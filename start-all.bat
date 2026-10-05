@@ -1,0 +1,3 @@
+@echo off
+echo Starting MCT Full-Stack System (FastAPI + React)...
+npm run dev
