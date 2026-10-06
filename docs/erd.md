@@ -30,7 +30,7 @@ Format: `Column (type)`. PK = primary key, FK = foreign key. Every table also ha
 
 | Table | Columns |
 |---|---|
-| **Company** | Company_ID PK, Name (varchar), Code (varchar), Description (text), Starting_Balance (decimal), Current_Balance (decimal) |
+| **Company** | Company_ID PK, Name (varchar), Company Name (varchar),Location(varchar),Contact Person(varchar),Contact Number(String(8), nullable=True), Phone(String(11), nullable=True), Email(varchar), Starting_Balance (decimal), Current_Balance (decimal) |
 | **Users** | User_ID PK, Company_ID FK, Name, Email, Password (hash!), Last_Login_At (timestamp), Is_Admin (boolean) |
 | **Permission** | Permission_ID PK, Name |
 | **Audit_Logs** | Audit_Log_ID PK, Company_ID FK, Action (varchar), Created_At only |

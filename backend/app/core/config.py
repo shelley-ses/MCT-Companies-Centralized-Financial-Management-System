@@ -19,6 +19,29 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     DATABASE_URL: str = ""
 
+    # Supabase JWT settings
+    SUPABASE_JWT_SECRET: str = ""
+    SUPABASE_JWT_AUDIENCE: str = "authenticated"
+    SUPABASE_JWT_ISSUER: str = ""
+
+    # Payload encryption key (Fernet)
+    PAYLOAD_ENCRYPTION_KEY: str = ""
+
+    # Login OTP delivery
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_TLS: bool = True
+    OTP_COOKIE_SECURE: bool = False
+
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 10
+    OTP_RESEND_LIMIT: int = 5
+    OTP_RESEND_INTERVAL_SECONDS: int = 120
+    OTP_EXPIRES_SECONDS: int = 180
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
@@ -36,4 +59,3 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
-
