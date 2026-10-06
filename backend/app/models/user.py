@@ -1,20 +1,19 @@
-from sqlalchemy import Column, Integer, String, Numeric, DateTime
-from sqlalchemy.orm import declarative_base
-
-Base = declarative_base()
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.sql import func
+from app.db.session import Base
 
 class User(Base):
     __tablename__ = 'users'
 
-    User_id = Column(Integer, primary_key=True, autoincrement=True)
-    Company_ID = Column(Integer, nullable=True)
-    name = Column(String(50), unique=True, nullable=False)
-    email = Column(String(100), unique=True, nullable=False)
-    password_hash = Column(String(128), nullable=False)
-    last_login_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
-    is_Admin = Column(bool, nullable=False, default=0)  # 0 for regular user, 1 for admin
+    user_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    company_id = Column(Integer, ForeignKey("company.company_id", ondelete="SET NULL"), nullable=True)
+    name = Column(String(100), nullable=False)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+    is_admin = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     def __repr__(self):
-        return f"<User(id={self.id}, username='{self.username}', email='{self.email}')>"
+        return f"<User(id={self.user_id}, name='{self.name}', email='{self.email}')>"

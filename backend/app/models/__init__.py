@@ -1,7 +1,16 @@
+from app.models.company import Company
+from app.models.user import User
+from app.models.permission import Permission
+from app.models.audit_log import AuditLog
 from app.models.finance import Category, CashInflow, Sale, Expense, Budget
 from app.models.loan import Loan, LoanRepayment
+from app.models.staff_credit import StaffCredit, StaffCreditRepayment
 
 __all__ = [
+    "Company",
+    "User",
+    "Permission",
+    "AuditLog",
     "Category",
     "CashInflow",
     "Sale",
@@ -9,4 +18,6 @@ __all__ = [
     "Budget",
     "Loan",
     "LoanRepayment",
+    "StaffCredit",
+    "StaffCreditRepayment",
 ]
