@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     DATABASE_URL: str = ""
 
+    # Supabase JWT settings
+    SUPABASE_JWT_SECRET: str = ""
+    SUPABASE_JWT_AUDIENCE: str = "authenticated"
+    SUPABASE_JWT_ISSUER: str = ""
+
+    # Payload encryption key (Fernet)
+    PAYLOAD_ENCRYPTION_KEY: str = ""
+
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

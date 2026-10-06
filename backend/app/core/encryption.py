@@ -1,30 +1,26 @@
 import base64
 import json
-import os
 import logging
 from cryptography.fernet import Fernet
 from fastapi import HTTPException, status
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 def get_encryption_key() -> bytes:
-    # Load .env if not already loaded
-    from dotenv import load_dotenv
-    load_dotenv()
-    key = os.getenv("PAYLOAD_ENCRYPTION_KEY")
+    # Load key from settings (sourced from .env via config.py)
+    key = settings.PAYLOAD_ENCRYPTION_KEY
     if not key:
-        secret = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("SUPABASE_KEY") or "mct-centralized-system-32byte-secret-key!!"
+        # Fallback: derive a key from SUPABASE_JWT_SECRET or SUPABASE_KEY
+        secret = settings.SUPABASE_JWT_SECRET or settings.SUPABASE_KEY or "mct-centralized-system-32byte-secret-key!!"
         key = base64.urlsafe_b64encode(secret.ljust(32)[:32].encode("utf-8")).decode("utf-8")
     if isinstance(key, str):
         key = key.encode("utf-8")
     return key
 
 
-
 def encrypt_payload(data: dict) -> str:
-    """
-    Encrypt a dictionary payload into an encrypted ciphertext token.
-    """
     try:
         f = Fernet(get_encryption_key())
         json_data = json.dumps(data).encode("utf-8")
@@ -38,9 +34,6 @@ def encrypt_payload(data: dict) -> str:
 
 
 def decrypt_payload(encrypted_str: str) -> dict:
-    """
-    Decrypt an encrypted ciphertext token back into a dictionary.
-    """
     try:
         f = Fernet(get_encryption_key())
         decrypted_bytes = f.decrypt(encrypted_str.encode("utf-8"))

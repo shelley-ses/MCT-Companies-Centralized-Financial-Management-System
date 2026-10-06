@@ -1,7 +1,6 @@
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Union, Dict, Any
+from typing import Optional, Union
 import logging
-import os
 import jwt
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -25,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_jwt_secret() -> str:
-    secret = os.getenv("SUPABASE_JWT_SECRET") or settings.SUPABASE_KEY
+    secret = settings.SUPABASE_JWT_SECRET or settings.SUPABASE_KEY
     if not secret:
         secret = "mct-centralized-financial-system-secret-key-32chars!"
     return secret
