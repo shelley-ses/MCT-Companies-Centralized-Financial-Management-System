@@ -1,5 +1,122 @@
-# handles the security aspects of the application, including authentication and authorization mechanisms. It defines functions and classes that manage user credentials, token generation, password hashing, and access control. This module ensures that sensitive information is protected and that only authorized users can access certain resources or perform specific actions within the application. 
-#Reading the access token. Validating the token. Identifying the logged-in user. Rejecting missing or invalid authentication.
+from __future__ import annotations
 
-#get_access_token(), verify_token(), get_authenticated_user() and other related functions are implemented in this module to facilitate secure user authentication and authorization processes.
+import base64
+import binascii
+import hashlib
+import hmac
+import json
+import os
+import time
+from typing import Any, Annotated
 
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+_SUPPORTED_ALGORITHM = "HS256"
+
+#get
+def get_access_token(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ],
+) -> str:
+    #Return the bearer token or reject an unauthenticated request.
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return credentials.credentials
+
+# get the access token from the Authorization header, validate it, and return its claims.
+def verify_token(token: Annotated[str, Depends(get_access_token)]) -> dict[str, Any]:
+    """Validate a Supabase HS256 JWT and return its claims.
+
+    The signing secret must be provided through ``SUPABASE_JWT_SECRET``.
+    Tokens are rejected when they have an invalid signature, missing subject,
+    expired timestamps, an invalid audience, or an invalid issuer.
+    """
+    secret = os.getenv("SUPABASE_JWT_SECRET")
+    if not secret:
+        raise RuntimeError("SUPABASE_JWT_SECRET is not configured.")
+
+    try:
+        header_segment, payload_segment, signature_segment = token.split(".")
+        header = _decode_json_segment(header_segment)
+        payload = _decode_json_segment(payload_segment)
+        signature = _decode_segment(signature_segment)
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, binascii.Error):
+        raise _invalid_token("Malformed access token.") from None
+
+    if header.get("alg") != _SUPPORTED_ALGORITHM:
+        raise _invalid_token("Unsupported access token algorithm.")
+    if header.get("typ") not in (None, "JWT"):
+        raise _invalid_token("Invalid access token type.")
+    if not isinstance(payload.get("sub"), str) or not payload["sub"]:
+        raise _invalid_token("Access token subject is missing.")
+
+    signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
+    expected_signature = hmac.new(
+        secret.encode("utf-8"), signing_input, hashlib.sha256
+    ).digest()
+    if not hmac.compare_digest(signature, expected_signature):
+        raise _invalid_token("Invalid access token signature.")
+
+    now = time.time()
+    _validate_numeric_timestamp(payload, "exp", now, must_be_present=True)
+    _validate_numeric_timestamp(payload, "nbf", now, must_be_present=False)
+
+    expected_audience = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
+    if payload.get("aud") != expected_audience:
+        raise _invalid_token("Invalid access token audience.")
+
+    expected_issuer = os.getenv("SUPABASE_JWT_ISSUER")
+    if expected_issuer and payload.get("iss") != expected_issuer:
+        raise _invalid_token("Invalid access token issuer.")
+
+    return payload
+
+#decode a base64url-encoded JWT segment, and raise a ValueError if the decoded value is not valid base64.
+def _decode_segment(segment: str) -> bytes:
+    return base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+
+#get json object from a base64url-encoded JWT segment, and raise a ValueError if the decoded value is not a JSON object.
+def _decode_json_segment(segment: str) -> dict[str, Any]:
+    decoded = _decode_segment(segment)
+    value = json.loads(decoded.decode("utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("JWT segment is not an object.")
+    return value
+
+#check if the numeric timestamp claim is present and valid, and raise an HTTPException if it is not.
+def _validate_numeric_timestamp(
+    payload: dict[str, Any],
+    claim: str,
+    now: float,
+    *,
+    must_be_present: bool,
+) -> None:
+    value = payload.get(claim)
+    if value is None:
+        if must_be_present:
+            raise _invalid_token(f"Access token {claim} claim is missing.")
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise _invalid_token(f"Access token {claim} claim is invalid.")
+
+    if claim == "exp" and now >= value:
+        raise _invalid_token("Access token has expired.")
+    if claim == "nbf" and now < value:
+        raise _invalid_token("Access token is not active yet.")
+
+# return an HTTPException for an invalid token with a 401 status code and a WWW-Authenticate header.
+def _invalid_token(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
