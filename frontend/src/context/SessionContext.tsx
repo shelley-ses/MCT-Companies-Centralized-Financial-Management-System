@@ -4,6 +4,7 @@ import {
   type User,
   type SignInResult,
   type Verify2FAResponse,
+  type Resend2FAResponse,
 } from '@/services/authService'
 import type { SignInFormValues } from '@/lib/validation/auth'
 
@@ -14,6 +15,7 @@ export interface SessionContextValue {
   user: User | null
   signIn: (values: SignInFormValues) => Promise<SignInResult>
   verify2FA: (code: string) => Promise<Verify2FAResponse>
+  resend2FA: () => Promise<Resend2FAResponse>
   complete2FA: () => Promise<void>
   signOut: () => Promise<void>
 }
@@ -77,6 +79,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({
     []
   )
 
+  const handleResend2FA = React.useCallback(
+    async (): Promise<Resend2FAResponse> => authService.resend2FA(),
+    []
+  )
+
   const handleComplete2FA = React.useCallback(async (): Promise<void> => {
     const sessionUser = await authService.getSession()
     setUser(sessionUser)
@@ -99,10 +106,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({
       user,
       signIn: handleSignIn,
       verify2FA: handleVerify2FA,
+      resend2FA: handleResend2FA,
       complete2FA: handleComplete2FA,
       signOut: handleSignOut,
     }),
-    [status, user, handleSignIn, handleVerify2FA, handleComplete2FA, handleSignOut]
+    [status, user, handleSignIn, handleVerify2FA, handleResend2FA, handleComplete2FA, handleSignOut]
   )
 
   return (

@@ -27,6 +27,20 @@ class Settings(BaseSettings):
     # Payload encryption key (Fernet)
     PAYLOAD_ENCRYPTION_KEY: str = ""
 
+    # Login OTP delivery
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_TLS: bool = True
+    OTP_COOKIE_SECURE: bool = False
+
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 10
+    OTP_RESEND_LIMIT: int = 5
+    OTP_RESEND_INTERVAL_SECONDS: int = 120
+    OTP_EXPIRES_SECONDS: int = 180
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -45,4 +59,3 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
-

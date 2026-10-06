@@ -1,12 +1,12 @@
-from fastapi import HTTPException
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
-from typing import Generator, Optional
 
 from app.db.session import get_db
+from app.core.config import settings
 from app.core.dependencies import get_current_user, AuthenticatedUser
 from app.schemas.auth import (
-    LoginRequest,
+    LoginRequest, LoginChallengeResponse, VerifyOtpRequest,
+    OtpResponse,
     TokenResponse,
     PasswordResetRequest,
     PasswordResetConfirm,
@@ -18,18 +18,43 @@ from app.services.auth_service import (
     logout_user,
     get_current_user_info,
     request_password_reset,
-    reset_password,
+    reset_password, verify_login_otp, resend_login_otp,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # login user
-@router.post("/login", response_model=TokenResponse, summary="User Login")
+@router.post("/login", response_model=LoginChallengeResponse, summary="User Login")
 def login(
     login_data: LoginRequest,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
-    return login_user(db=db, login_data=login_data)
+    result, cookie = login_user(db=db, login_data=login_data, ip_address=request.client.host if request.client else "unknown")
+    response.set_cookie("mct_login_otp", cookie, httponly=True, secure=settings.OTP_COOKIE_SECURE, samesite="lax", max_age=180)
+    return result
+
+@router.post("/login/verify-otp", response_model=TokenResponse, summary="Verify Login OTP")
+def verify_otp(
+    otp_data: VerifyOtpRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    result = verify_login_otp(db=db, otp_data=otp_data, ip_address=request.client.host if request.client else "unknown", cookie_value=request.cookies.get("mct_login_otp"))
+    response.delete_cookie("mct_login_otp")
+    return result
+
+@router.post("/login/resend-otp", response_model=OtpResponse, summary="Resend Login OTP")
+def resend_otp(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    result, cookie = resend_login_otp(db=db, ip_address=request.client.host if request.client else "unknown", cookie_value=request.cookies.get("mct_login_otp"))
+    response.set_cookie("mct_login_otp", cookie, httponly=True, secure=settings.OTP_COOKIE_SECURE, samesite="lax", max_age=180)
+    return result
 
 # logout user
 @router.post("/logout", response_model=MessageResponse, summary="User Logout")

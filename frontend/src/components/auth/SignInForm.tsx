@@ -57,7 +57,7 @@ export const SignInForm: React.FC = () => {
         navigate(safeRedirectPath, { replace: true })
       } else if (response.status === '2fa_required') {
         // Route to 2FA verification step, preserving return route
-        navigate('/verify-2fa', { state: { from: fromState } })
+        navigate('/verify-2fa', { state: { from: fromState, email: response.email } })
       }
     } catch (err: unknown) {
       // Generic server error for bad credentials; never reveal which field failed

@@ -13,6 +13,23 @@ class TokenResponse(BaseModel):
     user: UserResponse
     encrypted_response: Optional[str] = None
 
+class LoginChallengeResponse(BaseModel):
+    status: str = "2fa_required"
+    expires_in: int
+    email: str
+
+class VerifyOtpRequest(BaseModel):
+    otp: str
+
+class ResendOtpRequest(BaseModel):
+    pass
+
+class OtpResponse(BaseModel):
+    message: str
+    success: bool = True
+    expires_in: int
+    resend_available_in: int
+
 class PasswordResetRequest(BaseModel):
     email: Optional[EmailStr] = None
     encrypted_payload: Optional[str] = None
