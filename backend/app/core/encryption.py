@@ -8,9 +8,9 @@ from fastapi import HTTPException, status
 logger = logging.getLogger(__name__)
 
 def get_encryption_key() -> bytes:
-    """
-    Get 32-byte urlsafe base64 key for payload encryption and decryption.
-    """
+    # Load .env if not already loaded
+    from dotenv import load_dotenv
+    load_dotenv()
     key = os.getenv("PAYLOAD_ENCRYPTION_KEY")
     if not key:
         secret = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("SUPABASE_KEY") or "mct-centralized-system-32byte-secret-key!!"
@@ -18,6 +18,7 @@ def get_encryption_key() -> bytes:
     if isinstance(key, str):
         key = key.encode("utf-8")
     return key
+
 
 
 def encrypt_payload(data: dict) -> str:
