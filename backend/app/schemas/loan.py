@@ -1,0 +1,69 @@
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, List
+from datetime import date, datetime
+from decimal import Decimal
+
+# --- Loan Repayment ---
+class LoanRepaymentBase(BaseModel):
+    loan_id: int
+    recorded_by: Optional[int] = None
+    payment_date: date
+    due_date: Optional[date] = None
+    amount: Decimal = Field(..., gt=0, decimal_places=2)
+    reference_no: Optional[str] = None
+    status: str = Field(default="completed", description="pending, completed, overdue")
+    received_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+class LoanRepaymentCreate(LoanRepaymentBase):
+    pass
+
+class LoanRepaymentOut(LoanRepaymentBase):
+    loan_repayment_id: int
+    remaining_balance: Decimal
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+# --- Loan ---
+class LoanBase(BaseModel):
+    borrower: int = Field(..., description="Company_ID of borrower")
+    lender: int = Field(..., description="Company_ID of lender")
+    loan_ref_no: Optional[str] = None
+    principal_amount: Decimal = Field(..., gt=0, decimal_places=2)
+    interest_rate: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2, description="Interest percentage e.g. 5.00 for 5%")
+    interest_type: str = Field(default="simple", description="simple or compound")
+    loan_date: date
+    due_date: Optional[date] = None
+    description: Optional[str] = None
+
+class LoanCreate(LoanBase):
+    pass
+
+class LoanUpdate(BaseModel):
+    loan_ref_no: Optional[str] = None
+    due_date: Optional[date] = None
+    description: Optional[str] = None
+
+class LoanOut(LoanBase):
+    loan_id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class LoanStatementOut(BaseModel):
+    loan_id: int
+    borrower: int
+    lender: int
+    principal_amount: Decimal
+    interest_rate: Decimal
+    interest_type: str
+    interest_amount: Decimal
+    total_loan_payable: Decimal
+    total_amount_repaid: Decimal
+    current_remaining_balance: Decimal
+    status: str
+    repayments: List[LoanRepaymentOut] = []
+
