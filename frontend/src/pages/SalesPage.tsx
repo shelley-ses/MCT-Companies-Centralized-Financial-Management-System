@@ -12,11 +12,8 @@ import {
   FileSpreadsheet,
   FileText,
   Calendar,
-  TrendingDown,
   TrendingUp,
-  Landmark,
   AlertCircle,
-  Pencil,
   Trash2,
   Loader2,
 } from 'lucide-react'
@@ -41,11 +38,9 @@ import {
   DateRangePicker,
   type DateRange,
 } from '@/components/ui/DateRangePicker'
-import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
 import { IncomeSummaryChart } from '@/components/dashboard/CategorySummaryChart'
 import { AuditTransactionModal } from '@/components/dashboard/AuditTransactionModal'
 import { AddSalesModal } from '@/components/dashboard/AddSalesModal'
-import { EditSalesModal } from '@/components/dashboard/EditSalesModal'
 import {
   salesService,
   type SalesItem,
@@ -92,7 +87,6 @@ export const SalesPage: React.FC = () => {
   })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending'>('All')
-  const todayIso = new Date().toISOString().split('T')[0]
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
 
   // Handle switching period (Daily, Quarterly, Monthly, Annually)
@@ -153,8 +147,7 @@ export const SalesPage: React.FC = () => {
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = React.useState(false)
-  const [editingSale, setEditingSale] = React.useState<SalesItem | null>(null)
+  const [selectedSale, setSelectedSale] = React.useState<SalesItem | null>(null)
   const [deleteConfirmSale, setDeleteConfirmSale] = React.useState<SalesItem | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
@@ -177,6 +170,8 @@ export const SalesPage: React.FC = () => {
   // Handlers for edit and delete
   const handleSaleUpdated = (updatedItem: SalesItem) => {
     setSales((prev) => prev.map((s) => (s.id === updatedItem.id ? updatedItem : s)))
+    setSelectedSale(updatedItem)
+    setSelectedTx(salesService.toDashboardTransaction(updatedItem))
     setHighlightedSaleId(updatedItem.id)
     if (highlightTimeoutRef.current) {
       clearTimeout(highlightTimeoutRef.current)
@@ -316,28 +311,11 @@ export const SalesPage: React.FC = () => {
     setCurrentPage(1)
   }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod])
 
-  // KPI Calculations matching the dashboard:
-  // 1. Total Expenses
-  // 2. Total Income (Total Sales)
-  // 3. Net Income (Income - Expenses)
-  // 4. Overdue / Due Soon
+  // KPI Calculation: Total Income only (Total Sales)
   const kpis = React.useMemo(() => {
-    const expenses = filteredSales.reduce((sum, s) => sum + (s.withdrawal || 0), 0)
     const income = filteredSales.reduce((sum, s) => sum + (s.deposit || 0), 0)
-    const net = income - expenses
-    const overdue = filteredSales.filter(
-      (s) => s.status === 'Overdue' || s.auditStatus === 'Flagged'
-    ).length
-    const dueSoon = filteredSales.filter(
-      (s) => s.status === 'Pending'
-    ).length
-
     return {
-      totalExpenses: expenses,
       totalIncome: income,
-      netIncome: net,
-      overdueCount: overdue,
-      dueSoonCount: dueSoon,
     }
   }, [filteredSales])
 
@@ -407,8 +385,8 @@ export const SalesPage: React.FC = () => {
   }
 
   const handleOpenRow = (item: SalesItem) => {
-    const tx = salesService.toDashboardTransaction(item)
-    setSelectedTx(tx)
+    setSelectedSale(item)
+    setSelectedTx(salesService.toDashboardTransaction(item))
     setIsAuditModalOpen(true)
   }
 
@@ -499,31 +477,10 @@ export const SalesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Unified Filter Bar: Search, Period Dropdown (Daily, Quarterly, Monthly, Annually), Status, Date Picker */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        {/* Search Input */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by Ref No. or Cheque No. (or customer)…"
-            className="w-full h-11 pl-9 pr-8 rounded-full border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-xs box-border focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
+      {/* 2. Unified Filter Bar: Period Dropdown (Daily, Quarterly, Monthly, Annually), Status, Date Picker (Right-aligned) */}
+      <div className="flex items-center justify-end">
         {/* Filter controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
           {/* Custom Period Dropdown: Daily, Quarterly, Monthly, Annually */}
           <div ref={periodDropdownRef} className="relative inline-block">
             <button
@@ -739,33 +696,24 @@ export const SalesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. KPI Cards matching Dashboard (4 cards: Total Expenses, Total Income, Net Income, Overdue / Due Soon) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <DashboardKpiCard
-          label="Total Expenses"
-          value={formatPHP(kpis.totalExpenses)}
-          icon={TrendingDown}
-          subtext="Total withdrawals for period"
-        />
-        <DashboardKpiCard
-          label="Total Income"
-          value={formatPHP(kpis.totalIncome)}
-          icon={TrendingUp}
-          subtext="Total deposits for period"
-        />
-        <DashboardKpiCard
-          label="Net Income (Income - Expenses)"
-          value={formatPHP(kpis.netIncome)}
-          icon={Landmark}
-          subtext={kpis.netIncome >= 0 ? 'Positive net cashflow' : 'Negative net cashflow'}
-        />
-        <DashboardKpiCard
-          label="Overdue / Due Soon"
-          value={`${kpis.overdueCount} / ${kpis.dueSoonCount}`}
-          icon={AlertCircle}
-          subtext="Requires prompt review"
-        />
-      </div>
+      {/* 3. Total Income KPI Card */}
+      <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
+        <div>
+          <span className="text-xs font-medium text-muted-fg block">
+            Total Income
+          </span>
+          <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
+            {formatPHP(kpis.totalIncome)}
+          </h3>
+          <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5">
+            Total sales deposits for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
+          </p>
+        </div>
+
+        <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+          <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />
+        </div>
+      </Card>
 
       {/* 4. Charts Section: Diagram - Income Summary extended to full width (weekly sales trend removed) */}
       <div className="w-full">
@@ -780,43 +728,73 @@ export const SalesPage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Grey Header Banner from the mockup */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5">
-          <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
-            {selectedPeriod === 'Annually' ? 'Annual Sales' : `${selectedPeriod} Sales`}
-          </h2>
-          <p className="text-xs text-muted-fg font-normal mt-0.5">
-            Here's the summary of sales in {displayedCompanyTitle}.
-          </p>
+        {/* Grey Header Banner with Search Input for the table */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
+              {selectedPeriod === 'Annually' ? 'Annual Sales' : `${selectedPeriod} Sales`}
+            </h2>
+            <p className="text-xs text-muted-fg font-normal mt-0.5">
+              Here's the summary of sales in {displayedCompanyTitle}.
+            </p>
+          </div>
+
+          {/* Search bar moved to table */}
+          <div className="relative w-full md:w-80 lg:w-[420px]">
+            <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by Ref No. or Cheque No. (or customer)…"
+              className="w-full h-10 pl-9 pr-8 rounded-full border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-xs box-border focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Table matching the Sales table from mockup */}
+        {/* Table matching the Sales table from mockup with equal spacing across all columns */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table>
+          <Table className="w-full table-fixed min-w-[900px]">
+            <colgroup>
+              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '14.2857%' }} />
+            </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CHEQUE NO.
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
-                  WITHDRAWAL
-                </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DEPOSIT
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CATEGORY
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   NET AMOUNT
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -826,7 +804,7 @@ export const SalesPage: React.FC = () => {
               {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={7}
                     className="py-12 text-center text-xs sm:text-sm text-muted-fg animate-pulse"
                   >
                     Loading sales records…
@@ -835,7 +813,7 @@ export const SalesPage: React.FC = () => {
               ) : paginatedSales.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={7}
                     className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
@@ -865,11 +843,11 @@ export const SalesPage: React.FC = () => {
                     title="Click to view complete details"
                   >
                     {/* 1. Date */}
-                    <TableCell className="px-4 py-3.5 text-xs font-medium text-focus whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-medium text-focus truncate text-left">
+                      <div className="flex items-center gap-1.5 truncate">
                         <span>{sale.date}</span>
                         {highlightedSaleId === sale.id && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white shadow-xs animate-bounce">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white shadow-xs animate-bounce shrink-0">
                             NEW
                           </span>
                         )}
@@ -877,60 +855,42 @@ export const SalesPage: React.FC = () => {
                     </TableCell>
 
                     {/* 2. Cheque No */}
-                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 whitespace-nowrap font-mono">
+                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
                       {sale.chequeNo || '—'}
                     </TableCell>
 
                     {/* 3. Particulars */}
-                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-xs">
-                      <span className="line-clamp-1">{sale.particulars}</span>
+                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={sale.particulars}>
+                      <span className="truncate block">{sale.particulars}</span>
                     </TableCell>
 
-                    {/* 4. Withdrawal */}
-                    <TableCell className="px-4 py-3.5 text-xs font-medium text-right tabular-nums whitespace-nowrap text-muted-fg">
-                      {sale.withdrawal > 0 ? formatPHP(sale.withdrawal) : ''}
-                    </TableCell>
-
-                    {/* 5. Deposit */}
-                    <TableCell className="px-4 py-3.5 text-xs font-semibold text-right tabular-nums whitespace-nowrap text-emerald-600">
+                    {/* 4. Deposit */}
+                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-semibold text-left tabular-nums whitespace-nowrap text-emerald-600">
                       {sale.deposit > 0 ? formatPHP(sale.deposit) : ''}
                     </TableCell>
 
-                    {/* 6. Category (Clean text per Sales table reference) */}
-                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-medium whitespace-nowrap">
+                    {/* 5. Category */}
+                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
                       {sale.category}
                     </TableCell>
 
-                    {/* 7. Net Amount */}
-                    <TableCell className="px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap text-focus">
+                    {/* 6. Net Amount */}
+                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
                       {formatPHP(sale.netAmount)}
                     </TableCell>
 
-                    {/* 8. Actions (Edit / Delete) */}
+                    {/* 7. Actions */}
                     <TableCell
-                      className="px-4 py-3.5 text-center whitespace-nowrap"
+                      className="w-[14.2857%] px-4 py-3.5 text-center whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex items-center justify-center gap-1.5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditingSale(sale)
-                            setIsEditModalOpen(true)
-                          }}
-                          className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-                          title="Edit Sale"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
+                      <div className="flex items-center justify-center">
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
                           onClick={() => setDeleteConfirmSale(sale)}
-                          className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
                           title="Delete Sale"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -994,14 +954,6 @@ export const SalesPage: React.FC = () => {
         assignedCompany={isAuditor ? assignedCompany : selectedCompany}
       />
 
-      {/* Edit Sales Modal */}
-      <EditSalesModal
-        open={isEditModalOpen}
-        onOpenChange={setIsEditModalOpen}
-        sale={editingSale}
-        onSuccess={handleSaleUpdated}
-      />
-
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteConfirmSale} onOpenChange={(open) => !open && setDeleteConfirmSale(null)}>
         <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
@@ -1026,7 +978,7 @@ export const SalesPage: React.FC = () => {
               variant="outline"
               onClick={() => setDeleteConfirmSale(null)}
               disabled={isDeleting}
-              className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50"
+              className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 cursor-pointer"
             >
               Cancel
             </Button>
@@ -1034,7 +986,7 @@ export const SalesPage: React.FC = () => {
               type="button"
               onClick={handleConfirmDelete}
               disabled={isDeleting}
-              className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white"
+              className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white cursor-pointer"
             >
               {isDeleting ? (
                 <>
@@ -1049,11 +1001,20 @@ export const SalesPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Audit / Details Modal */}
+      {/* Transaction Details & Audit Modal (with direct editing, Cancel & Save Changes) */}
       <AuditTransactionModal
         open={isAuditModalOpen}
-        onOpenChange={setIsAuditModalOpen}
+        onOpenChange={(open) => {
+          setIsAuditModalOpen(open)
+          if (!open) {
+            setSelectedSale(null)
+            setSelectedTx(null)
+          }
+        }}
         transaction={selectedTx}
+        sale={selectedSale}
+        onSaleUpdated={handleSaleUpdated}
+        editable={true}
       />
     </div>
   )

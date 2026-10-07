@@ -22,10 +22,7 @@ import {
 import { Card } from '@/components/ui/card'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type {
-  DashboardTransactionItem,
-  TransactionCategory,
-} from '@/services/dashboardService'
+import type { DashboardTransactionItem } from '@/services/dashboardService'
 
 import {
   CATEGORY_COLORS,
@@ -66,32 +63,35 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
   // Aggregate by category
   // Income uses Deposit amounts; Expense uses Withdrawal amounts
   const { categoryData, totalAmount } = React.useMemo(() => {
-    const sums: Record<TransactionCategory, number> = {
-      GCash: 0,
-      Maya: 0,
-      PayMongo: 0,
-      Panda: 0,
-      'In-house': 0,
-    }
+    const sums: Record<string, number> = {}
+    CATEGORY_LIST.forEach((cat) => {
+      sums[cat] = 0
+    })
 
     transactions.forEach((tx) => {
-      const cat = tx.category
-      if (cat && sums[cat] !== undefined) {
-        if (type === 'income') {
-          sums[cat] += tx.deposit || 0
-        } else {
-          sums[cat] += tx.withdrawal || 0
-        }
-      }
+      const cat = tx.category || 'In-house'
+      const val = type === 'income' ? (tx.deposit || tx.amount || 0) : (tx.withdrawal || tx.amount || 0)
+      sums[cat] = (sums[cat] || 0) + val
     })
 
     const total = Object.values(sums).reduce((a, b) => a + b, 0)
 
-    const data = CATEGORY_LIST.map((cat) => ({
+    const extraColors: Record<string, string> = {
+      Cheque: '#8B5CF6',
+      'Bank Transfer': '#06B6D4',
+      Cash: '#10B981',
+      None: '#64748B',
+    }
+
+    const allCategories = Array.from(
+      new Set([...CATEGORY_LIST, ...Object.keys(sums).filter((k) => sums[k] > 0)])
+    )
+
+    const data = allCategories.map((cat) => ({
       category: cat,
-      amount: sums[cat],
-      color: CATEGORY_COLORS[cat],
-      percentage: total > 0 ? (sums[cat] / total) * 100 : 0,
+      amount: sums[cat] || 0,
+      color: (CATEGORY_COLORS as Record<string, string>)[cat] || extraColors[cat] || '#6366F1',
+      percentage: total > 0 ? ((sums[cat] || 0) / total) * 100 : 0,
     }))
 
     return { categoryData: data, totalAmount: total }
