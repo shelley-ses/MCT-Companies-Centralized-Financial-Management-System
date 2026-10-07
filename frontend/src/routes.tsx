@@ -2,10 +2,12 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
+import { EmployeePage } from '@/pages/EmployeePage'
 import { AppShell } from '@/components/layout/AppShell'
 import {
   ProtectedRoute,
   PublicOnlyRoute,
+  AdminOnlyRoute,
 } from '@/components/layout/RouteGuards'
 
 export const router = createBrowserRouter([
@@ -119,11 +121,21 @@ export const router = createBrowserRouter([
     path: '/employee',
     element: (
       <ProtectedRoute>
-        <AppShell>
-          <PlaceholderPage title="Employee" />
-        </AppShell>
+        <AdminOnlyRoute>
+          <AppShell>
+            <EmployeePage />
+          </AppShell>
+        </AdminOnlyRoute>
       </ProtectedRoute>
     ),
+  },
+  {
+    path: '/user-management',
+    element: <Navigate to="/employee" replace />,
+  },
+  {
+    path: '/users',
+    element: <Navigate to="/employee" replace />,
   },
   {
     path: '/settings',

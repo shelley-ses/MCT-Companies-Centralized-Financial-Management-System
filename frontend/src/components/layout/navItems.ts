@@ -29,12 +29,14 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     title: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
+    roles: ['Admin', 'Company Auditor'],
   },
   {
     id: 'sales',
     title: 'Sales',
     href: '/sales/daily',
     icon: BarChart3,
+    roles: ['Admin', 'Company Auditor'],
     subItems: [
       { id: 'sales-daily', title: 'Daily', href: '/sales/daily' },
       { id: 'sales-quarterly', title: 'Quarterly', href: '/sales/quarterly' },
@@ -47,12 +49,14 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     title: 'Expense',
     href: '/expense',
     icon: CircleDollarSign,
+    roles: ['Admin', 'Company Auditor'],
   },
   {
     id: 'loan',
     title: 'Loan',
     href: '/loan',
     icon: HandCoins,
+    roles: ['Admin', 'Company Auditor'],
   },
 ] as const
 
@@ -62,11 +66,13 @@ export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
     title: 'Employee',
     href: '/employee',
     icon: Users,
+    roles: ['Admin'], // Exclusively for Admin (Company & User Management)
   },
   {
     id: 'settings',
     title: 'Settings',
     href: '/settings',
     icon: Settings,
+    roles: ['Admin', 'Company Auditor'],
   },
 ] as const

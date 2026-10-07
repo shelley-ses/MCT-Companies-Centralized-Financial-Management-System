@@ -19,12 +19,15 @@ export const COMPANY_LINKS: readonly CompanyLinkItem[] = [
 
 export const CompanyLinks: React.FC = () => {
   return (
-    <footer className="w-full py-4 text-center">
-      <nav aria-label="MCT Companies" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs md:text-sm text-muted-fg">
+    <footer className="w-full px-6 py-4 text-center">
+      <nav
+        aria-label="MCT Companies"
+        className="flex flex-nowrap items-center justify-center gap-x-3 text-[11px] 2xl:text-xs text-muted-fg/80"
+      >
         {COMPANY_LINKS.map((company) => (
           <span
             key={company.id}
-            className="transition-colors hover:text-focus select-none cursor-default"
+            className="whitespace-nowrap transition-colors hover:text-focus select-none cursor-default"
           >
             {company.name}
           </span>

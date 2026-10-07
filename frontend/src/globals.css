@@ -26,4 +26,13 @@
     margin: 0;
     padding: 0;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-sphere-float-1,
+    .animate-sphere-float-2,
+    .animate-sphere-float-3,
+    .animate-sphere-float-accent {
+      animation: none !important;
+    }
+  }
 }
