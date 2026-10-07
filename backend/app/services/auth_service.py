@@ -3,6 +3,7 @@ from typing import Optional, Union
 import logging
 import secrets
 import json
+import hashlib
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import jwt
@@ -30,6 +31,7 @@ from app.schemas.user import UserResponse
 logger = logging.getLogger(__name__)
 OTP_COOKIE_NAME = "mct_login_otp"
 _rate_limits: dict[str, dict[str, object]] = {}
+_otp_challenges: dict[str, dict[str, object]] = {}
 
 
 def _mask_email(email: str) -> str:
@@ -106,7 +108,7 @@ def _send_login_otp(email: str, otp: str) -> None:
         "https://api.resend.com/emails",
         data=payload,
         headers={
-            "Authorization": f"Bearer {{settings.RESEND_API_KEY}}",
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
             "Content-Type": "application/json",
             "User-Agent": "MCT-Financial-Management-System",
         },
@@ -123,8 +125,20 @@ def _send_login_otp(email: str, otp: str) -> None:
                     response.headers,
                     None,
                 )
-    except (HTTPError, URLError, TimeoutError, OSError) as exc:
-        logger.error("Failed to send login OTP to %s: %s", email, exc)
+    except HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")[:1000]
+        logger.error(
+            "Resend rejected login OTP for %s: status=%s response=%s",
+            email,
+            exc.code,
+            error_body,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send the verification code. Please try again later.",
+        ) from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        logger.error("Resend request failed for %s: %s", email, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to send the verification code. Please try again later.",
@@ -298,18 +312,16 @@ def login_user(db: Session, login_data: LoginRequest, ip_address: str) -> tuple[
     otp = f"{secrets.randbelow(1_000_000):06d}"
     now = datetime.now(timezone.utc)
     challenge_cookie = encrypt_payload({
+        "challenge_id": secrets.token_urlsafe(24),
         "user_id": user["user_id"] if user else None,
         "email": normalized_email,
-        "otp": otp,
+        "otp_hash": hashlib.sha256(otp.encode("utf-8")).hexdigest(),
         "ip_address": ip_address,
         "expires_at": (now + timedelta(seconds=settings.OTP_EXPIRES_SECONDS)).timestamp(),
         "last_sent_at": now.timestamp(),
         "resend_count": 0,
     })
-    try:
-        _send_login_otp(normalized_email, otp)
-    except Exception:
-        raise
+    _send_login_otp(normalized_email, otp)
     return LoginChallengeResponse(
         expires_in=settings.OTP_EXPIRES_SECONDS,
         email=_mask_email(normalized_email),
@@ -323,10 +335,24 @@ def verify_login_otp(db: Session, otp_data: VerifyOtpRequest, ip_address: str, c
     now = datetime.now(timezone.utc)
     if challenge.get("ip_address") != ip_address or float(challenge.get("expires_at", 0)) <= now.timestamp():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired verification code.")
-    if not secrets.compare_digest(str(challenge.get("otp")), otp_data.otp):
+    challenge_id = str(challenge.get("challenge_id", ""))
+    challenge_state = _otp_challenges.setdefault(
+        challenge_id,
+        {"attempts": 0, "consumed": False},
+    )
+    if bool(challenge_state["consumed"]):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired verification code.")
+    if int(challenge_state["attempts"]) >= settings.OTP_MAX_ATTEMPTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many verification attempts. Please start again.")
+    submitted_otp_hash = hashlib.sha256(otp_data.otp.encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(str(challenge.get("otp_hash")), submitted_otp_hash):
+        challenge_state["attempts"] = int(challenge_state["attempts"]) + 1
         _record_failed_login(db, ip_address)
+        if int(challenge_state["attempts"]) >= settings.OTP_MAX_ATTEMPTS:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many verification attempts. Please start again.")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
 
+    challenge_state["consumed"] = True
     user_id = challenge.get("user_id")
     user = _get_application_user(user_id=int(user_id)) if user_id else None
     if user:
@@ -357,7 +383,7 @@ def resend_login_otp(db: Session, ip_address: str, cookie_value: str | None) -> 
         _record_failed_login(db, ip_address)
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Too many resend requests. Try again in {settings.LOGIN_LOCKOUT_MINUTES} minutes.")
     otp = f"{secrets.randbelow(1_000_000):06d}"
-    challenge["otp"] = otp
+    challenge["otp_hash"] = hashlib.sha256(otp.encode("utf-8")).hexdigest()
     challenge["expires_at"] = (now + timedelta(seconds=settings.OTP_EXPIRES_SECONDS)).timestamp()
     challenge["last_sent_at"] = now.timestamp()
     challenge["resend_count"] = int(challenge["resend_count"]) + 1

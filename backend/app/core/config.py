@@ -1,7 +1,10 @@
 from typing import List, Union
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AnyHttpUrl, field_validator
 import json
+
+BACKEND_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "MCT Companies Centralized Financial Management System"
@@ -34,6 +37,7 @@ class Settings(BaseSettings):
 
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 10
+    OTP_MAX_ATTEMPTS: int = 5
     OTP_RESEND_LIMIT: int = 5
     OTP_RESEND_INTERVAL_SECONDS: int = 120
     OTP_EXPIRES_SECONDS: int = 180
@@ -48,7 +52,7 @@ class Settings(BaseSettings):
         return v
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=BACKEND_ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"
