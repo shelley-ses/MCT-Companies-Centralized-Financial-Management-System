@@ -8,7 +8,6 @@ from urllib.request import Request, urlopen
 import jwt
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.core.encryption import decrypt_payload, encrypt_payload
@@ -29,7 +28,6 @@ from app.schemas.auth import (
 from app.schemas.user import UserResponse
 
 logger = logging.getLogger(__name__)
-password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 OTP_COOKIE_NAME = "mct_login_otp"
 _rate_limits: dict[str, dict[str, object]] = {}
 
@@ -37,6 +35,53 @@ _rate_limits: dict[str, dict[str, object]] = {}
 def _mask_email(email: str) -> str:
     local, domain = email.split("@", 1)
     return f"{local[:1]}***@{domain}"
+
+
+def _get_application_user(*, email: str | None = None, user_id: int | None = None) -> dict[str, object] | None:
+    query = get_supabase_admin_client().table("users").select(
+        "user_id,email,name,is_admin,company_id,created_at,updated_at,last_login_at"
+    )
+    if email is not None:
+        query = query.eq("email", email)
+    elif user_id is not None:
+        query = query.eq("user_id", user_id)
+    else:
+        return None
+    result = query.limit(1).execute().data
+    return result[0] if result else None
+
+
+def _update_application_user_login(user_id: int) -> None:
+    get_supabase_admin_client().table("users").update(
+        {"last_login_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("user_id", user_id).execute()
+
+
+def _application_user_response(user: dict[str, object]) -> UserResponse:
+    company_name = None
+    company_id = user.get("company_id")
+    if company_id is not None:
+        company = (
+            get_supabase_admin_client()
+            .table("company")
+            .select("company_name")
+            .eq("company_id", company_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        company_name = company[0]["company_name"] if company else None
+    return UserResponse(
+        user_id=int(user["user_id"]),
+        email=str(user["email"]),
+        name=str(user["name"]),
+        company_id=int(company_id) if company_id is not None else None,
+        is_admin=bool(user["is_admin"]),
+        last_login_at=user.get("last_login_at"),
+        created_at=user.get("created_at"),
+        updated_at=user.get("updated_at"),
+        company_name=company_name,
+    )
 
 
 def _send_login_otp(email: str, otp: str) -> None:
@@ -224,38 +269,36 @@ def login_user(db: Session, login_data: LoginRequest, ip_address: str) -> tuple[
 
     normalized_email = str(email).strip().lower()
 
-    auth_response = None
-    authenticated = False
-
-    # Authenticate via Supabase Auth SDK if configured
-    if settings.SUPABASE_URL and settings.SUPABASE_KEY:
-        try:
-            supabase = get_supabase_client()
-            auth_response = supabase.auth.sign_in_with_password({
-                "email": normalized_email,
-                "password": password
-            })
-            authenticated = bool(auth_response and auth_response.session)
-        except Exception as e:
-            logger.error(f"Supabase login failed for {normalized_email}: {e}")
-
-    # Find local user record
-    user = db.query(User).filter(User.email == normalized_email).first()
-
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-        authenticated = bool(user and password_context.verify(password, user.password_hash))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase authentication is not configured. Please contact an administrator.",
+        )
 
-    if not authenticated:
+    try:
+        supabase = get_supabase_client()
+        auth_response = supabase.auth.sign_in_with_password({
+            "email": normalized_email,
+            "password": password,
+        })
+        authenticated = bool(auth_response and auth_response.session)
+    except Exception as exc:
+        logger.warning("Supabase login failed for %s: %s", normalized_email, exc)
+        authenticated = False
+
+    user = _get_application_user(email=normalized_email)
+
+    if not authenticated or not user:
         _record_failed_login(db, ip_address)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            detail="Invalid email or password." if not authenticated else "Application user profile not found.",
         )
 
     otp = f"{secrets.randbelow(1_000_000):06d}"
     now = datetime.now(timezone.utc)
     challenge_cookie = encrypt_payload({
-        "user_id": user.user_id if user else None,
+        "user_id": user["user_id"] if user else None,
         "email": normalized_email,
         "otp": otp,
         "ip_address": ip_address,
@@ -285,17 +328,17 @@ def verify_login_otp(db: Session, otp_data: VerifyOtpRequest, ip_address: str, c
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
 
     user_id = challenge.get("user_id")
-    user = db.query(User).filter(User.user_id == user_id).first() if user_id else None
+    user = _get_application_user(user_id=int(user_id)) if user_id else None
     if user:
-        update_last_login_at(db, user.user_id)
-        user_info = get_current_user_info(db, user.user_id)
+        _update_application_user_login(int(user["user_id"]))
+        user_info = _application_user_response(user)
     else:
         user_info = UserResponse(user_id=0, email=challenge["email"], name=challenge["email"].split("@")[0], company_id=None, is_admin=False)
     access_token = create_jwt_token(
-        user_id=user.user_id if user else 1,
+        user_id=int(user["user_id"]) if user else 1,
         email=challenge["email"],
-        is_admin=user.is_admin if user else False,
-        company_id=user.company_id if user else None,
+        is_admin=bool(user["is_admin"]) if user else False,
+        company_id=int(user["company_id"]) if user and user["company_id"] is not None else None,
     )
     return TokenResponse(access_token=access_token, user=user_info)
 

@@ -78,8 +78,6 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
 
 export const ADMIN_USER: User = SEEDED_ACCOUNTS[0]
 export const AUDITOR_USER: User = SEEDED_ACCOUNTS[2]
-export const DEFAULT_MOCK_USER: User = AUDITOR_USER
-
 const SESSION_STORAGE_KEY = 'mct_session_user'
 
 function getInitialUser(): User {
@@ -93,7 +91,7 @@ function getInitialUser(): User {
       // ignore
     }
   }
-  return DEFAULT_MOCK_USER
+  return null
 }
 
 /**
@@ -141,17 +139,25 @@ export function detectUserByEmail(email: string): User {
 }
 
 let inMemorySessionUser: User | null = getInitialUser()
-let pendingUserEmail: string | null = null
-
 async function request<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`/api/v1/auth${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  const data = (await response.json()) as { detail?: string }
+  const responseText = await response.text()
+  let data: { detail?: string } = {}
+  try {
+    data = responseText ? (JSON.parse(responseText) as { detail?: string }) : {}
+  } catch {
+    data = {}
+  }
   if (!response.ok) {
-    throw new Error(data.detail || 'Authentication request failed.')
+    throw new Error(
+      data.detail ||
+        responseText ||
+        `Authentication request failed (${response.status}).`
+    )
   }
   return data as T
 }
@@ -178,34 +184,10 @@ export const authService = {
    * Validates credentials and starts an email OTP challenge.
    */
   async signIn(values: SignInFormValues): Promise<SignInResult> {
-    pendingUserEmail = values.email || DEFAULT_MOCK_USER.email
-    try {
-      const response = await request<{
-        email: string
-      }>('/login', { email: values.email, password: values.password })
-      return { status: '2fa_required', email: response.email }
-    } catch (err: unknown) {
-      // If server returned a business validation error (e.g. invalid credentials)
-      if (
-        err instanceof Error &&
-        err.message &&
-        !err.message.toLowerCase().includes('failed to fetch') &&
-        !err.message.toLowerCase().includes('network')
-      ) {
-        throw err
-      }
-
-      // Fallback for standalone frontend mock mode
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      if (values.password === 'wrong' || values.password === 'error') {
-        throw new Error('Invalid email or password.')
-      }
-
-      return {
-        status: '2fa_required',
-        email: values.email,
-      }
-    }
+    const response = await request<{
+      email: string
+    }>('/login', { email: values.email, password: values.password })
+    return { status: '2fa_required', email: response.email }
   },
 
   /**
@@ -223,7 +205,7 @@ export const authService = {
         // ignore
       }
     }
-    return inMemorySessionUser ?? DEFAULT_MOCK_USER
+    return inMemorySessionUser
   },
 
   /**
@@ -232,7 +214,6 @@ export const authService = {
   async signOut(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 400))
     inMemorySessionUser = null
-    pendingUserEmail = null
     if (typeof window !== 'undefined') {
       try {
         sessionStorage.removeItem(SESSION_STORAGE_KEY)
@@ -250,53 +231,20 @@ export const authService = {
       throw new Error('Please enter a valid 6-digit code.')
     }
 
-    try {
-      const response = await request<{
-        access_token: string
-        user: { user_id: number; email: string; name: string; is_admin: boolean }
-      }>('/login/verify-otp', { otp: code })
-      const mapped = mapUser(response.user)
-      inMemorySessionUser = mapped
-      if (typeof window !== 'undefined') {
-        try {
-          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(mapped))
-        } catch {
-          // ignore
-        }
-      }
-      return { success: true, token: response.access_token }
-    } catch (err: unknown) {
-      // If error is actual invalid code from backend, rethrow
-      if (
-        err instanceof Error &&
-        err.message &&
-        !err.message.toLowerCase().includes('failed to fetch') &&
-        !err.message.toLowerCase().includes('network')
-      ) {
-        throw err
-      }
-
-      // Fallback for standalone mock environment
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      if (code === '000000') {
-        throw new Error('Invalid authentication code. Please try again.')
-      }
-
-      const authenticatedUser = detectUserByEmail(pendingUserEmail || DEFAULT_MOCK_USER.email)
-      inMemorySessionUser = authenticatedUser
-      if (typeof window !== 'undefined') {
-        try {
-          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(authenticatedUser))
-        } catch {
-          // ignore
-        }
-      }
-
-      return {
-        success: true,
-        token: `auth_token_${Date.now()}`,
+    const response = await request<{
+      access_token: string
+      user: { user_id: number; email: string; name: string; is_admin: boolean }
+    }>('/login/verify-otp', { otp: code })
+    const mapped = mapUser(response.user)
+    inMemorySessionUser = mapped
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(mapped))
+      } catch {
+        // ignore
       }
     }
+    return { success: true, token: response.access_token }
   },
 
   /**
