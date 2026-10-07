@@ -105,7 +105,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
               render={({ field, fieldState }) => (
                 <FormItem className="space-y-1.5">
                   <Label htmlFor="company-name" className="text-xs sm:text-sm font-medium text-focus/90">
-                    Company Name
+                    Company Name <span className="text-red-500">*</span>
                   </Label>
                   <FormControl>
                     <Input
@@ -128,7 +128,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
               render={({ field, fieldState }) => (
                 <FormItem className="space-y-1.5">
                   <Label htmlFor="company-email" className="text-xs sm:text-sm font-medium text-focus/90">
-                    Company Email
+                    Company Email <span className="text-red-500">*</span>
                   </Label>
                   <FormControl>
                     <Input
@@ -153,7 +153,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="company-address" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Address
+                      Address <span className="text-red-500">*</span>
                     </Label>
                     <FormControl>
                       <Input
@@ -175,7 +175,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="contact-person" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Contact Person
+                      Contact Person <span className="text-red-500">*</span>
                     </Label>
                     <FormControl>
                       <Input
@@ -200,7 +200,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="contact-number" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Contact Number
+                      Contact Number <span className="text-red-500">*</span>
                     </Label>
                     <FormControl>
                       <Input
@@ -222,7 +222,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="telephone-number" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Telephone Number
+                      Telephone Number <span className="text-red-500">*</span>
                     </Label>
                     <FormControl>
                       <Input
@@ -247,7 +247,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="starting-balance" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Starting Balance
+                      Starting Balance <span className="text-red-500">*</span>
                     </Label>
                     <FormControl>
                       <Input
@@ -272,7 +272,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="current-balance" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Current Balance
+                      Current Balance <span className="text-red-500">*</span>
                     </Label>
                     <FormControl>
                       <Input

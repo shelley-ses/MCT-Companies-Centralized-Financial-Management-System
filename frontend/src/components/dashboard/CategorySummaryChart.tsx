@@ -1,0 +1,366 @@
+import * as React from 'react'
+import {
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+} from 'recharts'
+import {
+  BarChart3,
+  PieChart as PieIcon,
+  ChevronDown,
+  Check,
+  TrendingUp,
+  RotateCw,
+} from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { formatPHP } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import type {
+  DashboardTransactionItem,
+  TransactionCategory,
+} from '@/services/dashboardService'
+
+import {
+  CATEGORY_COLORS,
+  CATEGORY_LIST,
+} from '@/utils/categoryConstants'
+
+export { CATEGORY_COLORS, CATEGORY_LIST }
+
+interface CategorySummaryChartProps {
+  type: 'income' | 'expense'
+  transactions?: DashboardTransactionItem[]
+  className?: string
+}
+
+export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
+  type,
+  transactions = [],
+  className,
+}) => {
+  // Chart type dropdown: 'bar' (default) or 'pie'
+  // Independent per instance, retained across date range updates
+  const [chartType, setChartType] = React.useState<'bar' | 'pie'>('bar')
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false)
+  const dropdownRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false)
+      }
+    }
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isDropdownOpen])
+
+  // Aggregate by category
+  // Income uses Deposit amounts; Expense uses Withdrawal amounts
+  const { categoryData, totalAmount } = React.useMemo(() => {
+    const sums: Record<TransactionCategory, number> = {
+      GCash: 0,
+      Maya: 0,
+      PayMongo: 0,
+      Panda: 0,
+      'In-house': 0,
+    }
+
+    transactions.forEach((tx) => {
+      const cat = tx.category
+      if (cat && sums[cat] !== undefined) {
+        if (type === 'income') {
+          sums[cat] += tx.deposit || 0
+        } else {
+          sums[cat] += tx.withdrawal || 0
+        }
+      }
+    })
+
+    const total = Object.values(sums).reduce((a, b) => a + b, 0)
+
+    const data = CATEGORY_LIST.map((cat) => ({
+      category: cat,
+      amount: sums[cat],
+      color: CATEGORY_COLORS[cat],
+      percentage: total > 0 ? (sums[cat] / total) * 100 : 0,
+    }))
+
+    return { categoryData: data, totalAmount: total }
+  }, [transactions, type])
+
+  const title = type === 'income' ? 'Income Summary' : 'Expense Summary'
+  const subtitle =
+    type === 'income'
+      ? 'Deposit amounts broken down by payment category'
+      : 'Withdrawal amounts broken down by payment category'
+  const Icon = type === 'income' ? TrendingUp : RotateCw
+  const iconBg = type === 'income' ? 'bg-primary' : 'bg-[#0B0F2B]'
+
+  const hasData = totalAmount > 0
+
+  return (
+    <Card
+      className={cn(
+        'bg-white rounded-[20px] border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between transition-all hover:shadow-md',
+        className
+      )}
+    >
+      {/* 1. Header with Icon, Title, and Independent Chart Type Dropdown */}
+      <div className="flex items-start sm:items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0 shadow-xs',
+              iconBg
+            )}
+          >
+            <Icon className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm sm:text-base font-semibold text-focus leading-tight">
+              {title}
+            </h3>
+            <p className="text-xs text-muted-fg font-normal mt-0.5 line-clamp-1">
+              {subtitle}
+            </p>
+          </div>
+        </div>
+
+        {/* Chart Type Toggle Dropdown */}
+        <div className="relative inline-block shrink-0" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => setIsDropdownOpen((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-focus transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+            aria-expanded={isDropdownOpen}
+            aria-label={`Toggle chart type for ${title}`}
+          >
+            {chartType === 'bar' ? (
+              <>
+                <BarChart3 className="w-3.5 h-3.5 text-muted-fg" />
+                <span>Bar chart</span>
+              </>
+            ) : (
+              <>
+                <PieIcon className="w-3.5 h-3.5 text-muted-fg" />
+                <span>Pie chart</span>
+              </>
+            )}
+            <ChevronDown className="w-3 h-3 text-muted-fg ml-0.5" />
+          </button>
+
+          {isDropdownOpen && (
+            <div className="absolute right-0 top-full mt-1.5 w-36 bg-white rounded-xl border border-slate-200 shadow-xl p-1.5 z-40 animate-in fade-in-50 zoom-in-95 duration-150">
+              <button
+                type="button"
+                onClick={() => {
+                  setChartType('bar')
+                  setIsDropdownOpen(false)
+                }}
+                className={cn(
+                  'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-left',
+                  chartType === 'bar'
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-focus hover:bg-slate-50'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  <span>Bar chart</span>
+                </div>
+                {chartType === 'bar' && <Check className="w-3.5 h-3.5 text-primary" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setChartType('pie')
+                  setIsDropdownOpen(false)
+                }}
+                className={cn(
+                  'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors text-left mt-0.5',
+                  chartType === 'pie'
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-focus hover:bg-slate-50'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <PieIcon className="w-3.5 h-3.5" />
+                  <span>Pie chart</span>
+                </div>
+                {chartType === 'pie' && <Check className="w-3.5 h-3.5 text-primary" />}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2. Chart Display Area */}
+      {!hasData ? (
+        /* Empty State */
+        <div className="h-48 sm:h-56 flex flex-col items-center justify-center text-center p-6 bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2.5">
+            <BarChart3 className="w-5 h-5 text-slate-400" />
+          </div>
+          <p className="text-xs sm:text-sm font-semibold text-focus">
+            No {type === 'income' ? 'income' : 'expense'} data
+          </p>
+          <p className="text-2xs sm:text-xs text-muted-fg mt-0.5 max-w-xs">
+            No {type === 'income' ? 'deposit' : 'withdrawal'} transactions found for the selected date range.
+          </p>
+        </div>
+      ) : chartType === 'bar' ? (
+        /* Bar Chart View */
+        <div className="h-48 sm:h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={categoryData}
+              margin={{ top: 12, right: 12, left: -16, bottom: 0 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#F1F5F9"
+              />
+              <XAxis
+                dataKey="category"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                tick={{ fill: '#767B89', fontSize: 11, fontWeight: 500 }}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tickMargin={6}
+                tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`)}
+                tick={{ fill: '#767B89', fontSize: 10 }}
+              />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null
+                  const item = payload[0].payload as (typeof categoryData)[0]
+                  return (
+                    <div className="bg-focus text-white px-3 py-2 rounded-xl shadow-lg border border-white/10 text-xs">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <p className="font-semibold text-white/90">{item.category}</p>
+                      </div>
+                      <p className="font-bold text-white text-sm tabular-nums">
+                        {formatPHP(item.amount)}
+                      </p>
+                      <p className="text-[10px] text-white/70 mt-0.5">
+                        {item.percentage.toFixed(1)}% of total
+                      </p>
+                    </div>
+                  )
+                }}
+              />
+              <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                {categoryData.map((entry) => (
+                  <Cell key={entry.category} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        /* Pie Chart View */
+        <div className="h-48 sm:h-56 w-full flex items-center justify-center">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={categoryData.filter((d) => d.amount > 0)}
+                dataKey="amount"
+                nameKey="category"
+                cx="50%"
+                cy="50%"
+                innerRadius={48}
+                outerRadius={78}
+                paddingAngle={3}
+              >
+                {categoryData
+                  .filter((d) => d.amount > 0)
+                  .map((entry) => (
+                    <Cell
+                      key={entry.category}
+                      fill={entry.color}
+                      stroke="#ffffff"
+                      strokeWidth={2}
+                    />
+                  ))}
+              </Pie>
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null
+                  const item = payload[0].payload as (typeof categoryData)[0]
+                  return (
+                    <div className="bg-focus text-white px-3 py-2 rounded-xl shadow-lg border border-white/10 text-xs">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <p className="font-semibold text-white/90">{item.category}</p>
+                      </div>
+                      <p className="font-bold text-white text-sm tabular-nums">
+                        {formatPHP(item.amount)}
+                      </p>
+                      <p className="text-[10px] text-white/70 mt-0.5">
+                        {item.percentage.toFixed(1)}% of total
+                      </p>
+                    </div>
+                  )
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* 3. Category Color Legend */}
+      <div className="pt-3 mt-2 border-t border-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 text-2xs sm:text-xs">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            {categoryData.map((cat) => (
+              <div key={cat.category} className="flex items-center gap-1.5">
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: cat.color }}
+                />
+                <span className="text-muted-fg font-medium">{cat.category}:</span>
+                <span className="font-semibold text-focus tabular-nums">
+                  {cat.amount > 0 ? `${Math.round(cat.amount / 1000)}k` : '₱0'}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="font-bold text-focus text-xs sm:text-sm tabular-nums ml-auto">
+            Total: {formatPHP(totalAmount)}
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+export const IncomeSummaryChart: React.FC<Omit<CategorySummaryChartProps, 'type'>> = (
+  props
+) => <CategorySummaryChart type="income" {...props} />
+
+export const ExpenseSummaryChart: React.FC<Omit<CategorySummaryChartProps, 'type'>> = (
+  props
+) => <CategorySummaryChart type="expense" {...props} />

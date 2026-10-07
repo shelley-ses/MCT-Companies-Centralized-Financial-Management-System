@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { SalesPage } from '@/pages/SalesPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { EmployeePage } from '@/pages/EmployeePage'
 import { AppShell } from '@/components/layout/AppShell'
@@ -54,47 +55,29 @@ export const router = createBrowserRouter([
   // Sales routes
   {
     path: '/sales',
-    element: <Navigate to="/sales/daily" replace />,
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <SalesPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/sales/daily',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <PlaceholderPage title="Daily Sales" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
+    element: <Navigate to="/sales" replace />,
   },
   {
     path: '/sales/quarterly',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <PlaceholderPage title="Quarterly Sales" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
+    element: <Navigate to="/sales" replace />,
   },
   {
     path: '/sales/monthly',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <PlaceholderPage title="Monthly Sales" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
+    element: <Navigate to="/sales" replace />,
   },
   {
     path: '/sales/annual',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <PlaceholderPage title="Annual Sales" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
+    element: <Navigate to="/sales" replace />,
   },
   // Expense, Loan, Employee, Settings
   {

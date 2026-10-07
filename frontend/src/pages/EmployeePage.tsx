@@ -42,7 +42,7 @@ export const EmployeePage: React.FC = () => {
   const [dateRange, setDateRange] = React.useState<DateRange>({
     startDate: null,
     endDate: null,
-    label: '10/01/2026 - 10/05/2026',
+    label: 'All Dates',
   })
 
   // Data states

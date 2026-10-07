@@ -117,7 +117,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
               render={({ field, fieldState }) => (
                 <FormItem className="space-y-1.5">
                   <Label htmlFor="create-full-name" className="text-xs sm:text-sm font-medium text-focus/90">
-                    Full Name
+                    Full Name <span className="text-red-500">*</span>
                   </Label>
                   <FormControl>
                     <Input
@@ -140,7 +140,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
               render={({ field, fieldState }) => (
                 <FormItem className="space-y-1.5">
                   <Label htmlFor="create-email-address" className="text-xs sm:text-sm font-medium text-focus/90">
-                    Email Address
+                    Email Address <span className="text-red-500">*</span>
                   </Label>
                   <FormControl>
                     <Input
@@ -164,7 +164,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
               render={({ field, fieldState }) => (
                 <FormItem className="space-y-1.5">
                   <Label htmlFor="assigned-company" className="text-xs sm:text-sm font-medium text-focus/90">
-                    Assigned Company
+                    Assigned Company <span className="text-red-500">*</span>
                   </Label>
                   <FormControl>
                     <div className="relative">

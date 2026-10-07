@@ -1,9 +1,7 @@
 import * as React from 'react'
 import {
-  FileText,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import {
@@ -14,224 +12,222 @@ import {
   TableBody,
   TableCell,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import {
-  AuditTransactionModal,
-} from '@/components/dashboard/AuditTransactionModal'
-import { useSession } from '@/hooks/useSession'
-import type {
-  DashboardTransactionItem,
-  AuditStatus,
-} from '@/services/dashboardService'
+import { AuditTransactionModal } from '@/components/dashboard/AuditTransactionModal'
+import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import type { DashboardTransactionItem } from '@/services/dashboardService'
 
 export type { DashboardTransactionItem as DashboardTransaction }
+
+const ITEMS_PER_PAGE = 10
 
 interface RecentTransactionsCardProps {
   className?: string
   companyName?: string
   transactions?: DashboardTransactionItem[]
   readOnly?: boolean
-  onAuditUpdate?: (
-    id: string,
-    auditStatus: AuditStatus,
-    notes?: string,
-    auditorName?: string
-  ) => Promise<void>
 }
 
 export const RecentTransactionsCard: React.FC<RecentTransactionsCardProps> = ({
   className,
   companyName = 'MCT Kitchen',
   transactions = [],
-  readOnly,
-  onAuditUpdate,
 }) => {
-  const { user } = useSession()
-  const isAdmin = user?.role === 'Admin'
-  const isReadOnly = readOnly ?? isAdmin
-  const isAllCompanies = !companyName || companyName === 'All Companies'
-
   const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
   const [isModalOpen, setIsModalOpen] = React.useState(false)
 
-  // Strictly filter records for this company (or all if All Companies)
-  const companyTransactions = React.useMemo(() => {
-    if (isAllCompanies) {
-      return transactions
-    }
-    return transactions.filter((t) => t.company === companyName)
-  }, [transactions, companyName, isAllCompanies])
+  // Pagination state: max 10 transactions per page
+  const [currentPage, setCurrentPage] = React.useState(1)
 
-  const verifiedCount = companyTransactions.filter((t) => t.auditStatus === 'Verified').length
+  // Reset to page 1 when the date range or transactions change
+  React.useEffect(() => {
+    setCurrentPage(1)
+  }, [transactions])
+
+  // Ensure transactions are sorted latest first
+  const sortedTransactions = React.useMemo(() => {
+    return [...transactions].sort((a, b) => {
+      const dateA = normalizeDateToYYYYMMDD(a.date)
+      const dateB = normalizeDateToYYYYMMDD(b.date)
+      const cmp = dateB.localeCompare(dateA)
+      if (cmp !== 0) return cmp
+      return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
+    })
+  }, [transactions])
+
+  const totalItems = sortedTransactions.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE))
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems)
+  const paginatedTransactions = sortedTransactions.slice(startIndex, endIndex)
 
   const handleOpenAudit = (tx: DashboardTransactionItem) => {
     setSelectedTx(tx)
     setIsModalOpen(true)
   }
 
-  const handleSaveAudit = async (
-    id: string,
-    auditStatus: AuditStatus,
-    notes?: string,
-    auditorName?: string
-  ) => {
-    if (onAuditUpdate) {
-      await onAuditUpdate(id, auditStatus, notes, auditorName)
-    }
-  }
+  const displayedTitle =
+    companyName === 'All Companies' ? 'MCT Group of Companies' : companyName
 
   return (
     <Card
       className={cn(
-        'bg-white rounded-[20px] border border-slate-200/80 p-5 shadow-xs transition-all hover:shadow-md overflow-hidden',
+        'rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs',
         className
       )}
     >
-      {/* 1. Clean Header */}
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm sm:text-base font-semibold text-focus leading-tight">
-              Recent Transactions
-            </h3>
-            <p className="text-xs text-muted-fg font-normal mt-0.5">
-              {isReadOnly
-                ? `Transaction records overview for ${companyName}`
-                : `Audit records for ${companyName}`}
-            </p>
-          </div>
-        </div>
-
-        <span className="text-xs text-muted-fg font-medium bg-slate-50 border border-slate-100 px-3 py-1 rounded-full tabular-nums">
-          {companyTransactions.length} records
-        </span>
+      {/* 1. Grey Header Banner matching the Sales Table */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5">
+        <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
+          Recent Transactions
+        </h2>
+        <p className="text-xs text-muted-fg font-normal mt-0.5">
+          Here's the summary of recent transactions in {displayedTitle}.
+        </p>
       </div>
 
-      {/* 2. Clean Table */}
+      {/* 2. Table matching the Sales table columns:
+          DATE | CHEQUE NO. | PARTICULARS | WITHDRAWAL | DEPOSIT | CATEGORY | NET AMOUNT
+      */}
       <div className="overflow-x-auto rounded-xl border border-slate-100">
         <Table>
           <TableHeader>
-            <TableRow className="border-b border-slate-100 bg-slate-50/70 hover:bg-slate-50/70">
-              <TableHead className="px-5 py-3 text-xs font-semibold text-focus uppercase tracking-wider">
-                Date
+            <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+              <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                DATE
               </TableHead>
-              {isAllCompanies && (
-                <TableHead className="px-5 py-3 text-xs font-semibold text-focus uppercase tracking-wider">
-                  Company
-                </TableHead>
-              )}
-              <TableHead className="px-5 py-3 text-xs font-semibold text-focus uppercase tracking-wider">
-                Type
+              <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                CHEQUE NO.
               </TableHead>
-              <TableHead className="px-5 py-3 text-xs font-semibold text-focus uppercase tracking-wider">
-                Description
+              <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                PARTICULARS
               </TableHead>
-              <TableHead className="px-5 py-3 text-xs font-semibold text-focus uppercase tracking-wider">
-                Amount
+              <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                WITHDRAWAL
               </TableHead>
-              <TableHead className="px-5 py-3 text-xs font-semibold text-focus uppercase tracking-wider text-right pr-5">
-                Audit Status
+              <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                DEPOSIT
+              </TableHead>
+              <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                CATEGORY
+              </TableHead>
+              <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                NET AMOUNT
               </TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
-            {companyTransactions.length === 0 ? (
+            {paginatedTransactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isAllCompanies ? 6 : 5} className="text-center py-8 text-xs text-muted-fg">
-                  No transaction audit records found for {companyName}.
+                <TableCell
+                  colSpan={7}
+                  className="py-12 text-center text-xs sm:text-sm text-muted-fg"
+                >
+                  No transactions found for the selected date range.
                 </TableCell>
               </TableRow>
             ) : (
-              companyTransactions.map((tx) => (
-                <TableRow
-                  key={tx.id}
-                  onClick={() => handleOpenAudit(tx)}
-                  title={isReadOnly ? 'Click to view transaction details' : 'Click to inspect & audit record'}
-                  className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors cursor-pointer group"
-                >
-                  {/* Date */}
-                  <TableCell className="px-5 py-3 text-xs sm:text-sm font-medium text-focus whitespace-nowrap">
-                    {tx.date}
-                  </TableCell>
+              paginatedTransactions.map((tx) => {
+                const netAmount = (tx.deposit || 0) - (tx.withdrawal || 0)
 
-                  {/* Company (Shown when viewing All Companies) */}
-                  {isAllCompanies && (
-                    <TableCell className="px-5 py-3 text-xs sm:text-sm font-medium text-focus whitespace-nowrap">
-                      {tx.company}
+                return (
+                  <TableRow
+                    key={tx.id}
+                    onClick={() => handleOpenAudit(tx)}
+                    title="Click to view complete details"
+                    className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors cursor-pointer"
+                  >
+                    {/* 1. Date */}
+                    <TableCell className="px-4 py-3.5 text-xs font-medium text-focus whitespace-nowrap">
+                      {tx.date}
                     </TableCell>
-                  )}
 
-                  {/* Type */}
-                  <TableCell className="px-5 py-3">
-                    <Badge
-                      variant={
-                        tx.type === 'Sales' || tx.type === 'Income'
-                          ? 'paid'
-                          : 'expense'
-                      }
-                      className="px-2.5 py-0.5 text-xs font-medium rounded-full"
-                    >
-                      {tx.type}
-                    </Badge>
-                  </TableCell>
+                    {/* 2. Cheque No. */}
+                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 whitespace-nowrap font-mono">
+                      {tx.chequeNo || '—'}
+                    </TableCell>
 
-                  {/* Description */}
-                  <TableCell className="px-5 py-3 text-xs sm:text-sm text-focus/80 whitespace-nowrap font-normal">
-                    {tx.description}
-                  </TableCell>
+                    {/* 3. Particulars */}
+                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-xs">
+                      <span className="line-clamp-1">{tx.particulars || tx.description}</span>
+                    </TableCell>
 
-                  {/* Amount */}
-                  <TableCell className="px-5 py-3 text-xs sm:text-sm font-medium text-focus tabular-nums whitespace-nowrap">
-                    {formatPHP(tx.amount)}
-                  </TableCell>
+                    {/* 4. Withdrawal */}
+                    <TableCell className="px-4 py-3.5 text-xs font-medium text-right tabular-nums whitespace-nowrap text-muted-fg">
+                      {tx.withdrawal > 0 ? formatPHP(tx.withdrawal) : ''}
+                    </TableCell>
 
-                  {/* Audit Status */}
-                  <TableCell className="px-5 py-3 whitespace-nowrap text-right pr-5">
-                    {tx.auditStatus === 'Verified' ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Verified
-                      </span>
-                    ) : tx.auditStatus === 'Flagged' ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-800 border border-red-200">
-                        <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                        Flagged
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                        <Clock className="w-3.5 h-3.5 text-amber-600" />
-                        Pending
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+                    {/* 5. Deposit */}
+                    <TableCell className="px-4 py-3.5 text-xs font-semibold text-right tabular-nums whitespace-nowrap text-emerald-600">
+                      {tx.deposit > 0 ? formatPHP(tx.deposit) : ''}
+                    </TableCell>
+
+                    {/* 6. Category (Clean text per Sales table reference) */}
+                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-medium whitespace-nowrap">
+                      {tx.category}
+                    </TableCell>
+
+                    {/* 7. Net Amount */}
+                    <TableCell className="px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap text-focus">
+                      {formatPHP(netAmount)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>
       </div>
 
-      {/* 3. Clean Footer */}
-      <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-2xs sm:text-xs text-muted-fg font-normal">
-        <span>Showing audit records for {companyName}.</span>
-        <span className="font-medium text-focus">
-          {verifiedCount} of {companyTransactions.length} Verified
+      {/* 3. Pagination Footer matching Sales table */}
+      <div className="pt-4 mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
+        {/* Left: Record summary */}
+        <span className="font-medium text-focus/80">
+          {totalItems === 0
+            ? 'Showing 0 of 0 records'
+            : `Showing ${startIndex + 1}-${endIndex} of ${totalItems} records`}
         </span>
+
+        {/* Right: Page Indicator & Navigation without words Previous and Next */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <span className="text-xs text-muted-fg italic">
+            Page {currentPage} out of {totalPages}
+          </span>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={currentPage <= 1}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={currentPage >= totalPages}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+            aria-label="Next page"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
-      {/* 4. Inspection Modal */}
+      {/* 4. Complete Read-Only Transaction Details Modal */}
       <AuditTransactionModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         transaction={selectedTx}
-        readOnly={isReadOnly}
-        onSave={handleSaveAudit}
       />
     </Card>
   )
