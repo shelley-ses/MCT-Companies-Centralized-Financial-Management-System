@@ -106,7 +106,7 @@ def _send_login_otp(email: str, otp: str) -> None:
         "https://api.resend.com/emails",
         data=payload,
         headers={
-            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Authorization": f"Bearer {{settings.RESEND_API_KEY}}",
             "Content-Type": "application/json",
             "User-Agent": "MCT-Financial-Management-System",
         },

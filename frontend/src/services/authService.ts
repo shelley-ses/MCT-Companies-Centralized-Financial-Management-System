@@ -1,5 +1,6 @@
 import type { SignInFormValues } from '@/lib/validation/auth'
 import logo2Url from '@/assets/LOGO2.png'
+import { encryptPayload } from '@/services/payloadEncryption'
 
 export type UserRole = 'Admin' | 'Company Auditor'
 
@@ -184,9 +185,13 @@ export const authService = {
    * Validates credentials and starts an email OTP challenge.
    */
   async signIn(values: SignInFormValues): Promise<SignInResult> {
+    const encryptedPayload = await encryptPayload({
+      email: values.email,
+      password: values.password,
+    })
     const response = await request<{
       email: string
-    }>('/login', { email: values.email, password: values.password })
+    }>('/login', { encrypted_payload: encryptedPayload })
     return { status: '2fa_required', email: response.email }
   },
 
