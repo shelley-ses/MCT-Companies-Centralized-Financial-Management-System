@@ -2,6 +2,8 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { SalesPage } from '@/pages/SalesPage'
+import { ExpensePage } from '@/pages/ExpensePage'
+import { LoanPage } from '@/pages/LoanPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { EmployeePage } from '@/pages/EmployeePage'
 import { AppShell } from '@/components/layout/AppShell'
@@ -85,7 +87,7 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AppShell>
-          <PlaceholderPage title="Expense" />
+          <ExpensePage />
         </AppShell>
       </ProtectedRoute>
     ),
@@ -95,7 +97,7 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <AppShell>
-          <PlaceholderPage title="Loan" />
+          <LoanPage />
         </AppShell>
       </ProtectedRoute>
     ),

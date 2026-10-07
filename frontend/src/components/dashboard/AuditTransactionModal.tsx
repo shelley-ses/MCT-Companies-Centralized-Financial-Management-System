@@ -1,5 +1,14 @@
 import * as React from 'react'
-import { FileText } from 'lucide-react'
+import {
+  FileText,
+  Pencil,
+  ChevronDown,
+  Check,
+  AlertCircle,
+  Loader2,
+  CheckCircle2,
+} from 'lucide-react'
+import { UpdateLoanStatusModal } from './UpdateLoanStatusModal'
 import {
   Dialog,
   DialogContent,
@@ -7,183 +16,790 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { formatPHP } from '@/lib/format'
 import { CATEGORY_COLORS } from '@/utils/categoryConstants'
+import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import {
+  salesService,
+  type SalesItem,
+  type NewSalesInput,
+} from '@/services/salesService'
+import {
+  expenseService,
+  type ExpenseItem,
+} from '@/services/expenseService'
+import {
+  loanService,
+  type LoanItem,
+} from '@/services/loanService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
+import { cn } from '@/lib/utils'
 
 interface AuditTransactionModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   transaction: DashboardTransactionItem | null
+  sale?: SalesItem | null
+  onSaleUpdated?: (updatedItem: SalesItem) => void
+  expense?: ExpenseItem | null
+  onExpenseUpdated?: (updatedItem: ExpenseItem) => void
+  loan?: LoanItem | null
+  onLoanUpdated?: (updatedItem: LoanItem) => void
+  onOpenUpdateLoanStatus?: (loan: LoanItem | null) => void
+  editable?: boolean
 }
+
+const CATEGORY_OPTIONS = [
+  'None',
+  'GCash',
+  'Maya',
+  'PayMongo',
+  'Panda',
+  'In-house',
+  'Cheque',
+  'Bank Transfer',
+  'Cash',
+]
 
 export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   open,
   onOpenChange,
   transaction,
+  sale,
+  onSaleUpdated,
+  expense,
+  onExpenseUpdated,
+  loan,
+  onLoanUpdated,
+  onOpenUpdateLoanStatus,
+  editable = false,
 }) => {
-  if (!transaction) return null
+  const [currentTx, setCurrentTx] = React.useState<DashboardTransactionItem | null>(transaction)
+  const [currentSale, setCurrentSale] = React.useState<SalesItem | null>(sale || null)
+  const [currentExpense, setCurrentExpense] = React.useState<ExpenseItem | null>(expense || null)
+  const [currentLoan, setCurrentLoan] = React.useState<LoanItem | null>(loan || null)
+  const [isEditing, setIsEditing] = React.useState(false)
+  const [isUpdateLoanStatusOpen, setIsUpdateLoanStatusOpen] = React.useState(false)
 
-  const categoryColor = CATEGORY_COLORS[transaction.category] || '#475569'
-  const netAmount = (transaction.deposit || 0) - (transaction.withdrawal || 0)
+  // Form states for editing
+  const [date, setDate] = React.useState('')
+  const [chequeNo, setChequeNo] = React.useState('')
+  const [particulars, setParticulars] = React.useState('')
+  const [amount, setAmount] = React.useState('')
+  const [category, setCategory] = React.useState('None')
+  const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
+  const categoryContainerRef = React.useRef<HTMLDivElement>(null)
+
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [error, setError] = React.useState('')
+  const [fieldErrors, setFieldErrors] = React.useState<{
+    date?: string
+    particulars?: string
+    amount?: string
+    category?: string
+  }>({})
+
+  const todayIso = React.useMemo(() => new Date().toISOString().split('T')[0], [])
+
+  // Sync internal state when props change
+  React.useEffect(() => {
+    setCurrentTx(transaction)
+    setCurrentSale(sale || null)
+    setCurrentExpense(expense || null)
+    setCurrentLoan(loan || null)
+  }, [transaction, sale, expense, loan])
+
+  // Reset or initialize edit fields when modal opens or target changes
+  React.useEffect(() => {
+    if (open) {
+      setIsEditing(false)
+      setError('')
+      setFieldErrors({})
+
+      const activeSale = sale || currentSale
+      const activeExpense = expense || currentExpense
+      const activeLoan = loan || currentLoan
+      const activeTx = transaction || currentTx
+
+      if (activeSale) {
+        setDate(activeSale.rawDate || normalizeDateToYYYYMMDD(activeSale.date))
+        setChequeNo(activeSale.chequeNo || '')
+        setParticulars(activeSale.particulars || '')
+        setAmount(String(activeSale.deposit || activeSale.netAmount || ''))
+        setCategory(activeSale.category || 'None')
+      } else if (activeExpense) {
+        setDate(activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date))
+        setChequeNo(activeExpense.chequeNo || '')
+        setParticulars(activeExpense.particulars || '')
+        setAmount(String(activeExpense.withdrawal || activeExpense.netAmount || ''))
+        setCategory(activeExpense.category || 'None')
+      } else if (activeLoan) {
+        setDate(activeLoan.rawDate || normalizeDateToYYYYMMDD(activeLoan.date))
+        setChequeNo(activeLoan.chequeNo || '')
+        setParticulars(activeLoan.particulars || '')
+        setAmount(String(activeLoan.amount || ''))
+        setCategory(activeLoan.category || 'None')
+      } else if (activeTx) {
+        setDate(normalizeDateToYYYYMMDD(activeTx.date))
+        setChequeNo(activeTx.chequeNo || '')
+        setParticulars(activeTx.particulars || activeTx.description || '')
+        const txAmount =
+          activeTx.type === 'Expense'
+            ? activeTx.withdrawal || activeTx.amount || ''
+            : activeTx.type === 'Loan'
+            ? activeTx.amount || activeTx.withdrawal || ''
+            : activeTx.deposit || activeTx.amount || ''
+        setAmount(String(txAmount))
+        setCategory(activeTx.category || 'None')
+      }
+    } else {
+      setIsEditing(false)
+      setError('')
+      setFieldErrors({})
+    }
+  }, [open, sale, expense, loan, transaction, currentSale, currentExpense, currentLoan, currentTx])
+
+  // Click outside category dropdown
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        categoryContainerRef.current &&
+        !categoryContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsCategoryOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filteredCategoryOptions = React.useMemo(() => {
+    const q = category.trim().toLowerCase()
+    if (!q) return CATEGORY_OPTIONS
+    return CATEGORY_OPTIONS.filter((opt) => opt.toLowerCase().includes(q))
+  }, [category])
+
+  const activeTx = currentTx || transaction
+  const activeSale = currentSale || sale
+  const activeExpense = currentExpense || expense
+  const activeLoan = currentLoan || loan
+
+  if (!activeTx && !activeSale && !activeExpense && !activeLoan) return null
+
+  const isExpense = Boolean(activeExpense || activeTx?.type === 'Expense')
+  const isLoan = Boolean(activeLoan || activeTx?.type === 'Loan')
+
+  const displayRefNo =
+    activeSale?.refNo || activeExpense?.refNo || activeLoan?.refNo || activeTx?.refNo || '—'
+  const displayCompany =
+    activeSale?.company || activeExpense?.company || activeLoan?.company || activeTx?.company || '—'
+  const displayCategory = isEditing
+    ? category
+    : activeSale?.category || activeExpense?.category || activeLoan?.category || activeTx?.category || 'None'
+  const categoryColor =
+    CATEGORY_COLORS[displayCategory as keyof typeof CATEGORY_COLORS] || '#475569'
+
+  const displayDate =
+    activeSale?.date || activeExpense?.date || activeLoan?.date || activeTx?.date || '—'
+  const displayChequeNo =
+    activeSale?.chequeNo || activeExpense?.chequeNo || activeLoan?.chequeNo || activeTx?.chequeNo || '—'
+  const displayParticulars =
+    activeSale?.particulars || activeExpense?.particulars || activeLoan?.particulars || activeTx?.particulars || activeTx?.description || '—'
+  const displayStatus =
+    activeSale?.status || activeExpense?.status || activeLoan?.status || activeTx?.status || '—'
+  const displayCreatedAt =
+    activeSale?.createdAt || activeExpense?.createdAt || activeLoan?.createdAt || activeTx?.createdAt
+
+  const withdrawalVal = isExpense
+    ? (activeExpense?.withdrawal ?? activeTx?.withdrawal ?? 0)
+    : (activeSale?.withdrawal ?? activeTx?.withdrawal ?? 0)
+  const depositVal = isExpense || isLoan
+    ? 0
+    : (activeSale?.deposit ?? activeTx?.deposit ?? (activeTx?.amount || 0))
+  const loanVal = activeLoan?.amount ?? (isLoan ? (activeTx?.amount || activeTx?.withdrawal || 0) : 0)
+  const netAmount = isLoan
+    ? loanVal
+    : isExpense
+    ? (activeExpense?.netAmount ?? withdrawalVal)
+    : ((depositVal || 0) - (withdrawalVal || 0))
+
+  const handleCancel = () => {
+    if (activeSale) {
+      setDate(activeSale.rawDate || normalizeDateToYYYYMMDD(activeSale.date))
+      setChequeNo(activeSale.chequeNo || '')
+      setParticulars(activeSale.particulars || '')
+      setAmount(String(activeSale.deposit || activeSale.netAmount || ''))
+      setCategory(activeSale.category || 'None')
+    } else if (activeExpense) {
+      setDate(activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date))
+      setChequeNo(activeExpense.chequeNo || '')
+      setParticulars(activeExpense.particulars || '')
+      setAmount(String(activeExpense.withdrawal || activeExpense.netAmount || ''))
+      setCategory(activeExpense.category || 'None')
+    } else if (activeLoan) {
+      setDate(activeLoan.rawDate || normalizeDateToYYYYMMDD(activeLoan.date))
+      setChequeNo(activeLoan.chequeNo || '')
+      setParticulars(activeLoan.particulars || '')
+      setAmount(String(activeLoan.amount || ''))
+      setCategory(activeLoan.category || 'None')
+    } else if (activeTx) {
+      setDate(normalizeDateToYYYYMMDD(activeTx.date))
+      setChequeNo(activeTx.chequeNo || '')
+      setParticulars(activeTx.particulars || activeTx.description || '')
+      const txAmount =
+        activeTx.type === 'Expense'
+          ? activeTx.withdrawal || activeTx.amount || ''
+          : activeTx.type === 'Loan'
+          ? activeTx.amount || activeTx.withdrawal || ''
+          : activeTx.deposit || activeTx.amount || ''
+      setAmount(String(txAmount))
+      setCategory(activeTx.category || 'None')
+    }
+    setError('')
+    setFieldErrors({})
+    setIsEditing(false)
+  }
+
+  const handleSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    setError('')
+    const errors: { date?: string; particulars?: string; amount?: string; category?: string } = {}
+
+    const todayIso = new Date().toISOString().split('T')[0]
+    if (!date.trim()) {
+      errors.date = 'Date is required.'
+    } else if (date.trim() > todayIso) {
+      errors.date = 'Date cannot be in the future (maximum date is today).'
+    }
+
+    if (!particulars.trim()) {
+      errors.particulars = 'Particulars is required.'
+    }
+
+    const parsedAmount = parseFloat(amount)
+    if (!amount.trim()) {
+      errors.amount = 'Amount is required.'
+    } else if (isNaN(parsedAmount) || parsedAmount < 1.0) {
+      errors.amount = 'Amount must be at least 1.00 (cannot be 0 or less than 1).'
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setError('Please fill in all required fields.')
+      return
+    }
+
+    setFieldErrors({})
+    setIsSubmitting(true)
+
+    try {
+      const targetId =
+        activeSale?.id || activeExpense?.id || activeLoan?.id || activeTx?.id
+      if (!targetId) throw new Error('Transaction identifier not found.')
+
+      if (isExpense) {
+        const updatedExpenseItem = await expenseService.updateExpense(targetId, {
+          date: date.trim(),
+          chequeNo: chequeNo.trim(),
+          particulars: particulars.trim(),
+          withdrawal: parsedAmount,
+          netAmount: parsedAmount,
+          category: category.trim() || 'None',
+        })
+        if (!updatedExpenseItem) throw new Error('Expense item not found.')
+        const updatedTxItem = expenseService.toDashboardTransaction(updatedExpenseItem)
+
+        setCurrentExpense(updatedExpenseItem)
+        setCurrentTx(updatedTxItem)
+
+        if (onExpenseUpdated) {
+          onExpenseUpdated(updatedExpenseItem)
+        }
+      } else if (isLoan) {
+        const updatedLoanItem = await loanService.updateLoan(targetId, {
+          date: date.trim(),
+          chequeNo: chequeNo.trim(),
+          particulars: particulars.trim(),
+          amount: parsedAmount,
+          category: category.trim() || 'None',
+        })
+        if (!updatedLoanItem) throw new Error('Loan item not found.')
+        const updatedTxItem = loanService.toDashboardTransaction(updatedLoanItem)
+
+        setCurrentLoan(updatedLoanItem)
+        setCurrentTx(updatedTxItem)
+
+        if (onLoanUpdated) {
+          onLoanUpdated(updatedLoanItem)
+        }
+      } else {
+        const payload: Partial<NewSalesInput> = {
+          date: date.trim(),
+          chequeNo: chequeNo.trim(),
+          particulars: particulars.trim(),
+          amount: parsedAmount,
+          category: category.trim() || 'None',
+        }
+
+        const updatedSaleItem = await salesService.updateSale(targetId, payload)
+        const updatedTxItem = salesService.toDashboardTransaction(updatedSaleItem)
+
+        setCurrentSale(updatedSaleItem)
+        setCurrentTx(updatedTxItem)
+
+        if (onSaleUpdated) {
+          onSaleUpdated(updatedSaleItem)
+        }
+      }
+
+      setIsEditing(false)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save changes.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] rounded-[20px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-3.5 [&>button]:right-3.5 [&>button]:w-5 [&>button]:h-5 [&>button]:p-0.5 [&>button]:rounded-md [&>button>svg]:w-3 [&>button>svg]:h-3">
-        {/* Header - REF and Type badges on same row as Transaction Details */}
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          setIsEditing(false)
+          setError('')
+          setFieldErrors({})
+        }
+        onOpenChange(nextOpen)
+      }}
+    >
+      <DialogContent
+        className={cn(
+          'rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl transition-all duration-200',
+          isEditing ? 'sm:max-w-[520px]' : 'sm:max-w-[480px]'
+        )}
+      >
+        {/* Header */}
         <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-7">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <div className="w-8 h-8 rounded-lg bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
-              <FileText className="w-4 h-4" />
+              {isEditing ? (
+                <Pencil className="w-4 h-4 text-white" />
+              ) : (
+                <FileText className="w-4 h-4 text-white" />
+              )}
             </div>
-            <DialogTitle className="text-base sm:text-lg font-bold text-focus leading-tight">
-              Transaction Details
-            </DialogTitle>
-            <div className="flex items-center gap-1.5 ml-auto sm:ml-2">
-              <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-focus">
-                {transaction.refNo || '—'}
-              </span>
-              <Badge
-                variant={
-                  transaction.type === 'Sales' || transaction.type === 'Income'
-                    ? 'paid'
-                    : 'expense'
-                }
-                className="px-2 py-0.5 text-[10px] font-medium rounded-full"
-              >
-                {transaction.type || '—'}
-              </Badge>
+            <div>
+              <DialogTitle className="text-base sm:text-lg font-bold text-focus leading-tight">
+                {isEditing ? 'Edit Transaction Details' : 'Transaction Details'}
+              </DialogTitle>
             </div>
           </div>
-          <DialogDescription className="text-[11px] text-muted-fg font-normal mt-0.5">
-            Complete read-only transaction record
+          <DialogDescription className="text-[11px] text-muted-fg font-normal mt-1">
+            {isEditing
+              ? 'Update the transaction details directly below, then save changes'
+              : 'Complete transaction record'}
           </DialogDescription>
         </DialogHeader>
 
         {/* Content Body */}
-        <div className="space-y-3 pt-3">
-          {/* Outflow vs Inflow Amount Summary Card */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 grid grid-cols-2 gap-3">
-            <div>
-              <span className="text-[10px] font-medium text-muted-fg block">
-                Withdrawal (Outflow)
-              </span>
-              <span className="text-base sm:text-lg font-bold text-rose-600 tabular-nums">
-                {transaction.withdrawal > 0
-                  ? formatPHP(transaction.withdrawal)
-                  : '—'}
-              </span>
-            </div>
-            <div>
-              <span className="text-[10px] font-medium text-muted-fg block">
-                Deposit (Inflow)
-              </span>
-              <span className="text-base sm:text-lg font-bold text-emerald-600 tabular-nums">
-                {transaction.deposit > 0
-                  ? formatPHP(transaction.deposit)
-                  : '—'}
-              </span>
-            </div>
-          </div>
+        {isEditing ? (
+          /* ================= EDIT MODE ================= */
+          <form onSubmit={handleSave} className="space-y-3.5 pt-3">
+            {error && (
+              <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
 
-          {/* Key-Value Details */}
-          <div className="space-y-1.5 text-xs">
-            {/* 1. Date */}
-            <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-              <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                Transaction Date:
-              </span>
-              <span className="text-xs font-semibold text-focus text-right">
-                {transaction.date || '—'}
-              </span>
-            </div>
-
-            {/* 2. Cheque Number */}
-            <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-              <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                Cheque Number:
-              </span>
-              <span className="font-mono text-xs font-semibold text-focus text-right">
-                {transaction.chequeNo || '—'}
-              </span>
-            </div>
-
-            {/* 3. Particulars */}
-            <div className="flex items-start justify-between gap-3 py-1.5 border-b border-stroke/10">
-              <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                Particulars:
-              </span>
-              <span className="text-xs font-medium text-focus text-right max-w-[260px] line-clamp-2">
-                {transaction.particulars || transaction.description || '—'}
-              </span>
-            </div>
-
-            {/* 4. Category */}
-            <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-              <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                Category:
-              </span>
-              <span
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold select-none"
-                style={{
-                  backgroundColor: `${categoryColor}15`,
-                  color: categoryColor,
-                  border: `1px solid ${categoryColor}35`,
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: categoryColor }}
+            {/* Date & Cheque No: date field width exact to the end of date icon, cheque no extended */}
+            <div className="flex items-start gap-3">
+              <div className="w-[126px] shrink-0 space-y-1">
+                <Label className="text-xs font-semibold text-focus block">
+                  Date <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  max={todayIso}
+                  value={date}
+                  onChange={(e) => {
+                    setDate(e.target.value)
+                    if (fieldErrors.date) {
+                      setFieldErrors((prev) => ({ ...prev, date: undefined }))
+                    }
+                  }}
+                  className={cn(
+                    'h-9 px-2 text-xs font-medium rounded-xl border-stroke/50',
+                    fieldErrors.date && 'border-red-500 focus-visible:ring-red-200'
+                  )}
                 />
-                {transaction.category || '—'}
-              </span>
+                {fieldErrors.date && (
+                  <p className="text-[10px] text-red-600 font-medium leading-tight">{fieldErrors.date}</p>
+                )}
+              </div>
+
+              <div className="flex-1 space-y-1 min-w-0">
+                <Label className="text-xs font-semibold text-focus block">
+                  Cheque No. (Optional)
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. CHQ-8892"
+                  value={chequeNo}
+                  onChange={(e) => setChequeNo(e.target.value)}
+                  className="h-9 rounded-xl border-stroke/50 text-xs font-mono"
+                />
+              </div>
             </div>
 
-            {/* 5. Company */}
-            <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-              <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                Company:
-              </span>
-              <span className="text-xs font-semibold text-focus text-right">
-                {transaction.company || '—'}
-              </span>
+            {/* Particulars */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-focus block">
+                Particulars <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                type="text"
+                placeholder="e.g. Catering Deposit"
+                value={particulars}
+                onChange={(e) => {
+                  setParticulars(e.target.value)
+                  if (fieldErrors.particulars) {
+                    setFieldErrors((prev) => ({ ...prev, particulars: undefined }))
+                  }
+                }}
+                className={cn(
+                  'h-9 rounded-xl border-stroke/50 text-xs',
+                  fieldErrors.particulars && 'border-red-500 focus-visible:ring-red-200'
+                )}
+              />
+              {fieldErrors.particulars && (
+                <p className="text-[10px] text-red-600 font-medium">{fieldErrors.particulars}</p>
+              )}
             </div>
 
-            {/* 6. Payment Status */}
-            <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-              <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                Payment Status:
-              </span>
-              <span className="text-xs font-semibold text-focus text-right">
-                {transaction.status || '—'}
-              </span>
+            {/* Amount & Category */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-focus block">
+                  Amount (PHP) <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="1.00"
+                  placeholder="1.00"
+                  value={amount}
+                  onChange={(e) => {
+                    setAmount(e.target.value)
+                    if (fieldErrors.amount) {
+                      setFieldErrors((prev) => ({ ...prev, amount: undefined }))
+                    }
+                  }}
+                  className={cn(
+                    'h-9 rounded-xl border-stroke/50 text-xs font-semibold tabular-nums',
+                    fieldErrors.amount && 'border-red-500 focus-visible:ring-red-200'
+                  )}
+                />
+                {fieldErrors.amount && (
+                  <p className="text-[10px] text-red-600 font-medium">{fieldErrors.amount}</p>
+                )}
+              </div>
+
+              <div className="space-y-1" ref={categoryContainerRef}>
+                <Label className="text-xs font-semibold text-focus block">
+                  Category
+                </Label>
+                <div className="relative">
+                  <Input
+                    type="text"
+                    value={category}
+                    onChange={(e) => {
+                      setCategory(e.target.value)
+                      setIsCategoryOpen(true)
+                    }}
+                    onFocus={() => setIsCategoryOpen(true)}
+                    placeholder="Select category…"
+                    className="h-9 rounded-xl border-stroke/50 text-xs pr-8 font-medium bg-white"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setIsCategoryOpen((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded cursor-pointer"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        'w-3.5 h-3.5 transition-transform duration-200',
+                        isCategoryOpen && 'rotate-180'
+                      )}
+                    />
+                  </button>
+
+                  {isCategoryOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-stroke/30 shadow-2xl p-1.5 z-50 max-h-48 overflow-y-auto">
+                      <div className="space-y-0.5">
+                        {filteredCategoryOptions.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => {
+                              setCategory(opt)
+                              setIsCategoryOpen(false)
+                            }}
+                            className={cn(
+                              'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer',
+                              category.toLowerCase() === opt.toLowerCase()
+                                ? 'bg-primary/10 text-primary font-semibold'
+                                : 'text-focus/80 hover:bg-slate-50'
+                            )}
+                          >
+                            <span>{opt}</span>
+                            {category.toLowerCase() === opt.toLowerCase() && (
+                              <Check className="w-3.5 h-3.5 text-primary" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* 7. Net Amount */}
-            <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-              <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                Net Amount:
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-focus text-right tabular-nums">
-                {formatPHP(netAmount)}
-              </span>
+            {/* Read-only Context (Company) */}
+            <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+              <span className="text-[11px] font-medium text-muted-fg">Company:</span>
+              <span className="font-semibold text-focus">{displayCompany}</span>
             </div>
 
-            {/* 8. Created At (if present) */}
-            {transaction.createdAt && (
-              <div className="flex items-center justify-between gap-3 py-1.5">
+            {/* Actions: Cancel & Save Changes */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stroke/20">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={isSubmitting}
+                className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="h-9 px-5 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-white cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          /* ================= VIEW MODE ================= */
+          <div className="space-y-3 pt-3">
+            {/* Outflow vs Inflow Amount Summary Card */}
+            {isLoan ? (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-medium text-muted-fg block">
+                    Loan Amount
+                  </span>
+                  <span className="text-base sm:text-lg font-bold text-focus tabular-nums">
+                    {formatPHP(loanVal)}
+                  </span>
+                </div>
+                <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-slate-200/60 text-slate-700">
+                  Loan Commitment
+                </span>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] font-medium text-muted-fg block">
+                    Withdrawal (Outflow)
+                  </span>
+                  <span className="text-base sm:text-lg font-bold text-rose-600 tabular-nums">
+                    {withdrawalVal > 0 ? formatPHP(withdrawalVal) : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-medium text-muted-fg block">
+                    Deposit (Inflow)
+                  </span>
+                  <span className="text-base sm:text-lg font-bold text-emerald-600 tabular-nums">
+                    {depositVal > 0 ? formatPHP(depositVal) : '—'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Key-Value Details */}
+            <div className="space-y-1.5 text-xs">
+              {/* Reference No */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
                 <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                  Created At:
+                  Reference No:
                 </span>
-                <span className="font-mono text-focus text-right text-[11px]">
-                  {transaction.createdAt}
+                <span className="font-mono text-xs font-semibold text-focus text-right">
+                  {displayRefNo}
                 </span>
+              </div>
+
+              {/* 1. Date */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Transaction Date:
+                </span>
+                <span className="text-xs font-semibold text-focus text-right">
+                  {displayDate}
+                </span>
+              </div>
+
+              {/* 2. Cheque Number */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Cheque Number:
+                </span>
+                <span className="font-mono text-xs font-semibold text-focus text-right">
+                  {displayChequeNo}
+                </span>
+              </div>
+
+              {/* 3. Particulars */}
+              <div className="flex items-start justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Particulars:
+                </span>
+                <span className="text-xs font-medium text-focus text-right max-w-[260px] line-clamp-2">
+                  {displayParticulars}
+                </span>
+              </div>
+
+              {/* 4. Category */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Category:
+                </span>
+                <span
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold select-none"
+                  style={{
+                    backgroundColor: `${categoryColor}15`,
+                    color: categoryColor,
+                    border: `1px solid ${categoryColor}35`,
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: categoryColor }}
+                  />
+                  {displayCategory}
+                </span>
+              </div>
+
+              {/* 5. Company */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Company:
+                </span>
+                <span className="text-xs font-semibold text-focus text-right">
+                  {displayCompany}
+                </span>
+              </div>
+
+              {/* 6. Payment Status */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Payment Status:
+                </span>
+                <span className="text-xs font-semibold text-focus text-right">
+                  {displayStatus}
+                </span>
+              </div>
+
+              {/* 7. Amount / Net Amount */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  {isLoan ? 'Loan Amount:' : 'Net Amount:'}
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-focus text-right tabular-nums">
+                  {formatPHP(isLoan ? loanVal : netAmount)}
+                </span>
+              </div>
+
+              {/* 8. Created At (if present) */}
+              {displayCreatedAt && (
+                <div className="flex items-center justify-between gap-3 py-1.5">
+                  <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                    Created At:
+                  </span>
+                  <span className="font-mono text-focus text-right text-[11px]">
+                    {displayCreatedAt}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* View Mode Footer: Update Status & Edit Details Actions */}
+            {editable && (
+              <div className="flex items-center justify-end gap-2.5 pt-3 mt-2 border-t border-stroke/20">
+                {isLoan && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (onOpenUpdateLoanStatus) {
+                        onOpenUpdateLoanStatus(activeLoan || null)
+                      } else {
+                        setIsUpdateLoanStatusOpen(true)
+                      }
+                    }}
+                    className={cn(
+                      'h-9 px-4 text-xs font-semibold rounded-xl border-emerald-500/40 text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors',
+                      displayStatus === 'Paid' && 'border-slate-300 text-focus bg-slate-50 hover:bg-slate-100'
+                    )}
+                    title="Update repayment status (e.g. mark as Paid)"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{displayStatus === 'Paid' ? 'Update Status' : 'Update (Mark as Paid)'}</span>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="h-9 px-5 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-white" />
+                  <span>Edit Details</span>
+                </Button>
               </div>
             )}
           </div>
-        </div>
+        )}
       </DialogContent>
+
+      {/* Embedded Update Loan Status Modal when opened from transaction details */}
+      {activeLoan && (
+        <UpdateLoanStatusModal
+          open={isUpdateLoanStatusOpen}
+          onOpenChange={setIsUpdateLoanStatusOpen}
+          loan={activeLoan}
+          onSuccess={(updatedLoan) => {
+            setCurrentLoan(updatedLoan)
+            setCurrentTx(loanService.toDashboardTransaction(updatedLoan))
+            if (onLoanUpdated) {
+              onLoanUpdated(updatedLoan)
+            }
+          }}
+        />
+      )}
     </Dialog>
   )
 }
