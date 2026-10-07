@@ -2,8 +2,9 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Union
 import logging
 import secrets
-import smtplib
-from email.message import EmailMessage
+import json
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 import jwt
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -39,28 +40,45 @@ def _mask_email(email: str) -> str:
 
 
 def _send_login_otp(email: str, otp: str) -> None:
-    if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
+    if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Email delivery is not configured. Please contact an administrator.",
         )
 
-    message = EmailMessage()
-    message["Subject"] = "Your MCT login verification code"
-    message["From"] = settings.SMTP_FROM_EMAIL
-    message["To"] = email
-    message.set_content(
-        f"Your MCT Financial Management System verification code is {otp}. "
-        f"It expires in {settings.OTP_EXPIRES_SECONDS // 60} minutes."
+    payload = json.dumps(
+        {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [email],
+            "subject": "Your MCT login verification code",
+            "text": (
+                f"Your MCT Financial Management System verification code is {otp}. "
+                f"It expires in {settings.OTP_EXPIRES_SECONDS // 60} minutes."
+            ),
+        }
+    ).encode("utf-8")
+    request = Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "MCT-Financial-Management-System",
+        },
+        method="POST",
     )
+
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as smtp:
-            if settings.SMTP_USE_TLS:
-                smtp.starttls()
-            if settings.SMTP_USERNAME:
-                smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-            smtp.send_message(message)
-    except (OSError, smtplib.SMTPException) as exc:
+        with urlopen(request, timeout=10) as response:
+            if response.status < 200 or response.status >= 300:
+                raise HTTPError(
+                    request.full_url,
+                    response.status,
+                    "Unexpected response from Resend",
+                    response.headers,
+                    None,
+                )
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
         logger.error("Failed to send login OTP to %s: %s", email, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
