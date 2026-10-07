@@ -34,15 +34,9 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
   {
     id: 'sales',
     title: 'Sales',
-    href: '/sales/daily',
+    href: '/sales',
     icon: BarChart3,
     roles: ['Admin', 'Company Auditor'],
-    subItems: [
-      { id: 'sales-daily', title: 'Daily', href: '/sales/daily' },
-      { id: 'sales-quarterly', title: 'Quarterly', href: '/sales/quarterly' },
-      { id: 'sales-monthly', title: 'Monthly', href: '/sales/monthly' },
-      { id: 'sales-annual', title: 'Annual', href: '/sales/annual' },
-    ],
   },
   {
     id: 'expense',

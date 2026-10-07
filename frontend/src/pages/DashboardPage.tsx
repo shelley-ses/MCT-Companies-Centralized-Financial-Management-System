@@ -1,24 +1,29 @@
 import * as React from 'react'
-import { BarChart3, RotateCw, Landmark, AlertCircle } from 'lucide-react'
+import {
+  TrendingDown,
+  TrendingUp,
+  Landmark,
+  AlertCircle,
+} from 'lucide-react'
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner'
 import {
   DashboardHeader,
   type DashboardFilterState,
 } from '@/components/dashboard/DashboardHeader'
 import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
-import { WeeklySalesChart } from '@/components/dashboard/WeeklySalesChart'
-import { IncomePerCompanyChart } from '@/components/dashboard/IncomePerCompanyChart'
-import { LoanTrendChart } from '@/components/dashboard/LoanTrendChart'
-import { ExpensesDonutChart } from '@/components/dashboard/ExpensesDonutChart'
+import {
+  IncomeSummaryChart,
+  ExpenseSummaryChart,
+} from '@/components/dashboard/CategorySummaryChart'
 import { RecentTransactionsCard } from '@/components/dashboard/RecentTransactionsCard'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import {
   dashboardService,
   type DashboardData,
-  type AuditStatus,
 } from '@/services/dashboardService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
+import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 
 export const DashboardPage: React.FC = () => {
   const { user } = useSession()
@@ -32,7 +37,6 @@ export const DashboardPage: React.FC = () => {
       label: '10/01/2026 - 10/05/2026',
     },
     company: isAuditor ? assignedCompany : 'All Companies',
-    period: 'Last 30 Days',
   }))
 
   // Ensure Company Auditor is locked to their assigned company
@@ -45,7 +49,7 @@ export const DashboardPage: React.FC = () => {
   const [loading, setLoading] = React.useState<boolean>(true)
   const [data, setData] = React.useState<DashboardData | null>(null)
 
-  // Fetch dashboard data
+  // Fetch initial dashboard data
   React.useEffect(() => {
     let isMounted = true
 
@@ -54,8 +58,6 @@ export const DashboardPage: React.FC = () => {
       try {
         const result = await dashboardService.getDashboardData({
           company: filters.company,
-          dateRange: filters.dateRange.label,
-          period: filters.period,
         })
         if (isMounted) {
           setData(result)
@@ -74,35 +76,69 @@ export const DashboardPage: React.FC = () => {
     return () => {
       isMounted = false
     }
-  }, [filters])
+  }, [filters.company])
+
+  // Filter transactions strictly on client side by company and date range, sorted latest first
+  const filteredTransactions = React.useMemo(() => {
+    if (!data?.recentTransactions) return []
+
+    return data.recentTransactions
+      .filter((tx) => {
+        // 1. Company filter
+        if (
+          filters.company !== 'All Companies' &&
+          tx.company !== filters.company
+        ) {
+          return false
+        }
+
+        // 2. Date range filter
+        return isDateInRange(
+          tx.date,
+          filters.dateRange.startDate,
+          filters.dateRange.endDate
+        )
+      })
+      .sort((a, b) => {
+        const dateA = normalizeDateToYYYYMMDD(a.date)
+        const dateB = normalizeDateToYYYYMMDD(b.date)
+        const cmp = dateB.localeCompare(dateA)
+        if (cmp !== 0) return cmp
+        return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
+      })
+  }, [data?.recentTransactions, filters.company, filters.dateRange])
+
+  // Dynamic KPI calculations responding to filtered transactions
+  const { totalExpenses, totalIncome, netIncome, overdueCount, dueSoonCount } =
+    React.useMemo(() => {
+      const expenses = filteredTransactions.reduce(
+        (sum, tx) => sum + (tx.withdrawal || 0),
+        0
+      )
+      const income = filteredTransactions.reduce(
+        (sum, tx) => sum + (tx.deposit || 0),
+        0
+      )
+      const net = income - expenses
+
+      const overdue = filteredTransactions.filter(
+        (tx) => tx.status === 'Overdue' || tx.auditStatus === 'Flagged'
+      ).length
+      const dueSoon = filteredTransactions.filter(
+        (tx) => tx.status === 'Pending'
+      ).length
+
+      return {
+        totalExpenses: expenses,
+        totalIncome: income,
+        netIncome: net,
+        overdueCount: overdue,
+        dueSoonCount: dueSoon,
+      }
+    }, [filteredTransactions])
 
   if (loading && !data) {
     return <DashboardSkeleton />
-  }
-
-  const handleAuditUpdate = async (
-    id: string,
-    auditStatus: AuditStatus,
-    notes?: string,
-    auditorName?: string
-  ) => {
-    const updated = await dashboardService.updateTransactionAudit(
-      id,
-      auditStatus,
-      notes,
-      auditorName
-    )
-    if (updated && data) {
-      setData((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          recentTransactions: prev.recentTransactions.map((tx) =>
-            tx.id === id ? updated : tx
-          ),
-        }
-      })
-    }
   }
 
   return (
@@ -113,64 +149,66 @@ export const DashboardPage: React.FC = () => {
       {/* 1. Sleek Compact Welcome Greeting Banner */}
       <WelcomeBanner />
 
-      {/* 2. Financial Overview Header & Uniform Filter Bar */}
+      {/* 2. Financial Overview Header & Global Custom Date Picker */}
       <DashboardHeader
         filters={filters}
         onFiltersChange={(newFilters) => setFilters(newFilters)}
       />
 
-      {/* 3. Top KPI Metric Cards */}
+      {/* 3. KPI Cards (Admin and Company Auditor):
+          1. Total Expenses
+          2. Total Income
+          3. Net Income (Income - Expenses)
+          4. Overdue / Due Soon
+          All values respond dynamically to the selected date range.
+      */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardKpiCard
-          label="Total Sales"
-          value={formatPHP(data?.kpis.totalSales ?? 120000)}
-          icon={BarChart3}
-          subtext="+8.4% vs last period"
+          label="Total Expenses"
+          value={formatPHP(totalExpenses)}
+          icon={TrendingDown}
+          subtext="Total withdrawals for period"
         />
         <DashboardKpiCard
-          label="Total Expense"
-          value={formatPHP(data?.kpis.totalExpense ?? 120000)}
-          icon={RotateCw}
-          subtext="Controlled budget target"
+          label="Total Income"
+          value={formatPHP(totalIncome)}
+          icon={TrendingUp}
+          subtext="Total deposits for period"
         />
         <DashboardKpiCard
-          label="Total Loan"
-          value={formatPHP(data?.kpis.totalLoan ?? 120000)}
+          label="Net Income (Income - Expenses)"
+          value={formatPHP(netIncome)}
           icon={Landmark}
-          subtext="18 active schedules"
+          subtext={netIncome >= 0 ? 'Positive net cashflow' : 'Negative net cashflow'}
         />
         <DashboardKpiCard
           label="Overdue / Due Soon"
-          value={`${data?.kpis.overdueLoans ?? 3} / ${data?.kpis.dueSoon ?? 3}`}
+          value={`${overdueCount} / ${dueSoonCount}`}
           icon={AlertCircle}
           subtext="Requires prompt review"
         />
       </div>
 
-      {/* 4. Core 2x2 Clean Diagrams Grid matching reference image layout */}
+      {/* 4. Income and Expense Summary Charts:
+          Two separate charts side by side (stacked on mobile):
+          1. Income Summary
+          2. Expense Summary
+          Each chart has its independent Bar/Pie toggle, defaults to Bar,
+          and breaks down by GCash, Maya, PayMongo, Panda, In-house with consistent colors.
+      */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Card 1: Weekly Sales Trend (Smooth Spline Area Curve like SLA Compliance) */}
-        <WeeklySalesChart data={data?.weeklySales} />
-
-        {/* Card 2: Income per Company / Department Revenue Breakdown */}
-        <IncomePerCompanyChart
-          companyName={filters.company}
-          data={data?.companyIncome}
-        />
-
-        {/* Card 3: Loan & Repayment Trends (Dual Smooth Spline Curves like Ticket Trends) */}
-        <LoanTrendChart />
-
-        {/* Card 4: Expense Distribution (Smooth Spline Curve like Customer Satisfaction) */}
-        <ExpensesDonutChart />
+        <IncomeSummaryChart transactions={filteredTransactions} />
+        <ExpenseSummaryChart transactions={filteredTransactions} />
       </div>
 
-      {/* 5. Recent Transactions & Live Audit Records Table */}
+      {/* 5. Recent Transactions Table:
+          Columns in order: Date, Cheque No., Particulars, Withdrawal, Deposit, Category
+          Admin and Company Auditor view: Category is read-only badge.
+          Updates when date range changes. Max 10 rows per page with working pagination.
+      */}
       <RecentTransactionsCard
         companyName={filters.company}
-        transactions={data?.recentTransactions}
-        readOnly={!isAuditor}
-        onAuditUpdate={handleAuditUpdate}
+        transactions={filteredTransactions}
       />
     </div>
   )

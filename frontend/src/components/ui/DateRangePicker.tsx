@@ -1,0 +1,386 @@
+import * as React from 'react'
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  ChevronDown,
+  Check,
+  X,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { formatToMMDDYYYY } from '@/utils/dateUtils'
+
+export interface DateRange {
+  startDate: string | null // ISO YYYY-MM-DD
+  endDate: string | null   // ISO YYYY-MM-DD
+  label: string
+  preset?: string | null   // e.g. 'Last 7 Days', 'Last 30 Days', 'Custom', etc.
+}
+
+export interface DateRangePickerProps {
+  value: DateRange
+  onChange: (range: DateRange) => void
+  className?: string
+}
+
+export interface DatePresetOption {
+  label: string
+  startDate: string | null
+  endDate: string | null
+}
+
+export const DATE_PRESETS: DatePresetOption[] = [
+  {
+    label: 'All Dates',
+    startDate: null,
+    endDate: null,
+  },
+  {
+    label: 'Last 7 Days',
+    startDate: '2026-10-04',
+    endDate: '2026-10-10',
+  },
+  {
+    label: 'Last 30 Days',
+    startDate: '2026-10-01',
+    endDate: '2026-10-31',
+  },
+  {
+    label: 'This Month',
+    startDate: '2026-10-01',
+    endDate: '2026-10-31',
+  },
+  {
+    label: 'This Quarter',
+    startDate: '2026-10-01',
+    endDate: '2026-12-31',
+  },
+  {
+    label: 'This Year',
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+  },
+]
+
+export const DateRangePicker: React.FC<DateRangePickerProps> = ({
+  value,
+  onChange,
+  className,
+}) => {
+  // Preset dropdown open state
+  const [isPresetOpen, setIsPresetOpen] = React.useState(false)
+  const presetDropdownRef = React.useRef<HTMLDivElement>(null)
+
+  // Custom date picker popover open state
+  const [isCalendarOpen, setIsCalendarOpen] = React.useState(false)
+  const calendarPopoverRef = React.useRef<HTMLDivElement>(null)
+
+  // Track if active selection is custom
+  const isCustomRange = Boolean(
+    value.preset === 'Custom' ||
+      (!value.preset &&
+        Boolean(value.startDate) &&
+        !DATE_PRESETS.some(
+          (p) =>
+            p.startDate === value.startDate &&
+            p.endDate === value.endDate &&
+            p.label !== 'All Dates'
+        ))
+  )
+
+  const activePresetLabel = React.useMemo(() => {
+    if (value.preset === 'Custom') return 'Custom'
+    if (value.preset) return value.preset
+    const matched = DATE_PRESETS.find(
+      (p) => p.startDate === value.startDate && p.endDate === value.endDate
+    )
+    if (matched) return matched.label
+    if (value.startDate || value.endDate) return 'Custom'
+    return 'All Dates'
+  }, [value.preset, value.startDate, value.endDate])
+
+  // Custom date draft state: Start Date & End Date
+  const [draftStart, setDraftStart] = React.useState<string>(value.startDate || '')
+  const [draftEnd, setDraftEnd] = React.useState<string>(value.endDate || '')
+
+  // Sync draft whenever popover is opened
+  React.useEffect(() => {
+    if (isCalendarOpen) {
+      setDraftStart(value.startDate || '')
+      setDraftEnd(value.endDate || '')
+    }
+  }, [isCalendarOpen, value.startDate, value.endDate])
+
+  // Close menus on outside click
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (
+        presetDropdownRef.current &&
+        !presetDropdownRef.current.contains(target)
+      ) {
+        setIsPresetOpen(false)
+      }
+      if (
+        calendarPopoverRef.current &&
+        !calendarPopoverRef.current.contains(target)
+      ) {
+        setIsCalendarOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Handle preset selection
+  const handleSelectPreset = (preset: DatePresetOption) => {
+    setDraftStart(preset.startDate || '')
+    setDraftEnd(preset.endDate || '')
+    onChange({
+      startDate: preset.startDate,
+      endDate: preset.endDate,
+      label: preset.label,
+      preset: preset.label,
+    })
+    setIsPresetOpen(false)
+  }
+
+  // Apply custom start date & end date
+  const handleApplyCustom = () => {
+    const s = draftStart.trim()
+    const e = draftEnd.trim()
+    if (!s && !e) return
+
+    const start = s || e
+    const end = e || s
+    if (!start || !end) return
+
+    const min = start <= end ? start : end
+    const max = start <= end ? end : start
+
+    const label =
+      min === max
+        ? formatToMMDDYYYY(min)
+        : `${formatToMMDDYYYY(min)} - ${formatToMMDDYYYY(max)}`
+
+    onChange({
+      startDate: min,
+      endDate: max,
+      label,
+      preset: 'Custom',
+    })
+    setIsCalendarOpen(false)
+  }
+
+  // Clear custom date selection
+  const handleClearCustom = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    setDraftStart('')
+    setDraftEnd('')
+    onChange({
+      startDate: null,
+      endDate: null,
+      label: 'All Dates',
+      preset: 'All Dates',
+    })
+    setIsCalendarOpen(false)
+  }
+
+  // Label to show on custom date trigger button
+  const customPillLabel = React.useMemo(() => {
+    if (isCustomRange && value.startDate) {
+      if (value.startDate === value.endDate) {
+        return formatToMMDDYYYY(value.startDate)
+      }
+      return `${formatToMMDDYYYY(value.startDate)} - ${formatToMMDDYYYY(value.endDate)}`
+    }
+    return 'Custom Date'
+  }, [isCustomRange, value.startDate, value.endDate])
+
+  return (
+    <div className={cn('inline-flex flex-wrap items-center gap-2 sm:gap-2.5', className)}>
+      {/* 1. Preset Dropdown (Last 7 days, Last 30 days, This Month, etc. or 'Custom') */}
+      <div className="relative inline-block" ref={presetDropdownRef}>
+        <button
+          type="button"
+          onClick={() => {
+            setIsPresetOpen((prev) => !prev)
+            setIsCalendarOpen(false)
+          }}
+          className={cn(
+            'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+            isPresetOpen && 'ring-2 ring-focus/20 border-focus'
+          )}
+          aria-expanded={isPresetOpen}
+          aria-haspopup="listbox"
+          aria-label="Filter by time period preset"
+        >
+          <Clock className="h-4 w-4 text-muted-fg shrink-0" />
+          <span className="font-semibold text-focus/90">
+            {activePresetLabel}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0 ml-0.5" />
+        </button>
+
+        {isPresetOpen && (
+          <div className="absolute left-0 top-full mt-2 w-52 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+            <div className="pb-2 mb-1 border-b border-stroke/20 px-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
+                Preset Periods
+              </span>
+            </div>
+            <div className="space-y-1">
+              {DATE_PRESETS.map((preset) => {
+                const isSelected = activePresetLabel === preset.label
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => handleSelectPreset(preset)}
+                    className={cn(
+                      'w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer',
+                      isSelected
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-focus/80 hover:bg-surface'
+                    )}
+                  >
+                    <span>{preset.label}</span>
+                    {isSelected && (
+                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                    )}
+                  </button>
+                )
+              })}
+
+              {/* Custom indicator option */}
+              {isCustomRange && (
+                <div className="pt-1 mt-1 border-t border-stroke/20">
+                  <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary">
+                    <span>Custom Selection</span>
+                    <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 2. Custom Date Picker beside the preset dropdown */}
+      <div className="relative inline-block" ref={calendarPopoverRef}>
+        <button
+          type="button"
+          onClick={() => {
+            setIsCalendarOpen((prev) => !prev)
+            setIsPresetOpen(false)
+          }}
+          className={cn(
+            'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+            (isCalendarOpen || isCustomRange) &&
+              'ring-2 ring-primary/20 border-primary text-primary',
+            isCustomRange && 'bg-primary/5 font-semibold'
+          )}
+          aria-expanded={isCalendarOpen}
+          aria-haspopup="dialog"
+          aria-label="Pick custom start and end date"
+        >
+          <CalendarIcon
+            className={cn(
+              'h-4 w-4 shrink-0',
+              isCustomRange ? 'text-primary' : 'text-muted-fg'
+            )}
+          />
+          <span className="font-semibold truncate max-w-[170px] sm:max-w-[210px]">
+            {customPillLabel}
+          </span>
+          <ChevronDown
+            className={cn(
+              'h-3.5 w-3.5 shrink-0 ml-0.5',
+              isCustomRange ? 'text-primary' : 'text-muted-fg'
+            )}
+          />
+          {isCustomRange && value.startDate && (
+            <span
+              onClick={handleClearCustom}
+              className="p-0.5 rounded-full hover:bg-primary/20 text-primary transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
+              title="Clear custom date filter"
+            >
+              <X className="h-3 w-3" />
+            </span>
+          )}
+        </button>
+
+        {/* Popover: Positioned with right-0 so it never clips off the right screen boundary */}
+        {isCalendarOpen && (
+          <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-4 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-stroke/20">
+              <span className="text-xs font-bold uppercase tracking-wider text-focus">
+                Custom Date Range
+              </span>
+              {(draftStart || draftEnd || (isCustomRange && value.startDate)) && (
+                <button
+                  type="button"
+                  onClick={handleClearCustom}
+                  className="text-xs text-primary hover:underline font-semibold cursor-pointer"
+                >
+                  Clear Custom
+                </button>
+              )}
+            </div>
+
+            {/* Start Date & End Date inputs */}
+            <div className="py-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-fg block mb-1.5">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={draftStart}
+                    onChange={(e) => setDraftStart(e.target.value)}
+                    className="w-full text-xs h-9 px-2.5 rounded-xl border border-stroke/60 bg-white text-focus focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs font-medium cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted-fg block mb-1.5">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={draftEnd}
+                    onChange={(e) => setDraftEnd(e.target.value)}
+                    className="w-full text-xs h-9 px-2.5 rounded-xl border border-stroke/60 bg-white text-focus focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs font-medium cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-2 border-t border-stroke/20">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsCalendarOpen(false)}
+                className="flex-1 h-8 text-xs font-medium text-muted-fg rounded-lg cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleApplyCustom}
+                disabled={!draftStart.trim() && !draftEnd.trim()}
+                className="flex-1 h-8 text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white rounded-lg shadow-xs disabled:opacity-40 cursor-pointer"
+              >
+                Apply Range
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

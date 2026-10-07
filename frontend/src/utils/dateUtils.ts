@@ -1,0 +1,129 @@
+/**
+ * Date normalization and comparison utilities for MCT Centralized Financial Management System
+ */
+
+const MONTH_NAMES: Record<string, string> = {
+  january: '01',
+  jan: '01',
+  february: '02',
+  feb: '02',
+  march: '03',
+  mar: '03',
+  april: '04',
+  apr: '04',
+  may: '05',
+  june: '06',
+  jun: '06',
+  july: '07',
+  jul: '07',
+  august: '08',
+  aug: '08',
+  september: '09',
+  sep: '09',
+  october: '10',
+  oct: '10',
+  november: '11',
+  nov: '11',
+  december: '12',
+  dec: '12',
+}
+
+/**
+ * Normalizes any date string or Date object into ISO YYYY-MM-DD format
+ */
+export function normalizeDateToYYYYMMDD(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return ''
+
+  if (dateInput instanceof Date) {
+    const y = dateInput.getFullYear()
+    const m = String(dateInput.getMonth() + 1).padStart(2, '0')
+    const d = String(dateInput.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  const str = String(dateInput).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str
+  }
+
+  // Handle format like "October 1, 2026" or "Oct 01, 2026"
+  const wordMatch = str.match(/^([a-zA-Z]+)\s+(\d{1,2}),?\s+(\d{4})/)
+  if (wordMatch) {
+    const monthKey = wordMatch[1].toLowerCase()
+    const m = MONTH_NAMES[monthKey]
+    if (m) {
+      const d = wordMatch[2].padStart(2, '0')
+      const y = wordMatch[3]
+      return `${y}-${m}-${d}`
+    }
+  }
+
+  // Handle format like "10/01/2026" or "10/01/26"
+  const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/)
+  if (slashMatch) {
+    const m = slashMatch[1].padStart(2, '0')
+    const d = slashMatch[2].padStart(2, '0')
+    const yearStr = slashMatch[3]
+    const y = yearStr.length === 2 ? `20${yearStr}` : yearStr
+    return `${y}-${m}-${d}`
+  }
+
+  const parsed = new Date(str)
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear()
+    const m = String(parsed.getMonth() + 1).padStart(2, '0')
+    const d = String(parsed.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  return str
+}
+
+/**
+ * Checks if a date falls within a given start and end date range (inclusive).
+ * Supports null boundaries (e.g. all dates if both null).
+ */
+export function isDateInRange(
+  dateInput: string | Date | null | undefined,
+  startDate: string | null | undefined,
+  endDate: string | null | undefined
+): boolean {
+  if (!dateInput) return false
+  if (!startDate && !endDate) return true
+
+  const iso = normalizeDateToYYYYMMDD(dateInput)
+  if (!iso) return false
+
+  const startIso = startDate ? normalizeDateToYYYYMMDD(startDate) : null
+  const endIso = endDate ? normalizeDateToYYYYMMDD(endDate) : null
+
+  if (startIso && endIso) {
+    // If start > end, handle inverted range gracefully
+    const min = startIso <= endIso ? startIso : endIso
+    const max = startIso <= endIso ? endIso : startIso
+    return iso >= min && iso <= max
+  }
+
+  if (startIso) {
+    return iso >= startIso
+  }
+
+  if (endIso) {
+    return iso <= endIso
+  }
+
+  return true
+}
+
+/**
+ * Formats YYYY-MM-DD into MM/DD/YYYY
+ */
+export function formatToMMDDYYYY(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const normalized = normalizeDateToYYYYMMDD(iso)
+  const parts = normalized.split('-')
+  if (parts.length === 3) {
+    return `${parts[1]}/${parts[2]}/${parts[0]}`
+  }
+  return iso
+}
