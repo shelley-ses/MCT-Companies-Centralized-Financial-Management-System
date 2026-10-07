@@ -27,13 +27,9 @@ class Settings(BaseSettings):
     # Payload encryption key (Fernet)
     PAYLOAD_ENCRYPTION_KEY: str = ""
 
-    # Login OTP delivery
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 587
-    SMTP_USERNAME: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM_EMAIL: str = ""
-    SMTP_USE_TLS: bool = True
+    # Login OTP delivery via Resend
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = ""
     OTP_COOKIE_SECURE: bool = False
 
     LOGIN_MAX_ATTEMPTS: int = 5
