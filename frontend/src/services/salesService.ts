@@ -683,9 +683,78 @@ const INITIAL_SALES: SalesItem[] = [
 
 let inMemorySales: SalesItem[] = [...INITIAL_SALES]
 
+function mapBackendSaleToItem(b: any): SalesItem {
+  const rawDate = b.transaction_date || (b.created_at ? b.created_at.split('T')[0] : '2026-10-01')
+  const [year, month, day] = rawDate.split('-')
+  const displayDate = month && day ? `${month}/${day}/${year?.slice(2) || '26'}` : rawDate
+  const amt = Number(b.amount) || 0
+  
+  let chequeNo = b.cheque_no || b.chequeNo || b.reference_no || ''
+  let particulars = b.particulars || b.description || 'Sales Entry'
+  if (!chequeNo && particulars.includes('[Cheque:')) {
+    const parts = particulars.split('[Cheque:')
+    particulars = parts[0].trim()
+    chequeNo = parts[1].replace(']', '').trim()
+  }
+
+  return {
+    id: String(b.sales_id),
+    refNo: chequeNo || `REF-${b.sales_id}`,
+    chequeNo: chequeNo || undefined,
+    date: displayDate,
+    rawDate: rawDate,
+    particulars: particulars || 'Sales Entry',
+    withdrawal: 0,
+    deposit: amt,
+    netAmount: amt,
+    category: b.category_name || 'None',
+    company: b.company_name || 'MCT Kitchen',
+    status: 'Paid',
+    auditStatus: 'Verified',
+    createdBy: 'Company Auditor',
+    createdAt: b.created_at || new Date().toISOString(),
+    updatedAt: b.updated_at || new Date().toISOString(),
+    type: 'Sales',
+  }
+}
+
 export const salesService = {
   async getSales(company?: string): Promise<SalesItem[]> {
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    try {
+      const url =
+        company && company !== 'All Companies'
+          ? `/api/v1/sales?company_name=${encodeURIComponent(company)}`
+          : '/api/v1/sales'
+
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          const apiSales = data.map(mapBackendSaleToItem)
+          return apiSales.sort((a, b) => {
+            const dateA = a.rawDate || normalizeDateToYYYYMMDD(a.date)
+            const dateB = b.rawDate || normalizeDateToYYYYMMDD(b.date)
+            const cmp = dateB.localeCompare(dateA)
+            if (cmp !== 0) return cmp
+            return Number(b.id) - Number(a.id)
+          })
+        }
+      }
+    } catch (err) {
+      console.warn('Backend /sales fetch error, using local fallback:', err)
+    }
+
     const list =
       !company || company === 'All Companies'
         ? [...inMemorySales]
@@ -701,36 +770,159 @@ export const salesService = {
   },
 
   async addSale(input: NewSalesInput): Promise<SalesItem> {
-    await new Promise((resolve) => setTimeout(resolve, 150))
-    const id = `sale_${Date.now()}`
-    const refNo = `REF-${input.date.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`
-    
-    // Format date as MM/DD/YY for table
-    const [year, month, day] = input.date.split('-')
-    const displayDate = `${month}/${day}/${year?.slice(2) || '26'}`
-
-    const newItem: SalesItem = {
-      id,
-      refNo,
-      chequeNo: input.chequeNo || '',
-      date: displayDate,
-      rawDate: input.date,
-      particulars: input.particulars,
-      withdrawal: 0,
-      deposit: input.amount,
-      netAmount: input.amount,
-      category: input.category,
+    const payload = {
       company: input.company,
-      status: input.status,
-      auditStatus: 'Pending Audit',
-      createdBy: 'Company Auditor',
-      createdAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-      type: 'Sales',
+      transaction_date: input.date,
+      amount: input.amount,
+      particulars: input.particulars,
+      description: input.particulars,
+      category: input.category === 'None' ? null : input.category,
+      chequeNo: input.chequeNo || undefined,
     }
 
-    inMemorySales = [newItem, ...inMemorySales]
-    return newItem
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch('/api/v1/sales', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const created = await res.json()
+        const newItem = mapBackendSaleToItem(created)
+        inMemorySales = [newItem, ...inMemorySales]
+        return newItem
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        const errorMsg =
+          errData.detail ||
+          (typeof errData === 'string' ? errData : 'Failed to record sales entry.')
+        throw new Error(errorMsg)
+      }
+    } catch (err: any) {
+      console.warn('Backend POST /sales failed, creating local record:', err)
+      // If network error occurred, create local fallback item
+      const id = `sale_${Date.now()}`
+      const refNo = `REF-${input.date.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`
+      const [year, month, day] = input.date.split('-')
+      const displayDate = `${month}/${day}/${year?.slice(2) || '26'}`
+
+      const newItem: SalesItem = {
+        id,
+        refNo,
+        chequeNo: input.chequeNo || '',
+        date: displayDate,
+        rawDate: input.date,
+        particulars: input.particulars,
+        withdrawal: 0,
+        deposit: input.amount,
+        netAmount: input.amount,
+        category: input.category || 'None',
+        company: input.company,
+        status: input.status,
+        auditStatus: 'Verified',
+        createdBy: 'Company Auditor',
+        createdAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+        updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+        type: 'Sales',
+      }
+
+      inMemorySales = [newItem, ...inMemorySales]
+      return newItem
+    }
+  },
+
+  async updateSale(
+    id: string,
+    input: Partial<NewSalesInput>
+  ): Promise<SalesItem> {
+    const payload: Record<string, any> = {}
+    if (input.date) payload.transaction_date = input.date
+    if (input.amount !== undefined) payload.amount = input.amount
+    if (input.particulars) payload.particulars = input.particulars
+    if (input.category !== undefined) {
+      payload.category = input.category === 'None' ? null : input.category
+    }
+    if (input.chequeNo !== undefined) payload.chequeNo = input.chequeNo
+
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(`/api/v1/sales/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const updated = await res.json()
+        const mapped = mapBackendSaleToItem(updated)
+        inMemorySales = inMemorySales.map((s) => (s.id === id ? mapped : s))
+        return mapped
+      }
+    } catch (err) {
+      console.warn('Backend update sale failed, updating locally:', err)
+    }
+
+    // Local update fallback
+    inMemorySales = inMemorySales.map((s) => {
+      if (s.id !== id) return s
+      const amt = input.amount !== undefined ? input.amount : s.deposit
+      const [year, month, day] = (input.date || s.rawDate || '').split('-')
+      const displayDate = month && day ? `${month}/${day}/${year?.slice(2) || '26'}` : s.date
+      return {
+        ...s,
+        date: input.date ? displayDate : s.date,
+        rawDate: input.date || s.rawDate,
+        particulars: input.particulars || s.particulars,
+        chequeNo: input.chequeNo !== undefined ? input.chequeNo : s.chequeNo,
+        category: input.category || s.category,
+        deposit: amt,
+        netAmount: amt,
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    return inMemorySales.find((s) => s.id === id)!
+  },
+
+  async deleteSale(id: string): Promise<boolean> {
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(`/api/v1/sales/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      if (res.ok) {
+        inMemorySales = inMemorySales.filter((s) => s.id !== id)
+        return true
+      }
+    } catch (err) {
+      console.warn('Backend delete sale failed, deleting locally:', err)
+    }
+
+    inMemorySales = inMemorySales.filter((s) => s.id !== id)
+    return true
   },
 
   exportCsv(items: SalesItem[], filename = 'sales_report.csv') {
@@ -785,9 +977,12 @@ export const salesService = {
     const totalWithdrawal = items.reduce((sum, s) => sum + (s.withdrawal || 0), 0)
     const netTotal = totalDeposit - totalWithdrawal
 
-    const rowsHtml = items
-      .map(
-        (s) => `
+    const rowsHtml =
+      items.length === 0
+        ? `<tr><td colspan="8" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No sales transactions recorded for this selection.</td></tr>`
+        : items
+            .map(
+              (s) => `
       <tr>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${s.date}</td>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${s.chequeNo || '—'}</td>
@@ -799,8 +994,8 @@ export const salesService = {
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${s.status}</td>
       </tr>
     `
-      )
-      .join('')
+            )
+            .join('')
 
     printWindow.document.write(`
       <!DOCTYPE html>

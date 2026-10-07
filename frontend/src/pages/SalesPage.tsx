@@ -16,9 +16,19 @@ import {
   TrendingUp,
   Landmark,
   AlertCircle,
+  Pencil,
+  Trash2,
+  Loader2,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import {
   Table,
   TableHeader,
@@ -35,6 +45,7 @@ import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
 import { IncomeSummaryChart } from '@/components/dashboard/CategorySummaryChart'
 import { AuditTransactionModal } from '@/components/dashboard/AuditTransactionModal'
 import { AddSalesModal } from '@/components/dashboard/AddSalesModal'
+import { EditSalesModal } from '@/components/dashboard/EditSalesModal'
 import {
   salesService,
   type SalesItem,
@@ -81,38 +92,42 @@ export const SalesPage: React.FC = () => {
   })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending'>('All')
-  const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Daily')
+  const todayIso = new Date().toISOString().split('T')[0]
+  const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
 
   // Handle switching period (Daily, Quarterly, Monthly, Annually)
   const handlePeriodChange = (period: PeriodType) => {
     setSelectedPeriod(period)
     setIsPeriodDropdownOpen(false)
+    const currentToday = new Date().toISOString().split('T')[0]
+    const [currYear, currMonth, currDay] = currentToday.split('-')
+
     if (period === 'Daily') {
       setDateRange({
-        startDate: '2026-10-01',
-        endDate: '2026-10-01',
-        label: '10/01/2026',
+        startDate: currentToday,
+        endDate: currentToday,
+        label: `Today (${currMonth}/${currDay}/${currYear})`,
         preset: 'Daily',
       })
     } else if (period === 'Monthly') {
       setDateRange({
-        startDate: '2026-10-01',
-        endDate: '2026-10-31',
-        label: 'October 2026',
+        startDate: `${currYear}-${currMonth}-01`,
+        endDate: `${currYear}-${currMonth}-31`,
+        label: 'This Month',
         preset: 'This Month',
       })
     } else if (period === 'Quarterly') {
       setDateRange({
-        startDate: '2026-10-01',
-        endDate: '2026-12-31',
+        startDate: `${currYear}-10-01`,
+        endDate: `${currYear}-12-31`,
         label: 'Q4 2026',
         preset: 'This Quarter',
       })
     } else if (period === 'Annually') {
       setDateRange({
-        startDate: '2026-01-01',
-        endDate: '2026-12-31',
-        label: 'Year 2026',
+        startDate: `${currYear}-01-01`,
+        endDate: `${currYear}-12-31`,
+        label: `Year ${currYear}`,
         preset: 'This Year',
       })
     }
@@ -138,6 +153,10 @@ export const SalesPage: React.FC = () => {
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = React.useState(false)
+  const [editingSale, setEditingSale] = React.useState<SalesItem | null>(null)
+  const [deleteConfirmSale, setDeleteConfirmSale] = React.useState<SalesItem | null>(null)
+  const [isDeleting, setIsDeleting] = React.useState(false)
   const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
   const [isAuditModalOpen, setIsAuditModalOpen] = React.useState(false)
 
@@ -154,6 +173,32 @@ export const SalesPage: React.FC = () => {
       }
     }
   }, [])
+
+  // Handlers for edit and delete
+  const handleSaleUpdated = (updatedItem: SalesItem) => {
+    setSales((prev) => prev.map((s) => (s.id === updatedItem.id ? updatedItem : s)))
+    setHighlightedSaleId(updatedItem.id)
+    if (highlightTimeoutRef.current) {
+      clearTimeout(highlightTimeoutRef.current)
+    }
+    highlightTimeoutRef.current = setTimeout(() => {
+      setHighlightedSaleId(null)
+    }, 3000)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmSale) return
+    setIsDeleting(true)
+    try {
+      await salesService.deleteSale(deleteConfirmSale.id)
+      setSales((prev) => prev.filter((s) => s.id !== deleteConfirmSale.id))
+      setDeleteConfirmSale(null)
+    } catch (err) {
+      console.error('Delete sale error:', err)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   // Pagination state
   const [currentPage, setCurrentPage] = React.useState(1)
@@ -231,14 +276,26 @@ export const SalesPage: React.FC = () => {
           return false
         }
 
-        // 4. Search query (by refNo, chequeNo, particulars, customer)
+        // 4. Search query (by refNo, chequeNo, particulars, category, company, status, amount)
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim()
-          const matchRef = item.refNo.toLowerCase().includes(q)
+          const matchRef = (item.refNo || '').toLowerCase().includes(q)
           const matchCheque = (item.chequeNo || '').toLowerCase().includes(q)
-          const matchParticulars = item.particulars.toLowerCase().includes(q)
-          const matchCategory = item.category.toLowerCase().includes(q)
-          if (!matchRef && !matchCheque && !matchParticulars && !matchCategory) {
+          const matchParticulars = (item.particulars || '').toLowerCase().includes(q)
+          const matchCategory = (item.category || '').toLowerCase().includes(q)
+          const matchCompany = (item.company || '').toLowerCase().includes(q)
+          const matchStatus = (item.status || '').toLowerCase().includes(q)
+          const matchAmount = String(item.netAmount || item.deposit || '').includes(q)
+
+          if (
+            !matchRef &&
+            !matchCheque &&
+            !matchParticulars &&
+            !matchCategory &&
+            !matchCompany &&
+            !matchStatus &&
+            !matchAmount
+          ) {
             return false
           }
         }
@@ -759,6 +816,9 @@ export const SalesPage: React.FC = () => {
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
                   NET AMOUNT
                 </TableHead>
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                  ACTIONS
+                </TableHead>
               </TableRow>
             </TableHeader>
 
@@ -766,7 +826,7 @@ export const SalesPage: React.FC = () => {
               {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-12 text-center text-xs sm:text-sm text-muted-fg animate-pulse"
                   >
                     Loading sales records…
@@ -775,10 +835,20 @@ export const SalesPage: React.FC = () => {
               ) : paginatedSales.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
-                    className="py-12 text-center text-xs sm:text-sm text-muted-fg"
+                    colSpan={8}
+                    className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
-                    No sales records found for the selected filters.
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-1">
+                        <AlertCircle className="w-6 h-6 stroke-[1.5]" />
+                      </div>
+                      <p className="font-semibold text-focus text-sm sm:text-base">
+                        No sales records found
+                      </p>
+                      <p className="text-xs text-muted-fg leading-relaxed">
+                        There are no sales transactions recorded for {displayedCompanyTitle} matching your current filters. {isAuditor && 'Click "Add Sales" above to record a new transaction.'}
+                      </p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -834,6 +904,38 @@ export const SalesPage: React.FC = () => {
                     {/* 7. Net Amount */}
                     <TableCell className="px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap text-focus">
                       {formatPHP(sale.netAmount)}
+                    </TableCell>
+
+                    {/* 8. Actions (Edit / Delete) */}
+                    <TableCell
+                      className="px-4 py-3.5 text-center whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingSale(sale)
+                            setIsEditModalOpen(true)
+                          }}
+                          className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                          title="Edit Sale"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteConfirmSale(sale)}
+                          className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          title="Delete Sale"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -892,6 +994,61 @@ export const SalesPage: React.FC = () => {
         assignedCompany={isAuditor ? assignedCompany : selectedCompany}
       />
 
+      {/* Edit Sales Modal */}
+      <EditSalesModal
+        open={isEditModalOpen}
+        onOpenChange={setIsEditModalOpen}
+        sale={editingSale}
+        onSuccess={handleSaleUpdated}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirmSale} onOpenChange={(open) => !open && setDeleteConfirmSale(null)}>
+        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+          <DialogHeader>
+            <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center mb-2">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-focus">
+              Delete Sale Record
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-fg mt-1">
+              Are you sure you want to delete this sale entry{' '}
+              <strong className="text-focus">{deleteConfirmSale?.particulars}</strong> ({deleteConfirmSale?.refNo}) for{' '}
+              <strong className="text-focus">{deleteConfirmSale?.deposit ? formatPHP(deleteConfirmSale.deposit) : ''}</strong>?
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-center justify-end gap-2.5 pt-4 mt-2 border-t border-stroke/20">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteConfirmSale(null)}
+              disabled={isDeleting}
+              className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Audit / Details Modal */}
       <AuditTransactionModal
         open={isAuditModalOpen}
@@ -901,3 +1058,4 @@ export const SalesPage: React.FC = () => {
     </div>
   )
 }
+

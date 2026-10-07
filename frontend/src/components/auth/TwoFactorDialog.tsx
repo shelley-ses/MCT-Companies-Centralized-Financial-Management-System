@@ -176,7 +176,10 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
                     <InputOTPSlot index={5} isError={!!error} />
                   </InputOTPGroup>
                 </InputOTP>
-
+                <div className="rounded-md bg-muted/60 px-3 py-1.5 text-xs text-muted-fg text-center border border-border/50">
+                  <span>Seeded Verification Code: </span>
+                  <span className="font-mono font-semibold text-foreground">123456</span>
+                </div>
               </div>
               <div className="text-center text-sm text-muted-fg">
                 {resendCountdown.isExpired

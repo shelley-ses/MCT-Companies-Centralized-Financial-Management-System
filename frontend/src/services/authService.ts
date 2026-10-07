@@ -84,7 +84,7 @@ const ACCESS_TOKEN_KEY = 'mct_access_token'
 const LAST_ACTIVITY_KEY = 'mct_last_activity'
 const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000
 
-function getInitialUser(): User {
+function getInitialUser(): User | null {
   if (typeof window !== 'undefined') {
     try {
       const stored = sessionStorage.getItem(SESSION_STORAGE_KEY)
@@ -195,6 +195,7 @@ function mapUser(user: {
   email: string
   name: string
   is_admin: boolean
+  company_name?: string | null
 }): User {
   const role: UserRole = user.is_admin ? 'Admin' : 'Company Auditor'
   return {
@@ -202,7 +203,7 @@ function mapUser(user: {
     fullName: user.name,
     email: user.email,
     role: role,
-    assignedCompany: user.is_admin ? 'All Companies' : 'MCT Kitchen',
+    assignedCompany: user.is_admin ? 'All Companies' : (user.company_name || 'MCT Kitchen'),
     avatarUrl: logo2Url,
   }
 }
@@ -277,7 +278,13 @@ export const authService = {
 
     const response = await request<{
       access_token: string
-      user: { user_id: number; email: string; name: string; is_admin: boolean }
+      user: {
+        user_id: number
+        email: string
+        name: string
+        is_admin: boolean
+        company_name?: string | null
+      }
     }>('/login/verify-otp', { otp: code })
     const mapped = mapUser(response.user)
     inMemorySessionUser = mapped

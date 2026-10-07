@@ -4,19 +4,26 @@ from datetime import datetime
 
 class CompanyBase(BaseModel):
     name: str
-    code: str
-    currency: str = "USD"
+    code: Optional[str] = None
+    currency: str = "PHP"
     status: str = "Active"
 
 class CompanyCreate(CompanyBase):
     pass
 
-class CompanyOut(CompanyBase):
+class CompanyOut(BaseModel):
     id: int
+    name: str
+    code: Optional[str] = None
+    currency: str = "PHP"
+    status: str = "Active"
+    location: Optional[str] = None
+    contact_person: Optional[str] = None
+    email: Optional[str] = None
     total_revenue: float = 0.0
     total_expenses: float = 0.0
     net_profit: float = 0.0
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

@@ -73,9 +73,9 @@ CREATE TABLE IF NOT EXISTS sales (
     company_id BIGINT NOT NULL,
     category_id BIGINT REFERENCES category(category_id) ON DELETE SET NULL,
     transaction_date DATE NOT NULL,
-    reference_no VARCHAR(100),
+    cheque_no VARCHAR(100),
     amount NUMERIC(15, 2) NOT NULL,
-    description TEXT,
+    particulars TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

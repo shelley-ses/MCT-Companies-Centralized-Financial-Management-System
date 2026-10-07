@@ -31,6 +31,7 @@ interface AddSalesModalProps {
 }
 
 const CATEGORY_OPTIONS = [
+  'None',
   'GCash',
   'Maya',
   'PayMongo',
@@ -47,14 +48,14 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   onSuccess,
   assignedCompany,
 }) => {
-  // Date is always today
+  // Date default is today (editable)
   const getTodayIso = () => new Date().toISOString().split('T')[0]
-  const today = getTodayIso()
 
+  const [date, setDate] = React.useState(getTodayIso())
   const [chequeNo, setChequeNo] = React.useState('')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [category, setCategory] = React.useState('GCash')
+  const [category, setCategory] = React.useState('None')
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
 
@@ -63,6 +64,7 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [error, setError] = React.useState('')
   const [fieldErrors, setFieldErrors] = React.useState<{
+    date?: string
     particulars?: string
     amount?: string
     category?: string
@@ -92,10 +94,11 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   // Reset form when modal opens
   React.useEffect(() => {
     if (open) {
+      setDate(getTodayIso())
       setChequeNo('')
       setParticulars('')
       setAmount('')
-      setCategory('GCash')
+      setCategory('None')
       setError('')
       setFieldErrors({})
       setIsConfirmOpen(false)
@@ -106,7 +109,14 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const errors: { particulars?: string; amount?: string; category?: string } = {}
+    const errors: { date?: string; particulars?: string; amount?: string; category?: string } = {}
+
+    const todayIso = getTodayIso()
+    if (!date.trim()) {
+      errors.date = 'Date is required.'
+    } else if (date.trim() > todayIso) {
+      errors.date = 'Date cannot be in the future (maximum date is today).'
+    }
 
     if (!particulars.trim()) {
       errors.particulars = 'Particulars is required.'
@@ -115,12 +125,8 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
     const parsedAmount = parseFloat(amount)
     if (!amount.trim()) {
       errors.amount = 'Amount is required.'
-    } else if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      errors.amount = 'Please enter an amount greater than 0.'
-    }
-
-    if (!category.trim()) {
-      errors.category = 'Category is required.'
+    } else if (isNaN(parsedAmount) || parsedAmount < 1.0) {
+      errors.amount = 'Amount must be at least 1.00 (cannot be 0 or less than 1).'
     }
 
     if (Object.keys(errors).length > 0) {
@@ -140,13 +146,13 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
     try {
       const parsedAmount = parseFloat(amount)
       const payload: NewSalesInput = {
-        date: today,
+        date: date.trim() || getTodayIso(),
         chequeNo: chequeNo.trim(),
         particulars: particulars.trim(),
         amount: parsedAmount,
-        category: category.trim(),
+        category: category.trim() || 'None',
         company: assignedCompany,
-        status: 'Paid', // payment status field removed from modal, defaulted to Paid
+        status: 'Paid',
       }
       const created = await salesService.addSale(payload)
 
@@ -194,22 +200,34 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* 1. Date (always today, no icon in label) */}
+              {/* 1. Date (editable, defaults to today) */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-focus block">
-                  Date
+                  Date <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   type="date"
-                  value={today}
-                  readOnly
-                  disabled
-                  className="h-10 rounded-xl border-stroke/50 text-xs bg-slate-50 text-focus/90 font-medium cursor-not-allowed select-none"
-                  title="Date is automatically set to today"
+                  max={getTodayIso()}
+                  value={date}
+                  onChange={(e) => {
+                    setDate(e.target.value)
+                    if (fieldErrors.date) {
+                      setFieldErrors((prev) => ({ ...prev, date: undefined }))
+                    }
+                  }}
+                  className={cn(
+                    'h-10 rounded-xl border-stroke/50 text-xs font-medium',
+                    fieldErrors.date && 'border-red-500 focus-visible:ring-red-200'
+                  )}
+                  title="Transaction date (cannot be in the future)"
                 />
-                <p className="text-[11px] text-muted-fg font-normal">
-                  Always set to today
-                </p>
+                {fieldErrors.date ? (
+                  <p className="text-[11px] text-red-600 font-medium">{fieldErrors.date}</p>
+                ) : (
+                  <p className="text-[11px] text-muted-fg font-normal">
+                    Defaults to today (Max: today)
+                  </p>
+                )}
               </div>
 
               {/* 2. Cheque No (no icon in label) */}
@@ -263,8 +281,8 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
                 <Input
                   type="number"
                   step="0.01"
-                  min="0.01"
-                  placeholder="0.00"
+                  min="1.00"
+                  placeholder="1.00"
                   value={amount}
                   onChange={(e) => {
                     setAmount(e.target.value)
@@ -422,7 +440,7 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-fg font-medium">Date</span>
-                <span className="font-semibold text-focus">{today} (Today)</span>
+                <span className="font-semibold text-focus">{date}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-fg font-medium">Particulars</span>
