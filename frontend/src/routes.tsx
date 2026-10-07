@@ -14,7 +14,7 @@ import {
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <Navigate to="/dashboard" replace />,
+    element: <Navigate to="/login" replace />,
   },
   // Public Only routes (authenticated users redirected to /dashboard)
   {
@@ -133,6 +133,6 @@ export const router = createBrowserRouter([
   // Fallback
   {
     path: '*',
-    element: <Navigate to="/dashboard" replace />,
+    element: <Navigate to="/login" replace />,
   },
 ])

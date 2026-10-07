@@ -29,6 +29,30 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [status, setStatus] = React.useState<SessionStatus>('loading')
   const [user, setUser] = React.useState<User | null>(null)
+  const idleTimer = React.useRef<number | null>(null)
+
+  const resetIdleTimer = React.useCallback(() => {
+    authService.touchSessionActivity()
+    if (idleTimer.current !== null) {
+      window.clearTimeout(idleTimer.current)
+    }
+    if (status === 'authenticated') {
+      idleTimer.current = window.setTimeout(() => {
+        void handleSignOut()
+      }, 2 * 60 * 60 * 1000)
+    }
+  }, [status])
+
+  React.useEffect(() => {
+    if (status !== 'authenticated') return
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const
+    events.forEach((event) => window.addEventListener(event, resetIdleTimer))
+    resetIdleTimer()
+    return () => {
+      events.forEach((event) => window.removeEventListener(event, resetIdleTimer))
+      if (idleTimer.current !== null) window.clearTimeout(idleTimer.current)
+    }
+  }, [status, resetIdleTimer])
 
   // Bootstrap session from in-memory service on initial load
   React.useEffect(() => {
@@ -117,5 +141,3 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({
     <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
   )
 }
-
-

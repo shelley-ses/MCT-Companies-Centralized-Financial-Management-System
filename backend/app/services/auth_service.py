@@ -2,12 +2,13 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Union
 import logging
 import secrets
-import smtplib
-from email.message import EmailMessage
+import json
+import hashlib
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 import jwt
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.core.encryption import decrypt_payload, encrypt_payload
@@ -28,9 +29,9 @@ from app.schemas.auth import (
 from app.schemas.user import UserResponse
 
 logger = logging.getLogger(__name__)
-password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 OTP_COOKIE_NAME = "mct_login_otp"
 _rate_limits: dict[str, dict[str, object]] = {}
+_otp_challenges: dict[str, dict[str, object]] = {}
 
 
 def _mask_email(email: str) -> str:
@@ -38,30 +39,106 @@ def _mask_email(email: str) -> str:
     return f"{local[:1]}***@{domain}"
 
 
+def _get_application_user(*, email: str | None = None, user_id: int | None = None) -> dict[str, object] | None:
+    query = get_supabase_admin_client().table("users").select(
+        "user_id,email,name,is_admin,company_id,created_at,updated_at,last_login_at"
+    )
+    if email is not None:
+        query = query.eq("email", email)
+    elif user_id is not None:
+        query = query.eq("user_id", user_id)
+    else:
+        return None
+    result = query.limit(1).execute().data
+    return result[0] if result else None
+
+
+def _update_application_user_login(user_id: int) -> None:
+    get_supabase_admin_client().table("users").update(
+        {"last_login_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("user_id", user_id).execute()
+
+
+def _application_user_response(user: dict[str, object]) -> UserResponse:
+    company_name = None
+    company_id = user.get("company_id")
+    if company_id is not None:
+        company = (
+            get_supabase_admin_client()
+            .table("company")
+            .select("company_name")
+            .eq("company_id", company_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        company_name = company[0]["company_name"] if company else None
+    return UserResponse(
+        user_id=int(user["user_id"]),
+        email=str(user["email"]),
+        name=str(user["name"]),
+        company_id=int(company_id) if company_id is not None else None,
+        is_admin=bool(user["is_admin"]),
+        last_login_at=user.get("last_login_at"),
+        created_at=user.get("created_at"),
+        updated_at=user.get("updated_at"),
+        company_name=company_name,
+    )
+
+
 def _send_login_otp(email: str, otp: str) -> None:
-    if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
+    if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Email delivery is not configured. Please contact an administrator.",
         )
 
-    message = EmailMessage()
-    message["Subject"] = "Your MCT login verification code"
-    message["From"] = settings.SMTP_FROM_EMAIL
-    message["To"] = email
-    message.set_content(
-        f"Your MCT Financial Management System verification code is {otp}. "
-        f"It expires in {settings.OTP_EXPIRES_SECONDS // 60} minutes."
+    payload = json.dumps(
+        {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [email],
+            "subject": "Your MCT login verification code",
+            "text": (
+                f"Your MCT Financial Management System verification code is {otp}. "
+                f"It expires in {settings.OTP_EXPIRES_SECONDS // 60} minutes."
+            ),
+        }
+    ).encode("utf-8")
+    request = Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "MCT-Financial-Management-System",
+        },
+        method="POST",
     )
+
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as smtp:
-            if settings.SMTP_USE_TLS:
-                smtp.starttls()
-            if settings.SMTP_USERNAME:
-                smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-            smtp.send_message(message)
-    except (OSError, smtplib.SMTPException) as exc:
-        logger.error("Failed to send login OTP to %s: %s", email, exc)
+        with urlopen(request, timeout=10) as response:
+            if response.status < 200 or response.status >= 300:
+                raise HTTPError(
+                    request.full_url,
+                    response.status,
+                    "Unexpected response from Resend",
+                    response.headers,
+                    None,
+                )
+    except HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")[:1000]
+        logger.error(
+            "Resend rejected login OTP for %s: status=%s response=%s",
+            email,
+            exc.code,
+            error_body,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send the verification code. Please try again later.",
+        ) from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        logger.error("Resend request failed for %s: %s", email, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to send the verification code. Please try again later.",
@@ -112,9 +189,11 @@ def create_jwt_token(
     email: str,
     is_admin: bool = False,
     company_id: Optional[int] = None,
-    expires_delta_seconds: int = 86400,
+    expires_delta_seconds: int | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
+    if expires_delta_seconds is None:
+        expires_delta_seconds = settings.SESSION_IDLE_TIMEOUT_SECONDS
     expiration = now + timedelta(seconds=expires_delta_seconds)
 
     payload = {
@@ -124,6 +203,7 @@ def create_jwt_token(
         "role": "admin" if is_admin else "authenticated",
         "iat": int(now.timestamp()),
         "exp": int(expiration.timestamp()),
+        "jti": secrets.token_urlsafe(24),
         "app_metadata": {
             "is_admin": is_admin,
             "company_id": company_id,
@@ -206,49 +286,52 @@ def login_user(db: Session, login_data: LoginRequest, ip_address: str) -> tuple[
 
     normalized_email = str(email).strip().lower()
 
-    auth_response = None
-    authenticated = False
-
-    # Authenticate via Supabase Auth SDK if configured
-    if settings.SUPABASE_URL and settings.SUPABASE_KEY:
-        try:
-            supabase = get_supabase_client()
-            auth_response = supabase.auth.sign_in_with_password({
-                "email": normalized_email,
-                "password": password
-            })
-            authenticated = bool(auth_response and auth_response.session)
-        except Exception as e:
-            logger.error(f"Supabase login failed for {normalized_email}: {e}")
-
-    # Find local user record
-    user = db.query(User).filter(User.email == normalized_email).first()
-
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-        authenticated = bool(user and password_context.verify(password, user.password_hash))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase authentication is not configured. Please contact an administrator.",
+        )
 
-    if not authenticated:
+    try:
+        supabase = get_supabase_client()
+        auth_response = supabase.auth.sign_in_with_password({
+            "email": normalized_email,
+            "password": password,
+        })
+        authenticated = bool(auth_response and auth_response.session)
+    except Exception as exc:
+        logger.warning("Supabase login failed for %s: %s", normalized_email, exc)
+        authenticated = False
+
+    user = _get_application_user(email=normalized_email)
+
+    if not authenticated or not user:
         _record_failed_login(db, ip_address)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            detail="Invalid email or password." if not authenticated else "Application user profile not found.",
         )
 
     otp = f"{secrets.randbelow(1_000_000):06d}"
     now = datetime.now(timezone.utc)
+    challenge_id = secrets.token_urlsafe(24)
+    otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+    _otp_challenges[challenge_id] = {
+        "attempts": 0,
+        "consumed": False,
+        "otp_hash": otp_hash,
+    }
     challenge_cookie = encrypt_payload({
-        "user_id": user.user_id if user else None,
+        "challenge_id": challenge_id,
+        "user_id": user["user_id"] if user else None,
         "email": normalized_email,
-        "otp": otp,
+        "otp_hash": otp_hash,
         "ip_address": ip_address,
         "expires_at": (now + timedelta(seconds=settings.OTP_EXPIRES_SECONDS)).timestamp(),
         "last_sent_at": now.timestamp(),
         "resend_count": 0,
     })
-    try:
-        _send_login_otp(normalized_email, otp)
-    except Exception:
-        raise
+    _send_login_otp(normalized_email, otp)
     return LoginChallengeResponse(
         expires_in=settings.OTP_EXPIRES_SECONDS,
         email=_mask_email(normalized_email),
@@ -262,22 +345,37 @@ def verify_login_otp(db: Session, otp_data: VerifyOtpRequest, ip_address: str, c
     now = datetime.now(timezone.utc)
     if challenge.get("ip_address") != ip_address or float(challenge.get("expires_at", 0)) <= now.timestamp():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired verification code.")
-    if not secrets.compare_digest(str(challenge.get("otp")), otp_data.otp):
+    challenge_id = str(challenge.get("challenge_id", ""))
+    challenge_state = _otp_challenges.setdefault(
+        challenge_id,
+        {"attempts": 0, "consumed": False},
+    )
+    if bool(challenge_state["consumed"]):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired verification code.")
+    if int(challenge_state["attempts"]) >= settings.OTP_MAX_ATTEMPTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many verification attempts. Please start again.")
+    submitted_otp_hash = hashlib.sha256(otp_data.otp.encode("utf-8")).hexdigest()
+    expected_otp_hash = str(challenge_state.get("otp_hash", challenge.get("otp_hash")))
+    if not secrets.compare_digest(expected_otp_hash, submitted_otp_hash):
+        challenge_state["attempts"] = int(challenge_state["attempts"]) + 1
         _record_failed_login(db, ip_address)
+        if int(challenge_state["attempts"]) >= settings.OTP_MAX_ATTEMPTS:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many verification attempts. Please start again.")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
 
+    challenge_state["consumed"] = True
     user_id = challenge.get("user_id")
-    user = db.query(User).filter(User.user_id == user_id).first() if user_id else None
+    user = _get_application_user(user_id=int(user_id)) if user_id else None
     if user:
-        update_last_login_at(db, user.user_id)
-        user_info = get_current_user_info(db, user.user_id)
+        _update_application_user_login(int(user["user_id"]))
+        user_info = _application_user_response(user)
     else:
         user_info = UserResponse(user_id=0, email=challenge["email"], name=challenge["email"].split("@")[0], company_id=None, is_admin=False)
     access_token = create_jwt_token(
-        user_id=user.user_id if user else 1,
+        user_id=int(user["user_id"]) if user else 1,
         email=challenge["email"],
-        is_admin=user.is_admin if user else False,
-        company_id=user.company_id if user else None,
+        is_admin=bool(user["is_admin"]) if user else False,
+        company_id=int(user["company_id"]) if user and user["company_id"] is not None else None,
     )
     return TokenResponse(access_token=access_token, user=user_info)
 
@@ -296,7 +394,15 @@ def resend_login_otp(db: Session, ip_address: str, cookie_value: str | None) -> 
         _record_failed_login(db, ip_address)
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Too many resend requests. Try again in {settings.LOGIN_LOCKOUT_MINUTES} minutes.")
     otp = f"{secrets.randbelow(1_000_000):06d}"
-    challenge["otp"] = otp
+    challenge["otp_hash"] = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+    challenge_id = str(challenge.get("challenge_id", ""))
+    challenge_state = _otp_challenges.get(challenge_id)
+    if challenge_state is None:
+        challenge_state = {"attempts": 0, "consumed": False}
+        _otp_challenges[challenge_id] = challenge_state
+    challenge_state["otp_hash"] = challenge["otp_hash"]
+    challenge_state["attempts"] = 0
+    challenge_state["consumed"] = False
     challenge["expires_at"] = (now + timedelta(seconds=settings.OTP_EXPIRES_SECONDS)).timestamp()
     challenge["last_sent_at"] = now.timestamp()
     challenge["resend_count"] = int(challenge["resend_count"]) + 1
