@@ -80,14 +80,34 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
 export const ADMIN_USER: User = SEEDED_ACCOUNTS[0]
 export const AUDITOR_USER: User = SEEDED_ACCOUNTS[2]
 const SESSION_STORAGE_KEY = 'mct_session_user'
+const ACCESS_TOKEN_KEY = 'mct_access_token'
+const LAST_ACTIVITY_KEY = 'mct_last_activity'
+const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000
 
 function getInitialUser(): User {
   if (typeof window !== 'undefined') {
     try {
       const stored = sessionStorage.getItem(SESSION_STORAGE_KEY)
-      if (stored) {
+      const token = sessionStorage.getItem(ACCESS_TOKEN_KEY)
+      const lastActivity = Number(sessionStorage.getItem(LAST_ACTIVITY_KEY))
+      const tokenPayload = token
+        ? JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+        : null
+      const tokenIsValid =
+        tokenPayload &&
+        typeof tokenPayload.exp === 'number' &&
+        tokenPayload.exp * 1000 > Date.now()
+      if (
+        stored &&
+        tokenIsValid &&
+        Number.isFinite(lastActivity) &&
+        Date.now() - lastActivity < SESSION_IDLE_TIMEOUT_MS
+      ) {
         return JSON.parse(stored)
       }
+      sessionStorage.removeItem(SESSION_STORAGE_KEY)
+      sessionStorage.removeItem(ACCESS_TOKEN_KEY)
+      sessionStorage.removeItem(LAST_ACTIVITY_KEY)
     } catch {
       // ignore
     }
@@ -141,9 +161,16 @@ export function detectUserByEmail(email: string): User {
 
 let inMemorySessionUser: User | null = getInitialUser()
 async function request<T>(path: string, body: unknown): Promise<T> {
+  const token =
+    typeof window !== 'undefined'
+      ? sessionStorage.getItem(ACCESS_TOKEN_KEY)
+      : null
   const response = await fetch(`/api/v1/auth${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   })
   const responseText = await response.text()
@@ -181,6 +208,11 @@ function mapUser(user: {
 }
 
 export const authService = {
+  touchSessionActivity(): void {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
+    }
+  },
   /**
    * Validates credentials and starts an email OTP challenge.
    */
@@ -217,13 +249,20 @@ export const authService = {
    * Clears session.
    */
   async signOut(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    inMemorySessionUser = null
-    if (typeof window !== 'undefined') {
-      try {
-        sessionStorage.removeItem(SESSION_STORAGE_KEY)
-      } catch {
-        // ignore
+    try {
+      if (typeof window !== 'undefined' && sessionStorage.getItem(ACCESS_TOKEN_KEY)) {
+        await request('/logout', {})
+      }
+    } finally {
+      inMemorySessionUser = null
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.removeItem(ACCESS_TOKEN_KEY)
+          sessionStorage.removeItem(SESSION_STORAGE_KEY)
+          sessionStorage.removeItem(LAST_ACTIVITY_KEY)
+        } catch {
+          // ignore storage cleanup failures
+        }
       }
     }
   },
@@ -244,7 +283,9 @@ export const authService = {
     inMemorySessionUser = mapped
     if (typeof window !== 'undefined') {
       try {
+        sessionStorage.setItem(ACCESS_TOKEN_KEY, response.access_token)
         sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(mapped))
+        sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
       } catch {
         // ignore
       }
@@ -265,12 +306,8 @@ export const authService = {
         expiresIn: response.expires_in,
         resendAvailableIn: response.resend_available_in,
       }
-    } catch {
-      // Fallback stub for dev without backend
-      return {
-        expiresIn: 300,
-        resendAvailableIn: 60,
-      }
+    } catch (error) {
+      throw error
     }
   },
 }

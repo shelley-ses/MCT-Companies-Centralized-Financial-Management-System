@@ -189,9 +189,11 @@ def create_jwt_token(
     email: str,
     is_admin: bool = False,
     company_id: Optional[int] = None,
-    expires_delta_seconds: int = 86400,
+    expires_delta_seconds: int | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
+    if expires_delta_seconds is None:
+        expires_delta_seconds = settings.SESSION_IDLE_TIMEOUT_SECONDS
     expiration = now + timedelta(seconds=expires_delta_seconds)
 
     payload = {
@@ -201,6 +203,7 @@ def create_jwt_token(
         "role": "admin" if is_admin else "authenticated",
         "iat": int(now.timestamp()),
         "exp": int(expiration.timestamp()),
+        "jti": secrets.token_urlsafe(24),
         "app_metadata": {
             "is_admin": is_admin,
             "company_id": company_id,
@@ -311,11 +314,18 @@ def login_user(db: Session, login_data: LoginRequest, ip_address: str) -> tuple[
 
     otp = f"{secrets.randbelow(1_000_000):06d}"
     now = datetime.now(timezone.utc)
+    challenge_id = secrets.token_urlsafe(24)
+    otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+    _otp_challenges[challenge_id] = {
+        "attempts": 0,
+        "consumed": False,
+        "otp_hash": otp_hash,
+    }
     challenge_cookie = encrypt_payload({
-        "challenge_id": secrets.token_urlsafe(24),
+        "challenge_id": challenge_id,
         "user_id": user["user_id"] if user else None,
         "email": normalized_email,
-        "otp_hash": hashlib.sha256(otp.encode("utf-8")).hexdigest(),
+        "otp_hash": otp_hash,
         "ip_address": ip_address,
         "expires_at": (now + timedelta(seconds=settings.OTP_EXPIRES_SECONDS)).timestamp(),
         "last_sent_at": now.timestamp(),
@@ -345,7 +355,8 @@ def verify_login_otp(db: Session, otp_data: VerifyOtpRequest, ip_address: str, c
     if int(challenge_state["attempts"]) >= settings.OTP_MAX_ATTEMPTS:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many verification attempts. Please start again.")
     submitted_otp_hash = hashlib.sha256(otp_data.otp.encode("utf-8")).hexdigest()
-    if not secrets.compare_digest(str(challenge.get("otp_hash")), submitted_otp_hash):
+    expected_otp_hash = str(challenge_state.get("otp_hash", challenge.get("otp_hash")))
+    if not secrets.compare_digest(expected_otp_hash, submitted_otp_hash):
         challenge_state["attempts"] = int(challenge_state["attempts"]) + 1
         _record_failed_login(db, ip_address)
         if int(challenge_state["attempts"]) >= settings.OTP_MAX_ATTEMPTS:
@@ -384,6 +395,14 @@ def resend_login_otp(db: Session, ip_address: str, cookie_value: str | None) -> 
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Too many resend requests. Try again in {settings.LOGIN_LOCKOUT_MINUTES} minutes.")
     otp = f"{secrets.randbelow(1_000_000):06d}"
     challenge["otp_hash"] = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+    challenge_id = str(challenge.get("challenge_id", ""))
+    challenge_state = _otp_challenges.get(challenge_id)
+    if challenge_state is None:
+        challenge_state = {"attempts": 0, "consumed": False}
+        _otp_challenges[challenge_id] = challenge_state
+    challenge_state["otp_hash"] = challenge["otp_hash"]
+    challenge_state["attempts"] = 0
+    challenge_state["consumed"] = False
     challenge["expires_at"] = (now + timedelta(seconds=settings.OTP_EXPIRES_SECONDS)).timestamp()
     challenge["last_sent_at"] = now.timestamp()
     challenge["resend_count"] = int(challenge["resend_count"]) + 1

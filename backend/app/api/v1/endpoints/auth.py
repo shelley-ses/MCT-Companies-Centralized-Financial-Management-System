@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core.config import settings
 from app.core.dependencies import get_current_user, AuthenticatedUser
+from app.core.security import get_access_token, revoke_access_token
 from app.schemas.auth import (
     LoginRequest, LoginChallengeResponse, VerifyOtpRequest,
     OtpResponse,
@@ -58,8 +59,11 @@ def resend_otp(
 def logout(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
+    token: str = Depends(get_access_token),
 ):
-    return logout_user(db=db)
+    result = logout_user(db=db, token=token)
+    revoke_access_token(token)
+    return result
 
 # get current user profile
 @router.get("/me", response_model=UserResponse, summary="Get Current User Profile")

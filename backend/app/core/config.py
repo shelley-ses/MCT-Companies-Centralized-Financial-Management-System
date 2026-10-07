@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     OTP_RESEND_LIMIT: int = 5
     OTP_RESEND_INTERVAL_SECONDS: int = 120
     OTP_EXPIRES_SECONDS: int = 180
+    SESSION_IDLE_TIMEOUT_SECONDS: int = 7200
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

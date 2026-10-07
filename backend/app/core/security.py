@@ -16,6 +16,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 _SUPPORTED_ALGORITHM = "HS256"
+_revoked_tokens: set[str] = set()
+
+
+def revoke_access_token(token: str) -> None:
+    _revoked_tokens.add(hashlib.sha256(token.encode("utf-8")).hexdigest())
 
 #get
 def get_access_token(
@@ -44,6 +49,8 @@ def verify_token(token: Annotated[str, Depends(get_access_token)]) -> dict[str, 
     secret = settings.SUPABASE_JWT_SECRET
     if not secret:
         raise RuntimeError("SUPABASE_JWT_SECRET is not configured. Set it in backend/.env.")
+    if hashlib.sha256(token.encode("utf-8")).hexdigest() in _revoked_tokens:
+        raise _invalid_token("Access token has been revoked.")
 
     try:
         header_segment, payload_segment, signature_segment = token.split(".")
