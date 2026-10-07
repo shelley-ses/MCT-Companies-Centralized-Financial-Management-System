@@ -15,6 +15,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { useSession } from '@/hooks/useSession'
 import { cn } from '@/lib/utils'
 
 interface AppSidebarProps {
@@ -26,12 +27,25 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onItemClick,
   className,
 }) => {
+  const { user } = useSession()
   const location = useLocation()
   // Sales collapsible group is expanded by default per specification and mockup
   const [isSalesOpen, setIsSalesOpen] = React.useState(true)
 
   // Determine if current route is within Sales
   const isSalesActive = location.pathname.startsWith('/sales')
+
+  const userRole = user?.role === 'Company Auditor' ? 'Company Auditor' : 'Admin'
+
+  const filteredMainItems = React.useMemo(
+    () => MAIN_NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(userRole)),
+    [userRole]
+  )
+
+  const filteredSecondaryItems = React.useMemo(
+    () => SECONDARY_NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(userRole)),
+    [userRole]
+  )
 
   return (
     <aside
@@ -42,20 +56,20 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     >
       <div className="flex flex-col">
         {/* Logo Lockup using LOGO2.png and MCT2.png with Group of Companies */}
-        <div className="px-6 pt-6 pb-6">
+        <div className="pl-6 pr-4 pt-6 pb-2">
           <div className="flex items-center gap-3">
             <img
               src={logo2Url}
               alt="MCT Logo"
-              className="h-11 w-auto object-contain shrink-0"
+              className="h-10 sm:h-11 w-auto object-contain shrink-0"
             />
-            <div className="flex flex-col justify-center">
+            <div className="flex flex-col justify-center items-start">
               <img
                 src={mct2Url}
                 alt="MCT"
-                className="h-6 sm:h-6.5 w-auto object-contain"
+                className="h-4.5 sm:h-5 w-auto object-contain object-left block"
               />
-              <span className="text-[10px] sm:text-[11px] font-semibold text-muted-fg tracking-wider uppercase pl-0.5 mt-0.5">
+              <span className="text-[10px] font-medium text-muted-fg tracking-tight leading-tight mt-0.5 whitespace-nowrap">
                 Group of Companies
               </span>
             </div>
@@ -63,10 +77,15 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         </div>
 
         {/* Navigation */}
-        <nav aria-label="Main Navigation" className="flex flex-col">
+        <nav aria-label="Main Navigation" className="flex flex-col mt-6 sm:mt-7">
+          {/* GENERAL Section Header */}
+          <div className="px-6 pb-2 text-[10.5px] font-semibold tracking-wider text-muted-fg/80 uppercase select-none">
+            GENERAL
+          </div>
+
           {/* Main items (Dashboard, Sales, Expense, Loan) */}
-          <div className="px-4 space-y-1">
-            {MAIN_NAV_ITEMS.map((item: NavItem) => {
+          <div className="px-3.5 space-y-1">
+            {filteredMainItems.map((item: NavItem) => {
               const Icon = item.icon
 
               // Collapsible Sales group with sub-items
@@ -76,31 +95,31 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     key={item.id}
                     open={isSalesOpen}
                     onOpenChange={setIsSalesOpen}
-                    className="w-full space-y-1"
+                    className="w-full space-y-0.5"
                   >
                     <CollapsibleTrigger
                       className={cn(
-                        'flex w-full items-center justify-between rounded-lg px-3.5 py-3 text-base font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
                         isSalesActive
                           ? 'text-primary bg-primary/10'
                           : 'text-focus hover:bg-surface'
                       )}
                       aria-expanded={isSalesOpen}
                     >
-                      <div className="flex items-center gap-3.5">
-                        <Icon className="h-5 w-5 shrink-0" />
+                      <div className="flex items-center gap-3">
+                        <Icon className="h-4.5 w-4.5 shrink-0" />
                         <span>{item.title}</span>
                       </div>
                       <ChevronDown
                         className={cn(
-                          'h-4 w-4 shrink-0 transition-transform duration-200 text-muted-fg',
+                          'h-3.5 w-3.5 shrink-0 transition-transform duration-200 text-muted-fg',
                           isSalesOpen && 'rotate-180'
                         )}
                         aria-hidden="true"
                       />
                     </CollapsibleTrigger>
 
-                    <CollapsibleContent className="space-y-1 pl-11 pt-0.5">
+                    <CollapsibleContent className="space-y-0.5 pl-9 pt-0.5 pb-0.5">
                       {item.subItems.map((subItem) => (
                         <NavLink
                           key={subItem.id}
@@ -108,9 +127,9 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                           onClick={onItemClick}
                           className={({ isActive }) =>
                             cn(
-                              'block rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                              'block rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
                               isActive
-                                ? 'text-primary font-bold'
+                                ? 'text-primary font-semibold'
                                 : 'text-muted-fg hover:text-focus hover:bg-surface/60'
                             )
                           }
@@ -131,14 +150,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                   onClick={onItemClick}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3.5 rounded-lg px-3.5 py-3 text-base font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
                       isActive
                         ? 'text-primary bg-primary/10'
                         : 'text-focus hover:bg-surface'
                     )
                   }
                 >
-                  <Icon className="h-5 w-5 shrink-0" />
+                  <Icon className="h-4.5 w-4.5 shrink-0" />
                   <span>{item.title}</span>
                 </NavLink>
               )
@@ -146,11 +165,16 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           </div>
 
           {/* Line separator after Loan (edge-to-edge divider per picture) */}
-          <Separator className="my-5 bg-stroke/40" />
+          <Separator className="my-3 sm:my-3.5 bg-stroke/40" />
 
-          {/* Secondary Nav Items (Employee, Settings) */}
-          <div className="px-4 space-y-1">
-            {SECONDARY_NAV_ITEMS.map((item: NavItem) => {
+          {/* OPERATIONS Section Header */}
+          <div className="px-6 pb-1.5 text-[10px] font-semibold tracking-wider text-muted-fg/80 uppercase select-none">
+            OPERATIONS
+          </div>
+
+          {/* Secondary Nav Items (Employee for Admin, Settings for both) */}
+          <div className="px-3.5 space-y-1">
+            {filteredSecondaryItems.map((item: NavItem) => {
               const Icon = item.icon
               return (
                 <NavLink
@@ -159,14 +183,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                   onClick={onItemClick}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3.5 rounded-lg px-3.5 py-3 text-base font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
                       isActive
                         ? 'text-primary bg-primary/10'
                         : 'text-focus hover:bg-surface'
                     )
                   }
                 >
-                  <Icon className="h-5 w-5 shrink-0" />
+                  <Icon className="h-4.5 w-4.5 shrink-0" />
                   <span>{item.title}</span>
                 </NavLink>
               )
@@ -178,7 +202,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       {/* User Info Block & Logout at bottom with edge-to-edge top divider per picture */}
       <div className="mt-auto">
         <Separator className="bg-stroke/40" />
-        <div className="p-6">
+        <div className="p-4 sm:p-4.5">
           <NavUserBlock />
         </div>
       </div>

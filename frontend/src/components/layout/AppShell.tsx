@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Outlet } from 'react-router-dom'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { MobileTopBar } from '@/components/layout/MobileTopBar'
+import { TopHeader } from '@/components/layout/TopHeader'
 
 interface AppShellProps {
   children?: React.ReactNode
@@ -18,10 +19,15 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
         <AppSidebar />
       </div>
 
-      {/* Main Content Area */}
-      <main className="flex-1 min-h-[calc(100vh-4rem)] lg:min-h-screen p-4 sm:p-6 lg:p-8 bg-surface overflow-x-hidden">
-        {children || <Outlet />}
-      </main>
+      {/* Right Column: Top Notification Header + Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="hidden lg:block">
+          <TopHeader />
+        </div>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-surface overflow-x-hidden">
+          {children || <Outlet />}
+        </main>
+      </div>
     </div>
   )
 }

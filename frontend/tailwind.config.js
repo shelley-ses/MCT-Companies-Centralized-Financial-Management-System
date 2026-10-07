@@ -57,10 +57,67 @@ export default {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
+        'sphere-float-1': {
+          '0%, 100%': {
+            transform: 'translate3d(0px, 0px, 0px) scale(1) rotate(0deg)',
+          },
+          '25%': {
+            transform: 'translate3d(24px, -26px, 0px) scale(1.06) rotate(4deg)',
+          },
+          '50%': {
+            transform: 'translate3d(-20px, 18px, 0px) scale(0.95) rotate(-3deg)',
+          },
+          '75%': {
+            transform: 'translate3d(18px, 24px, 0px) scale(1.04) rotate(2deg)',
+          },
+        },
+        'sphere-float-2': {
+          '0%, 100%': {
+            transform: 'translate3d(0px, 0px, 0px) scale(1) rotate(0deg)',
+          },
+          '30%': {
+            transform: 'translate3d(32px, 28px, 0px) scale(1.05) rotate(-5deg)',
+          },
+          '60%': {
+            transform: 'translate3d(-24px, 36px, 0px) scale(0.96) rotate(3deg)',
+          },
+          '85%': {
+            transform: 'translate3d(18px, -20px, 0px) scale(1.03) rotate(-2deg)',
+          },
+        },
+        'sphere-float-3': {
+          '0%, 100%': {
+            transform: 'translate3d(0px, 0px, 0px) scale(1) rotate(0deg)',
+          },
+          '20%': {
+            transform: 'translate3d(-28px, -24px, 0px) scale(1.05) rotate(3deg)',
+          },
+          '50%': {
+            transform: 'translate3d(28px, -32px, 0px) scale(0.95) rotate(-4deg)',
+          },
+          '75%': {
+            transform: 'translate3d(-18px, 22px, 0px) scale(1.02) rotate(2deg)',
+          },
+        },
+        'sphere-float-accent': {
+          '0%, 100%': {
+            transform: 'translate3d(0px, 0px, 0px) scale(0.96)',
+          },
+          '35%': {
+            transform: 'translate3d(-22px, 26px, 0px) scale(1.08)',
+          },
+          '70%': {
+            transform: 'translate3d(24px, -20px, 0px) scale(1.02)',
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'sphere-float-1': 'sphere-float-1 13s ease-in-out infinite',
+        'sphere-float-2': 'sphere-float-2 17s ease-in-out infinite',
+        'sphere-float-3': 'sphere-float-3 15s ease-in-out infinite',
+        'sphere-float-accent': 'sphere-float-accent 11s ease-in-out infinite',
       },
     },
   },

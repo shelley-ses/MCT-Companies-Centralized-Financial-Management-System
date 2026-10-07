@@ -32,7 +32,7 @@ export const NavUserBlock: React.FC = () => {
   return (
     <div className="w-full">
       <div className="flex items-center gap-3 mb-3">
-        <Avatar className="h-10 w-10 border-2 border-primary bg-white">
+        <Avatar className="h-10 w-10 border-2 border-primary bg-white shrink-0">
           {user?.avatarUrl && (
             <AvatarImage
               src={user.avatarUrl}
@@ -49,7 +49,7 @@ export const NavUserBlock: React.FC = () => {
           <span className="text-sm font-bold text-focus truncate">
             {user?.fullName ?? ''}
           </span>
-          <span className="text-xs font-semibold text-primary truncate">
+          <span className="text-[11px] font-semibold text-primary truncate">
             {user?.role ?? ''}
           </span>
         </div>

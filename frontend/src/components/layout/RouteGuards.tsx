@@ -56,3 +56,24 @@ export const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
 
   return <>{children}</>
 }
+
+export const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const { user, status } = useSession()
+
+  if (status === 'loading') {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-surface p-8">
+        <Skeleton className="h-64 w-full max-w-4xl rounded-lg" />
+      </div>
+    )
+  }
+
+  // Company Auditor has no access to Company / User Management (Admin only)
+  if (user?.role === 'Company Auditor') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
