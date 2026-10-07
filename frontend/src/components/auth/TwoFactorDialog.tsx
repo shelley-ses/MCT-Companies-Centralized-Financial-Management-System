@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/input-otp'
 import { Button } from '@/components/ui/button'
 import { useSession } from '@/hooks/useSession'
+import { useCountdown } from '@/hooks/useCountdown'
 
 interface TwoFactorDialogProps {
   open: boolean
@@ -24,15 +25,17 @@ interface TwoFactorDialogProps {
 export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { verify2FA, complete2FA } = useSession()
+  const { verify2FA, resend2FA, complete2FA } = useSession()
   const [code, setCode] = React.useState('')
   const [error, setError] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(false)
   const [isSuccess, setIsSuccess] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const resendCountdown = useCountdown({ initialSeconds: 120 })
 
   // Retrieve remembered path if available
   const fromState = (location.state as { from?: string | { pathname?: string } })?.from
+  const challengeEmail = (location.state as { email?: string })?.email
   const fromPath = typeof fromState === 'string' ? fromState : fromState?.pathname
   const safeRedirectPath =
     fromPath &&
@@ -128,8 +131,8 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
               </div>
               <DialogTitle>Two-Factor Authentication</DialogTitle>
               <DialogDescription>
-                Enter the 6-digit code from your authenticator app to complete
-                signing in.
+                Enter the 6-digit code sent to your registered email to complete
+                signing in{challengeEmail ? ` (${challengeEmail})` : ''}.
               </DialogDescription>
             </DialogHeader>
 
@@ -175,6 +178,11 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
                 </InputOTP>
 
               </div>
+              <div className="text-center text-sm text-muted-fg">
+                {resendCountdown.isExpired
+                  ? 'You can request a new code.'
+                  : `Resend available in ${resendCountdown.formattedTime}`}
+              </div>
 
               {/* Action Buttons */}
               <div className="flex flex-col gap-3">
@@ -191,6 +199,25 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
                   ) : (
                     'Verify & Sign In'
                   )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      setError(null)
+                      const result = await resend2FA()
+                      setCode('')
+                      resendCountdown.start(result.resendAvailableIn)
+                    } catch (err: unknown) {
+                      setError(err instanceof Error ? err.message : 'Unable to resend the code.')
+                    }
+                  }}
+                  disabled={!resendCountdown.isExpired || isLoading}
+                  className="w-full h-12 text-base font-medium"
+                >
+                  Resend Code
                 </Button>
 
                 <Button

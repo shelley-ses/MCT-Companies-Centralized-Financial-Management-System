@@ -225,3 +225,12 @@ node_modules/
 dist/
 venv/
 .venv/
+
+# Backend virtual environment
+backend/venv/
+
+# NGINX SSL certificates (never commit to git)
+nginx/ssl/
+
+# Docker build artifacts
+*.log

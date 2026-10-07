@@ -5,9 +5,10 @@ import binascii
 import hashlib
 import hmac
 import json
-import os
 import time
 from typing import Any, Annotated
+
+from app.core.config import settings
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -40,9 +41,9 @@ def verify_token(token: Annotated[str, Depends(get_access_token)]) -> dict[str, 
     Tokens are rejected when they have an invalid signature, missing subject,
     expired timestamps, an invalid audience, or an invalid issuer.
     """
-    secret = os.getenv("SUPABASE_JWT_SECRET")
+    secret = settings.SUPABASE_JWT_SECRET
     if not secret:
-        raise RuntimeError("SUPABASE_JWT_SECRET is not configured.")
+        raise RuntimeError("SUPABASE_JWT_SECRET is not configured. Set it in backend/.env.")
 
     try:
         header_segment, payload_segment, signature_segment = token.split(".")
@@ -70,11 +71,11 @@ def verify_token(token: Annotated[str, Depends(get_access_token)]) -> dict[str, 
     _validate_numeric_timestamp(payload, "exp", now, must_be_present=True)
     _validate_numeric_timestamp(payload, "nbf", now, must_be_present=False)
 
-    expected_audience = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
+    expected_audience = settings.SUPABASE_JWT_AUDIENCE or "authenticated"
     if payload.get("aud") != expected_audience:
         raise _invalid_token("Invalid access token audience.")
 
-    expected_issuer = os.getenv("SUPABASE_JWT_ISSUER")
+    expected_issuer = settings.SUPABASE_JWT_ISSUER
     if expected_issuer and payload.get("iss") != expected_issuer:
         raise _invalid_token("Invalid access token issuer.")
 

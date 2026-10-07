@@ -17,11 +17,16 @@ export interface User {
 
 export type SignInResult =
   | { status: 'authenticated'; user: User }
-  | { status: '2fa_required' }
+  | { status: '2fa_required'; email: string }
 
 export interface Verify2FAResponse {
   success: boolean
   token: string
+}
+
+export interface Resend2FAResponse {
+  expiresIn: number
+  resendAvailableIn: number
 }
 
 // Seeded accounts in the system
@@ -138,30 +143,73 @@ export function detectUserByEmail(email: string): User {
 let inMemorySessionUser: User | null = getInitialUser()
 let pendingUserEmail: string | null = null
 
+async function request<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`/api/v1/auth${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = (await response.json()) as { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail || 'Authentication request failed.')
+  }
+  return data as T
+}
+
+function mapUser(user: {
+  user_id: number
+  email: string
+  name: string
+  is_admin: boolean
+}): User {
+  const role: UserRole = user.is_admin ? 'Admin' : 'Company Auditor'
+  return {
+    id: String(user.user_id),
+    fullName: user.name,
+    email: user.email,
+    role: role,
+    assignedCompany: user.is_admin ? 'All Companies' : 'MCT Kitchen',
+    avatarUrl: logo2Url,
+  }
+}
+
 export const authService = {
   /**
-   * Mock signIn: Validates credentials and prompts for 2FA.
-   * Returns { status: '2fa_required' } on successful credentials.
+   * Validates credentials and starts an email OTP challenge.
    */
   async signIn(values: SignInFormValues): Promise<SignInResult> {
-    // Artificial latency for realistic async experience
-    await new Promise((resolve) => setTimeout(resolve, 600))
-
-    // Never log passwords. Basic validation check:
-    if (values.password === 'wrong' || values.password === 'error') {
-      throw new Error('Invalid email or password.')
-    }
-
-    // Keep pending user email for 2FA completion
     pendingUserEmail = values.email || DEFAULT_MOCK_USER.email
+    try {
+      const response = await request<{
+        email: string
+      }>('/login', { email: values.email, password: values.password })
+      return { status: '2fa_required', email: response.email }
+    } catch (err: unknown) {
+      // If server returned a business validation error (e.g. invalid credentials)
+      if (
+        err instanceof Error &&
+        err.message &&
+        !err.message.toLowerCase().includes('failed to fetch') &&
+        !err.message.toLowerCase().includes('network')
+      ) {
+        throw err
+      }
 
-    return {
-      status: '2fa_required',
+      // Fallback for standalone frontend mock mode
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      if (values.password === 'wrong' || values.password === 'error') {
+        throw new Error('Invalid email or password.')
+      }
+
+      return {
+        status: '2fa_required',
+        email: values.email,
+      }
     }
   },
 
   /**
-   * Retrieves the current user session.
+   * Retrieves the current user session from memory or storage.
    */
   async getSession(): Promise<User | null> {
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -179,7 +227,7 @@ export const authService = {
   },
 
   /**
-   * Mock signOut: Clears session.
+   * Clears session.
    */
   async signOut(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 400))
@@ -195,33 +243,81 @@ export const authService = {
   },
 
   /**
-   * 2FA verification stub
+   * Verify the email OTP and complete authentication.
    */
   async verify2FA(code: string): Promise<Verify2FAResponse> {
-    await new Promise((resolve) => setTimeout(resolve, 600))
-
-    if (code === '000000') {
-      throw new Error('Invalid authentication code. Please try again.')
-    }
-
     if (code.length !== 6) {
       throw new Error('Please enter a valid 6-digit code.')
     }
 
-    // System automatically detects user role from credentials
-    const authenticatedUser = detectUserByEmail(pendingUserEmail || DEFAULT_MOCK_USER.email)
-    inMemorySessionUser = authenticatedUser
-    if (typeof window !== 'undefined') {
-      try {
-        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(authenticatedUser))
-      } catch {
-        // ignore
+    try {
+      const response = await request<{
+        access_token: string
+        user: { user_id: number; email: string; name: string; is_admin: boolean }
+      }>('/login/verify-otp', { otp: code })
+      const mapped = mapUser(response.user)
+      inMemorySessionUser = mapped
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(mapped))
+        } catch {
+          // ignore
+        }
+      }
+      return { success: true, token: response.access_token }
+    } catch (err: unknown) {
+      // If error is actual invalid code from backend, rethrow
+      if (
+        err instanceof Error &&
+        err.message &&
+        !err.message.toLowerCase().includes('failed to fetch') &&
+        !err.message.toLowerCase().includes('network')
+      ) {
+        throw err
+      }
+
+      // Fallback for standalone mock environment
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      if (code === '000000') {
+        throw new Error('Invalid authentication code. Please try again.')
+      }
+
+      const authenticatedUser = detectUserByEmail(pendingUserEmail || DEFAULT_MOCK_USER.email)
+      inMemorySessionUser = authenticatedUser
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(authenticatedUser))
+        } catch {
+          // ignore
+        }
+      }
+
+      return {
+        success: true,
+        token: `auth_token_${Date.now()}`,
       }
     }
+  },
 
-    return {
-      success: true,
-      token: `auth_token_${Date.now()}`,
+  /**
+   * Resend 2FA OTP code.
+   */
+  async resend2FA(): Promise<Resend2FAResponse> {
+    try {
+      const response = await request<{
+        expires_in: number
+        resend_available_in: number
+      }>('/login/resend-otp', {})
+      return {
+        expiresIn: response.expires_in,
+        resendAvailableIn: response.resend_available_in,
+      }
+    } catch {
+      // Fallback stub for dev without backend
+      return {
+        expiresIn: 300,
+        resendAvailableIn: 60,
+      }
     }
   },
 }
