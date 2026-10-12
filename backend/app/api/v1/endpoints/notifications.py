@@ -46,7 +46,7 @@ def _resolve_company(
     summary="Get notifications (computed from audit logs + loan due dates)",
 )
 def get_notifications(
-    current_user: CurrentUser = Depends(),
+    current_user: CurrentUser,
     company_id: Optional[int] = Query(
         None, description="Admin only: filter by company ID"
     ),
@@ -93,7 +93,7 @@ def get_notifications(
     summary="Get total active notification count",
 )
 def notification_count(
-    current_user: CurrentUser = Depends(),
+    current_user: CurrentUser,
     company_id: Optional[int] = Query(None, description="Admin only: filter by company ID"),
     db: Session = Depends(get_db),
 ) -> NotificationCountOut:
