@@ -12,7 +12,7 @@ from app.services.user_service import (
 
 router = APIRouter()
 
-
+#get all users
 @router.get("", response_model=list[UserResponse], summary="List application users")
 def get_users(
     _: AdminUser,
@@ -24,7 +24,7 @@ def get_users(
     except UserServiceError as error:
         raise _service_http_error(error) from error
 
-
+#get a single user by ID
 @router.get("/{user_id}", response_model=UserResponse, summary="Get an application user")
 def get_user(user_id: int, _: AdminUser, db: Session = Depends(get_db)):
     try:
@@ -35,7 +35,7 @@ def get_user(user_id: int, _: AdminUser, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
-
+#create a new user
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Create an employee user")
 def create_user(user: UserCreate, _: AdminUser, db: Session = Depends(get_db)):
     try:
@@ -48,7 +48,7 @@ def create_user(user: UserCreate, _: AdminUser, db: Session = Depends(get_db)):
     except UserServiceError as error:
         raise _service_http_error(error) from error
 
-
+#update an existing user
 @router.patch("/{user_id}", response_model=UserResponse, summary="Update an application user")
 def update_user(
     user_id: int,
@@ -69,7 +69,7 @@ def update_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return result
 
-
+#delete a user by ID
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an application user")
 def delete_user(user_id: int, _: AdminUser, db: Session = Depends(get_db)):
     try:
@@ -79,7 +79,7 @@ def delete_user(user_id: int, _: AdminUser, db: Session = Depends(get_db)):
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-
+#return a 500 Internal Server Error for service errors
 def _service_http_error(error: UserServiceError) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

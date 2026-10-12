@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 from typing import Generator
@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
+# Database connection setup
 db_url = settings.DATABASE_URL
 if db_url and db_url.strip():
     if db_url.startswith("postgres://"):
@@ -32,16 +33,6 @@ def init_db():
     import app.models.staff_credit
     from app.models.company import Company
     Base.metadata.create_all(bind=engine)
-    if engine.dialect.name == "sqlite":
-        columns = {column["name"] for column in inspect(engine).get_columns("users")}
-        if "password_hash" not in columns:
-            with engine.begin() as connection:
-                connection.execute(
-                    text(
-                        "ALTER TABLE users ADD COLUMN password_hash "
-                        "VARCHAR(255) NOT NULL DEFAULT ''"
-                    )
-                )
 
     # Sync companies from Supabase if local table is empty
     try:
@@ -70,10 +61,8 @@ def init_db():
 
 init_db()
 
+# Dependency to get a database session for FastAPI endpoints
 def get_db() -> Generator:
-    """
-    FastAPI dependency that yields a SQLAlchemy database session.
-    """
     db = SessionLocal()
     try:
         yield db
