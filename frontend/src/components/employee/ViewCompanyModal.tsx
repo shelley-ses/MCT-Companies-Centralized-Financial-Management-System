@@ -115,6 +115,8 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
       onUpdate?.(updated)
       setIsConfirmEditOpen(false)
       setIsEditing(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to update company.')
     } finally {
       setIsSubmitting(false)
     }
@@ -127,6 +129,8 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
       onDelete?.(company.id)
       setIsConfirmDeleteOpen(false)
       onOpenChange(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to delete company.')
     } finally {
       setIsSubmitting(false)
     }

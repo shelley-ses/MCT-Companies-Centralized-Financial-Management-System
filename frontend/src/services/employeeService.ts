@@ -534,32 +534,6 @@ function mapUser(value: unknown): EmployeeUser {
     last_login_at: string | null
   }
 
-  function mapCompany(value: unknown): Company {
-    const company = value as {
-      company_id: number
-      company_name: string
-      location: string
-      contact_person: string
-      contact_number: string | null
-      phone: string | null
-      email: string
-      starting_balance: number
-      current_balance: number
-    }
-    return {
-      id: String(company.company_id),
-      name: company.company_name,
-      email: company.email,
-      address: company.location,
-      contactPerson: company.contact_person,
-      contactNumber: company.contact_number || '',
-      telephoneNumber: company.phone || '',
-      startingBalance: Number(company.starting_balance),
-      currentBalance: Number(company.current_balance),
-      status: 'Active',
-      createdAt: '',
-    }
-  }
   return {
     id: String(user.user_id),
     fullName: user.name,
@@ -571,6 +545,34 @@ function mapUser(value: unknown): EmployeeUser {
       ? new Date(user.last_login_at).toLocaleString()
       : 'Never',
     isAdmin: user.is_admin,
+  }
+}
+
+function mapCompany(value: unknown): Company {
+  const company = value as {
+    id: number
+    name: string
+    location: string
+    contact_person: string
+    contact_number: string | null
+    phone: string | null
+    email: string
+    starting_balance: number
+    current_balance: number
+    created_at: string | null
+  }
+  return {
+    id: String(company.id),
+    name: company.name,
+    email: company.email,
+    address: company.location,
+    contactPerson: company.contact_person,
+    contactNumber: company.contact_number || '',
+    telephoneNumber: company.phone || '',
+    startingBalance: Number(company.starting_balance),
+    currentBalance: Number(company.current_balance),
+    status: 'Active',
+    createdAt: company.created_at || '',
   }
 }
 
@@ -637,46 +639,53 @@ export const employeeService = {
   },
 
   async createCompany(payload: CreateCompanyPayload): Promise<Company> {
-    await new Promise((resolve) => setTimeout(resolve, 350))
-    const newCompany: Company = {
-      id: `comp_${Date.now()}`,
-      name: payload.name,
-      email: payload.email,
-      address: payload.address,
-      contactPerson: payload.contactPerson,
-      contactNumber: payload.contactNumber,
-      telephoneNumber: payload.telephoneNumber,
-      startingBalance: payload.startingBalance,
-      currentBalance: payload.currentBalance,
-      logoUrl: payload.logoUrl,
-      status: 'Active',
-      createdAt: new Date().toISOString().split('T')[0],
-    }
-
-    inMemoryCompanies = [newCompany, ...inMemoryCompanies]
-    return newCompany
+    const response = await fetch('/api/v1/companies', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: payload.name,
+        location: payload.address,
+        contact_person: payload.contactPerson,
+        contact_number: payload.contactNumber || null,
+        phone: payload.telephoneNumber || null,
+        email: payload.email,
+        starting_balance: payload.startingBalance,
+        current_balance: payload.currentBalance,
+      }),
+    })
+    return mapApiResponse(response, mapCompany)
   },
 
   async updateCompany(
     id: string,
     payload: Partial<CreateCompanyPayload>
   ): Promise<Company> {
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const index = inMemoryCompanies.findIndex((c) => c.id === id)
-    if (index === -1) {
-      throw new Error('Company not found')
-    }
-    const updated: Company = {
-      ...inMemoryCompanies[index],
-      ...payload,
-    }
-    inMemoryCompanies[index] = updated
-    return updated
+    const body: Record<string, unknown> = {}
+    if (payload.name !== undefined) body.name = payload.name
+    if (payload.address !== undefined) body.location = payload.address
+    if (payload.contactPerson !== undefined) body.contact_person = payload.contactPerson
+    if (payload.contactNumber !== undefined) body.contact_number = payload.contactNumber || null
+    if (payload.telephoneNumber !== undefined) body.phone = payload.telephoneNumber || null
+    if (payload.email !== undefined) body.email = payload.email
+    if (payload.startingBalance !== undefined) body.starting_balance = payload.startingBalance
+    if (payload.currentBalance !== undefined) body.current_balance = payload.currentBalance
+
+    const response = await fetch(`/api/v1/companies/${id}`, {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return mapApiResponse(response, mapCompany)
   },
 
   async deleteCompany(id: string): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    inMemoryCompanies = inMemoryCompanies.filter((c) => c.id !== id)
+    const response = await fetch(`/api/v1/companies/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
   },
 
   async getActivityLogs(): Promise<ActivityLogItem[]> {

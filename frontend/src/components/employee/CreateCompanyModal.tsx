@@ -78,6 +78,8 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
       onSuccess?.(created)
       setIsConfirmOpen(false)
       onOpenChange(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to create company.')
     } finally {
       setIsSubmitting(false)
     }
