@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 from typing import Generator
@@ -32,6 +32,16 @@ def init_db():
     import app.models.staff_credit
     from app.models.company import Company
     Base.metadata.create_all(bind=engine)
+    if engine.dialect.name == "sqlite":
+        columns = {column["name"] for column in inspect(engine).get_columns("users")}
+        if "password_hash" not in columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN password_hash "
+                        "VARCHAR(255) NOT NULL DEFAULT ''"
+                    )
+                )
 
     # Sync companies from Supabase if local table is empty
     try:
@@ -69,4 +79,3 @@ def get_db() -> Generator:
         yield db
     finally:
         db.close()
-

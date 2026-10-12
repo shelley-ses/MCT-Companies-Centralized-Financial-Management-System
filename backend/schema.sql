@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     company_id BIGINT REFERENCES company(company_id) ON DELETE SET NULL,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
     last_login_at TIMESTAMPTZ,
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
