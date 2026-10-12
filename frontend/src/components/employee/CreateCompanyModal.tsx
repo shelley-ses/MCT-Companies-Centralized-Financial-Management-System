@@ -46,6 +46,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
       email: '',
       address: '',
       contactPerson: '',
+      contactPersonEmail: '',
       contactNumber: '',
       telephoneNumber: '',
       startingBalance: 0,
@@ -121,32 +122,31 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
               )}
             />
 
-            {/* Company Email */}
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field, fieldState }) => (
-                <FormItem className="space-y-1.5">
-                  <Label htmlFor="company-email" className="text-xs sm:text-sm font-medium text-focus/90">
-                    Company Email <span className="text-red-500">*</span>
-                  </Label>
-                  <FormControl>
-                    <Input
-                      id="company-email"
-                      type="email"
-                      placeholder="e.g. logistics@mctgroup.com"
-                      className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
-                      aria-invalid={!!fieldState.error}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage className="text-xs text-error" />
-                </FormItem>
-              )}
-            />
-
-            {/* Address & Contact Person */}
+            {/* Company Email & Address */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field, fieldState }) => (
+                  <FormItem className="space-y-1.5">
+                    <Label htmlFor="company-email" className="text-xs sm:text-sm font-medium text-focus/90">
+                      Company Email <span className="text-red-500">*</span>
+                    </Label>
+                    <FormControl>
+                      <Input
+                        id="company-email"
+                        type="email"
+                        placeholder="e.g. logistics@mctgroup.com"
+                        className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
+                        aria-invalid={!!fieldState.error}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage className="text-xs text-error" />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="address"
@@ -168,7 +168,10 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                   </FormItem>
                 )}
               />
+            </div>
 
+            {/* Contact Person Name & Contact Person Email */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="contactPerson"
@@ -190,6 +193,29 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="contactPersonEmail"
+                render={({ field, fieldState }) => (
+                  <FormItem className="space-y-1.5">
+                    <Label htmlFor="contact-person-email" className="text-xs sm:text-sm font-medium text-focus/90">
+                      Email Address of Contact Person <span className="text-red-500">*</span>
+                    </Label>
+                    <FormControl>
+                      <Input
+                        id="contact-person-email"
+                        type="email"
+                        placeholder="e.g. juan@mctgroup.com"
+                        className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
+                        aria-invalid={!!fieldState.error}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage className="text-xs text-error" />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {/* Contact Number & Telephone Number */}
@@ -200,15 +226,22 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="contact-number" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Contact Number <span className="text-red-500">*</span>
+                      Contact Number <span className="text-red-500">*</span> <span className="text-muted-fg text-xs font-normal">(11 digits)</span>
                     </Label>
                     <FormControl>
                       <Input
                         id="contact-number"
-                        placeholder="e.g. +63 917 123 4567"
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={11}
+                        placeholder="e.g. 09171234567"
+                        value={field.value}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 11)
+                          field.onChange(val)
+                        }}
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
-                        {...field}
                       />
                     </FormControl>
                     <FormMessage className="text-xs text-error" />
@@ -222,15 +255,22 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="telephone-number" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Telephone Number <span className="text-red-500">*</span>
+                      Telephone Number <span className="text-muted-fg text-xs font-normal">(Optional, 8 digits)</span>
                     </Label>
                     <FormControl>
                       <Input
                         id="telephone-number"
-                        placeholder="e.g. (02) 8123-4567"
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={8}
+                        placeholder="e.g. 81234567"
+                        value={field.value}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 8)
+                          field.onChange(val)
+                        }}
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
-                        {...field}
                       />
                     </FormControl>
                     <FormMessage className="text-xs text-error" />

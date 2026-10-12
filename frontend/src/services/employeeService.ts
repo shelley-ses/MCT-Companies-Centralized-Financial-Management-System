@@ -4,6 +4,7 @@ export interface Company {
   email: string
   address: string
   contactPerson: string
+  contactPersonEmail?: string
   contactNumber: string
   telephoneNumber: string
   startingBalance: number
@@ -43,6 +44,7 @@ export interface CreateCompanyPayload {
   email: string
   address: string
   contactPerson: string
+  contactPersonEmail?: string
   contactNumber: string
   telephoneNumber: string
   startingBalance: number
@@ -531,6 +533,7 @@ export const employeeService = {
       email: payload.email,
       address: payload.address,
       contactPerson: payload.contactPerson,
+      contactPersonEmail: payload.contactPersonEmail,
       contactNumber: payload.contactNumber,
       telephoneNumber: payload.telephoneNumber,
       startingBalance: payload.startingBalance,

@@ -200,10 +200,10 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   }, [isCustomRange, value.startDate, value.endDate])
 
   return (
-    <div className={cn('inline-flex flex-wrap items-center gap-2 sm:gap-2.5', className)}>
+    <div className={cn('inline-flex items-center gap-2 sm:gap-2.5 shrink-0 flex-nowrap', className)}>
       {/* 1. Preset Dropdown (Last 7 days, Last 30 days, This Month, etc. or 'Custom') */}
       {!hidePresets && (
-        <div className="relative inline-block" ref={presetDropdownRef}>
+        <div className="relative inline-block shrink-0" ref={presetDropdownRef}>
           <button
             type="button"
             onClick={() => {
@@ -211,7 +211,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               setIsCalendarOpen(false)
             }}
             className={cn(
-              'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+              'inline-flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
               isPresetOpen && 'ring-2 ring-focus/20 border-focus'
             )}
             aria-expanded={isPresetOpen}
@@ -271,7 +271,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       )}
 
       {/* 2. Custom Date Picker beside the preset dropdown */}
-      <div className="relative inline-block" ref={calendarPopoverRef}>
+      <div className="relative inline-block shrink-0" ref={calendarPopoverRef}>
         <button
           type="button"
           onClick={() => {
@@ -279,7 +279,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
             setIsPresetOpen(false)
           }}
           className={cn(
-            'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+            'inline-flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
             (isCalendarOpen || isCustomRange) &&
               'ring-2 ring-primary/20 border-primary text-primary',
             isCustomRange && 'bg-primary/5 font-semibold'

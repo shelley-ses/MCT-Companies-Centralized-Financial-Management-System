@@ -2,79 +2,39 @@ import * as React from 'react'
 import {
   Search,
   Building2,
-  UserPlus,
-  ChevronLeft,
-  ChevronRight,
   CheckCircle2,
-  Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CreateCompanyModal } from '@/components/employee/CreateCompanyModal'
-import { CreateUserModal } from '@/components/employee/CreateUserModal'
-import { PermissionSettingsModal } from '@/components/employee/PermissionSettingsModal'
 import { ViewCompanyModal } from '@/components/employee/ViewCompanyModal'
-import { DateRangeFilter, type DateRange } from '@/components/employee/DateRangeFilter'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   employeeService,
   type Company,
-  type EmployeeUser,
 } from '@/services/employeeService'
 import logo2Url from '@/assets/LOGO2.png'
 
-type TabType = 'user' | 'company'
-
-// Helper to parse date string like "Oct 6, 2026 · 9:15 AM" or "2026-10-05 08:14"
-function parseDateForFilter(dateStr: string): Date | null {
-  if (!dateStr) return null
-  if (dateStr === 'Just now') return new Date('2026-10-06')
-  const datePart = dateStr.includes('·') ? dateStr.split('·')[0].trim() : dateStr.split(' ')[0].trim()
-  const parsed = Date.parse(datePart)
-  if (!isNaN(parsed)) return new Date(parsed)
-  return null
-}
-
 export const EmployeePage: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<TabType>('user')
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    startDate: null,
-    endDate: null,
-    label: 'All Dates',
-  })
 
-  // Data states
-  const [users, setUsers] = React.useState<EmployeeUser[]>([])
+  // Companies data state
   const [companies, setCompanies] = React.useState<Company[]>([])
   const [loading, setLoading] = React.useState(true)
 
   // Modals state
   const [isCreateCompanyOpen, setIsCreateCompanyOpen] = React.useState(false)
-  const [isCreateUserOpen, setIsCreateUserOpen] = React.useState(false)
-  const [isPermissionOpen, setIsPermissionOpen] = React.useState(false)
-  const [selectedUser, setSelectedUser] = React.useState<EmployeeUser | null>(null)
-
-  // View / Edit / Delete Company Modal state
   const [isViewCompanyOpen, setIsViewCompanyOpen] = React.useState(false)
   const [selectedCompany, setSelectedCompany] = React.useState<Company | null>(null)
 
   // Success message toast/banner
   const [successBanner, setSuccessBanner] = React.useState<string | null>(null)
 
-  // Pagination state
-  const [userPage, setUserPage] = React.useState(1)
-  const itemsPerPage = 14
-
-  // Load initial data
+  // Load companies
   const loadData = React.useCallback(async () => {
     try {
       setLoading(true)
-      const [userList, companyList] = await Promise.all([
-        employeeService.getUsers(),
-        employeeService.getCompanies(),
-      ])
-      setUsers(userList)
+      const companyList = await employeeService.getCompanies()
       setCompanies(companyList)
     } finally {
       setLoading(false)
@@ -95,40 +55,10 @@ export const EmployeePage: React.FC = () => {
 
   // Dynamic document title
   React.useEffect(() => {
-    document.title =
-      activeTab === 'user'
-        ? 'User Management - MCT Centralized Financial System'
-        : 'Company Management - MCT Centralized Financial System'
-  }, [activeTab])
+    document.title = 'Company Management - MCT Centralized Financial System'
+  }, [])
 
-  // Filtered users for User Tab with Search + Date Range
-  const filteredUsers = React.useMemo(() => {
-    let result = users
-
-    const q = searchQuery.toLowerCase().trim()
-    if (q) {
-      result = result.filter(
-        (u) =>
-          u.fullName.toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q) ||
-          u.companyName.toLowerCase().includes(q)
-      )
-    }
-
-    if (dateRange.startDate && dateRange.endDate) {
-      const start = new Date(`${dateRange.startDate}T00:00:00`)
-      const end = new Date(`${dateRange.endDate}T23:59:59`)
-      result = result.filter((u) => {
-        const uDate = parseDateForFilter(u.lastLogin)
-        if (!uDate) return true
-        return uDate >= start && uDate <= end
-      })
-    }
-
-    return result
-  }, [users, searchQuery, dateRange])
-
-  // Filtered companies for Company Tab (Search query)
+  // Filtered companies based on search
   const filteredCompanies = React.useMemo(() => {
     let result = companies
 
@@ -139,24 +69,13 @@ export const EmployeePage: React.FC = () => {
           c.name.toLowerCase().includes(q) ||
           c.email.toLowerCase().includes(q) ||
           c.address.toLowerCase().includes(q) ||
-          c.contactPerson.toLowerCase().includes(q)
+          c.contactPerson.toLowerCase().includes(q) ||
+          (c.contactPersonEmail && c.contactPersonEmail.toLowerCase().includes(q))
       )
     }
 
     return result
   }, [companies, searchQuery])
-
-  // User tab pagination calculation
-  const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage))
-  const displayedUsers = React.useMemo(() => {
-    const start = (userPage - 1) * itemsPerPage
-    return filteredUsers.slice(start, start + itemsPerPage)
-  }, [filteredUsers, userPage, itemsPerPage])
-
-  const handleOpenPermission = (user: EmployeeUser) => {
-    setSelectedUser(user)
-    setIsPermissionOpen(true)
-  }
 
   const handleCardClickCompany = (comp: Company) => {
     setSelectedCompany(comp)
@@ -182,53 +101,28 @@ export const EmployeePage: React.FC = () => {
     setSuccessBanner(`"${deletedName}" has been removed from companies.`)
   }
 
-  const handleUserCreated = (newUser: EmployeeUser) => {
-    setUsers((prev) => [newUser, ...prev])
-    setSuccessBanner(`User "${newUser.fullName}" has been added successfully.`)
-  }
-
-  const handlePermissionSaved = () => {
-    if (selectedUser) {
-      setSuccessBanner(
-        `Permissions for "${selectedUser.fullName}" updated successfully.`
-      )
-    }
-  }
-
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
       {/* Top Header Block */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-            {activeTab === 'user' ? 'User Management' : 'Company Management'}
+            Company Management
           </h1>
           <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-            {activeTab === 'user'
-              ? `${users.length} users registered across all companies`
-              : `${companies.length} companies registered in MCT Group`}
+            {companies.length} companies registered in MCT Group
           </p>
         </div>
 
-        {/* Top Right Action Buttons: Create Company & Create User */}
+        {/* Top Right Action Button: Create Company */}
         <div className="flex items-center gap-3 self-start sm:self-auto">
           <Button
             type="button"
-            variant="outline"
             onClick={() => setIsCreateCompanyOpen(true)}
-            className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl border border-stroke/50 bg-white text-focus hover:bg-surface font-semibold text-sm shadow-xs flex items-center gap-2 cursor-pointer"
-          >
-            <Building2 className="h-4 w-4 text-focus/70 shrink-0" />
-            <span>Create Company</span>
-          </Button>
-
-          <Button
-            type="button"
-            onClick={() => setIsCreateUserOpen(true)}
             className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer"
           >
-            <UserPlus className="h-4 w-4 shrink-0" />
-            <span>Create User</span>
+            <Building2 className="h-4 w-4 shrink-0" />
+            <span>Create Company</span>
           </Button>
         </div>
       </div>
@@ -244,302 +138,93 @@ export const EmployeePage: React.FC = () => {
         </div>
       )}
 
-      {/* Filters and Tabs Toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        {/* Left Side: Extended Width Search Bar */}
-        <div className="relative flex-1 max-w-full lg:max-w-xl xl:max-w-2xl">
+      {/* Filters Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* Search Bar */}
+        <div className="relative flex-1 max-w-full sm:max-w-xl">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
           <Input
             type="search"
-            placeholder={
-              activeTab === 'user'
-                ? 'Search users by name, email, or company...'
-                : 'Search companies by name, email, or address...'
-            }
+            placeholder="Search companies by name, email, contact person, or address..."
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              setUserPage(1)
-            }}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
           />
         </div>
-
-        {/* Right Side: Date Filter + Outlined Tab Buttons */}
-        <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto">
-          {/* Working Date Filter (displayed on User tab) */}
-          {activeTab === 'user' && (
-            <DateRangeFilter
-              value={dateRange}
-              onChange={(newRange) => {
-                setDateRange(newRange)
-                setUserPage(1)
-              }}
-            />
-          )}
-
-          {/* Outlined Tab Switcher (User, Company) */}
-          <div className="inline-flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('user')}
-              className={`px-5 py-2 rounded-full text-sm transition-all cursor-pointer shadow-xs ${
-                activeTab === 'user'
-                  ? 'bg-[#960C01] text-white border border-[#960C01] font-semibold'
-                  : 'bg-white text-focus border border-stroke/60 hover:bg-surface hover:border-stroke font-medium'
-              }`}
-            >
-              User
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('company')}
-              className={`px-5 py-2 rounded-full text-sm transition-all cursor-pointer shadow-xs ${
-                activeTab === 'company'
-                  ? 'bg-[#960C01] text-white border border-[#960C01] font-semibold'
-                  : 'bg-white text-focus border border-stroke/60 hover:bg-surface hover:border-stroke font-medium'
-              }`}
-            >
-              Company
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Success Notification Alert */}
-      {successBanner && (
-        <div
-          role="status"
-          className="flex items-center gap-3 p-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-medium animate-in fade-in-50 duration-200"
-        >
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-          <span>{successBanner}</span>
-        </div>
-      )}
-
-      {/* Main Content Area based on Tab */}
-
-      {/* 1. USER TAB (matching Image 4) */}
-      {activeTab === 'user' && (
-        <div className="bg-white rounded-[20px] border border-stroke/30 shadow-xs p-4 sm:p-6 lg:p-8">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-stroke/20">
-                  <th className="pb-4 pt-1 px-6 w-[25%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Company
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[28%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[12%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[20%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Last Login
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[15%] text-xs font-bold text-focus uppercase tracking-wider text-right sm:text-left">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stroke/15">
-                {loading ? (
-                  Array.from({ length: 8 }).map((_, i) => (
-                    <tr key={i}>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-36 rounded-md" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-48 rounded-md" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-5 w-16 rounded-full" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-36 rounded-md" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-7 w-28 rounded-full" /></td>
-                    </tr>
-                  ))
-                ) : displayedUsers.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-12 text-center text-muted-fg text-sm">
-                      No users found matching your search.
-                    </td>
-                  </tr>
-                ) : (
-                  displayedUsers.map((user) => (
-                    <tr
-                      key={user.id}
-                      className="hover:bg-surface/40 transition-colors group"
-                    >
-                      {/* COMPANY */}
-                      <td className="py-4 px-6 text-sm font-medium text-focus whitespace-nowrap">
-                        {user.companyName}
-                      </td>
-
-                      {/* EMAIL */}
-                      <td className="py-4 px-6 text-sm text-focus/80 whitespace-nowrap">
-                        {user.email}
-                      </td>
-
-                      {/* STATUS */}
-                      <td className="py-4 px-6">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold text-emerald-600 bg-emerald-50">
-                          {user.status}
-                        </span>
-                      </td>
-
-                      {/* LAST LOGIN */}
-                      <td className="py-4 px-6 text-sm text-focus/80 tabular-nums whitespace-nowrap">
-                        {user.lastLogin}
-                      </td>
-
-                      {/* ACTIONS */}
-                      <td className="py-4 px-6 text-right sm:text-left whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPermission(user)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-stroke/40 hover:border-stroke hover:bg-surface text-focus text-xs font-semibold tracking-wider transition-colors cursor-pointer select-none"
-                          aria-label={`Configure permissions for ${user.fullName}`}
-                        >
-                          <Lock className="h-3 w-3 text-focus/70 shrink-0" />
-                          <span>PERMISSION</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Table Footer with Pagination */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 mt-4 border-t border-stroke/20">
-            <p className="text-xs sm:text-sm text-muted-fg font-normal">
-              Showing {displayedUsers.length} of {filteredUsers.length} users
-            </p>
-
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-xs sm:text-sm text-muted-fg font-normal">
-                Page {userPage} out of {totalUserPages}
-              </span>
-
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={userPage <= 1}
-                  onClick={() => setUserPage((p) => Math.max(1, p - 1))}
-                  className="h-8 w-8 p-0 rounded-lg text-focus hover:bg-surface disabled:opacity-40"
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={userPage >= totalUserPages}
-                  onClick={() => setUserPage((p) => Math.min(totalUserPages, p + 1))}
-                  className="h-8 w-8 p-0 rounded-lg text-focus hover:bg-surface disabled:opacity-40"
-                  aria-label="Next page"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+      {/* Company Grid */}
+      <div className="space-y-4">
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div
+                key={i}
+                className="bg-white rounded-2xl border border-rose-200/60 p-4 sm:p-5 flex items-center gap-4 shadow-xs"
+              >
+                <Skeleton className="h-16 w-16 sm:h-20 sm:w-20 rounded-full shrink-0" />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  <Skeleton className="h-5 w-3/4 rounded-md" />
+                  <Skeleton className="h-3.5 w-full rounded-md" />
+                  <Skeleton className="h-3.5 w-2/3 rounded-md" />
+                </div>
               </div>
-            </div>
+            ))}
           </div>
-        </div>
-      )}
-
-      {/* 2. COMPANY TAB (matching Image 1 - 3 Column Card Grid) */}
-      {activeTab === 'company' && (
-        <div className="space-y-4">
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {Array.from({ length: 9 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="bg-white rounded-2xl border border-rose-200/60 p-4 sm:p-5 flex items-center gap-4 shadow-xs"
-                >
-                  <Skeleton className="h-16 w-16 sm:h-20 sm:w-20 rounded-full shrink-0" />
-                  <div className="min-w-0 flex-1 space-y-2.5">
-                    <Skeleton className="h-5 w-3/4 rounded-md" />
-                    <Skeleton className="h-3.5 w-full rounded-md" />
-                    <Skeleton className="h-3.5 w-2/3 rounded-md" />
-                  </div>
+        ) : filteredCompanies.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-stroke/30 p-12 text-center text-muted-fg text-sm">
+            No companies found matching your search.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredCompanies.map((comp) => (
+              <div
+                key={comp.id}
+                onClick={() => handleCardClickCompany(comp)}
+                className="bg-white rounded-2xl border border-rose-200/90 hover:border-primary/80 hover:shadow-md p-4 sm:p-5 transition-all duration-200 cursor-pointer flex items-center gap-4 group shadow-xs select-none"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleCardClickCompany(comp)
+                  }
+                }}
+                aria-label={`View details for ${comp.name}`}
+              >
+                {/* Left circular badge */}
+                <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full border-2 border-primary/90 flex items-center justify-center p-2.5 shrink-0 bg-white shadow-xs group-hover:scale-105 transition-transform duration-200">
+                  <img
+                    src={comp.logoUrl || logo2Url}
+                    alt={comp.name}
+                    className="h-9 w-9 sm:h-12 sm:w-12 object-contain"
+                  />
                 </div>
-              ))}
-            </div>
-          ) : filteredCompanies.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-stroke/30 p-12 text-center text-muted-fg text-sm">
-              No companies found matching your search.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredCompanies.map((comp) => (
-                <div
-                  key={comp.id}
-                  onClick={() => handleCardClickCompany(comp)}
-                  className="bg-white rounded-2xl border border-rose-200/90 hover:border-primary/80 hover:shadow-md p-4 sm:p-5 transition-all duration-200 cursor-pointer flex items-center gap-4 group shadow-xs select-none"
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      handleCardClickCompany(comp)
-                    }
-                  }}
-                  aria-label={`View details for ${comp.name}`}
-                >
-                  {/* Left circular badge matching Image 1 */}
-                  <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full border-2 border-primary/90 flex items-center justify-center p-2.5 shrink-0 bg-white shadow-xs group-hover:scale-105 transition-transform duration-200">
-                    <img
-                      src={comp.logoUrl || logo2Url}
-                      alt={comp.name}
-                      className="h-9 w-9 sm:h-12 sm:w-12 object-contain"
-                    />
-                  </div>
 
-                  {/* Right side: Company Name & Address */}
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-base sm:text-lg font-bold text-focus group-hover:text-primary transition-colors truncate">
-                      {comp.name}
-                    </h3>
-                    <p className="text-xs text-muted-fg leading-relaxed mt-1 line-clamp-2">
-                      {comp.address || 'Blk 43, Lot 24 Regalado Highway, Fairview, Quezon City, Metro Manila'}
-                    </p>
-                  </div>
+                {/* Right side: Company Name & Address */}
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base sm:text-lg font-bold text-focus group-hover:text-primary transition-colors truncate">
+                    {comp.name}
+                  </h3>
+                  <p className="text-xs text-muted-fg leading-relaxed mt-1 line-clamp-2">
+                    {comp.address || 'Blk 43, Lot 24 Regalado Highway, Fairview, Quezon City, Metro Manila'}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
-
-      {/* 1. Create Company Modal (matching Image 1 of previous turn) */}
+      {/* 1. Create Company Modal */}
       <CreateCompanyModal
         open={isCreateCompanyOpen}
         onOpenChange={setIsCreateCompanyOpen}
         onSuccess={handleCompanyCreated}
       />
 
-      {/* 2. Create User Modal (matching Image 2 of previous turn) */}
-      <CreateUserModal
-        open={isCreateUserOpen}
-        onOpenChange={setIsCreateUserOpen}
-        companies={companies}
-        onSuccess={handleUserCreated}
-      />
-
-      {/* 3. Permission Settings Modal (matching Image 3 of previous turn) */}
-      <PermissionSettingsModal
-        open={isPermissionOpen}
-        onOpenChange={setIsPermissionOpen}
-        targetUser={selectedUser}
-        onSuccess={handlePermissionSaved}
-      />
-
-      {/* 4. View / Edit / Delete Company Modal (matching new Image 2) */}
+      {/* 2. View / Edit / Delete Company Modal */}
       <ViewCompanyModal
         open={isViewCompanyOpen}
         onOpenChange={setIsViewCompanyOpen}

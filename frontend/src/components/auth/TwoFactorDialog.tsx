@@ -222,19 +222,6 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
                 >
                   Resend Code
                 </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    resetState()
-                    navigate('/login')
-                  }}
-                  disabled={isLoading}
-                  className="w-full h-12 text-base font-medium"
-                >
-                  Back to Sign In
-                </Button>
               </div>
             </form>
           </div>

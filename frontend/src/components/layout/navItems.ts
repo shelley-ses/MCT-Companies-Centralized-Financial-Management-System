@@ -5,6 +5,7 @@ import {
   HandCoins,
   ArrowLeftRight,
   Users,
+  Building2,
   History,
   Settings,
 } from 'lucide-react'
@@ -66,10 +67,10 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
 export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
   {
     id: 'employee',
-    title: 'Management',
+    title: 'Company Management',
     href: '/employee',
-    icon: Users,
-    roles: ['Admin'], // Exclusively for Admin (Company & User Management)
+    icon: Building2,
+    roles: ['Admin'], // Exclusively for Admin (Company Management)
   },
   {
     id: 'activity-log',
