@@ -1,83 +1,81 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
 from sqlalchemy.orm import Session
+
 from app.db.session import get_db
-from app.models.company import Company
-from app.schemas.company import CompanyOut, CompanyCreate
-from app.services.finance_service import FinanceService
+from app.schemas.company import CompanyCreate, CompanyOut, CompanyUpdate
+from app.services.company_service import CompanyService, CompanyServiceError
 
 router = APIRouter()
 
-@router.get("", response_model=List[CompanyOut], summary="List all MCT companies")
+# get all companies
+@router.get("", response_model=list[CompanyOut], summary="List all MCT companies")
 def get_companies(db: Session = Depends(get_db)):
-    companies = db.query(Company).order_by(Company.company_id.asc()).all()
-    finance_svc = FinanceService(db)
-    
-    result = []
-    for c in companies:
-        summary = finance_svc.get_company_financial_summary(company_id=c.company_id)
-        result.append(
-            CompanyOut(
-                id=c.company_id,
-                name=c.company_name,
-                code=c.company_name.upper().replace(" ", "-")[:15],
-                currency="PHP",
-                status="Active",
-                location=c.location,
-                contact_person=c.contact_person,
-                email=c.email,
-                total_revenue=float(summary.total_revenue),
-                total_expenses=float(summary.total_expenses),
-                net_profit=float(summary.net_profit),
-                created_at=c.created_at
-            )
-        )
-    return result
+    try:
+        return CompanyService(db).list_companies()
+    except CompanyServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
 
+# get company by ID
 @router.get("/{company_id}", response_model=CompanyOut, summary="Get company by ID")
 def get_company(company_id: int, db: Session = Depends(get_db)):
-    c = db.query(Company).filter(Company.company_id == company_id).first()
-    if not c:
+    try:
+        company = CompanyService(db).get_company_response(company_id)
+    except CompanyServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+    if company is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
-    
-    summary = FinanceService(db).get_company_financial_summary(company_id=c.company_id)
-    return CompanyOut(
-        id=c.company_id,
-        name=c.company_name,
-        code=c.company_name.upper().replace(" ", "-")[:15],
-        currency="PHP",
-        status="Active",
-        location=c.location,
-        contact_person=c.contact_person,
-        email=c.email,
-        total_revenue=float(summary.total_revenue),
-        total_expenses=float(summary.total_expenses),
-        net_profit=float(summary.net_profit),
-        created_at=c.created_at
-    )
+    return company
 
+# create a new company
 @router.post("", response_model=CompanyOut, status_code=status.HTTP_201_CREATED, summary="Create a new company")
 def create_company(company: CompanyCreate, db: Session = Depends(get_db)):
-    new_c = Company(
-        company_name=company.name,
-        starting_balance=0.00,
-        current_balance=0.00
-    )
-    db.add(new_c)
-    db.commit()
-    db.refresh(new_c)
-    return CompanyOut(
-        id=new_c.company_id,
-        name=new_c.company_name,
-        code=company.code or new_c.company_name.upper().replace(" ", "-")[:15],
-        currency="PHP",
-        status="Active",
-        location=new_c.location,
-        contact_person=new_c.contact_person,
-        email=new_c.email,
-        total_revenue=0.0,
-        total_expenses=0.0,
-        net_profit=0.0,
-        created_at=new_c.created_at
-    )
+    try:
+        return CompanyService(db).create_company(company)
+    except CompanyServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
 
+# update an existing company
+@router.patch("/{company_id}", response_model=CompanyOut, summary="Update an existing company")
+def update_company(
+    company_id: int,
+    company_update: CompanyUpdate,
+    db: Session = Depends(get_db),
+):
+    service = CompanyService(db)
+    try:
+        company = service.update_company(company_id, company_update)
+    except CompanyServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    return company
+
+# delete a company
+@router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a company")
+def delete_company(company_id: int, db: Session = Depends(get_db)):
+    try:
+        deleted = CompanyService(db).delete_company(company_id)
+    except CompanyServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")

@@ -1,0 +1,166 @@
+import logging
+from typing import List, Optional
+
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.models.company import Company
+from app.schemas.company import CompanyCreate, CompanyOut, CompanyUpdate
+from app.services.finance_service import FinanceService
+
+logger = logging.getLogger(__name__)
+
+
+class CompanyServiceError(Exception):
+    """Safe application error for company operations."""
+
+
+class CompanyService:
+    _required_update_fields = {
+        "name",
+        "location",
+        "contact_person",
+        "email",
+        "starting_balance",
+        "current_balance",
+    }
+
+    # initialize the CompanyService with a database session and a FinanceService
+    def __init__(self, db: Session):
+        self.db = db
+        self.finance_service = FinanceService(db)
+
+    #list_companies retrieves all companies from the database, orders them by company_id in ascending order, and returns a list of CompanyOut objects.
+    def list_companies(self) -> List[CompanyOut]:
+        try:
+            companies = (
+                self.db.query(Company)
+                .order_by(Company.company_id.asc())
+                .all()
+            )
+            return [self.to_response(company) for company in companies]
+        except SQLAlchemyError as error:
+            raise self._database_error("list companies", error)
+
+    #retrieves a company by its ID from the database and returns the Company object if found, or None if not found.
+    def get_company(self, company_id: int) -> Optional[Company]:
+        try:
+            return (
+                self.db.query(Company)
+                .filter(Company.company_id == company_id)
+                .first()
+            )
+        except SQLAlchemyError as error:
+            raise self._database_error("get company", error)
+
+    #retrieves a company by its ID and returns a CompanyOut object if found, or None if not found. It uses the get_company method to fetch the company and then converts it to a response format using the to_response method.
+    def get_company_response(self, company_id: int) -> Optional[CompanyOut]:
+        company = self.get_company(company_id)
+        try:
+            return self.to_response(company) if company else None
+        except SQLAlchemyError as error:
+            raise self._database_error("build company response", error)
+
+    #creates a new company in the database using the provided CompanyCreate object. It initializes a new Company instance with the data from the CompanyCreate object, adds it to the database session, commits the transaction, and refreshes the instance to get the updated state. Finally, it returns a CompanyOut object representing the newly created company.
+    def create_company(self, company_in: CompanyCreate) -> CompanyOut:
+        company = Company(
+            company_name=company_in.name,
+            location=company_in.location,
+            contact_person=company_in.contact_person,
+            contact_number=company_in.contact_number,
+            phone=company_in.phone,
+            email=company_in.email,
+            starting_balance=company_in.starting_balance,
+            current_balance=company_in.current_balance,
+        )
+        try:
+            self.db.add(company)
+            self.db.commit()
+            self.db.refresh(company)
+            return self.to_response(company)
+        except SQLAlchemyError as error:
+            raise self._database_error("create company", error)
+
+    #updates an existing company in the database. It first retrieves the company using the get_company method. If the company is found, it updates its attributes based on the provided CompanyUpdate object, ensuring that required fields are not set to None. After updating, it commits the changes to the database and returns a CompanyOut object representing the updated company. If the company is not found, it returns None.
+    def update_company(
+        self,
+        company_id: int,
+        company_in: CompanyUpdate,
+    ) -> Optional[CompanyOut]:
+        company = self.get_company(company_id)
+        if not company:
+            return None
+
+        update_data = company_in.model_dump(exclude_unset=True)
+        invalid_required_fields = [
+            field
+            for field in self._required_update_fields
+            if field in update_data and update_data[field] is None
+        ]
+        if invalid_required_fields:
+            raise ValueError(
+                f"{', '.join(sorted(invalid_required_fields))} cannot be null"
+            )
+
+        if "name" in update_data:
+            company.company_name = update_data.pop("name")
+        for field, value in update_data.items():
+            setattr(company, field, value)
+
+        try:
+            self.db.commit()
+            self.db.refresh(company)
+            return self.to_response(company)
+        except SQLAlchemyError as error:
+            raise self._database_error("update company", error)
+
+    #deletes a company from the database by its ID. It first retrieves the company using the get_company method. If the company is found, it deletes it from the database and commits the transaction, returning True. If the company is not found, it returns False.
+    def delete_company(self, company_id: int) -> bool:
+        company = self.get_company(company_id)
+        if not company:
+            return False
+
+        try:
+            self.db.delete(company)
+            self.db.commit()
+            return True
+        except SQLAlchemyError as error:
+            raise self._database_error("delete company", error)
+
+    #converts a Company object into a CompanyOut object, including financial summary data retrieved from the FinanceService.
+    def to_response(self, company: Company) -> CompanyOut:
+        try:
+            summary = self.finance_service.get_company_financial_summary(
+                company_id=company.company_id
+            )
+            return CompanyOut(
+                id=company.company_id,
+                name=company.company_name,
+                location=company.location,
+                contact_person=company.contact_person,
+                contact_number=company.contact_number,
+                phone=company.phone,
+                email=company.email,
+                starting_balance=float(company.starting_balance),
+                current_balance=float(company.current_balance),
+                total_revenue=float(summary.total_revenue),
+                total_expenses=float(summary.total_expenses),
+                net_profit=float(summary.net_profit),
+                created_at=company.created_at,
+                updated_at=company.updated_at,
+            )
+        except SQLAlchemyError as error:
+            raise self._database_error("build company response", error)
+
+    def _database_error(
+        self,
+        operation: str,
+        error: SQLAlchemyError,
+    ) -> CompanyServiceError:
+        self.db.rollback()
+        logger.exception(
+            "Company database operation failed: %s (%s)",
+            operation,
+            type(error).__name__,
+        )
+        return CompanyServiceError("The company operation could not be completed.")

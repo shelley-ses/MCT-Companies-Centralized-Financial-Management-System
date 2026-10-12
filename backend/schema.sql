@@ -5,13 +5,13 @@
 CREATE TABLE IF NOT EXISTS company (
     company_id BIGSERIAL PRIMARY KEY,
     company_name VARCHAR(100) NOT NULL,
-    location VARCHAR(100),
-    contact_person VARCHAR(100),
-    contact_number VARCHAR(20),
-    phone VARCHAR(20),
-    email VARCHAR(100),
-    starting_balance NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
-    current_balance NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
+    location VARCHAR(100) NOT NULL,
+    contact_person VARCHAR(100) NOT NULL,
+    contact_number VARCHAR(8),
+    phone VARCHAR(11),
+    email VARCHAR(100) NOT NULL,
+    starting_balance NUMERIC(15, 2) NOT NULL,
+    current_balance NUMERIC(15, 2) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
