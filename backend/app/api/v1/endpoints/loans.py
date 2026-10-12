@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from typing import List, Optional
 from decimal import Decimal
 from sqlalchemy.orm import Session
@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.models.loan import Loan, LoanRepayment
 from app.schemas.loan import LoanCreate, LoanOut, LoanRepaymentCreate, LoanRepaymentOut, LoanStatementOut
 from app.services.finance_service import FinanceService, FinanceCalculator
+from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
@@ -23,13 +24,21 @@ def get_loans(
     return query.order_by(Loan.loan_date.desc()).all()
 
 @router.post("", response_model=LoanOut, status_code=status.HTTP_201_CREATED, summary="Create a new loan record")
-def create_loan(loan_in: LoanCreate, db: Session = Depends(get_db)):
+def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get_db)):
     if loan_in.borrower == loan_in.lender:
         raise HTTPException(status_code=400, detail="Borrower and lender cannot be the same company.")
     loan = Loan(**loan_in.model_dump())
     db.add(loan)
     db.commit()
     db.refresh(loan)
+
+    log_transaction(
+        db, AuditAction.LOAN_CREATED,
+        user_id=None, company_id=loan.borrower,
+        ip_address=request.client.host if request.client else "unknown",
+        record_id=loan.loan_id, record_type="loan",
+        extra={"borrower": loan.borrower, "lender": loan.lender, "amount": float(loan.principal_amount)},
+    )
     return loan
 
 @router.get("/{loan_id}/statement", response_model=LoanStatementOut, summary="Get full loan statement and amortized balance")
@@ -41,7 +50,7 @@ def get_loan_statement(loan_id: int, db: Session = Depends(get_db)):
     return statement
 
 @router.post("/{loan_id}/repayments", response_model=LoanRepaymentOut, status_code=status.HTTP_201_CREATED, summary="Record a loan repayment")
-def create_loan_repayment(loan_id: int, repayment_in: LoanRepaymentCreate, db: Session = Depends(get_db)):
+def create_loan_repayment(loan_id: int, repayment_in: LoanRepaymentCreate, request: Request, db: Session = Depends(get_db)):
     loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
@@ -68,4 +77,12 @@ def create_loan_repayment(loan_id: int, repayment_in: LoanRepaymentCreate, db: S
     db.add(repayment)
     db.commit()
     db.refresh(repayment)
+
+    log_transaction(
+        db, AuditAction.LOAN_UPDATED,
+        user_id=None, company_id=loan.borrower,
+        ip_address=request.client.host if request.client else "unknown",
+        record_id=loan_id, record_type="loan_repayment",
+        extra={"repayment_id": repayment.repayment_id, "amount": float(repayment.amount), "remaining_balance": float(new_remaining)},
+    )
     return repayment
