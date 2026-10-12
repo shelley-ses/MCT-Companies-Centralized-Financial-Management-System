@@ -29,21 +29,34 @@ const MONTH_NAMES: Record<string, string> = {
 }
 
 /**
+ * Formats a Date object into local YYYY-MM-DD string without timezone skew
+ */
+export function formatToYYYYMMDD(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/**
  * Normalizes any date string or Date object into ISO YYYY-MM-DD format
  */
 export function normalizeDateToYYYYMMDD(dateInput: string | Date | null | undefined): string {
   if (!dateInput) return ''
 
   if (dateInput instanceof Date) {
-    const y = dateInput.getFullYear()
-    const m = String(dateInput.getMonth() + 1).padStart(2, '0')
-    const d = String(dateInput.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
+    return formatToYYYYMMDD(dateInput)
   }
 
   const str = String(dateInput).trim()
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     return str
+  }
+
+  // Handle format with timestamp like "2026-10-12T01:41:36" or "2026-10-12 01:41:36"
+  const isoPrefix = str.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (isoPrefix) {
+    return isoPrefix[1]
   }
 
   // Handle format like "October 1, 2026" or "Oct 01, 2026"

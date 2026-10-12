@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { formatToMMDDYYYY } from '@/utils/dateUtils'
+import { formatToMMDDYYYY, formatToYYYYMMDD } from '@/utils/dateUtils'
 
 export interface DateRange {
   startDate: string | null // ISO YYYY-MM-DD
@@ -30,38 +30,82 @@ export interface DatePresetOption {
   endDate: string | null
 }
 
-export const DATE_PRESETS: DatePresetOption[] = [
-  {
-    label: 'All Dates',
-    startDate: null,
-    endDate: null,
-  },
-  {
-    label: 'Last 7 Days',
-    startDate: '2026-10-04',
-    endDate: '2026-10-10',
-  },
-  {
-    label: 'Last 30 Days',
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-  },
-  {
-    label: 'This Month',
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-  },
-  {
-    label: 'This Quarter',
-    startDate: '2026-10-01',
-    endDate: '2026-12-31',
-  },
-  {
-    label: 'This Year',
-    startDate: '2026-01-01',
-    endDate: '2026-12-31',
-  },
-]
+export const getDatePresets = (): DatePresetOption[] => {
+  const now = new Date()
+  const todayStr = formatToYYYYMMDD(now)
+
+  const d7 = new Date(now)
+  d7.setDate(now.getDate() - 6)
+  const d7Str = formatToYYYYMMDD(d7)
+
+  const d30 = new Date(now)
+  d30.setDate(now.getDate() - 29)
+  const d30Str = formatToYYYYMMDD(d30)
+
+  const currYear = now.getFullYear()
+  const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+  const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+  const monthStart = `${currYear}-${currMonth}-01`
+  const monthEnd = `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`
+
+  const monthNum = now.getMonth() + 1
+  let qStart = '01'
+  let qEnd = '03'
+  let qEndDay = '31'
+  if (monthNum >= 4 && monthNum <= 6) {
+    qStart = '04'
+    qEnd = '06'
+    qEndDay = '30'
+  } else if (monthNum >= 7 && monthNum <= 9) {
+    qStart = '07'
+    qEnd = '09'
+    qEndDay = '30'
+  } else if (monthNum >= 10) {
+    qStart = '10'
+    qEnd = '12'
+    qEndDay = '31'
+  }
+
+  return [
+    {
+      label: 'All Dates',
+      startDate: null,
+      endDate: null,
+    },
+    {
+      label: 'Today',
+      startDate: todayStr,
+      endDate: todayStr,
+    },
+    {
+      label: 'Last 7 Days',
+      startDate: d7Str,
+      endDate: todayStr,
+    },
+    {
+      label: 'Last 30 Days',
+      startDate: d30Str,
+      endDate: todayStr,
+    },
+    {
+      label: 'This Month',
+      startDate: monthStart,
+      endDate: monthEnd,
+    },
+    {
+      label: 'This Quarter',
+      startDate: `${currYear}-${qStart}-01`,
+      endDate: `${currYear}-${qEnd}-${qEndDay}`,
+    },
+    {
+      label: 'This Year',
+      startDate: `${currYear}-01-01`,
+      endDate: `${currYear}-12-31`,
+    },
+  ]
+}
+
+export const DATE_PRESETS: DatePresetOption[] = getDatePresets()
 
 export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   value,
@@ -69,6 +113,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   className,
   hidePresets = false,
 }) => {
+  const presets = React.useMemo(() => getDatePresets(), [])
+
   // Preset dropdown open state
   const [isPresetOpen, setIsPresetOpen] = React.useState(false)
   const presetDropdownRef = React.useRef<HTMLDivElement>(null)
@@ -82,7 +128,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     value.preset === 'Custom' ||
       (!value.preset &&
         Boolean(value.startDate) &&
-        !DATE_PRESETS.some(
+        !presets.some(
           (p) =>
             p.startDate === value.startDate &&
             p.endDate === value.endDate &&
@@ -93,13 +139,13 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const activePresetLabel = React.useMemo(() => {
     if (value.preset === 'Custom') return 'Custom'
     if (value.preset) return value.preset
-    const matched = DATE_PRESETS.find(
+    const matched = presets.find(
       (p) => p.startDate === value.startDate && p.endDate === value.endDate
     )
     if (matched) return matched.label
     if (value.startDate || value.endDate) return 'Custom'
     return 'All Dates'
-  }, [value.preset, value.startDate, value.endDate])
+  }, [value.preset, value.startDate, value.endDate, presets])
 
   // Custom date draft state: Start Date & End Date
   const [draftStart, setDraftStart] = React.useState<string>(value.startDate || '')
@@ -233,7 +279,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
                 </span>
               </div>
               <div className="space-y-1">
-                {DATE_PRESETS.map((preset) => {
+                {presets.map((preset) => {
                   const isSelected = activePresetLabel === preset.label
                   return (
                     <button

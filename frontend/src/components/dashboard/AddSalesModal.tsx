@@ -22,6 +22,7 @@ import {
 } from '@/services/salesService'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { formatToYYYYMMDD } from '@/utils/dateUtils'
 
 interface AddSalesModalProps {
   open: boolean
@@ -49,7 +50,7 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   assignedCompany,
 }) => {
   // Date default is today (editable)
-  const getTodayIso = () => new Date().toISOString().split('T')[0]
+  const getTodayIso = () => formatToYYYYMMDD(new Date())
 
   const [date, setDate] = React.useState(getTodayIso())
   const [chequeNo, setChequeNo] = React.useState('')

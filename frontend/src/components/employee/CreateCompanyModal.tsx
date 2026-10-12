@@ -79,6 +79,8 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
       onSuccess?.(created)
       setIsConfirmOpen(false)
       onOpenChange(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to create company.')
     } finally {
       setIsSubmitting(false)
     }
@@ -299,6 +301,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
                         {...field}
+                        onChange={(event) => field.onChange(event.target.valueAsNumber)}
                       />
                     </FormControl>
                     <FormMessage className="text-xs text-error" />
@@ -324,6 +327,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
                         {...field}
+                        onChange={(event) => field.onChange(event.target.valueAsNumber)}
                       />
                     </FormControl>
                     <FormMessage className="text-xs text-error" />

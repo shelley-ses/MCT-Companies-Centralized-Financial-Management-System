@@ -54,6 +54,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
       fullName: '',
       email: '',
       assignedCompany: companies[0]?.name || 'MCT Head Office',
+      password: '',
     },
   })
 
@@ -70,6 +71,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
         fullName: '',
         email: '',
         assignedCompany: companies[0]?.name || 'MCT Head Office',
+        password: '',
       })
       setPendingValues(null)
       setIsConfirmOpen(false)
@@ -129,6 +131,28 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
                     />
                   </FormControl>
                   <FormMessage className="text-xs text-error" />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem className="space-y-1.5">
+                  <Label htmlFor="create-password" className="text-xs sm:text-sm font-medium text-focus/90">
+                    Temporary Password <span className="text-red-500">*</span>
+                  </Label>
+                  <FormControl>
+                    <Input
+                      id="create-password"
+                      type="password"
+                      placeholder="At least 8 characters"
+                      className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
                 </FormItem>
               )}
             />
