@@ -8,8 +8,8 @@ class CompanyBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     location: str = Field(min_length=1, max_length=100)
     contact_person: str = Field(min_length=1, max_length=100)
-    contact_number: Optional[str] = Field(default=None, max_length=8)
-    phone: Optional[str] = Field(default=None, max_length=11)
+    contact_number: Optional[str] = Field(default=None, max_length=11)
+    phone: Optional[str] = Field(default=None, max_length=8)
     email: EmailStr
     starting_balance: Decimal = Field(decimal_places=2)
     current_balance: Decimal = Field(decimal_places=2)
@@ -21,8 +21,8 @@ class CompanyUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     location: Optional[str] = Field(default=None, min_length=1, max_length=100)
     contact_person: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    contact_number: Optional[str] = Field(default=None, max_length=8)
-    phone: Optional[str] = Field(default=None, max_length=11)
+    contact_number: Optional[str] = Field(default=None, max_length=11)
+    phone: Optional[str] = Field(default=None, max_length=8)
     email: Optional[EmailStr] = None
     starting_balance: Optional[Decimal] = Field(default=None, decimal_places=2)
     current_balance: Optional[Decimal] = Field(default=None, decimal_places=2)

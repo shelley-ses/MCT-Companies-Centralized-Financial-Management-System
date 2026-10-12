@@ -22,8 +22,14 @@ export const createCompanySchema = z.object({
     .email('Please enter a valid email address'),
   address: z.string().trim().min(1, 'Address is required'),
   contactPerson: z.string().trim().min(1, 'Contact person is required'),
-  contactNumber: z.string().trim().min(1, 'Contact number is required'),
-  telephoneNumber: z.string().trim(),
+  contactNumber: z
+    .string()
+    .trim()
+    .max(11, 'Contact number must be at most 11 characters'),
+  telephoneNumber: z
+    .string()
+    .trim()
+    .max(8, 'Telephone number must be at most 8 characters'),
   startingBalance: z.number().min(0, 'Starting balance must be 0 or greater'),
   currentBalance: z.number().min(0, 'Current balance must be 0 or greater'),
   logoUrl: z.string().optional(),

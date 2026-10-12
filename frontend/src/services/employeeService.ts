@@ -496,8 +496,7 @@ export const PERMISSION_COMPANIES = [
   { id: 'comp_jk_printing', name: 'JK Printing' },
 ]
 
-let inMemoryUsers: EmployeeUser[] = [...INITIAL_USERS]
-let inMemoryCompanies: Company[] = [...INITIAL_COMPANIES]
+let inMemoryCompanies: Company[] = []
 const inMemoryPermissions: Record<string, Record<string, UserPermissionActions>> = {}
 
 function getAuthHeaders(): HeadersInit {
@@ -509,6 +508,15 @@ async function getApiError(response: Response): Promise<string> {
   try {
     const body = await response.json()
     if (typeof body?.detail === 'string') return body.detail
+    if (Array.isArray(body?.detail)) {
+      const messages = body.detail
+        .map((item: { loc?: unknown[]; msg?: string }) => {
+          const field = item.loc?.at(-1)
+          return field && item.msg ? `${String(field)}: ${item.msg}` : item.msg
+        })
+        .filter(Boolean)
+      if (messages.length > 0) return messages.join('; ')
+    }
   } catch {
     // Use the generic fallback below when the response is not JSON.
   }
