@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     loans,
     calculations,
     audit_logs,
+    notifications,
 )
 
 api_router = APIRouter()
@@ -28,3 +29,4 @@ api_router.include_router(budgets.router, prefix="/budgets", tags=["Budgets"])
 api_router.include_router(loans.router, prefix="/loans", tags=["Loans"])
 api_router.include_router(calculations.router, prefix="/calculations", tags=["Financial Calculations"])
 api_router.include_router(audit_logs.router, tags=["Audit Logs"])
+api_router.include_router(notifications.router, tags=["Notifications"])
