@@ -107,13 +107,13 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   }, [companies, searchQuery])
 
   return (
-    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
+    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
       {/* Title & Subtitle */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-focus">
+        <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
           Financial Overview
         </h1>
-        <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5">
+        <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
           {isAuditor
             ? `Audit transactions and verify financial records for ${assignedCompany}.`
             : "Here's the summary of what's happening with MCT Group of Companies."}
@@ -121,7 +121,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
       </div>
 
       {/* Uniform Filter Bar: Shared Date Picker + Company Scope */}
-      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start lg:self-auto">
         {/* 1. Global Custom Date Picker (Single date or Custom range, no presets) */}
         <DateRangePicker
           value={filters.dateRange}

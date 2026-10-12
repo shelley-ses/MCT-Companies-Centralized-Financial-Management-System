@@ -83,7 +83,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             GENERAL
           </div>
 
-          {/* Main items (Dashboard, Sales, Expense, Loan) */}
+          {/* Main items (Dashboard, Sales, Expense, Loan, Transaction) */}
           <div className="px-3.5 space-y-1">
             {filteredMainItems.map((item: NavItem) => {
               const Icon = item.icon
@@ -164,7 +164,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             })}
           </div>
 
-          {/* Line separator after Loan (edge-to-edge divider per picture) */}
+          {/* Line separator after Loan / Transaction (edge-to-edge divider per picture) */}
           <Separator className="my-3 sm:my-3.5 bg-stroke/40" />
 
           {/* OPERATIONS Section Header */}
@@ -172,7 +172,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             OPERATIONS
           </div>
 
-          {/* Secondary Nav Items (Employee for Admin, Settings for both) */}
+          {/* Secondary Nav Items (Employee, Activity Log for Admin, Settings for both) */}
           <div className="px-3.5 space-y-1">
             {filteredSecondaryItems.map((item: NavItem) => {
               const Icon = item.icon

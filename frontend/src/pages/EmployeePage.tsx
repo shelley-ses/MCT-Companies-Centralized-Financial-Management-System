@@ -20,11 +20,10 @@ import {
   employeeService,
   type Company,
   type EmployeeUser,
-  type ActivityLogItem,
 } from '@/services/employeeService'
 import logo2Url from '@/assets/LOGO2.png'
 
-type TabType = 'user' | 'company' | 'activity'
+type TabType = 'user' | 'company'
 
 // Helper to parse date string like "Oct 6, 2026 · 9:15 AM" or "2026-10-05 08:14"
 function parseDateForFilter(dateStr: string): Date | null {
@@ -48,7 +47,6 @@ export const EmployeePage: React.FC = () => {
   // Data states
   const [users, setUsers] = React.useState<EmployeeUser[]>([])
   const [companies, setCompanies] = React.useState<Company[]>([])
-  const [activityLogs, setActivityLogs] = React.useState<ActivityLogItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
   // Modals state
@@ -66,22 +64,18 @@ export const EmployeePage: React.FC = () => {
 
   // Pagination state
   const [userPage, setUserPage] = React.useState(1)
-  const [logPage, setLogPage] = React.useState(1)
   const itemsPerPage = 14
-  const logsPerPage = 10
 
   // Load initial data
   const loadData = React.useCallback(async () => {
     try {
       setLoading(true)
-      const [userList, companyList, logList] = await Promise.all([
+      const [userList, companyList] = await Promise.all([
         employeeService.getUsers(),
         employeeService.getCompanies(),
-        employeeService.getActivityLogs(),
       ])
       setUsers(userList)
       setCompanies(companyList)
-      setActivityLogs(logList)
     } finally {
       setLoading(false)
     }
@@ -98,6 +92,14 @@ export const EmployeePage: React.FC = () => {
       return () => clearTimeout(timer)
     }
   }, [successBanner])
+
+  // Dynamic document title
+  React.useEffect(() => {
+    document.title =
+      activeTab === 'user'
+        ? 'User Management - MCT Centralized Financial System'
+        : 'Company Management - MCT Centralized Financial System'
+  }, [activeTab])
 
   // Filtered users for User Tab with Search + Date Range
   const filteredUsers = React.useMemo(() => {
@@ -144,47 +146,12 @@ export const EmployeePage: React.FC = () => {
     return result
   }, [companies, searchQuery])
 
-  // Filtered Activity Logs (Search + Date Range)
-  const filteredLogs = React.useMemo(() => {
-    let result = activityLogs
-
-    const q = searchQuery.toLowerCase().trim()
-    if (q) {
-      result = result.filter(
-        (l) =>
-          l.company.toLowerCase().includes(q) ||
-          l.action.toLowerCase().includes(q) ||
-          l.module.toLowerCase().includes(q) ||
-          l.target.toLowerCase().includes(q)
-      )
-    }
-
-    if (dateRange.startDate && dateRange.endDate) {
-      const start = new Date(`${dateRange.startDate}T00:00:00`)
-      const end = new Date(`${dateRange.endDate}T23:59:59`)
-      result = result.filter((l) => {
-        const lDate = parseDateForFilter(l.time)
-        if (!lDate) return true
-        return lDate >= start && lDate <= end
-      })
-    }
-
-    return result
-  }, [activityLogs, searchQuery, dateRange])
-
   // User tab pagination calculation
   const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage))
   const displayedUsers = React.useMemo(() => {
     const start = (userPage - 1) * itemsPerPage
     return filteredUsers.slice(start, start + itemsPerPage)
   }, [filteredUsers, userPage, itemsPerPage])
-
-  // Activity Log pagination calculation
-  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / logsPerPage))
-  const displayedLogs = React.useMemo(() => {
-    const start = (logPage - 1) * logsPerPage
-    return filteredLogs.slice(start, start + logsPerPage)
-  }, [filteredLogs, logPage, logsPerPage])
 
   const handleOpenPermission = (user: EmployeeUser) => {
     setSelectedUser(user)
@@ -230,14 +197,16 @@ export const EmployeePage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
-      {/* Top Header Block matching Image 1, 3, 4 */}
+      {/* Top Header Block */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-            User Management
+            {activeTab === 'user' ? 'User Management' : 'Company Management'}
           </h1>
           <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-            {users.length} users · {companies.length} companies
+            {activeTab === 'user'
+              ? `${users.length} users registered across all companies`
+              : `${companies.length} companies registered in MCT Group`}
           </p>
         </div>
 
@@ -247,7 +216,7 @@ export const EmployeePage: React.FC = () => {
             type="button"
             variant="outline"
             onClick={() => setIsCreateCompanyOpen(true)}
-            className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl border border-stroke/50 bg-white text-focus hover:bg-surface font-semibold text-sm shadow-xs flex items-center gap-2"
+            className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl border border-stroke/50 bg-white text-focus hover:bg-surface font-semibold text-sm shadow-xs flex items-center gap-2 cursor-pointer"
           >
             <Building2 className="h-4 w-4 text-focus/70 shrink-0" />
             <span>Create Company</span>
@@ -256,7 +225,7 @@ export const EmployeePage: React.FC = () => {
           <Button
             type="button"
             onClick={() => setIsCreateUserOpen(true)}
-            className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm shadow-xs flex items-center gap-2 transition-all"
+            className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer"
           >
             <UserPlus className="h-4 w-4 shrink-0" />
             <span>Create User</span>
@@ -279,15 +248,18 @@ export const EmployeePage: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         {/* Left Side: Extended Width Search Bar */}
         <div className="relative flex-1 max-w-full lg:max-w-xl xl:max-w-2xl">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
           <Input
             type="search"
-            placeholder="Search by Ref No. or Cheque No. (or customer)..."
+            placeholder={
+              activeTab === 'user'
+                ? 'Search users by name, email, or company...'
+                : 'Search companies by name, email, or address...'
+            }
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value)
               setUserPage(1)
-              setLogPage(1)
             }}
             className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
           />
@@ -295,19 +267,18 @@ export const EmployeePage: React.FC = () => {
 
         {/* Right Side: Date Filter + Outlined Tab Buttons */}
         <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto">
-          {/* Working Date Filter (displayed on User and Activity Log tabs) */}
-          {activeTab !== 'company' && (
+          {/* Working Date Filter (displayed on User tab) */}
+          {activeTab === 'user' && (
             <DateRangeFilter
               value={dateRange}
               onChange={(newRange) => {
                 setDateRange(newRange)
                 setUserPage(1)
-                setLogPage(1)
               }}
             />
           )}
 
-          {/* Outlined Tab Switcher (User, Company, Activity Log) */}
+          {/* Outlined Tab Switcher (User, Company) */}
           <div className="inline-flex items-center gap-2">
             <button
               type="button"
@@ -331,20 +302,20 @@ export const EmployeePage: React.FC = () => {
             >
               Company
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('activity')}
-              className={`px-5 py-2 rounded-full text-sm transition-all cursor-pointer shadow-xs ${
-                activeTab === 'activity'
-                  ? 'bg-[#960C01] text-white border border-[#960C01] font-semibold'
-                  : 'bg-white text-focus border border-stroke/60 hover:bg-surface hover:border-stroke font-medium'
-              }`}
-            >
-              Activity Log
-            </button>
           </div>
         </div>
       </div>
+
+      {/* Success Notification Alert */}
+      {successBanner && (
+        <div
+          role="status"
+          className="flex items-center gap-3 p-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-medium animate-in fade-in-50 duration-200"
+        >
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+          <span>{successBanner}</span>
+        </div>
+      )}
 
       {/* Main Content Area based on Tab */}
 
@@ -541,123 +512,7 @@ export const EmployeePage: React.FC = () => {
         </div>
       )}
 
-      {/* 3. ACTIVITY LOG TAB (matching Image 3 - Read-Only Table) */}
-      {activeTab === 'activity' && (
-        <div className="bg-white rounded-[20px] border border-stroke/30 shadow-xs p-4 sm:p-6 lg:p-8">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-stroke/20">
-                  <th className="pb-4 pt-1 px-6 w-[25%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Company
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[22%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Action
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[16%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Module
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[17%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Target
-                  </th>
-                  <th className="pb-4 pt-1 px-6 w-[20%] text-xs font-bold text-focus uppercase tracking-wider">
-                    Time
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stroke/15">
-                {loading ? (
-                  Array.from({ length: 8 }).map((_, i) => (
-                    <tr key={i}>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-36 rounded-md" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-32 rounded-md" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-24 rounded-md" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-24 rounded-md" /></td>
-                      <td className="py-4 px-6"><Skeleton className="h-4 w-36 rounded-md" /></td>
-                    </tr>
-                  ))
-                ) : displayedLogs.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-12 text-center text-muted-fg text-sm">
-                      No activity logs found matching your filters.
-                    </td>
-                  </tr>
-                ) : (
-                  displayedLogs.map((log) => (
-                    <tr
-                      key={log.id}
-                      className="hover:bg-surface/40 transition-colors"
-                    >
-                      {/* COMPANY */}
-                      <td className="py-4 px-6 text-sm font-medium text-focus whitespace-nowrap">
-                        {log.company}
-                      </td>
 
-                      {/* ACTION */}
-                      <td className="py-4 px-6 text-sm text-focus/90 whitespace-nowrap">
-                        {log.action}
-                      </td>
-
-                      {/* MODULE */}
-                      <td className="py-4 px-6 text-sm text-focus/80 whitespace-nowrap">
-                        {log.module}
-                      </td>
-
-                      {/* TARGET */}
-                      <td className="py-4 px-6 text-sm font-mono text-xs text-focus/80 whitespace-nowrap">
-                        {log.target}
-                      </td>
-
-                      {/* TIME */}
-                      <td className="py-4 px-6 text-sm text-focus/70 tabular-nums whitespace-nowrap">
-                        {log.time}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Activity Log Pagination matching Image 3 */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 mt-4 border-t border-stroke/20">
-            <p className="text-xs sm:text-sm text-muted-fg font-normal">
-              Showing {displayedLogs.length} of {filteredLogs.length} activity records
-            </p>
-
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-xs sm:text-sm text-muted-fg font-normal">
-                Page {logPage} out of {totalLogPages}
-              </span>
-
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={logPage <= 1}
-                  onClick={() => setLogPage((p) => Math.max(1, p - 1))}
-                  className="h-8 w-8 p-0 rounded-lg text-focus hover:bg-surface disabled:opacity-40"
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={logPage >= totalLogPages}
-                  onClick={() => setLogPage((p) => Math.min(totalLogPages, p + 1))}
-                  className="h-8 w-8 p-0 rounded-lg text-focus hover:bg-surface disabled:opacity-40"
-                  aria-label="Next page"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modals */}
 

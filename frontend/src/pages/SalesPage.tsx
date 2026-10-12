@@ -398,301 +398,304 @@ export const SalesPage: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-10 max-w-7xl mx-auto animate-in fade-in duration-300">
-      {/* 1. Header & Action Buttons (Matching EmployeePage Create Company / Create User layout) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-focus">
-            Sales
-          </h1>
-          <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5">
-            Here's the summary of sales in {displayedCompanyTitle}
-          </p>
-        </div>
-
-        {/* Top Right Actions: Export (Dropdown: CSV / PDF) & Add Sales */}
-        <div className="flex items-center gap-3 self-start sm:self-auto">
-          {/* Export Dropdown Button (Red in Admin sales page per user request; Outline for Auditor where Add Sales is red) */}
-          <div ref={exportDropdownRef} className="relative inline-block">
-            <Button
-              type="button"
-              variant={!isAuditor ? 'default' : 'outline'}
-              onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-              className={cn(
-                'h-11 px-4 sm:px-5 rounded-xl font-semibold text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
-                !isAuditor
-                  ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
-                  : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-              )}
-              aria-haspopup="true"
-              aria-expanded={isExportDropdownOpen}
-            >
-              <Download
-                className={cn(
-                  'h-4 w-4 shrink-0',
-                  !isAuditor ? 'text-white' : 'text-focus/70'
-                )}
-              />
-              <span>Export</span>
-              <ChevronDown
-                className={cn(
-                  'h-3.5 w-3.5 ml-0.5',
-                  !isAuditor ? 'text-white/90' : 'text-muted-fg'
-                )}
-              />
-            </Button>
-
-            {isExportDropdownOpen && (
-              <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                <button
-                  type="button"
-                  onClick={handleExportCsv}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-focus/90 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Download as CSV</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportPdf}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-focus/90 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-                >
-                  <FileText className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>Download as PDF</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Add Sales Button (Exclusively for Company Auditor; Admin side has NO Add Sales button per user request) */}
-          {isAuditor && (
-            <Button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
-            >
-              <Plus className="h-4 w-4 shrink-0" />
-              <span>Add Sales</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* 2. Unified Filter Bar: Period Dropdown (Daily, Quarterly, Monthly, Annually), Status, Date Picker (Right-aligned) */}
-      <div className="flex items-center justify-end">
-        {/* Filter controls */}
-        <div className="flex flex-wrap items-center justify-end gap-2.5">
-          {/* Custom Period Dropdown: Daily, Quarterly, Monthly, Annually */}
-          <div ref={periodDropdownRef} className="relative inline-block">
-            <button
-              type="button"
-              onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
-              className={cn(
-                'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
-              )}
-            >
-              <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
-              <span className="font-medium text-focus/90">{selectedPeriod}</span>
-              <ChevronDown
-                className={cn(
-                  'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
-                  isPeriodDropdownOpen && 'transform rotate-180'
-                )}
-              />
-            </button>
-
-            {isPeriodDropdownOpen && (
-              <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                {PERIOD_OPTIONS.map((period) => (
-                  <button
-                    key={period}
-                    type="button"
-                    onClick={() => handlePeriodChange(period)}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                      selectedPeriod === period
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-focus/80 hover:bg-slate-50'
-                    )}
-                  >
-                    <span>{period}</span>
-                    {selectedPeriod === period && (
-                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Status Dropdown */}
-          <div ref={statusDropdownRef} className="relative inline-block">
-            <button
-              type="button"
-              onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
-              className={cn(
-                'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
-              )}
-            >
-              <span className="font-medium text-focus/90">
-                {statusFilter === 'All' ? 'Status' : statusFilter}
-              </span>
-              <ChevronDown
-                className={cn(
-                  'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
-                  isStatusDropdownOpen && 'transform rotate-180'
-                )}
-              />
-            </button>
-
-            {isStatusDropdownOpen && (
-              <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                {(['All', 'Paid', 'Pending'] as const).map((st) => (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => {
-                      setStatusFilter(st)
-                      setIsStatusDropdownOpen(false)
-                    }}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                      statusFilter === st
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-focus/80 hover:bg-slate-50'
-                    )}
-                  >
-                    <span>
-                      {st === 'All'
-                        ? 'All Status'
-                        : st === 'Paid'
-                        ? 'Received / Paid'
-                        : 'Pending'}
-                    </span>
-                    {statusFilter === st && (
-                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Unified Date Range Picker (Presets + Custom Start & End Date) */}
-          <DateRangePicker
-            value={dateRange}
-            onChange={(newRange) => setDateRange(newRange)}
-          />
-
-          {/* Company Scope Dropdown (Admin only - no "Assigned: MCT Kitchen" badge per user request) */}
-          {!isAuditor && (
-            <div ref={companyDropdownRef} className="relative inline-block">
-              <button
+      {/* 1. Header & Controls */}
+      <div className="space-y-3">
+        {/* Top Row: Action Buttons (Export & Add Sales) sitting on top of the filters */}
+        <div className="flex items-center justify-end">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            {/* Export Dropdown Button (Red in Admin sales page per user request; Outline for Auditor where Add Sales is red) */}
+            <div ref={exportDropdownRef} className="relative inline-block">
+              <Button
                 type="button"
-                onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
+                variant={!isAuditor ? 'default' : 'outline'}
+                onClick={() => setIsExportDropdownOpen((prev) => !prev)}
                 className={cn(
-                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  !isAuditor
+                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
+                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
                 )}
-                aria-label="Filter sales by company"
+                aria-haspopup="true"
+                aria-expanded={isExportDropdownOpen}
               >
-                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-medium text-focus/90 truncate max-w-[150px]">
-                  {selectedCompany}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                {selectedCompany !== 'All Companies' && (
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSelectedCompany('All Companies')
-                    }}
-                    className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
-                    title="Reset to All Companies"
+                <Download
+                  className={cn(
+                    'h-4 w-4 shrink-0',
+                    !isAuditor ? 'text-white' : 'text-focus/70'
+                  )}
+                />
+                <span>Export</span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 ml-0.5',
+                    !isAuditor ? 'text-white/90' : 'text-muted-fg'
+                  )}
+                />
+              </Button>
+
+              {isExportDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-focus/90 hover:bg-slate-50 transition-colors text-left cursor-pointer"
                   >
-                    <X className="h-3 w-3" />
-                  </span>
-                )}
-              </button>
-
-              {isCompanyDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-68 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {/* Header */}
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-stroke/20 px-1">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
-                      Filter By Company
-                    </span>
-                    {selectedCompany !== 'All Companies' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedCompany('All Companies')
-                          setIsCompanyDropdownOpen(false)
-                        }}
-                        className="text-xs text-primary hover:underline font-semibold cursor-pointer"
-                      >
-                        Clear Filter
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Company Quick Search */}
-                  <div className="relative mb-2 px-1">
-                    <Search className="w-3.5 h-3.5 text-muted-fg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={companySearch}
-                      onChange={(e) => setCompanySearch(e.target.value)}
-                      placeholder="Search company…"
-                      className="w-full pl-8 pr-7 py-1.5 rounded-lg border border-stroke/40 bg-slate-50/70 text-xs text-focus placeholder:text-muted-fg/60 focus:outline-none focus:ring-1 focus:ring-focus focus:bg-white"
-                    />
-                    {companySearch && (
-                      <button
-                        type="button"
-                        onClick={() => setCompanySearch('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Company list */}
-                  <div className="space-y-0.5 max-h-56 overflow-y-auto pr-0.5">
-                    {filteredCompanyList.length === 0 ? (
-                      <div className="py-4 text-center text-xs text-muted-fg">
-                        No matching companies
-                      </div>
-                    ) : (
-                      filteredCompanyList.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => {
-                            setSelectedCompany(c)
-                            setIsCompanyDropdownOpen(false)
-                            setCompanySearch('')
-                          }}
-                          className={cn(
-                            'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                            selectedCompany === c
-                              ? 'bg-primary/10 text-primary font-semibold'
-                              : 'text-focus/80 hover:bg-slate-50'
-                          )}
-                        >
-                          <span className="truncate">{c}</span>
-                          {selectedCompany === c && (
-                            <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                          )}
-                        </button>
-                      ))
-                    )}
-                  </div>
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Download as CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportPdf}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-focus/90 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Download as PDF</span>
+                  </button>
                 </div>
               )}
             </div>
-          )}
+
+            {/* Add Sales Button (Exclusively for Company Auditor; Admin side has NO Add Sales button per user request) */}
+            {isAuditor && (
+              <Button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>Add Sales</span>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Second Row: Page Title on Left, Filter Toolbar on Right (level with Title & Subtitle) */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+              Sales
+            </h1>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Here's the summary of sales in {displayedCompanyTitle}
+            </p>
+          </div>
+
+          {/* Filter Toolbar (Aligned with Title/Subtitle, sitting directly under Export & Add Sales) */}
+          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+            {/* Custom Period Dropdown: Daily, Quarterly, Monthly, Annually */}
+            <div ref={periodDropdownRef} className="relative inline-block">
+              <button
+                type="button"
+                onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
+                className={cn(
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                  isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                )}
+              >
+                <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
+                <span className="font-medium text-focus/90">{selectedPeriod}</span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
+                    isPeriodDropdownOpen && 'transform rotate-180'
+                  )}
+                />
+              </button>
+
+              {isPeriodDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  {PERIOD_OPTIONS.map((period) => (
+                    <button
+                      key={period}
+                      type="button"
+                      onClick={() => handlePeriodChange(period)}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                        selectedPeriod === period
+                          ? 'bg-primary/10 text-primary font-semibold'
+                          : 'text-focus/80 hover:bg-slate-50'
+                      )}
+                    >
+                      <span>{period}</span>
+                      {selectedPeriod === period && (
+                        <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Status Dropdown */}
+            <div ref={statusDropdownRef} className="relative inline-block">
+              <button
+                type="button"
+                onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
+                className={cn(
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                )}
+              >
+                <span className="font-medium text-focus/90">
+                  {statusFilter === 'All' ? 'Status' : statusFilter}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
+                    isStatusDropdownOpen && 'transform rotate-180'
+                  )}
+                />
+              </button>
+
+              {isStatusDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  {(['All', 'Paid', 'Pending'] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(st)
+                        setIsStatusDropdownOpen(false)
+                      }}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                        statusFilter === st
+                          ? 'bg-primary/10 text-primary font-semibold'
+                          : 'text-focus/80 hover:bg-slate-50'
+                      )}
+                    >
+                      <span>
+                        {st === 'All'
+                          ? 'All Status'
+                          : st === 'Paid'
+                          ? 'Received / Paid'
+                          : 'Pending'}
+                      </span>
+                      {statusFilter === st && (
+                        <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Unified Date Range Picker (presets hidden, period handled by Period dropdown) */}
+            <DateRangePicker
+              value={dateRange}
+              onChange={(newRange) => setDateRange(newRange)}
+              hidePresets
+            />
+
+            {/* Company Scope Dropdown (Admin only - no "Assigned: MCT Kitchen" badge per user request) */}
+            {!isAuditor && (
+              <div ref={companyDropdownRef} className="relative inline-block">
+                <button
+                  type="button"
+                  onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
+                  className={cn(
+                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                    isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  )}
+                  aria-label="Filter sales by company"
+                >
+                  <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                  <span className="font-medium text-focus/90 truncate max-w-[150px]">
+                    {selectedCompany}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                  {selectedCompany !== 'All Companies' && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedCompany('All Companies')
+                      }}
+                      className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
+                      title="Reset to All Companies"
+                    >
+                      <X className="h-3 w-3" />
+                    </span>
+                  )}
+                </button>
+
+                {isCompanyDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-68 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-stroke/20 px-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
+                        Filter By Company
+                      </span>
+                      {selectedCompany !== 'All Companies' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCompany('All Companies')
+                            setIsCompanyDropdownOpen(false)
+                          }}
+                          className="text-xs text-primary hover:underline font-semibold cursor-pointer"
+                        >
+                          Clear Filter
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Company Quick Search */}
+                    <div className="relative mb-2 px-1">
+                      <Search className="w-3.5 h-3.5 text-muted-fg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={companySearch}
+                        onChange={(e) => setCompanySearch(e.target.value)}
+                        placeholder="Search company…"
+                        className="w-full pl-8 pr-7 py-1.5 rounded-lg border border-stroke/40 bg-slate-50/70 text-xs text-focus placeholder:text-muted-fg/60 focus:outline-none focus:ring-1 focus:ring-focus focus:bg-white"
+                      />
+                      {companySearch && (
+                        <button
+                          type="button"
+                          onClick={() => setCompanySearch('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Company list */}
+                    <div className="space-y-0.5 max-h-56 overflow-y-auto pr-0.5">
+                      {filteredCompanyList.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-muted-fg">
+                          No matching companies
+                        </div>
+                      ) : (
+                        filteredCompanyList.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCompany(c)
+                              setIsCompanyDropdownOpen(false)
+                              setCompanySearch('')
+                            }}
+                            className={cn(
+                              'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                              selectedCompany === c
+                                ? 'bg-primary/10 text-primary font-semibold'
+                                : 'text-focus/80 hover:bg-slate-50'
+                            )}
+                          >
+                            <span className="truncate">{c}</span>
+                            {selectedCompany === c && (
+                              <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

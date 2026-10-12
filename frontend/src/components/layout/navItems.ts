@@ -3,7 +3,9 @@ import {
   BarChart3,
   CircleDollarSign,
   HandCoins,
+  ArrowLeftRight,
   Users,
+  History,
   Settings,
 } from 'lucide-react'
 import type * as React from 'react'
@@ -52,15 +54,29 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     icon: HandCoins,
     roles: ['Admin', 'Company Auditor'],
   },
+  {
+    id: 'transaction',
+    title: 'Transaction',
+    href: '/transaction',
+    icon: ArrowLeftRight,
+    roles: ['Admin', 'Company Auditor'],
+  },
 ] as const
 
 export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
   {
     id: 'employee',
-    title: 'Employee',
+    title: 'Management',
     href: '/employee',
     icon: Users,
     roles: ['Admin'], // Exclusively for Admin (Company & User Management)
+  },
+  {
+    id: 'activity-log',
+    title: 'Activity Log',
+    href: '/activity-log',
+    icon: History,
+    roles: ['Admin'], // Exclusively for Admin
   },
   {
     id: 'settings',
@@ -70,3 +86,4 @@ export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
     roles: ['Admin', 'Company Auditor'],
   },
 ] as const
+
