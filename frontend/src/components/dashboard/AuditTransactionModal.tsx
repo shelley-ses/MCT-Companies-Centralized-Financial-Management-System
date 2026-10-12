@@ -50,9 +50,10 @@ interface AuditTransactionModalProps {
   onLoanUpdated?: (updatedItem: LoanItem) => void
   onOpenUpdateLoanStatus?: (loan: LoanItem | null) => void
   editable?: boolean
+  initialIsEditing?: boolean
 }
 
-const CATEGORY_OPTIONS = [
+const DEFAULT_CATEGORY_OPTIONS = [
   'None',
   'GCash',
   'Maya',
@@ -76,12 +77,13 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   onLoanUpdated,
   onOpenUpdateLoanStatus,
   editable = false,
+  initialIsEditing = false,
 }) => {
   const [currentTx, setCurrentTx] = React.useState<DashboardTransactionItem | null>(transaction)
   const [currentSale, setCurrentSale] = React.useState<SalesItem | null>(sale || null)
   const [currentExpense, setCurrentExpense] = React.useState<ExpenseItem | null>(expense || null)
   const [currentLoan, setCurrentLoan] = React.useState<LoanItem | null>(loan || null)
-  const [isEditing, setIsEditing] = React.useState(false)
+  const [isEditing, setIsEditing] = React.useState(Boolean(initialIsEditing && editable))
   const [isUpdateLoanStatusOpen, setIsUpdateLoanStatusOpen] = React.useState(false)
 
   // Form states for editing
@@ -90,6 +92,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [category, setCategory] = React.useState('None')
+  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_CATEGORY_OPTIONS)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
 
@@ -104,6 +107,26 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
 
   const todayIso = React.useMemo(() => new Date().toISOString().split('T')[0], [])
 
+  // Fetch categories from database
+  React.useEffect(() => {
+    let isMounted = true
+    const fetchCats = async () => {
+      try {
+        const cats = await expenseService.getCategories()
+        if (isMounted && cats && cats.length > 0) {
+          const names = Array.from(new Set(['None', ...cats.map((c) => c.name)]))
+          setCategoryOptions(names)
+        }
+      } catch (err) {
+        console.warn('Could not load categories:', err)
+      }
+    }
+    fetchCats()
+    return () => {
+      isMounted = false
+    }
+  }, [open])
+
   // Sync internal state when props change
   React.useEffect(() => {
     setCurrentTx(transaction)
@@ -115,7 +138,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   // Reset or initialize edit fields when modal opens or target changes
   React.useEffect(() => {
     if (open) {
-      setIsEditing(false)
+      setIsEditing(Boolean(initialIsEditing && editable))
       setError('')
       setFieldErrors({})
 
@@ -178,9 +201,9 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
 
   const filteredCategoryOptions = React.useMemo(() => {
     const q = category.trim().toLowerCase()
-    if (!q) return CATEGORY_OPTIONS
-    return CATEGORY_OPTIONS.filter((opt) => opt.toLowerCase().includes(q))
-  }, [category])
+    if (!q) return categoryOptions
+    return categoryOptions.filter((opt) => opt.toLowerCase().includes(q))
+  }, [category, categoryOptions])
 
   const activeTx = currentTx || transaction
   const activeSale = currentSale || sale
@@ -279,11 +302,16 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       errors.particulars = 'Particulars is required.'
     }
 
-    const parsedAmount = parseFloat(amount)
-    if (!amount.trim()) {
+    const cleanAmount = amount.trim().replace(/,/g, '')
+    if (!cleanAmount) {
       errors.amount = 'Amount is required.'
-    } else if (isNaN(parsedAmount) || parsedAmount < 1.0) {
-      errors.amount = 'Amount must be at least 1.00 (cannot be 0 or less than 1).'
+    } else if (/[a-zA-Z]/.test(cleanAmount) || !/^\d+(\.\d{1,2})?$/.test(cleanAmount)) {
+      errors.amount = 'Amount must be a valid positive number without letters.'
+    } else {
+      const parsedAmount = parseFloat(cleanAmount)
+      if (isNaN(parsedAmount) || parsedAmount < 1.0) {
+        errors.amount = 'Amount must be at least 1.00 (cannot be 0 or negative).'
+      }
     }
 
     if (Object.keys(errors).length > 0) {
@@ -487,15 +515,22 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                   Amount (PHP) <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  type="number"
-                  step="0.01"
-                  min="1.00"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="1.00"
                   value={amount}
+                  onKeyDown={(e) => {
+                    if (['-', '+', 'e', 'E'].includes(e.key)) {
+                      e.preventDefault()
+                    }
+                  }}
                   onChange={(e) => {
-                    setAmount(e.target.value)
-                    if (fieldErrors.amount) {
-                      setFieldErrors((prev) => ({ ...prev, amount: undefined }))
+                    const val = e.target.value
+                    if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                      setAmount(val)
+                      if (fieldErrors.amount) {
+                        setFieldErrors((prev) => ({ ...prev, amount: undefined }))
+                      }
                     }
                   }}
                   className={cn(

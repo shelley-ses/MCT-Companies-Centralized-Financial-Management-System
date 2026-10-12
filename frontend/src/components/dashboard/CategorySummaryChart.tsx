@@ -35,16 +35,19 @@ interface CategorySummaryChartProps {
   type: 'income' | 'expense'
   transactions?: DashboardTransactionItem[]
   className?: string
+  defaultChartType?: 'bar' | 'pie'
 }
 
 export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
   type,
   transactions = [],
   className,
+  defaultChartType,
 }) => {
-  // Chart type dropdown: 'bar' (default) or 'pie'
-  // Independent per instance, retained across date range updates
-  const [chartType, setChartType] = React.useState<'bar' | 'pie'>('bar')
+  // Chart type dropdown: defaults to 'pie' for expense, 'bar' for income (unless overridden)
+  const [chartType, setChartType] = React.useState<'bar' | 'pie'>(
+    defaultChartType || (type === 'expense' ? 'pie' : 'bar')
+  )
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
 
@@ -278,7 +281,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
         </div>
       ) : (
         /* Pie Chart View */
-        <div className="h-48 sm:h-56 w-full flex items-center justify-center">
+        <div className="h-56 sm:h-64 w-full flex items-center justify-center">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -287,9 +290,15 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
                 nameKey="category"
                 cx="50%"
                 cy="50%"
-                innerRadius={48}
-                outerRadius={78}
+                innerRadius={42}
+                outerRadius={72}
                 paddingAngle={3}
+                labelLine={true}
+                label={({ category, name, percent }: any) => {
+                  const cat = category || name || ''
+                  const pct = Math.round((percent || 0) * 100)
+                  return `${cat} (${pct}%)`
+                }}
               >
                 {categoryData
                   .filter((d) => d.amount > 0)

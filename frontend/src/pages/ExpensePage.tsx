@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   FileText,
   Trash2,
+  Pencil,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
@@ -48,7 +49,7 @@ import {
   type ExpenseItem,
 } from '@/services/expenseService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
-import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
 
 const COMPANY_LIST = [
@@ -114,12 +115,13 @@ export const ExpensePage: React.FC = () => {
   const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
   const [selectedExpense, setSelectedExpense] = React.useState<ExpenseItem | null>(null)
   const [isAuditModalOpen, setIsAuditModalOpen] = React.useState(false)
+  const [isEditingModal, setIsEditingModal] = React.useState(false)
   const [highlightedExpenseId, setHighlightedExpenseId] = React.useState<string | null>(null)
 
   const handlePeriodChange = (period: PeriodOption) => {
     setSelectedPeriod(period)
     setIsPeriodDropdownOpen(false)
-    const currentToday = new Date().toISOString().split('T')[0]
+    const currentToday = formatToYYYYMMDD(new Date())
     const [currYear, currMonth] = currentToday.split('-')
 
     switch (period) {
@@ -187,14 +189,16 @@ export const ExpensePage: React.FC = () => {
   const loadExpenses = React.useCallback(async () => {
     try {
       setLoading(true)
-      const data = await expenseService.getExpenses()
+      const data = await expenseService.getExpenses({
+        company: isAuditor ? assignedCompany : (selectedCompany === 'All Companies' ? undefined : selectedCompany),
+      })
       setExpenses(data)
     } catch (err) {
       console.error('Failed to load expenses:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isAuditor, assignedCompany, selectedCompany])
 
   React.useEffect(() => {
     loadExpenses()
@@ -336,6 +340,14 @@ export const ExpensePage: React.FC = () => {
   const handleOpenRow = (expense: ExpenseItem) => {
     setSelectedExpense(expense)
     setSelectedTx(expenseService.toDashboardTransaction(expense))
+    setIsEditingModal(false)
+    setIsAuditModalOpen(true)
+  }
+
+  const handleEditRow = (expense: ExpenseItem) => {
+    setSelectedExpense(expense)
+    setSelectedTx(expenseService.toDashboardTransaction(expense))
+    setIsEditingModal(true)
     setIsAuditModalOpen(true)
   }
 
@@ -666,16 +678,25 @@ export const ExpensePage: React.FC = () => {
 
       {/* 3. Total Expense KPI Card */}
       <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
-        <div>
+        <div className="w-full max-w-[calc(100%-60px)]">
           <span className="text-xs font-medium text-muted-fg block">
             Total Expense
           </span>
-          <h3 className="text-xl sm:text-2xl font-bold text-red-600 mt-1 tabular-nums tracking-tight">
-            {formatPHP(kpis.totalExpense)}
-          </h3>
-          <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5">
-            Total operational expense withdrawals for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-          </p>
+          {loading ? (
+            <div className="space-y-1.5 mt-2">
+              <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+              <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+            </div>
+          ) : (
+            <>
+              <h3 className="text-xl sm:text-2xl font-bold text-red-600 mt-1 tabular-nums tracking-tight">
+                {formatPHP(kpis.totalExpense)}
+              </h3>
+              <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                Total operational expense withdrawals for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
+              </p>
+            </>
+          )}
         </div>
 
         <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-red-50 border border-red-200/60 flex items-center justify-center text-red-600 shrink-0 shadow-2xs">
@@ -685,10 +706,26 @@ export const ExpensePage: React.FC = () => {
 
       {/* 4. Charts Section: Single Diagram with Dropdown (matching SalesPage) */}
       <div className="w-full">
-        <ExpenseSummaryChart
-          transactions={mappedTransactions}
-          className="w-full"
-        />
+        {loading ? (
+          <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-stroke/20">
+              <div className="space-y-1.5">
+                <div className="h-5 w-44 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3.5 w-64 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+              <div className="h-9 w-28 bg-slate-200/60 animate-pulse rounded-xl" />
+            </div>
+            <div className="h-56 sm:h-64 w-full bg-slate-50/70 rounded-2xl flex flex-col items-center justify-center gap-3">
+              <div className="w-20 h-20 rounded-full border-4 border-slate-200 border-t-red-400 animate-spin opacity-60" />
+              <div className="h-3.5 w-40 bg-slate-200/70 animate-pulse rounded" />
+            </div>
+          </Card>
+        ) : (
+          <ExpenseSummaryChart
+            transactions={mappedTransactions}
+            className="w-full"
+          />
+        )}
       </div>
 
       {/* 5. Summary Transactions in Expense */}
@@ -770,14 +807,31 @@ export const ExpensePage: React.FC = () => {
 
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-12 text-center text-xs sm:text-sm text-muted-fg animate-pulse"
-                  >
-                    Loading expense records…
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 5 }).map((_, idx) => (
+                  <TableRow key={idx} className="border-b border-slate-100">
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-24 bg-slate-200/60 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-36 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/70 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-5 w-20 bg-slate-200/60 animate-pulse rounded-full" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4 text-center">
+                      <div className="h-6 w-14 bg-slate-200/60 animate-pulse rounded-md mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ))
               ) : paginatedExpenses.length === 0 ? (
                 <TableRow>
                   <TableCell
@@ -852,7 +906,17 @@ export const ExpensePage: React.FC = () => {
                       className="w-[14.2857%] px-4 py-3.5 text-center whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex items-center justify-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditRow(expense)}
+                          className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-primary hover:bg-primary/10 cursor-pointer"
+                          title="Edit Expense"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
@@ -987,12 +1051,14 @@ export const ExpensePage: React.FC = () => {
           if (!open) {
             setSelectedExpense(null)
             setSelectedTx(null)
+            setIsEditingModal(false)
           }
         }}
         transaction={selectedTx}
         expense={selectedExpense}
         onExpenseUpdated={handleExpenseUpdated}
         editable={true}
+        initialIsEditing={isEditingModal}
       />
     </div>
   )

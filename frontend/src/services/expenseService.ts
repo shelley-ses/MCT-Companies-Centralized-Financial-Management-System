@@ -32,193 +32,7 @@ export interface NewExpenseInput {
   status: 'Paid' | 'Pending'
 }
 
-const INITIAL_EXPENSES: ExpenseItem[] = [
-  {
-    id: 'exp_1',
-    refNo: 'REF-202610-301',
-    chequeNo: 'CHK-99201',
-    date: '10/01/26',
-    rawDate: '2026-10-01',
-    particulars: 'Commercial Kitchen Utilities & Gas Refill',
-    withdrawal: 9000,
-    netAmount: 9000,
-    category: 'In-house',
-    company: 'MCT Kitchen',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Invoice and receipt verified against Meralco & Solane statements.',
-    auditDate: '2026-10-02 14:15',
-    createdBy: 'Finance Officer (Maria Santos)',
-    createdAt: '2026-10-01 08:30',
-    updatedAt: '2026-10-02 14:15',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_2',
-    refNo: 'REF-202610-302',
-    chequeNo: 'CHK-99203',
-    date: '10/02/26',
-    rawDate: '2026-10-02',
-    particulars: 'Fresh Produce & Wholesale Seafood Supplies',
-    withdrawal: 15200,
-    netAmount: 15200,
-    category: 'Maya',
-    company: 'MCT Kitchen',
-    status: 'Paid',
-    auditStatus: 'Pending Audit',
-    auditNotes: 'Awaiting supplier delivery receipt countersignature.',
-    createdBy: 'Inventory Head (Carlos Dizon)',
-    createdAt: '2026-10-02 07:15',
-    updatedAt: '2026-10-02 07:20',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_3',
-    refNo: 'REF-202610-303',
-    chequeNo: 'CHK-88101',
-    date: '10/03/26',
-    rawDate: '2026-10-03',
-    particulars: 'Main Facility Electricity & Power Generation',
-    withdrawal: 24000,
-    netAmount: 24000,
-    category: 'In-house',
-    company: 'MCT Hotel',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Remi Lee',
-    auditNotes: 'Utility voucher cleared by Head of Audit.',
-    auditDate: '2026-10-04 11:20',
-    createdBy: 'Hotel General Admin (Paul Tan)',
-    createdAt: '2026-10-03 09:10',
-    updatedAt: '2026-10-04 11:20',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_4',
-    refNo: 'REF-202610-304',
-    chequeNo: 'CHK-77102',
-    date: '10/04/26',
-    rawDate: '2026-10-04',
-    particulars: 'Beverage Syrup & Espresso Roast Procurement',
-    withdrawal: 12500,
-    netAmount: 12500,
-    category: 'GCash',
-    company: 'JK Cafe',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Supplier invoice and GCash voucher validated.',
-    auditDate: '2026-10-05 10:00',
-    createdBy: 'Store Manager (Carla Reyes)',
-    createdAt: '2026-10-04 14:20',
-    updatedAt: '2026-10-05 10:00',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_5',
-    refNo: 'REF-202610-305',
-    chequeNo: '',
-    date: '10/05/26',
-    rawDate: '2026-10-05',
-    particulars: 'Weekly Staff Transport & Logistics Fuel Voucher',
-    withdrawal: 4800,
-    netAmount: 4800,
-    category: 'Cash',
-    company: 'Annex Nine',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Fuel receipts and vehicle logbook checked.',
-    auditDate: '2026-10-06 09:15',
-    createdBy: 'Logistics Supervisor (Mario Cruz)',
-    createdAt: '2026-10-05 17:30',
-    updatedAt: '2026-10-06 09:15',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_6',
-    refNo: 'REF-202610-306',
-    chequeNo: 'CHK-66201',
-    date: '10/06/26',
-    rawDate: '2026-10-06',
-    particulars: 'High-Volume Paper Stock & Offset Ink Restock',
-    withdrawal: 31000,
-    netAmount: 31000,
-    category: 'Cheque',
-    company: 'JK Printing',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Remi Lee',
-    auditNotes: 'PDC voucher cleared and verified with depository statement.',
-    auditDate: '2026-10-07 13:00',
-    createdBy: 'Production Manager (Dante Cruz)',
-    createdAt: '2026-10-06 11:00',
-    updatedAt: '2026-10-07 13:00',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_7',
-    refNo: 'REF-202610-307',
-    chequeNo: '',
-    date: '10/07/26',
-    rawDate: '2026-10-07',
-    particulars: 'Cold Storage Maintenance & Freezing Inspection',
-    withdrawal: 8500,
-    netAmount: 8500,
-    category: 'PayMongo',
-    company: 'MCT Kitchen',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Technician service report attached and verified.',
-    auditDate: '2026-10-07 16:45',
-    createdBy: 'Operations Lead (David Ramos)',
-    createdAt: '2026-10-07 14:15',
-    updatedAt: '2026-10-07 16:45',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_8',
-    refNo: 'REF-202610-308',
-    chequeNo: 'CHK-99208',
-    date: '10/08/26',
-    rawDate: '2026-10-08',
-    particulars: 'Corporate Software Licensing & ERP Cloud Hosting',
-    withdrawal: 18500,
-    netAmount: 18500,
-    category: 'Bank Transfer',
-    company: 'Merillon',
-    status: 'Pending',
-    auditStatus: 'Pending Audit',
-    auditNotes: 'Invoice under verification with corporate IT administrator.',
-    createdBy: 'IT Specialist (Kevin Flores)',
-    createdAt: '2026-10-08 09:30',
-    updatedAt: '2026-10-08 09:30',
-    type: 'Expense',
-  },
-  {
-    id: 'exp_9',
-    refNo: 'REF-202610-309',
-    chequeNo: '',
-    date: '10/08/26',
-    rawDate: '2026-10-08',
-    particulars: 'Packaging Supplies & Biodegradable Takeout Boxes',
-    withdrawal: 7400,
-    netAmount: 7400,
-    category: 'Panda',
-    company: 'MCT Kitchen',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Supplier packing list confirmed upon arrival at commissary.',
-    auditDate: '2026-10-08 12:00',
-    createdBy: 'Head Cashier (Angela Reyes)',
-    createdAt: '2026-10-08 10:15',
-    updatedAt: '2026-10-08 12:00',
-    type: 'Expense',
-  },
-]
+const INITIAL_EXPENSES: ExpenseItem[] = []
 
 const EXPENSES_STORAGE_KEY = 'mct_expense_records_v1'
 
@@ -226,9 +40,9 @@ function loadStoredExpenses(): ExpenseItem[] {
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem(EXPENSES_STORAGE_KEY)
-      if (stored) {
+      if (stored !== null) {
         const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed
         }
       }
@@ -236,7 +50,7 @@ function loadStoredExpenses(): ExpenseItem[] {
       // ignore
     }
   }
-  return INITIAL_EXPENSES
+  return []
 }
 
 function saveStoredExpenses(items: ExpenseItem[]): void {
@@ -251,15 +65,47 @@ function saveStoredExpenses(items: ExpenseItem[]): void {
 
 let inMemoryExpenses: ExpenseItem[] = loadStoredExpenses()
 
+function mapBackendExpenseToItem(exp: any): ExpenseItem {
+  const rawDateStr = exp.expense_date || '2026-10-01'
+  let displayDate = '10/01/26'
+  if (rawDateStr) {
+    const parts = rawDateStr.split('-')
+    if (parts.length === 3) {
+      displayDate = `${parts[1]}/${parts[2]}/${parts[0].slice(2)}`
+    }
+  }
+
+  const amt = Number(exp.amount || exp.withdrawal || 0)
+  const isPending = (exp.unpaid_balance !== undefined && Number(exp.unpaid_balance) > 0) || exp.status === 'Pending'
+
+  return {
+    id: `exp_${exp.expense_id || exp.id}`,
+    refNo: exp.reference_no || exp.ref_no || `REF-${exp.expense_id || '001'}`,
+    chequeNo: exp.cheque_no || exp.cheque_number || '',
+    date: displayDate,
+    rawDate: rawDateStr,
+    particulars: exp.particulars || exp.description || 'Expense Outflow',
+    withdrawal: amt,
+    netAmount: amt,
+    category: exp.category_name || exp.category || 'In-house',
+    company: exp.company_name || exp.company || 'MCT Kitchen',
+    status: isPending ? 'Pending' : 'Paid',
+    auditStatus: 'Verified',
+    type: 'Expense',
+    createdAt: exp.created_at || new Date().toISOString(),
+    updatedAt: exp.updated_at || new Date().toISOString(),
+  }
+}
+
 export const expenseService = {
-  async getExpenses(): Promise<ExpenseItem[]> {
+  async getCategories(): Promise<{ category_id: number; name: string }[]> {
     try {
       const token =
         typeof window !== 'undefined'
           ? sessionStorage.getItem('mct_access_token')
           : null
 
-      const res = await fetch('/api/v1/expenses', {
+      const res = await fetch('/api/v1/categories', {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -267,34 +113,63 @@ export const expenseService = {
       })
       if (res.ok) {
         const data = await res.json()
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped: ExpenseItem[] = data.map((exp: any) => ({
-            id: `exp_${exp.expense_id || exp.id}`,
-            refNo: exp.ref_no || `REF-${exp.expense_id}`,
-            chequeNo: exp.cheque_no || '',
-            date: exp.expense_date
-              ? new Date(exp.expense_date).toLocaleDateString('en-US', {
-                  month: '2-digit',
-                  day: '2-digit',
-                  year: '2-digit',
-                })
-              : '10/01/26',
-            rawDate: exp.expense_date || '2026-10-01',
-            particulars: exp.particulars || exp.description || 'Expense Transaction',
-            withdrawal: Number(exp.amount || exp.withdrawal || 0),
-            netAmount: Number(exp.amount || exp.withdrawal || 0),
-            category: exp.category_name || exp.category || 'In-house',
-            company: exp.company_name || 'MCT Kitchen',
-            status: exp.unpaid_balance && exp.unpaid_balance > 0 ? 'Pending' : 'Paid',
-            auditStatus: 'Verified',
-            type: 'Expense',
-            createdAt: exp.created_at || '2026-10-01 08:30',
-          }))
+        if (Array.isArray(data)) {
+          return data
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch categories from backend:', err)
+    }
+    return [
+      { category_id: 1, name: 'GCash' },
+      { category_id: 2, name: 'Maya' },
+      { category_id: 3, name: 'PayMongo' },
+      { category_id: 4, name: 'Panda' },
+      { category_id: 5, name: 'In-house' },
+      { category_id: 6, name: 'Cheque' },
+      { category_id: 7, name: 'Bank Transfer' },
+      { category_id: 8, name: 'Cash' },
+    ]
+  },
+
+  async getExpenses(params?: {
+    company?: string
+    start_date?: string
+    end_date?: string
+    category_id?: number
+  }): Promise<ExpenseItem[]> {
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const query = new URLSearchParams()
+      if (params?.company && params.company !== 'All Companies') {
+        query.append('company_name', params.company)
+      }
+      if (params?.start_date) query.append('start_date', params.start_date)
+      if (params?.end_date) query.append('end_date', params.end_date)
+      if (params?.category_id) query.append('category_id', String(params.category_id))
+
+      const url = `/api/v1/expenses${query.toString() ? `?${query.toString()}` : ''}`
+      const res = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          const mapped = data.map(mapBackendExpenseToItem)
+          inMemoryExpenses = mapped
+          saveStoredExpenses(mapped)
           return mapped
         }
       }
-    } catch {
-      // fallback to local
+    } catch (err) {
+      console.warn('Backend GET /expenses failed, falling back to local storage:', err)
     }
 
     return [...inMemoryExpenses]
@@ -309,7 +184,53 @@ export const expenseService = {
         : input.date
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-    const refNo = `REF-202610-${randomSuffix}`
+    const refNo = `REF-${rawDate.replace(/-/g, '')}-${randomSuffix}`
+
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const payload = {
+        company: input.company,
+        expense_date: input.date,
+        particulars: input.particulars,
+        description: input.particulars,
+        amount: input.amount,
+        category: input.category,
+        cheque_no: input.chequeNo || null,
+        reference_no: refNo,
+      }
+
+      const res = await fetch('/api/v1/expenses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const created = await res.json()
+        const mapped = mapBackendExpenseToItem(created)
+        inMemoryExpenses = [mapped, ...inMemoryExpenses]
+        saveStoredExpenses(inMemoryExpenses)
+        return mapped
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        const errorMsg =
+          errData.detail ||
+          (typeof errData === 'string' ? errData : 'Failed to record expense entry.')
+        throw new Error(errorMsg)
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err
+      }
+      console.warn('Backend POST /expenses failed, creating local record:', err)
+    }
 
     const newExpense: ExpenseItem = {
       id: `exp_${Date.now()}`,
@@ -325,7 +246,7 @@ export const expenseService = {
       status: input.status,
       auditStatus: 'Pending Audit',
       auditNotes: 'Newly recorded expense transaction.',
-      createdBy: 'Finance Auditor (Alex Cruz)',
+      createdBy: 'Finance Auditor',
       createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
       updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
       type: 'Expense',
@@ -338,9 +259,61 @@ export const expenseService = {
 
   async updateExpense(
     id: string,
-    updates: Partial<ExpenseItem> & { amount?: number }
+    updates: Partial<ExpenseItem> & { amount?: number; particulars?: string; chequeNo?: string }
   ): Promise<ExpenseItem | null> {
-    const index = inMemoryExpenses.findIndex((e) => e.id === id)
+    const numericId = id.replace(/^exp_/, '')
+    const withdrawalVal =
+      updates.withdrawal !== undefined
+        ? updates.withdrawal
+        : updates.amount !== undefined
+        ? updates.amount
+        : undefined
+
+    const payload: Record<string, any> = {}
+    if (updates.rawDate || (updates.date && updates.date.includes('-'))) {
+      payload.expense_date = updates.rawDate || updates.date
+    }
+    if (withdrawalVal !== undefined) {
+      payload.amount = withdrawalVal
+    }
+    if (updates.particulars) {
+      payload.particulars = updates.particulars
+      payload.description = updates.particulars
+    }
+    if (updates.category) {
+      payload.category = updates.category
+    }
+    if (updates.chequeNo !== undefined) {
+      payload.cheque_no = updates.chequeNo
+    }
+
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(`/api/v1/expenses/${numericId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const updated = await res.json()
+        const mapped = mapBackendExpenseToItem(updated)
+        inMemoryExpenses = inMemoryExpenses.map((e) => (e.id === id || e.id === `exp_${numericId}` ? mapped : e))
+        saveStoredExpenses(inMemoryExpenses)
+        return mapped
+      }
+    } catch (err) {
+      console.warn('Backend PUT /expenses failed, updating locally:', err)
+    }
+
+    const index = inMemoryExpenses.findIndex((e) => e.id === id || e.id === `exp_${numericId}`)
     if (index === -1) return null
 
     const existing = inMemoryExpenses[index]
@@ -356,22 +329,14 @@ export const expenseService = {
       displayDate = updates.date
     }
 
-    const withdrawalVal =
-      updates.withdrawal !== undefined
-        ? updates.withdrawal
-        : updates.amount !== undefined
-        ? updates.amount
-        : existing.withdrawal
-    const netAmountVal =
-      updates.netAmount !== undefined ? updates.netAmount : withdrawalVal
-
+    const finalWithdrawal = withdrawalVal !== undefined ? withdrawalVal : existing.withdrawal
     const updated: ExpenseItem = {
       ...existing,
       ...updates,
       date: displayDate,
       rawDate: rawDate,
-      withdrawal: withdrawalVal,
-      netAmount: netAmountVal,
+      withdrawal: finalWithdrawal,
+      netAmount: finalWithdrawal,
       updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
     }
 
@@ -381,7 +346,30 @@ export const expenseService = {
   },
 
   async deleteExpense(id: string): Promise<boolean> {
-    inMemoryExpenses = inMemoryExpenses.filter((e) => e.id !== id)
+    const numericId = id.replace(/^exp_/, '')
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(`/api/v1/expenses/${numericId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      if (res.ok) {
+        inMemoryExpenses = inMemoryExpenses.filter((e) => e.id !== id && e.id !== `exp_${numericId}`)
+        saveStoredExpenses(inMemoryExpenses)
+        return true
+      }
+    } catch (err) {
+      console.warn('Backend DELETE /expenses failed, deleting locally:', err)
+    }
+
+    inMemoryExpenses = inMemoryExpenses.filter((e) => e.id !== id && e.id !== `exp_${numericId}`)
     saveStoredExpenses(inMemoryExpenses)
     return true
   },
@@ -396,8 +384,6 @@ export const expenseService = {
       'Category',
       'Net Amount',
       'Company',
-      'Status',
-      'Audit Status',
     ]
 
     const rows = items.map((e) => [
@@ -409,8 +395,6 @@ export const expenseService = {
       e.category,
       e.netAmount,
       e.company,
-      e.status,
-      e.auditStatus,
     ])
 
     const csvContent =
