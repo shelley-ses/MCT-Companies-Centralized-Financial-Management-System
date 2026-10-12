@@ -474,7 +474,22 @@ def reset_password(
                     admin_client = get_supabase_admin_client()
                     user = db.query(User).filter(User.email == normalized_email).first()
                     if user:
-                        admin_client.auth.admin.update_user_by_id(str(user.user_id), {"password": new_password})
+                        auth_users = admin_client.auth.admin.list_users()
+                        auth_user = next(
+                            (
+                                auth_user
+                                for auth_user in getattr(auth_users, "users", auth_users)
+                                if str(getattr(auth_user, "email", "")).lower()
+                                == normalized_email
+                            ),
+                            None,
+                        )
+                        if auth_user is None:
+                            raise ValueError("Authentication user not found.")
+                        admin_client.auth.admin.update_user_by_id(
+                            str(auth_user.id),
+                            {"password": new_password},
+                        )
                 except Exception as admin_err:
                     logger.error(f"Admin auth password update failed: {admin_err}")
 

@@ -220,6 +220,35 @@ export const EmployeePage: React.FC = () => {
     setSuccessBanner(`User "${newUser.fullName}" has been added successfully.`)
   }
 
+  const handleUserUpdated = async (user: EmployeeUser) => {
+    const fullName = window.prompt('Full name', user.fullName)
+    if (fullName === null) return
+    const email = window.prompt('Email', user.email)
+    if (email === null) return
+    try {
+      const updatedUser = await employeeService.updateUser(user.id, {
+        fullName: fullName.trim(),
+        email: email.trim(),
+        assignedCompany: user.companyId,
+      })
+      setUsers((prev) => prev.map((item) => item.id === user.id ? updatedUser : item))
+      setSuccessBanner(`User "${updatedUser.fullName}" updated successfully.`)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to update user.')
+    }
+  }
+
+  const handleUserDeleted = async (user: EmployeeUser) => {
+    if (!window.confirm(`Delete "${user.fullName}"? This also removes their login account.`)) return
+    try {
+      await employeeService.deleteUser(user.id)
+      setUsers((prev) => prev.filter((item) => item.id !== user.id))
+      setSuccessBanner(`User "${user.fullName}" has been deleted.`)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to delete user.')
+    }
+  }
+
   const handlePermissionSaved = () => {
     if (selectedUser) {
       setSuccessBanner(
@@ -428,6 +457,24 @@ export const EmployeePage: React.FC = () => {
                           <Lock className="h-3 w-3 text-focus/70 shrink-0" />
                           <span>PERMISSION</span>
                         </button>
+                        {!user.isAdmin && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleUserUpdated(user)}
+                              className="ml-2 text-xs font-semibold text-focus hover:underline"
+                            >
+                              EDIT
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUserDeleted(user)}
+                              className="ml-2 text-xs font-semibold text-red-600 hover:underline"
+                            >
+                              DELETE
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))

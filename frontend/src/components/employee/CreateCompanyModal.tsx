@@ -78,6 +78,8 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
       onSuccess?.(created)
       setIsConfirmOpen(false)
       onOpenChange(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to create company.')
     } finally {
       setIsSubmitting(false)
     }
@@ -200,12 +202,12 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="contact-number" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Contact Number <span className="text-red-500">*</span>
+                      Contact Number
                     </Label>
                     <FormControl>
                       <Input
                         id="contact-number"
-                        placeholder="e.g. +63 917 123 4567"
+                        placeholder="Up to 11 characters"
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
                         {...field}
@@ -222,12 +224,12 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 render={({ field, fieldState }) => (
                   <FormItem className="space-y-1.5">
                     <Label htmlFor="telephone-number" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Telephone Number <span className="text-red-500">*</span>
+                      Telephone Number
                     </Label>
                     <FormControl>
                       <Input
                         id="telephone-number"
-                        placeholder="e.g. (02) 8123-4567"
+                        placeholder="Up to 8 characters"
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
                         {...field}
@@ -259,6 +261,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
                         {...field}
+                        onChange={(event) => field.onChange(event.target.valueAsNumber)}
                       />
                     </FormControl>
                     <FormMessage className="text-xs text-error" />
@@ -284,6 +287,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                         className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
                         aria-invalid={!!fieldState.error}
                         {...field}
+                        onChange={(event) => field.onChange(event.target.valueAsNumber)}
                       />
                     </FormControl>
                     <FormMessage className="text-xs text-error" />

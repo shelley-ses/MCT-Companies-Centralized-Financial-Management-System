@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
+# Database connection setup
 db_url = settings.DATABASE_URL
 if db_url and db_url.strip():
     if db_url.startswith("postgres://"):
@@ -60,13 +61,10 @@ def init_db():
 
 init_db()
 
+# Dependency to get a database session for FastAPI endpoints
 def get_db() -> Generator:
-    """
-    FastAPI dependency that yields a SQLAlchemy database session.
-    """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
