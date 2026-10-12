@@ -15,7 +15,6 @@ from app.core.encryption import decrypt_payload, encrypt_payload
 from app.db.supabase import get_supabase_client, get_supabase_admin_client
 from app.models.user import User
 from app.models.company import Company
-from app.models.audit_log import AuditLog
 from app.schemas.auth import (
     LoginRequest,
     TokenResponse,
@@ -27,6 +26,19 @@ from app.schemas.auth import (
     OtpResponse,
 )
 from app.schemas.user import UserResponse
+from app.services.audit_service import (
+    log_login_attempt,
+    log_login_success,
+    log_login_failed,
+    log_otp_sent,
+    log_otp_verified,
+    log_otp_failed,
+    log_otp_resent,
+    log_logout,
+    log_account_locked,
+    log_forgot_password,
+    log_password_reset,
+)
 
 logger = logging.getLogger(__name__)
 OTP_COOKIE_NAME = "mct_login_otp"
@@ -135,7 +147,7 @@ def _send_login_otp(email: str, otp: str) -> None:
         )
 
 
-def _record_failed_login(db: Session, ip_address: str) -> None:
+def _record_failed_login(db: Session, ip_address: str, email: str = "") -> None:
     now = datetime.now(timezone.utc)
     state = _rate_limits.setdefault(ip_address, {"attempts": 0, "locked_until": None})
     locked_until = state["locked_until"]
@@ -150,6 +162,10 @@ def _record_failed_login(db: Session, ip_address: str) -> None:
     state["attempts"] = int(state["attempts"]) + 1
     if int(state["attempts"]) >= settings.LOGIN_MAX_ATTEMPTS:
         state["locked_until"] = now + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+        try:
+            log_account_locked(db, ip_address=ip_address, email=email)
+        except Exception:
+            pass
 
 
 def _ensure_ip_available(db: Session, ip_address: str) -> None:
@@ -276,6 +292,12 @@ def login_user(db: Session, login_data: LoginRequest, ip_address: str) -> tuple[
 
     normalized_email = str(email).strip().lower()
 
+    # Audit: record the login attempt
+    try:
+        log_login_attempt(db, ip_address=ip_address, email=normalized_email)
+    except Exception:
+        pass
+
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -296,7 +318,12 @@ def login_user(db: Session, login_data: LoginRequest, ip_address: str) -> tuple[
     user = _get_application_user(email=normalized_email)
 
     if not authenticated or not user:
-        _record_failed_login(db, ip_address)
+        try:
+            log_login_failed(db, ip_address=ip_address, email=normalized_email,
+                             reason="Invalid credentials" if not authenticated else "App user not found")
+        except Exception:
+            pass
+        _record_failed_login(db, ip_address, email=normalized_email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password." if not authenticated else "Application user profile not found.",
@@ -322,6 +349,13 @@ def login_user(db: Session, login_data: LoginRequest, ip_address: str) -> tuple[
         "resend_count": 0,
     })
     _send_login_otp(normalized_email, otp)
+
+    # Audit: OTP sent
+    try:
+        log_otp_sent(db, ip_address=ip_address, email=normalized_email)
+    except Exception:
+        pass
+
     return LoginChallengeResponse(
         expires_in=settings.OTP_EXPIRES_SECONDS,
         email=_mask_email(normalized_email),
@@ -349,7 +383,11 @@ def verify_login_otp(db: Session, otp_data: VerifyOtpRequest, ip_address: str, c
     is_seeded_valid = (otp_data.otp == SEEDED_OTP_CODE)
     if not secrets.compare_digest(expected_otp_hash, submitted_otp_hash) and not is_seeded_valid:
         challenge_state["attempts"] = int(challenge_state["attempts"]) + 1
-        _record_failed_login(db, ip_address)
+        try:
+            log_otp_failed(db, ip_address=ip_address, email=challenge.get("email", ""))
+        except Exception:
+            pass
+        _record_failed_login(db, ip_address, email=challenge.get("email", ""))
         if int(challenge_state["attempts"]) >= settings.OTP_MAX_ATTEMPTS:
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many verification attempts. Please start again.")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code.")
@@ -368,6 +406,16 @@ def verify_login_otp(db: Session, otp_data: VerifyOtpRequest, ip_address: str, c
         is_admin=bool(user["is_admin"]) if user else False,
         company_id=int(user["company_id"]) if user and user["company_id"] is not None else None,
     )
+
+    # Audit: OTP verified + login success
+    try:
+        uid = int(user["user_id"]) if user else None
+        cid = int(user["company_id"]) if user and user["company_id"] is not None else None
+        log_otp_verified(db, user_id=uid, company_id=cid, ip_address=ip_address, email=challenge["email"])
+        log_login_success(db, user_id=uid, company_id=cid, ip_address=ip_address, email=challenge["email"])
+    except Exception:
+        pass
+
     return TokenResponse(access_token=access_token, user=user_info)
 
 
@@ -382,7 +430,7 @@ def resend_login_otp(db: Session, ip_address: str, cookie_value: str | None) -> 
     if elapsed < settings.OTP_RESEND_INTERVAL_SECONDS:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Please wait {settings.OTP_RESEND_INTERVAL_SECONDS - elapsed} seconds before resending.")
     if int(challenge["resend_count"]) >= settings.OTP_RESEND_LIMIT:
-        _record_failed_login(db, ip_address)
+        _record_failed_login(db, ip_address, email=challenge.get("email", ""))
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Too many resend requests. Try again in {settings.LOGIN_LOCKOUT_MINUTES} minutes.")
     otp = f"{secrets.randbelow(1_000_000):06d}"
     challenge["otp_hash"] = hashlib.sha256(otp.encode("utf-8")).hexdigest()
@@ -398,11 +446,24 @@ def resend_login_otp(db: Session, ip_address: str, cookie_value: str | None) -> 
     challenge["last_sent_at"] = now.timestamp()
     challenge["resend_count"] = int(challenge["resend_count"]) + 1
     _send_login_otp(challenge["email"], otp)
+
+    # Audit: OTP resent
+    try:
+        log_otp_resent(db, ip_address=ip_address, email=challenge["email"])
+    except Exception:
+        pass
+
     return OtpResponse(message="A new verification code has been sent.", expires_in=settings.OTP_EXPIRES_SECONDS, resend_available_in=settings.OTP_RESEND_INTERVAL_SECONDS), encrypt_payload(challenge)
 
 
 # logout user
-def logout_user(db: Session, token: Optional[str] = None) -> MessageResponse:
+def logout_user(
+    db: Session,
+    token: Optional[str] = None,
+    user_id: Optional[int] = None,
+    company_id: Optional[int] = None,
+    ip_address: str = "unknown",
+) -> MessageResponse:
     if settings.SUPABASE_URL and settings.SUPABASE_KEY:
         try:
             supabase = get_supabase_client()
@@ -410,11 +471,20 @@ def logout_user(db: Session, token: Optional[str] = None) -> MessageResponse:
         except Exception as e:
             logger.warning(f"Supabase sign_out error: {e}")
 
+    try:
+        log_logout(db, user_id=user_id, company_id=company_id, ip_address=ip_address)
+    except Exception:
+        pass
+
     return MessageResponse(message="Successfully logged out.", success=True)
 
 
 # request password reset with encrypted payload support
-def request_password_reset(db: Session, request_data: PasswordResetRequest) -> MessageResponse:
+def request_password_reset(
+    db: Session,
+    request_data: PasswordResetRequest,
+    ip_address: str = "unknown",
+) -> MessageResponse:
     email = request_data.email
     if request_data.encrypted_payload:
         decrypted = decrypt_payload(request_data.encrypted_payload)
@@ -427,6 +497,12 @@ def request_password_reset(db: Session, request_data: PasswordResetRequest) -> M
         )
 
     normalized_email = str(email).strip().lower()
+
+    try:
+        log_forgot_password(db, ip_address=ip_address, email=normalized_email)
+    except Exception:
+        pass
+
     if settings.SUPABASE_URL and settings.SUPABASE_KEY:
         try:
             supabase = get_supabase_client()
@@ -500,13 +576,14 @@ def reset_password(
         db.commit()
 
         try:
-            audit = AuditLog(
-                company_id=user.company_id,
+            log_password_reset(
+                db,
                 user_id=user.user_id,
-                action=f"User {normalized_email} reset password",
+                company_id=user.company_id,
+                ip_address="system",   # no Request object here; callers can pass it if needed
+                email=normalized_email,
+                success=True,
             )
-            db.add(audit)
-            db.commit()
         except Exception:
             db.rollback()
 

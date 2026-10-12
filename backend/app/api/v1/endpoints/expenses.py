@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from typing import List, Optional
 from datetime import date
 from decimal import Decimal
@@ -9,6 +9,7 @@ from app.db.supabase import get_supabase_admin_client
 from app.models.finance import Expense, Category
 from app.models.company import Company
 from app.schemas.expense import ExpenseCreate, ExpenseOut, ExpenseUpdate
+from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
@@ -132,7 +133,7 @@ def get_expenses(
         ]
 
 @router.post("", response_model=ExpenseOut, status_code=status.HTTP_201_CREATED, summary="Record a new expense")
-def create_expense(expense_in: ExpenseCreate, db: Session = Depends(get_db)):
+def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = Depends(get_db)):
     if expense_in.amount < Decimal("1.00"):
         raise HTTPException(status_code=400, detail="Withdrawal amount must be at least 1.00 (cannot be 0 or negative).")
 
@@ -244,6 +245,14 @@ def create_expense(expense_in: ExpenseCreate, db: Session = Depends(get_db)):
         except Exception:
             db.rollback()
 
+        log_transaction(
+            db, AuditAction.EXPENSE_CREATED,
+            user_id=None, company_id=target_company_id,
+            ip_address=request.client.host if request.client else "unknown",
+            record_id=sb_expense_id, record_type="expense",
+            extra={"amount": float(expense_in.amount), "expense_date": expense_in.expense_date.isoformat()},
+        )
+
         return ExpenseOut(
             expense_id=created_row["expense_id"],
             company_id=created_row.get("company_id"),
@@ -303,6 +312,14 @@ def create_expense(expense_in: ExpenseCreate, db: Session = Depends(get_db)):
         db.refresh(expense)
 
         cat = db.query(Category).filter(Category.category_id == expense.category_id).first() if expense.category_id else None
+
+        log_transaction(
+            db, AuditAction.EXPENSE_CREATED,
+            user_id=None, company_id=target_company.company_id,
+            ip_address=request.client.host if request.client else "unknown",
+            record_id=expense.expense_id, record_type="expense",
+            extra={"amount": float(expense.amount), "expense_date": expense.expense_date.isoformat()},
+        )
 
         return ExpenseOut(
             expense_id=expense.expense_id,
@@ -387,7 +404,7 @@ def get_expense(expense_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{expense_id}", response_model=ExpenseOut, summary="Update an existing expense")
 @router.patch("/{expense_id}", response_model=ExpenseOut, summary="Update an existing expense")
-def update_expense(expense_id: int, expense_in: ExpenseUpdate, db: Session = Depends(get_db)):
+def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request, db: Session = Depends(get_db)):
     target_amt = expense_in.amount if expense_in.amount is not None else expense_in.withdrawal
     if target_amt is not None and target_amt < Decimal("1.00"):
         raise HTTPException(status_code=400, detail="Withdrawal amount must be at least 1.00 (cannot be 0 or negative).")
@@ -465,6 +482,12 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, db: Session = Dep
     if updated_row:
         client = get_supabase_admin_client()
         company_map, cat_map = get_supabase_mappings(client)
+        log_transaction(
+            db, AuditAction.EXPENSE_UPDATED,
+            user_id=None, company_id=updated_row.get("company_id"),
+            ip_address=request.client.host if request.client else "unknown",
+            record_id=expense_id, record_type="expense",
+        )
         return ExpenseOut(
             expense_id=updated_row["expense_id"],
             company_id=updated_row.get("company_id"),
@@ -490,6 +513,12 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, db: Session = Dep
     company = db.query(Company).filter(Company.company_id == expense.company_id).first()
     category = db.query(Category).filter(Category.category_id == expense.category_id).first() if expense.category_id else None
 
+    log_transaction(
+        db, AuditAction.EXPENSE_UPDATED,
+        user_id=None, company_id=expense.company_id,
+        ip_address=request.client.host if request.client else "unknown",
+        record_id=expense_id, record_type="expense",
+    )
     return ExpenseOut(
         expense_id=expense.expense_id,
         company_id=expense.company_id,
@@ -510,10 +539,14 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, db: Session = Dep
     )
 
 @router.delete("/{expense_id}", status_code=status.HTTP_200_OK, summary="Delete an expense")
-def delete_expense(expense_id: int, db: Session = Depends(get_db)):
+def delete_expense(expense_id: int, request: Request, db: Session = Depends(get_db)):
     deleted_from_supabase = False
+    deleted_company_id = None
     try:
         client = get_supabase_admin_client()
+        existing = client.table("expenses").select("company_id").eq("expense_id", expense_id).limit(1).execute()
+        if existing.data:
+            deleted_company_id = existing.data[0].get("company_id")
         sb_res = client.table("expenses").delete().eq("expense_id", expense_id).execute()
         if sb_res.data and len(sb_res.data) > 0:
             deleted_from_supabase = True
@@ -522,8 +555,16 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
 
     expense = db.query(Expense).filter(Expense.expense_id == expense_id).first()
     if expense:
+        deleted_company_id = deleted_company_id or expense.company_id
         db.delete(expense)
         db.commit()
+
+    log_transaction(
+        db, AuditAction.EXPENSE_DELETED,
+        user_id=None, company_id=deleted_company_id,
+        ip_address=request.client.host if request.client else "unknown",
+        record_id=expense_id, record_type="expense",
+    )
 
     return {
         "message": "Expense deleted successfully",

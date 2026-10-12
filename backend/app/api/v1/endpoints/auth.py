@@ -57,11 +57,19 @@ def resend_otp(
 # logout user
 @router.post("/logout", response_model=MessageResponse, summary="User Logout")
 def logout(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
     token: str = Depends(get_access_token),
 ):
-    result = logout_user(db=db, token=token)
+    ip = request.client.host if request.client else "unknown"
+    result = logout_user(
+        db=db,
+        token=token,
+        user_id=int(current_user["auth_user_id"]) if current_user["auth_user_id"] else None,
+        company_id=current_user.get("company_id"),
+        ip_address=ip,
+    )
     revoke_access_token(token)
     return result
 
@@ -77,10 +85,12 @@ def get_me(
 # request password reset
 @router.post("/forgot-password", response_model=MessageResponse, summary="Request Password Reset")
 def forgot_password(
-    request: PasswordResetRequest,
+    request: Request,
+    reset_request: PasswordResetRequest,
     db: Session = Depends(get_db),
 ):
-    return request_password_reset(db=db, request_data=request)
+    ip = request.client.host if request.client else "unknown"
+    return request_password_reset(db=db, request_data=reset_request, ip_address=ip)
 
 # reset password
 @router.post("/reset-password", response_model=MessageResponse, summary="Confirm Password Reset")
