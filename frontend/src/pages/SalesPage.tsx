@@ -48,7 +48,7 @@ import {
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
-import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
 
 const DEFAULT_COMPANIES = [
@@ -93,7 +93,7 @@ export const SalesPage: React.FC = () => {
   const handlePeriodChange = (period: PeriodType) => {
     setSelectedPeriod(period)
     setIsPeriodDropdownOpen(false)
-    const currentToday = new Date().toISOString().split('T')[0]
+    const currentToday = formatToYYYYMMDD(new Date())
     const [currYear, currMonth, currDay] = currentToday.split('-')
 
     if (period === 'Daily') {
@@ -698,16 +698,25 @@ export const SalesPage: React.FC = () => {
 
       {/* 3. Total Income KPI Card */}
       <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
-        <div>
+        <div className="w-full max-w-[calc(100%-60px)]">
           <span className="text-xs font-medium text-muted-fg block">
             Total Income
           </span>
-          <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
-            {formatPHP(kpis.totalIncome)}
-          </h3>
-          <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5">
-            Total sales deposits for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-          </p>
+          {loading ? (
+            <div className="space-y-1.5 mt-2">
+              <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+              <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+            </div>
+          ) : (
+            <>
+              <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
+                {formatPHP(kpis.totalIncome)}
+              </h3>
+              <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                Total sales deposits for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
+              </p>
+            </>
+          )}
         </div>
 
         <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
@@ -717,10 +726,26 @@ export const SalesPage: React.FC = () => {
 
       {/* 4. Charts Section: Diagram - Income Summary extended to full width (weekly sales trend removed) */}
       <div className="w-full">
-        <IncomeSummaryChart
-          transactions={mappedTransactions}
-          className="w-full"
-        />
+        {loading ? (
+          <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-stroke/20">
+              <div className="space-y-1.5">
+                <div className="h-5 w-44 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3.5 w-64 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+              <div className="h-9 w-28 bg-slate-200/60 animate-pulse rounded-xl" />
+            </div>
+            <div className="h-56 sm:h-64 w-full bg-slate-50/70 rounded-2xl flex flex-col items-center justify-center gap-3">
+              <div className="w-20 h-20 rounded-full border-4 border-slate-200 border-t-emerald-400 animate-spin opacity-60" />
+              <div className="h-3.5 w-40 bg-slate-200/70 animate-pulse rounded" />
+            </div>
+          </Card>
+        ) : (
+          <IncomeSummaryChart
+            transactions={mappedTransactions}
+            className="w-full"
+          />
+        )}
       </div>
 
       {/* 5. Summary Transactions in Sales (Following the Sales table from the provided mockup) */}
@@ -802,14 +827,31 @@ export const SalesPage: React.FC = () => {
 
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-12 text-center text-xs sm:text-sm text-muted-fg animate-pulse"
-                  >
-                    Loading sales records…
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 5 }).map((_, idx) => (
+                  <TableRow key={idx} className="border-b border-slate-100">
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-24 bg-slate-200/60 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-36 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/70 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-5 w-20 bg-slate-200/60 animate-pulse rounded-full" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4 text-center">
+                      <div className="h-6 w-14 bg-slate-200/60 animate-pulse rounded-md mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ))
               ) : paginatedSales.length === 0 ? (
                 <TableRow>
                   <TableCell

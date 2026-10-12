@@ -22,6 +22,7 @@ import {
   type SalesItem,
 } from '@/services/salesService'
 import { cn } from '@/lib/utils'
+import { formatToYYYYMMDD } from '@/utils/dateUtils'
 
 interface EditSalesModalProps {
   open: boolean
@@ -67,7 +68,7 @@ export const EditSalesModal: React.FC<EditSalesModalProps> = ({
 
   React.useEffect(() => {
     if (open && sale) {
-      setDate(sale.rawDate || new Date().toISOString().split('T')[0])
+      setDate(sale.rawDate || formatToYYYYMMDD(new Date()))
       setChequeNo(sale.chequeNo || '')
       setParticulars(sale.particulars || '')
       setAmount(String(sale.deposit || sale.netAmount || ''))

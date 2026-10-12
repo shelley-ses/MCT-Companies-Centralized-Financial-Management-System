@@ -936,8 +936,6 @@ export const salesService = {
       'Net Amount',
       'Category',
       'Company',
-      'Status',
-      'Audit Status',
     ]
 
     const rows = items.map((s) => [
@@ -950,8 +948,6 @@ export const salesService = {
       s.netAmount,
       s.category,
       s.company,
-      s.status,
-      s.auditStatus,
     ])
 
     const csvContent =

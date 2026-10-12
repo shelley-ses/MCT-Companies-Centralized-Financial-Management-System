@@ -22,6 +22,7 @@ import {
 } from '@/services/expenseService'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { formatToYYYYMMDD } from '@/utils/dateUtils'
 
 interface AddExpenseModalProps {
   open: boolean
@@ -30,7 +31,7 @@ interface AddExpenseModalProps {
   assignedCompany: string
 }
 
-const CATEGORY_OPTIONS = [
+const DEFAULT_CATEGORY_OPTIONS = [
   'None',
   'GCash',
   'Maya',
@@ -48,13 +49,14 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   onSuccess,
   assignedCompany,
 }) => {
-  const getTodayIso = () => new Date().toISOString().split('T')[0]
+  const getTodayIso = () => formatToYYYYMMDD(new Date())
 
   const [date, setDate] = React.useState(getTodayIso())
   const [chequeNo, setChequeNo] = React.useState('')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [category, setCategory] = React.useState('None')
+  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_CATEGORY_OPTIONS)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
 
@@ -68,11 +70,31 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     category?: string
   }>({})
 
+  // Fetch categories from the database
+  React.useEffect(() => {
+    let isMounted = true
+    const fetchCategories = async () => {
+      try {
+        const cats = await expenseService.getCategories()
+        if (isMounted && cats && cats.length > 0) {
+          const names = Array.from(new Set(['None', ...cats.map((c) => c.name)]))
+          setCategoryOptions(names)
+        }
+      } catch (err) {
+        console.warn('Could not load categories from database:', err)
+      }
+    }
+    fetchCategories()
+    return () => {
+      isMounted = false
+    }
+  }, [open])
+
   const filteredCategoryOptions = React.useMemo(() => {
     const q = category.trim().toLowerCase()
-    if (!q) return CATEGORY_OPTIONS
-    return CATEGORY_OPTIONS.filter((opt) => opt.toLowerCase().includes(q))
-  }, [category])
+    if (!q) return categoryOptions
+    return categoryOptions.filter((opt) => opt.toLowerCase().includes(q))
+  }, [category, categoryOptions])
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -110,21 +132,32 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       category?: string
     } = {}
 
+    const todayIso = getTodayIso()
     if (!date.trim()) {
       errors.date = 'Date is required.'
+    } else if (date.trim() > todayIso) {
+      errors.date = 'Expense date cannot be in the future (maximum date is today).'
     }
 
     if (!particulars.trim()) {
       errors.particulars = 'Particulars description is required.'
     }
 
-    const numAmount = parseFloat(amount.replace(/,/g, ''))
-    if (!amount.trim() || isNaN(numAmount) || numAmount <= 0) {
-      errors.amount = 'Please enter a valid expense amount greater than 0.'
+    // Amount validation: strictly positive numeric value, no letters, no negative
+    const cleanAmount = amount.trim().replace(/,/g, '')
+    if (!cleanAmount) {
+      errors.amount = 'Withdrawal amount is required.'
+    } else if (/[a-zA-Z]/.test(cleanAmount) || !/^\d+(\.\d{1,2})?$/.test(cleanAmount)) {
+      errors.amount = 'Withdrawal amount must be a valid positive number without letters.'
+    } else {
+      const numAmount = parseFloat(cleanAmount)
+      if (isNaN(numAmount) || numAmount < 1.0) {
+        errors.amount = 'Withdrawal amount must be at least ₱1.00 (cannot be zero or negative).'
+      }
     }
 
     if (category === 'None' || !category.trim()) {
-      errors.category = 'Please choose a category.'
+      errors.category = 'Please choose a category from the database list.'
     }
 
     setFieldErrors(errors)
@@ -271,14 +304,23 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 </Label>
                 <Input
                   id="expense-amount"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="0.00"
                   value={amount}
+                  onKeyDown={(e) => {
+                    // Block minus, plus, exponent keys
+                    if (['-', '+', 'e', 'E'].includes(e.key)) {
+                      e.preventDefault()
+                    }
+                  }}
                   onChange={(e) => {
-                    setAmount(e.target.value)
-                    if (fieldErrors.amount) setFieldErrors((p) => ({ ...p, amount: undefined }))
+                    // Allow only digits and a single decimal point
+                    const val = e.target.value
+                    if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                      setAmount(val)
+                      if (fieldErrors.amount) setFieldErrors((p) => ({ ...p, amount: undefined }))
+                    }
                   }}
                   className={cn(
                     'h-10 text-xs rounded-xl border-stroke/40 focus-visible:ring-primary',
