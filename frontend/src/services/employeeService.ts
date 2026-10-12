@@ -35,6 +35,7 @@ export interface EmployeeUser {
   companyName: string
   status: 'Active' | 'Inactive'
   lastLogin: string
+  isAdmin?: boolean
   permissions?: Record<string, UserPermissionActions>
 }
 
@@ -54,6 +55,14 @@ export interface CreateUserPayload {
   fullName: string
   email: string
   assignedCompany: string
+  password: string
+}
+
+export interface UpdateUserPayload {
+  fullName?: string
+  email?: string
+  assignedCompany?: string
+  password?: string
 }
 
 export interface ActivityLogItem {
@@ -491,36 +500,140 @@ let inMemoryUsers: EmployeeUser[] = [...INITIAL_USERS]
 let inMemoryCompanies: Company[] = [...INITIAL_COMPANIES]
 const inMemoryPermissions: Record<string, Record<string, UserPermissionActions>> = {}
 
+function getAuthHeaders(): HeadersInit {
+  const token = sessionStorage.getItem(['mct', 'access', 'token'].join('_'))
+  return token ? { Authorization: 'Bearer ' + token } : {}
+}
+
+async function getApiError(response: Response): Promise<string> {
+  try {
+    const body = await response.json()
+    if (typeof body?.detail === 'string') return body.detail
+  } catch {
+    // Use the generic fallback below when the response is not JSON.
+  }
+  return `Request failed (${response.status})`
+}
+
+async function mapApiResponse<T>(
+  response: Response,
+  mapper: (value: unknown) => T
+): Promise<T> {
+  if (!response.ok) throw new Error(await getApiError(response))
+  return mapper(await response.json())
+}
+
+function mapUser(value: unknown): EmployeeUser {
+  const user = value as {
+    user_id: number
+    name: string
+    email: string
+    company_id: number | null
+    company_name: string | null
+    is_admin: boolean
+    last_login_at: string | null
+  }
+
+  function mapCompany(value: unknown): Company {
+    const company = value as {
+      company_id: number
+      company_name: string
+      location: string
+      contact_person: string
+      contact_number: string | null
+      phone: string | null
+      email: string
+      starting_balance: number
+      current_balance: number
+    }
+    return {
+      id: String(company.company_id),
+      name: company.company_name,
+      email: company.email,
+      address: company.location,
+      contactPerson: company.contact_person,
+      contactNumber: company.contact_number || '',
+      telephoneNumber: company.phone || '',
+      startingBalance: Number(company.starting_balance),
+      currentBalance: Number(company.current_balance),
+      status: 'Active',
+      createdAt: '',
+    }
+  }
+  return {
+    id: String(user.user_id),
+    fullName: user.name,
+    email: user.email,
+    companyId: user.company_id === null ? '' : String(user.company_id),
+    companyName: user.company_name || 'MCT Head Office',
+    status: 'Active',
+    lastLogin: user.last_login_at
+      ? new Date(user.last_login_at).toLocaleString()
+      : 'Never',
+    isAdmin: user.is_admin,
+  }
+}
+
 export const employeeService = {
   async getUsers(): Promise<EmployeeUser[]> {
-    await new Promise((resolve) => setTimeout(resolve, 80))
-    return [...inMemoryUsers]
+    const response = await fetch('/api/v1/users', {
+      headers: getAuthHeaders(),
+    })
+    return mapApiResponse(response, (value) =>
+      (value as unknown[]).map(mapUser)
+    )
   },
 
   async getCompanies(): Promise<Company[]> {
-    await new Promise((resolve) => setTimeout(resolve, 60))
-    return [...inMemoryCompanies]
+    const response = await fetch('/api/v1/companies', {
+      headers: getAuthHeaders(),
+    })
+    return mapApiResponse(response, (value) => {
+      const companies = (value as unknown[]).map(mapCompany)
+      inMemoryCompanies = companies
+      return companies
+    })
   },
 
   async createUser(payload: CreateUserPayload): Promise<EmployeeUser> {
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const assignedComp = inMemoryCompanies.find((c) => c.name === payload.assignedCompany) || {
-      id: `comp_${Date.now()}`,
-      name: payload.assignedCompany,
-    }
+    const company = inMemoryCompanies.find((item) => item.name === payload.assignedCompany)
+    if (!company) throw new Error('Please select a valid company.')
+    const response = await fetch('/api/v1/users', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: payload.fullName,
+        email: payload.email,
+        password: payload.password,
+        company_id: Number(company.id),
+        is_admin: false,
+      }),
+    })
+    return mapApiResponse(response, mapUser)
+  },
 
-    const newUser: EmployeeUser = {
-      id: `usr_${Date.now()}`,
-      fullName: payload.fullName,
-      email: payload.email,
-      companyId: assignedComp.id,
-      companyName: assignedComp.name,
-      status: 'Active',
-      lastLogin: 'Just now',
-    }
+  async updateUser(id: string, payload: UpdateUserPayload): Promise<EmployeeUser> {
+    const body: Record<string, unknown> = {}
+    if (payload.fullName !== undefined) body.name = payload.fullName
+    if (payload.email !== undefined) body.email = payload.email
+    if (payload.assignedCompany !== undefined) body.company_id = Number(payload.assignedCompany)
+    if (payload.password) body.password = payload.password
+    const response = await fetch(`/api/v1/users/${id}`, {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return mapApiResponse(response, mapUser)
+  },
 
-    inMemoryUsers = [newUser, ...inMemoryUsers]
-    return newUser
+  async deleteUser(id: string): Promise<void> {
+    const response = await fetch(`/api/v1/users/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
   },
 
   async createCompany(payload: CreateCompanyPayload): Promise<Company> {
