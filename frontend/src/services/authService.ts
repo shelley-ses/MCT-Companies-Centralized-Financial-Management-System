@@ -58,21 +58,22 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     assignedCompany: 'All Companies',
     avatarUrl: logo2Url,
   },
-  // Company Auditor accounts (audits transactions and tracks records)
+  // Company Auditor account for MCT Kitchen
   {
-    id: 'usr_auditor_01',
-    fullName: 'Alex Cruz',
-    email: 'auditor@mct.com',
+    id: 'usr_kitchen_01',
+    fullName: 'Temporary Employee',
+    email: 'temporary.employee@mct.com',
     role: 'Company Auditor',
     assignedCompany: 'MCT Kitchen',
     avatarUrl: logo2Url,
   },
+  // Company Auditor account for MCT Hotel
   {
-    id: 'usr_auditor_02',
-    fullName: 'Alex Cruz',
-    email: 'alex.cruz@mct.com',
+    id: 'usr_hotel_01',
+    fullName: 'Temporary Employee 1',
+    email: 'temporary.employee1@mct.com',
     role: 'Company Auditor',
-    assignedCompany: 'MCT Kitchen',
+    assignedCompany: 'MCT Hotel',
     avatarUrl: logo2Url,
   },
 ]

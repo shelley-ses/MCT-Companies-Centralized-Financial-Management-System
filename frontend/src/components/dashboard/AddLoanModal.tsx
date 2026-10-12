@@ -15,14 +15,18 @@ import {
   Check,
   AlertCircle,
   Building2,
+  Calendar,
+  Percent,
 } from 'lucide-react'
 import {
   loanService,
   type NewLoanInput,
   type LoanItem,
+  type CompanyOption,
 } from '@/services/loanService'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { formatToYYYYMMDD } from '@/utils/dateUtils'
 
 interface AddLoanModalProps {
   open: boolean
@@ -44,50 +48,53 @@ const DEFAULT_COMPANY_OPTIONS = [
   'Golden Sunburst Ventures',
 ]
 
-const CATEGORY_OPTIONS = [
-  'None',
-  'GCash',
-  'Maya',
-  'PayMongo',
-  'Panda',
-  'In-house',
-  'Cheque',
-  'Bank Transfer',
-  'Cash',
-]
-
 export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   open,
   onOpenChange,
   onSuccess,
   assignedCompany,
-  companies,
+  companies: propsCompanies,
 }) => {
-  const getTodayIso = () => new Date().toISOString().split('T')[0]
+  const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
 
-  const availableCompanies = React.useMemo(() => {
-    if (companies && companies.length > 0) {
-      return companies.filter((c) => c !== 'All Companies')
+  // Fetch companies from DB
+  React.useEffect(() => {
+    let mounted = true
+    loanService.getCompanies().then((res) => {
+      if (mounted && res.length > 0) {
+        setDbCompanies(res)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const allCompanyNames = React.useMemo(() => {
+    if (dbCompanies.length > 0) {
+      return dbCompanies.map((c) => c.company_name)
+    }
+    if (propsCompanies && propsCompanies.length > 0) {
+      return propsCompanies.filter((c) => c !== 'All Companies')
     }
     return DEFAULT_COMPANY_OPTIONS
-  }, [companies])
+  }, [dbCompanies, propsCompanies])
 
-  const defaultCompany =
+  const defaultBorrower =
     assignedCompany && assignedCompany !== 'All Companies'
       ? assignedCompany
-      : availableCompanies[0] || 'MCT Kitchen'
+      : allCompanyNames[0] || 'MCT Kitchen'
 
-  const [date, setDate] = React.useState(getTodayIso())
-  const [chequeNo, setChequeNo] = React.useState('')
+  const [date, setDate] = React.useState(formatToYYYYMMDD(new Date()))
+  const [dueDate, setDueDate] = React.useState('')
+  const [interestRate, setInterestRate] = React.useState('0')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [company, setCompany] = React.useState(defaultCompany)
-  const [isCompanyOpen, setIsCompanyOpen] = React.useState(false)
-  const companyContainerRef = React.useRef<HTMLDivElement>(null)
+  const [borrowerCompany, setBorrowerCompany] = React.useState(defaultBorrower)
+  const [lenderCompany, setLenderCompany] = React.useState('')
 
-  const [category, setCategory] = React.useState('None')
-  const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
-  const categoryContainerRef = React.useRef<HTMLDivElement>(null)
+  const [isLenderOpen, setIsLenderOpen] = React.useState(false)
+  const lenderRef = React.useRef<HTMLDivElement>(null)
 
   // Confirmation dialogue state
   const [isConfirmOpen, setIsConfirmOpen] = React.useState(false)
@@ -95,34 +102,26 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   const [error, setError] = React.useState('')
   const [fieldErrors, setFieldErrors] = React.useState<{
     date?: string
+    dueDate?: string
     particulars?: string
     amount?: string
-    category?: string
-    company?: string
+    borrower?: string
+    lender?: string
   }>({})
 
-  // Dynamic filter for category suggestions
-  const filteredCategoryOptions = React.useMemo(() => {
-    const q = category.trim().toLowerCase()
-    if (!q) return CATEGORY_OPTIONS
-    return CATEGORY_OPTIONS.filter((opt) => opt.toLowerCase().includes(q))
-  }, [category])
+  // Lender options cannot include the chosen borrower
+  const availableLenders = React.useMemo(() => {
+    return allCompanyNames.filter(
+      (c) => c.toLowerCase() !== borrowerCompany.toLowerCase()
+    )
+  }, [allCompanyNames, borrowerCompany])
 
-  // Close dropdowns on click outside
+  // Close dropdowns on outside click
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node
-      if (
-        categoryContainerRef.current &&
-        !categoryContainerRef.current.contains(target)
-      ) {
-        setIsCategoryOpen(false)
-      }
-      if (
-        companyContainerRef.current &&
-        !companyContainerRef.current.contains(target)
-      ) {
-        setIsCompanyOpen(false)
+      if (lenderRef.current && !lenderRef.current.contains(target)) {
+        setIsLenderOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -132,33 +131,33 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   // Reset form when modal opens
   React.useEffect(() => {
     if (open) {
-      setDate(getTodayIso())
-      setChequeNo('')
+      const todayStr = formatToYYYYMMDD(new Date())
+      setDate(todayStr)
+      setDueDate('')
+      setInterestRate('0')
       setParticulars('')
       setAmount('')
-      setCompany(defaultCompany)
-      setCategory('None')
-      setIsCompanyOpen(false)
-      setIsCategoryOpen(false)
+      setBorrowerCompany(defaultBorrower)
+      // Pick first eligible lender
+      const eligible = allCompanyNames.filter(
+        (c) => c.toLowerCase() !== defaultBorrower.toLowerCase()
+      )
+      setLenderCompany(eligible[0] || '')
+      setIsLenderOpen(false)
       setIsConfirmOpen(false)
       setIsSubmitting(false)
       setError('')
       setFieldErrors({})
     }
-  }, [open, defaultCompany])
+  }, [open, defaultBorrower, allCompanyNames])
 
   // Pre-validate and show confirmation dialogue
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const errors: {
-      date?: string
-      particulars?: string
-      amount?: string
-      category?: string
-    } = {}
+    const errors: typeof fieldErrors = {}
 
-    const todayIso = getTodayIso()
+    const todayIso = formatToYYYYMMDD(new Date())
     if (!date.trim()) {
       errors.date = 'Date is required.'
     } else if (date.trim() > todayIso) {
@@ -169,19 +168,22 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
       errors.particulars = 'Particulars description is required.'
     }
 
-    if (!company.trim()) {
-      errors.company = 'Please choose a company.'
+    if (!borrowerCompany.trim()) {
+      errors.borrower = 'Borrower company is required.'
     }
 
-    const parsedAmount = parseFloat(amount.replace(/,/g, ''))
-    if (!amount.trim()) {
-      errors.amount = 'Amount is required.'
-    } else if (isNaN(parsedAmount) || parsedAmount < 1.0) {
-      errors.amount = 'Amount must be at least 1.00 (cannot be 0 or less than 1).'
+    if (!lenderCompany.trim()) {
+      errors.lender = 'Lender company is required.'
+    } else if (
+      borrowerCompany.trim().toLowerCase() === lenderCompany.trim().toLowerCase()
+    ) {
+      errors.lender = 'Borrower and lender cannot be the same company.'
     }
 
-    if (category === 'None' || !category.trim()) {
-      errors.category = 'Please choose a category.'
+    const cleanedAmount = amount.replace(/,/g, '').trim()
+    const parsedAmount = parseFloat(cleanedAmount)
+    if (!cleanedAmount || isNaN(parsedAmount) || parsedAmount < 1.0) {
+      errors.amount = 'Amount must be at least 1.00 (cannot be 0 or letters).'
     }
 
     if (Object.keys(errors).length > 0) {
@@ -201,13 +203,14 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
     try {
       const parsedAmount = parseFloat(amount.replace(/,/g, ''))
       const payload: NewLoanInput = {
-        date: date.trim() || getTodayIso(),
-        chequeNo: chequeNo.trim() || undefined,
+        date: date.trim() || formatToYYYYMMDD(new Date()),
+        dueDate: dueDate.trim() || undefined,
+        interestRate: parseFloat(interestRate) || 0.0,
         particulars: particulars.trim(),
         amount: parsedAmount,
-        category: category.trim(),
-        company: company.trim(),
-        status: 'Pending',
+        borrowerCompany: borrowerCompany.trim(),
+        lenderCompany: lenderCompany.trim(),
+        status: 'Pending Approval',
       }
       const created = await loanService.addLoan(payload)
 
@@ -226,7 +229,7 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
     <>
       {/* 1. Main Add Loan Modal */}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[540px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4 [&>button]:w-6 [&>button]:h-6 [&>button]:p-0.5 [&>button]:rounded-md [&>button>svg]:w-3.5 [&>button>svg]:h-3.5">
+        <DialogContent className="sm:max-w-[560px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
           <DialogHeader className="text-left pb-4 border-b border-stroke/20 pr-8">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[#960C01] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -237,7 +240,7 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
                   Record New Loan
                 </DialogTitle>
                 <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
-                  Enter loan transaction record for {company}
+                  Borrowing request for <span className="font-semibold text-focus">{borrowerCompany}</span>
                 </DialogDescription>
               </div>
             </div>
@@ -252,323 +255,259 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* 1. Date (editable, defaults to today) */}
+              {/* 1. Loan Date */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-focus block">
-                  Date <span className="text-red-500">*</span>
+                  Loan Date <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   type="date"
-                  max={getTodayIso()}
                   value={date}
                   onChange={(e) => {
                     setDate(e.target.value)
-                    if (fieldErrors.date) {
-                      setFieldErrors((prev) => ({ ...prev, date: undefined }))
-                    }
+                    if (fieldErrors.date) setFieldErrors((p) => ({ ...p, date: undefined }))
                   }}
-                  className={cn(
-                    'h-10 rounded-xl border-stroke/50 text-xs font-medium',
-                    fieldErrors.date && 'border-red-500 focus-visible:ring-red-200'
-                  )}
-                  title="Transaction date (cannot be in the future)"
+                  className={cn('h-10 text-xs sm:text-sm rounded-xl', fieldErrors.date && 'border-red-500')}
+                  required
                 />
-                {fieldErrors.date ? (
-                  <p className="text-[11px] text-red-600 font-medium">{fieldErrors.date}</p>
-                ) : (
-                  <p className="text-[11px] text-muted-fg font-normal">
-                    Defaults to today (Max: today)
-                  </p>
-                )}
+                {fieldErrors.date && <p className="text-2xs text-red-500">{fieldErrors.date}</p>}
               </div>
 
-              {/* 2. Cheque No (Optional) */}
+              {/* 2. Due Date */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-focus block">
-                  Cheque No. (Optional)
+                  Due Date (Repayment)
                 </Label>
                 <Input
-                  type="text"
-                  placeholder="e.g. CHK-88104"
-                  value={chequeNo}
-                  onChange={(e) => setChequeNo(e.target.value)}
-                  className="h-10 rounded-xl border-stroke/50 text-xs font-mono"
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="h-10 text-xs sm:text-sm rounded-xl"
                 />
               </div>
-            </div>
 
-            {/* 3. Company & Category Dropdowns */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* Company Dropdown Button */}
-              <div className="space-y-1.5" ref={companyContainerRef}>
+              {/* 3. Borrower Company (Automatic from account) */}
+              <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-focus block">
-                  Company <span className="text-red-500">*</span>
+                  Borrower Company
                 </Label>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setIsCompanyOpen((prev) => !prev)}
-                    className={cn(
-                      'w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs flex items-center justify-between transition-colors cursor-pointer text-left',
-                      isCompanyOpen && 'ring-2 ring-focus/20 border-focus',
-                      fieldErrors.company && 'border-red-500 focus-visible:ring-red-200'
-                    )}
-                    aria-label="Choose company"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                      <span className="truncate">{company}</span>
-                    </div>
-                    <ChevronDown
-                      className={cn(
-                        'w-3.5 h-3.5 text-muted-fg shrink-0 transition-transform duration-200 ml-1',
-                        isCompanyOpen && 'rotate-180'
-                      )}
-                    />
-                  </button>
-
-                  {isCompanyOpen && (
-                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-stroke/40 rounded-xl shadow-xl max-h-52 overflow-y-auto p-1.5">
-                      <div className="space-y-0.5">
-                        {availableCompanies.map((comp) => (
-                          <button
-                            key={comp}
-                            type="button"
-                            onClick={() => {
-                              setCompany(comp)
-                              setIsCompanyOpen(false)
-                              if (fieldErrors.company) {
-                                setFieldErrors((prev) => ({ ...prev, company: undefined }))
-                              }
-                            }}
-                            className={cn(
-                              'w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition-colors cursor-pointer',
-                              company === comp
-                                ? 'bg-primary/10 text-primary font-semibold'
-                                : 'hover:bg-slate-100 text-focus'
-                            )}
-                          >
-                            <span>{comp}</span>
-                            {company === comp && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                <div className="h-10 px-3 rounded-xl border border-stroke/40 bg-slate-50 text-focus/90 text-xs sm:text-sm font-medium flex items-center justify-between shadow-2xs select-none">
+                  <div className="flex items-center gap-2 truncate">
+                    <Building2 className="w-4 h-4 text-primary shrink-0" />
+                    <span className="truncate font-semibold">{borrowerCompany}</span>
+                  </div>
+                  <span className="text-[11px] text-muted-fg font-normal px-2 py-0.5 rounded-md bg-white border border-stroke/30 shrink-0">
+                    Automatic (Account)
+                  </span>
                 </div>
-                {fieldErrors.company && (
-                  <p className="text-[11px] text-red-600 font-medium">{fieldErrors.company}</p>
-                )}
               </div>
 
-              {/* Category (Searchable Dropdown) */}
-              <div className="space-y-1.5" ref={categoryContainerRef}>
+              {/* 4. Lender Company */}
+              <div className="space-y-1.5 relative" ref={lenderRef}>
                 <Label className="text-xs font-semibold text-focus block">
-                  Category <span className="text-red-500">*</span>
+                  Lender Company <span className="text-red-500">*</span>
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setIsLenderOpen((p) => !p)}
+                  className={cn(
+                    'w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium flex items-center justify-between shadow-xs transition-colors cursor-pointer',
+                    isLenderOpen && 'ring-2 ring-focus/20 border-focus'
+                  )}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Building2 className="w-4 h-4 text-muted-fg shrink-0" />
+                    <span className="truncate">{lenderCompany || 'Select Lender Company'}</span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-muted-fg shrink-0" />
+                </button>
+
+                {isLenderOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 w-full bg-white rounded-xl border border-stroke/30 shadow-xl p-1.5 z-50 max-h-48 overflow-y-auto">
+                    {availableLenders.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => {
+                          setLenderCompany(name)
+                          setIsLenderOpen(false)
+                          if (fieldErrors.lender) setFieldErrors((p) => ({ ...p, lender: undefined }))
+                        }}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer',
+                          lenderCompany === name ? 'bg-primary/10 text-primary font-semibold' : 'text-focus/80 hover:bg-slate-50'
+                        )}
+                      >
+                        <span className="truncate">{name}</span>
+                        {lenderCompany === name && <Check className="w-3.5 h-3.5 text-primary ml-2 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {fieldErrors.lender && <p className="text-2xs text-red-500">{fieldErrors.lender}</p>}
+              </div>
+
+              {/* 5. Principal Amount */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Principal Amount (₱) <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-fg text-xs font-bold pointer-events-none">
+                    ₱
+                  </span>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={amount}
+                    onKeyDown={(e) => {
+                      if (['e', 'E', '+', '-'].includes(e.key)) {
+                        e.preventDefault()
+                      }
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '')
+                      setAmount(val)
+                      if (fieldErrors.amount) setFieldErrors((p) => ({ ...p, amount: undefined }))
+                    }}
+                    className={cn('pl-7 h-10 text-xs sm:text-sm rounded-xl tabular-nums', fieldErrors.amount && 'border-red-500')}
+                    required
+                  />
+                </div>
+                {fieldErrors.amount && <p className="text-2xs text-red-500">{fieldErrors.amount}</p>}
+              </div>
+
+              {/* 6. Interest Rate */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Interest Rate (%)
                 </Label>
                 <div className="relative">
                   <Input
-                    type="text"
-                    placeholder="Search or enter category..."
-                    value={category}
-                    onChange={(e) => {
-                      setCategory(e.target.value)
-                      setIsCategoryOpen(true)
-                      if (fieldErrors.category) {
-                        setFieldErrors((prev) => ({ ...prev, category: undefined }))
-                      }
-                    }}
-                    onFocus={() => setIsCategoryOpen(true)}
-                    className={cn(
-                      'h-10 rounded-xl border-stroke/50 text-xs pr-8 font-medium',
-                      fieldErrors.category && 'border-red-500 focus-visible:ring-red-200'
-                    )}
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0.0"
+                    value={interestRate}
+                    onChange={(e) => setInterestRate(e.target.value)}
+                    className="pr-7 h-10 text-xs sm:text-sm rounded-xl tabular-nums"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setIsCategoryOpen((prev) => !prev)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-1 cursor-pointer"
-                    aria-label="Toggle category options"
-                  >
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  </button>
-
-                  {isCategoryOpen && (
-                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-stroke/40 rounded-xl shadow-xl max-h-48 overflow-y-auto p-1.5">
-                      <div className="space-y-0.5">
-                        {filteredCategoryOptions.map((opt) => (
-                          <button
-                            key={opt}
-                            type="button"
-                            onClick={() => {
-                              setCategory(opt)
-                              setIsCategoryOpen(false)
-                              if (fieldErrors.category) {
-                                setFieldErrors((prev) => ({ ...prev, category: undefined }))
-                              }
-                            }}
-                            className={cn(
-                              'w-full text-left px-3 py-1.5 text-xs rounded-lg flex items-center justify-between transition-colors cursor-pointer',
-                              category === opt
-                                ? 'bg-primary/10 text-primary font-semibold'
-                                : 'hover:bg-slate-100 text-focus'
-                            )}
-                          >
-                            <span>{opt}</span>
-                            {category === opt && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg text-xs font-bold pointer-events-none">
+                    %
+                  </span>
                 </div>
-                {fieldErrors.category && (
-                  <p className="text-[11px] text-red-600 font-medium">
-                    {fieldErrors.category}
-                  </p>
-                )}
+              </div>
+
+              {/* 7. Particulars / Purpose */}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-semibold text-focus block">
+                  Particulars / Purpose <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Commercial Kitchen Heavy Equipment Financing"
+                  value={particulars}
+                  onChange={(e) => {
+                    setParticulars(e.target.value)
+                    if (fieldErrors.particulars) setFieldErrors((p) => ({ ...p, particulars: undefined }))
+                  }}
+                  className={cn('h-10 text-xs sm:text-sm rounded-xl', fieldErrors.particulars && 'border-red-500')}
+                  required
+                />
+                {fieldErrors.particulars && <p className="text-2xs text-red-500">{fieldErrors.particulars}</p>}
               </div>
             </div>
 
-            {/* 4. Particulars */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus block">
-                Particulars <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                type="text"
-                placeholder="e.g. Commercial Equipment Term Loan Facility"
-                value={particulars}
-                onChange={(e) => {
-                  setParticulars(e.target.value)
-                  if (fieldErrors.particulars) {
-                    setFieldErrors((prev) => ({ ...prev, particulars: undefined }))
-                  }
-                }}
-                className={cn(
-                  'h-10 rounded-xl border-stroke/50 text-xs',
-                  fieldErrors.particulars && 'border-red-500 focus-visible:ring-red-200'
-                )}
-              />
-              {fieldErrors.particulars && (
-                <p className="text-[11px] text-red-600 font-medium">
-                  {fieldErrors.particulars}
-                </p>
-              )}
-            </div>
-
-            {/* 5. Loan Amount */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus block">
-                Loan Amount (₱) <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="1"
-                placeholder="0.00"
-                value={amount}
-                onChange={(e) => {
-                  setAmount(e.target.value)
-                  if (fieldErrors.amount) {
-                    setFieldErrors((prev) => ({ ...prev, amount: undefined }))
-                  }
-                }}
-                className={cn(
-                  'h-10 rounded-xl border-stroke/50 text-xs font-medium',
-                  fieldErrors.amount && 'border-red-500 focus-visible:ring-red-200'
-                )}
-              />
-              {fieldErrors.amount && (
-                <p className="text-[11px] text-red-600 font-medium">{fieldErrors.amount}</p>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stroke/15">
+            <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-stroke/20">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                className="h-10 px-4 rounded-xl border-stroke/60 text-xs font-medium cursor-pointer"
+                className="h-10 px-4 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                className="h-10 px-6 rounded-xl bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold shadow-xs cursor-pointer"
+                className="h-10 px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer"
               >
-                Add Loan
+                Record Loan
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* 2. Confirmation Dialogue */}
+      {/* 2. Confirmation Dialog */}
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <DialogContent className="sm:max-w-[460px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4 [&>button]:w-6 [&>button]:h-6 [&>button]:p-0.5 [&>button]:rounded-md [&>button>svg]:w-3.5 [&>button>svg]:h-3.5">
-          <DialogHeader className="text-left pb-3 border-b border-stroke/20">
-            <DialogTitle className="text-lg sm:text-xl font-bold text-focus leading-tight">
-              Confirm Loan Record
+        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
+          <DialogHeader className="text-left pb-2 pr-6">
+            <DialogTitle className="text-lg font-bold text-focus leading-tight">
+              Confirm Loan Submission
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg font-normal">
-              Please review and confirm this loan transaction entry before saving.
+              Please verify the inter-company loan details before submitting.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4 space-y-3">
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-fg font-medium">Company</span>
-                <span className="font-semibold text-focus">{company}</span>
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2 my-2">
+            <div className="flex justify-between">
+              <span className="text-muted-fg font-medium">Borrower:</span>
+              <span className="font-bold text-focus">{borrowerCompany}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-fg font-medium">Lender:</span>
+              <span className="font-bold text-focus">{lenderCompany}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-fg font-medium">Principal Amount:</span>
+              <span className="font-bold text-emerald-600 tabular-nums">
+                {formatPHP(parseFloat(amount.replace(/,/g, '')) || 0)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-fg font-medium">Interest Rate:</span>
+              <span className="font-bold text-primary">{parseFloat(interestRate) || 0}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-fg font-medium">Date:</span>
+              <span className="font-medium text-focus">{date}</span>
+            </div>
+            {dueDate && (
+              <div className="flex justify-between">
+                <span className="text-muted-fg font-medium">Due Date:</span>
+                <span className="font-medium text-focus">{dueDate}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-fg font-medium">Date</span>
-                <span className="font-semibold text-focus">{date}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-fg font-medium">Particulars</span>
-                <span className="font-semibold text-focus max-w-[220px] truncate text-right">
-                  {particulars}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-fg font-medium">Category</span>
-                <span className="font-semibold text-focus">{category}</span>
-              </div>
-              {chequeNo && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-fg font-medium">Cheque No.</span>
-                  <span className="font-mono font-semibold text-focus">{chequeNo}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between pt-2.5 border-t border-slate-200">
-                <span className="font-bold text-focus">Total Loan Amount</span>
-                <span className="font-bold text-blue-600 text-base">
-                  {formatPHP(parseFloat(amount.replace(/,/g, '')) || 0)}
-                </span>
-              </div>
+            )}
+            <div className="pt-2 border-t border-slate-200">
+              <span className="text-muted-fg block">Purpose:</span>
+              <span className="font-medium text-focus italic">{particulars}</span>
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stroke/15">
+          <p className="text-2xs text-muted-fg">
+            * Note: This loan request will be placed in <strong>Pending Approval</strong> until confirmed by <strong>{lenderCompany}</strong>.
+          </p>
+
+          <div className="pt-2 flex items-center justify-end gap-2 border-t border-stroke/20">
             <Button
               type="button"
               variant="outline"
-              disabled={isSubmitting}
+              size="sm"
               onClick={() => setIsConfirmOpen(false)}
-              className="h-10 px-4 rounded-xl border-stroke/60 text-xs font-medium cursor-pointer"
+              className="h-9 px-3 rounded-lg text-xs"
             >
-              Cancel
+              Back
             </Button>
             <Button
               type="button"
-              disabled={isSubmitting}
+              size="sm"
               onClick={handleConfirmedSubmit}
-              className="h-10 px-6 rounded-xl bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold shadow-xs cursor-pointer"
+              disabled={isSubmitting}
+              className="h-9 px-4 rounded-lg bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold shadow-xs"
             >
-              {isSubmitting ? 'Recording…' : 'Confirm & Add'}
+              {isSubmitting ? 'Recording…' : 'Confirm & Submit'}
             </Button>
           </div>
         </DialogContent>

@@ -16,6 +16,7 @@ class Loan(Base):
     loan_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=True)
     description = Column(Text, nullable=True)
+    status = Column(String(50), default="Pending Approval")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

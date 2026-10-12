@@ -1,52 +1,175 @@
 import * as React from 'react'
-import { Bell, Check, Clock, ShieldCheck, Building2, UserCheck } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import {
+  Bell,
+  Check,
+  Clock,
+  Building2,
+  Calendar,
+  AlertCircle,
+  FileCheck2,
+  Landmark,
+  CheckCircle2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import {
+  notificationService,
+  type NotificationItemOut,
+} from '@/services/notificationService'
 
-interface NotificationItem {
+interface DisplayNotification {
   id: string
   title: string
   description: string
   time: string
   unread: boolean
+  type: string
+  refType?: string | null
+  refId?: number | null
   icon: React.ElementType
+  iconColor: string
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: '1',
-    title: 'New Company Added',
-    description: 'MCT South Branch was successfully registered in the system.',
-    time: '10m ago',
-    unread: true,
-    icon: Building2,
-  },
-  {
-    id: '2',
-    title: 'Permissions Updated',
-    description: 'Updated administrative permissions for 3 employee accounts.',
-    time: '1h ago',
-    unread: true,
-    icon: ShieldCheck,
-  },
-  {
-    id: '3',
-    title: 'User Profile Synchronized',
-    description: 'Jordan Smith credentials and company assignment updated.',
-    time: '3h ago',
-    unread: false,
-    icon: UserCheck,
-  },
-]
+const READ_STORAGE_KEY = 'mct_read_notification_ids'
+
+function getReadIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = localStorage.getItem(READ_STORAGE_KEY)
+    if (raw) {
+      return new Set(JSON.parse(raw))
+    }
+  } catch {
+    // ignore
+  }
+  return new Set()
+}
+
+function saveReadId(id: string) {
+  if (typeof window === 'undefined') return
+  try {
+    const set = getReadIds()
+    set.add(id)
+    localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(Array.from(set)))
+  } catch {
+    // ignore
+  }
+}
+
+function saveAllReadIds(ids: string[]) {
+  if (typeof window === 'undefined') return
+  try {
+    const set = getReadIds()
+    ids.forEach((i) => set.add(i))
+    localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(Array.from(set)))
+  } catch {
+    // ignore
+  }
+}
+
+function formatRelativeTime(dateStr?: string | null): string {
+  if (!dateStr) return 'Just now'
+  try {
+    const d = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffMin = Math.floor(diffMs / 60000)
+    if (diffMin < 1) return 'Just now'
+    if (diffMin < 60) return `${diffMin}m ago`
+    const diffHrs = Math.floor(diffMin / 60)
+    if (diffHrs < 24) return `${diffHrs}h ago`
+    const diffDays = Math.floor(diffHrs / 24)
+    return `${diffDays}d ago`
+  } catch {
+    return 'Recently'
+  }
+}
 
 interface NotificationBellProps {
   className?: string
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ className }) => {
+  const navigate = useNavigate()
   const [isOpen, setIsOpen] = React.useState(false)
-  const [notifications, setNotifications] = React.useState<NotificationItem[]>(INITIAL_NOTIFICATIONS)
+  const [notifications, setNotifications] = React.useState<DisplayNotification[]>([])
+  const [readIds, setReadIds] = React.useState<Set<string>>(() => getReadIds())
   const dropdownRef = React.useRef<HTMLDivElement>(null)
+
+  const fetchLiveNotifications = React.useCallback(async () => {
+    try {
+      const items: NotificationItemOut[] = await notificationService.getNotifications({ limit: 50 })
+      const readSet = getReadIds()
+
+      const mapped: DisplayNotification[] = items.map((item) => {
+        let IconComponent: React.ElementType = AlertCircle
+        let iconColor = 'text-primary'
+
+        if (item.notification_type === 'LOAN_PENDING_APPROVAL') {
+          IconComponent = FileCheck2
+          iconColor = 'text-amber-600'
+        } else if (item.notification_type === 'LOAN_OVERDUE') {
+          IconComponent = AlertCircle
+          iconColor = 'text-red-600'
+        } else if (item.notification_type === 'LOAN_DUE_TODAY') {
+          IconComponent = Clock
+          iconColor = 'text-amber-500'
+        } else if (
+          item.notification_type === 'LOAN_DUE_TOMORROW' ||
+          item.notification_type === 'LOAN_DUE_SOON'
+        ) {
+          IconComponent = Calendar
+          iconColor = 'text-blue-600'
+        } else if (item.notification_type === 'LOAN_REPAYMENT_RECEIVED') {
+          IconComponent = CheckCircle2
+          iconColor = 'text-emerald-600'
+        } else if (item.notification_type === 'LOAN_REPAYMENT_SENT') {
+          IconComponent = Landmark
+          iconColor = 'text-slate-600'
+        } else if (item.notification_type === 'LOAN_FULLY_SETTLED') {
+          IconComponent = CheckCircle2
+          iconColor = 'text-emerald-600'
+        } else {
+          IconComponent = Building2
+          iconColor = 'text-primary'
+        }
+
+        const isUnread = !readSet.has(item.notification_id)
+
+        return {
+          id: item.notification_id,
+          title: item.title,
+          description: item.message,
+          time: formatRelativeTime(item.created_at),
+          unread: isUnread,
+          type: item.notification_type,
+          refType: item.reference_type,
+          refId: item.reference_id,
+          icon: IconComponent,
+          iconColor,
+        }
+      })
+
+      setNotifications(mapped)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // Initial fetch and polling every 30s
+  React.useEffect(() => {
+    fetchLiveNotifications()
+    const timer = setInterval(fetchLiveNotifications, 30000)
+    return () => clearInterval(timer)
+  }, [fetchLiveNotifications])
+
+  // Refetch when dropdown opened
+  React.useEffect(() => {
+    if (isOpen) {
+      fetchLiveNotifications()
+    }
+  }, [isOpen, fetchLiveNotifications])
 
   const unreadCount = notifications.filter((n) => n.unread).length
 
@@ -66,13 +189,24 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
   }, [isOpen])
 
   const markAllAsRead = () => {
+    const allIds = notifications.map((n) => n.id)
+    saveAllReadIds(allIds)
+    setReadIds(new Set([...readIds, ...allIds]))
     setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })))
   }
 
-  const markItemAsRead = (id: string) => {
+  const handleItemClick = (item: DisplayNotification) => {
+    saveReadId(item.id)
+    setReadIds((prev) => new Set([...prev, item.id]))
     setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, unread: false } : n))
+      prev.map((n) => (n.id === item.id ? { ...n, unread: false } : n))
     )
+
+    // If related to a loan, navigate to /loan
+    if (item.refType === 'loan' || item.type.includes('LOAN')) {
+      setIsOpen(false)
+      navigate('/loan')
+    }
   }
 
   return (
@@ -83,7 +217,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
         size="icon"
         onClick={() => setIsOpen((prev) => !prev)}
         className={cn(
-          'relative h-10 w-10 rounded-full text-focus hover:bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+          'relative h-10 w-10 rounded-full text-focus hover:bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus cursor-pointer',
           isOpen && 'bg-surface'
         )}
         aria-label="Open notifications"
@@ -131,7 +265,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
           <div className="max-h-80 overflow-y-auto divide-y divide-stroke/10">
             {notifications.length === 0 ? (
               <div className="p-6 text-center text-sm text-muted-fg">
-                No new notifications
+                No active notifications
               </div>
             ) : (
               notifications.map((item) => {
@@ -139,21 +273,21 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
                 return (
                   <div
                     key={item.id}
-                    onClick={() => markItemAsRead(item.id)}
+                    onClick={() => handleItemClick(item)}
                     className={cn(
                       'flex items-start gap-3.5 px-5 py-3.5 text-left hover:bg-surface/60 transition-colors cursor-pointer',
-                      item.unread && 'bg-primary/[0.02]'
+                      item.unread && 'bg-primary/[0.03]'
                     )}
                   >
                     <div
                       className={cn(
                         'h-9 w-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5',
                         item.unread
-                          ? 'bg-primary/10 text-primary'
-                          : 'bg-muted/30 text-muted-fg'
+                          ? 'bg-primary/10'
+                          : 'bg-muted/30'
                       )}
                     >
-                      <Icon className="h-4.5 w-4.5" />
+                      <Icon className={cn('h-4.5 w-4.5', item.iconColor)} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">

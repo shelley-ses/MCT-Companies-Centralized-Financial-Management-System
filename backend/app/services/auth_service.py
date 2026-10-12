@@ -169,6 +169,8 @@ def _record_failed_login(db: Session, ip_address: str, email: str = "") -> None:
 
 
 def _ensure_ip_available(db: Session, ip_address: str) -> None:
+    if ip_address in ("127.0.0.1", "::1", "localhost", "unknown"):
+        return
     now = datetime.now(timezone.utc)
     state = _rate_limits.get(ip_address)
     locked_until = state.get("locked_until") if state else None

@@ -11,11 +11,17 @@ import {
   FileSpreadsheet,
   FileText,
   Trash2,
+  Pencil,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
   X,
   Eye,
+  CheckCircle2,
+  Clock,
+  Lock,
+  ArrowRight,
+  Bell,
 } from 'lucide-react'
 import { UpdateLoanStatusModal } from '@/components/dashboard/UpdateLoanStatusModal'
 import { LoanHistoryModal } from '@/components/dashboard/LoanHistoryModal'
@@ -43,30 +49,20 @@ import {
 } from '@/components/ui/DateRangePicker'
 import { AuditTransactionModal } from '@/components/dashboard/AuditTransactionModal'
 import { AddLoanModal } from '@/components/dashboard/AddLoanModal'
+import { EditLoanModal } from '@/components/dashboard/EditLoanModal'
+import { ApproveLoanModal } from '@/components/dashboard/ApproveLoanModal'
 import { LoanHorizontalBarChart } from '@/components/dashboard/LoanHorizontalBarChart'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import {
   loanService,
   type LoanItem,
+  type CompanyOption,
 } from '@/services/loanService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { useLocation } from 'react-router-dom'
-import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
-
-const COMPANY_LIST = [
-  'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
 
 const PERIOD_OPTIONS = ['Daily', 'Monthly', 'Quarterly', 'Annually'] as const
 type PeriodOption = (typeof PERIOD_OPTIONS)[number]
@@ -107,6 +103,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     document.title = `${loanType} Loans - MCT Centralized Financial System`
   }, [loanType])
 
+  const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
   const [loans, setLoans] = React.useState<LoanItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
@@ -121,7 +118,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     startDate: '2026-10-01',
     endDate: '2026-10-31',
   })
-  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending'>('All')
+  const [statusFilter, setStatusFilter] = React.useState<string>('All')
+  const [lenderQuickFilter, setLenderQuickFilter] = React.useState<'All' | 'Pending' | 'Approved'>('All')
   const [searchQuery, setSearchQuery] = React.useState('')
   const [currentPage, setCurrentPage] = React.useState(1)
 
@@ -140,6 +138,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
   // Modals & Action state
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
+  const [editLoan, setEditLoan] = React.useState<LoanItem | null>(null)
+  const [approveLoanItem, setApproveLoanItem] = React.useState<LoanItem | null>(null)
   const [deleteConfirmLoan, setDeleteConfirmLoan] = React.useState<LoanItem | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
 
@@ -148,16 +148,33 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [selectedLoan, setSelectedLoan] = React.useState<LoanItem | null>(null)
   const [isAuditModalOpen, setIsAuditModalOpen] = React.useState(false)
   const [highlightedLoanId, setHighlightedLoanId] = React.useState<string | null>(null)
-  const [updateStatusLoan, setUpdateStatusLoan] = React.useState<LoanItem | null>(null)
 
   // Lender View-Only History Modal state
   const [isHistoryModalOpen, setIsHistoryModalOpen] = React.useState(false)
   const [historyLoan, setHistoryLoan] = React.useState<LoanItem | null>(null)
 
+  // Fetch Companies from Database
+  React.useEffect(() => {
+    let mounted = true
+    loanService.getCompanies().then((res) => {
+      if (mounted && res.length > 0) {
+        setDbCompanies(res)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const companyNamesList = React.useMemo(() => {
+    const list = dbCompanies.map((c) => c.company_name)
+    return ['All Companies', ...list]
+  }, [dbCompanies])
+
   const handlePeriodChange = (period: PeriodOption) => {
     setSelectedPeriod(period)
     setIsPeriodDropdownOpen(false)
-    const currentToday = new Date().toISOString().split('T')[0]
+    const currentToday = formatToYYYYMMDD(new Date())
     const [currYear, currMonth] = currentToday.split('-')
 
     switch (period) {
@@ -225,18 +242,30 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const loadLoans = React.useCallback(async () => {
     try {
       setLoading(true)
-      const data = await loanService.getLoans()
+      const data = await loanService.getLoans({
+        company: isAuditor ? assignedCompany : (selectedCompany === 'All Companies' ? undefined : selectedCompany),
+        scope: loanType.toLowerCase() as 'borrower' | 'lender',
+      })
       setLoans(data)
     } catch (err) {
       console.error('Failed to load loans:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isAuditor, assignedCompany, selectedCompany, loanType])
 
   React.useEffect(() => {
     loadLoans()
   }, [loadLoans])
+
+  // Count pending approvals for the active company (where they are lender)
+  const pendingLenderApprovalsCount = React.useMemo(() => {
+    const targetComp = (isAuditor ? assignedCompany : selectedCompany).toLowerCase()
+    return loans.filter((l) => {
+      const isTargetLender = targetComp === 'all companies' || l.lender.toLowerCase() === targetComp
+      return isTargetLender && l.status === 'Pending Approval'
+    }).length
+  }, [loans, isAuditor, assignedCompany, selectedCompany])
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -265,8 +294,23 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const filteredLoans = React.useMemo(() => {
     return loans
       .filter((item) => {
-        if (!isAuditor && selectedCompany !== 'All Companies' && item.company !== selectedCompany) {
-          return false
+        // Tab separation: Borrower vs Lender
+        const currentTargetCompany = isAuditor
+          ? assignedCompany.toLowerCase()
+          : selectedCompany.toLowerCase()
+
+        if (currentTargetCompany !== 'all companies') {
+          if (loanType === 'Borrower') {
+            if (item.borrower.toLowerCase() !== currentTargetCompany) return false
+          } else {
+            if (item.lender.toLowerCase() !== currentTargetCompany) return false
+          }
+        }
+
+        // Quick filter in Lender tab (All, Pending, Approved)
+        if (loanType === 'Lender' && lenderQuickFilter !== 'All') {
+          if (lenderQuickFilter === 'Pending' && item.status !== 'Pending Approval') return false
+          if (lenderQuickFilter === 'Approved' && item.status !== 'Approved') return false
         }
 
         if (!isDateInRange(item.rawDate || item.date, dateRange.startDate, dateRange.endDate)) {
@@ -282,8 +326,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           const matchRef = (item.refNo || '').toLowerCase().includes(q)
           const matchCheque = (item.chequeNo || '').toLowerCase().includes(q)
           const matchParticulars = (item.particulars || '').toLowerCase().includes(q)
-          const matchCategory = (item.category || '').toLowerCase().includes(q)
-          const matchCompany = (item.company || '').toLowerCase().includes(q)
+          const matchBorrower = (item.borrower || '').toLowerCase().includes(q)
+          const matchLender = (item.lender || '').toLowerCase().includes(q)
           const matchStatus = (item.status || '').toLowerCase().includes(q)
           const matchAmount = String(item.amount || '').includes(q)
 
@@ -291,8 +335,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
             !matchRef &&
             !matchCheque &&
             !matchParticulars &&
-            !matchCategory &&
-            !matchCompany &&
+            !matchBorrower &&
+            !matchLender &&
             !matchStatus &&
             !matchAmount
           ) {
@@ -309,16 +353,18 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [loans, isAuditor, selectedCompany, dateRange, statusFilter, searchQuery])
+  }, [loans, isAuditor, assignedCompany, selectedCompany, loanType, lenderQuickFilter, dateRange, statusFilter, searchQuery])
 
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod])
+  }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod, loanType, lenderQuickFilter])
 
   // Total Loans KPI
   const kpis = React.useMemo(() => {
     const total = filteredLoans.reduce((sum, l) => sum + (l.amount || 0), 0)
-    return { totalLoans: total }
+    const pending = filteredLoans.filter((l) => l.status === 'Pending Approval').length
+    const approved = filteredLoans.filter((l) => l.status === 'Approved').length
+    return { totalLoans: total, pendingCount: pending, approvedCount: approved }
   }, [filteredLoans])
 
   // Pagination
@@ -333,13 +379,14 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const handleExportCsv = () => {
     loanService.exportCsv(
       filteredLoans,
-      `loan_summary_${companyForExport.replace(/\s+/g, '_')}_${Date.now()}.csv`
+      loanType,
+      `loan_${loanType.toLowerCase()}_${companyForExport.replace(/\s+/g, '_')}_${Date.now()}.csv`
     )
     setIsExportDropdownOpen(false)
   }
 
   const handleExportPdf = () => {
-    loanService.exportPdf(filteredLoans, companyForExport)
+    loanService.exportPdf(filteredLoans, companyForExport, loanType)
     setIsExportDropdownOpen(false)
   }
 
@@ -375,20 +422,17 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     setIsAuditModalOpen(true)
   }
 
-  const handleRowClick = (loan: LoanItem) => {
-    if (loanType === 'Lender') {
-      setHistoryLoan(loan)
-      setIsHistoryModalOpen(true)
-    } else {
-      handleOpenRow(loan)
-    }
-  }
-
   const handleLoanUpdated = (updatedItem: LoanItem) => {
     setLoans((prev) => prev.map((l) => (l.id === updatedItem.id ? updatedItem : l)))
-    setSelectedLoan(updatedItem)
-    setSelectedTx(loanService.toDashboardTransaction(updatedItem))
     setHighlightedLoanId(updatedItem.id)
+    setTimeout(() => {
+      setHighlightedLoanId(null)
+    }, 3000)
+  }
+
+  const handleLoanApproved = (approvedItem: LoanItem) => {
+    setLoans((prev) => prev.map((l) => (l.id === approvedItem.id ? approvedItem : l)))
+    setHighlightedLoanId(approvedItem.id)
     setTimeout(() => {
       setHighlightedLoanId(null)
     }, 3000)
@@ -401,19 +445,19 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
       await loanService.deleteLoan(deleteConfirmLoan.id)
       setLoans((prev) => prev.filter((l) => l.id !== deleteConfirmLoan.id))
       setDeleteConfirmLoan(null)
-    } catch (err) {
-      console.error('Failed to delete loan:', err)
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete loan')
     } finally {
       setIsDeleting(false)
     }
   }
 
   const filteredCompanyList = React.useMemo(() => {
-    if (!companySearch.trim()) return COMPANY_LIST
-    return COMPANY_LIST.filter((c) =>
+    if (!companySearch.trim()) return companyNamesList
+    return companyNamesList.filter((c) =>
       c.toLowerCase().includes(companySearch.toLowerCase().trim())
     )
-  }, [companySearch])
+  }, [companySearch, companyNamesList])
 
   const displayedCompanyTitle = isAuditor
     ? assignedCompany
@@ -425,9 +469,31 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">
       {/* 1. Header & Controls */}
       <div className="space-y-3">
-        {/* Top Row: Action Buttons (Export & Add Loan) sitting on top of the filters */}
-        <div className="flex items-center justify-end">
-          <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Top Row: Action Buttons (Export & Add Loan) */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          {/* Left: Pending Approval notification alert badge */}
+          {pendingLenderApprovalsCount > 0 ? (
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs shadow-2xs animate-in fade-in">
+              <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+              <span className="font-semibold">{pendingLenderApprovalsCount} loan request(s) awaiting lender approval.</span>
+              {loanType !== 'Lender' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoanType('Lender')
+                    setLenderQuickFilter('Pending')
+                  }}
+                  className="font-bold underline text-amber-800 hover:text-amber-950 ml-1 inline-flex items-center gap-1 cursor-pointer"
+                >
+                  Review now <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <div />
+          )}
+
+          <div className="flex items-center gap-2.5 sm:gap-3 ml-auto">
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
@@ -480,32 +546,32 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               )}
             </div>
 
-            {/* Add Loan Button (Exclusively for Company Auditor in Borrower view; Lender view is view-only) */}
-            {isAuditor && loanType === 'Borrower' && (
-              <Button
-                type="button"
-                onClick={() => setIsAddModalOpen(true)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
-              >
-                <Plus className="h-4 w-4 shrink-0" />
-                <span>Add Loan</span>
-              </Button>
-            )}
+            {/* Add Loan Button (Available for Borrower requests) */}
+            <Button
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span>Request Loan</span>
+            </Button>
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right (level with Title & Subtitle) */}
+        {/* Second Row: Page Title on Left, Filter Toolbar on Right */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-              Loan
+              {loanType} Loans
             </h1>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Comprehensive breakdown of {loanType.toLowerCase()} loans in {displayedCompanyTitle}.
+              {loanType === 'Borrower'
+                ? `Loans and facilities borrowed by ${displayedCompanyTitle} from partner companies.`
+                : `Loans and financing extended by ${displayedCompanyTitle} to partner companies.`}
             </p>
           </div>
 
-          {/* Filter Toolbar (Aligned with Title/Subtitle, sitting directly under Export & Add Loan) */}
+          {/* Filter Toolbar */}
           <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
             {/* Dropdown Filter for: Borrower / Lender */}
             <div ref={loanTypeDropdownRef} className="relative inline-block">
@@ -517,11 +583,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                   isLoanTypeDropdownOpen && 'ring-2 ring-focus/20 border-focus'
                 )}
                 aria-label="Filter by Borrower or Lender"
-                aria-haspopup="listbox"
-                aria-expanded={isLoanTypeDropdownOpen}
               >
                 <Landmark className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90">{loanType}</span>
+                <span className="font-semibold text-focus/90">
+                  {loanType}
+                </span>
                 <ChevronDown
                   className={cn(
                     'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
@@ -531,28 +597,43 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               </button>
 
               {isLoanTypeDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {(['Borrower', 'Lender'] as const).map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => {
-                        setLoanType(type)
-                        setIsLoanTypeDropdownOpen(false)
-                      }}
-                      className={cn(
-                        'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                        loanType === type
-                          ? 'bg-primary/10 text-primary font-semibold'
-                          : 'text-focus/80 hover:bg-slate-50'
-                      )}
-                    >
-                      <span>{type}</span>
-                      {loanType === type && (
-                        <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                      )}
-                    </button>
-                  ))}
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoanType('Borrower')
+                      setIsLoanTypeDropdownOpen(false)
+                    }}
+                    className={cn(
+                      'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                      loanType === 'Borrower'
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-focus/80 hover:bg-slate-50'
+                    )}
+                  >
+                    <span>Borrower</span>
+                    {loanType === 'Borrower' && (
+                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoanType('Lender')
+                      setIsLoanTypeDropdownOpen(false)
+                    }}
+                    className={cn(
+                      'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                      loanType === 'Lender'
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-focus/80 hover:bg-slate-50'
+                    )}
+                  >
+                    <span>Lender</span>
+                    {loanType === 'Lender' && (
+                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                    )}
+                  </button>
                 </div>
               )}
             </div>
@@ -578,7 +659,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               </button>
 
               {isPeriodDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
                   {PERIOD_OPTIONS.map((period) => (
                     <button
                       key={period}
@@ -623,8 +704,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               </button>
 
               {isStatusDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {(['All', 'Paid', 'Pending'] as const).map((st) => (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  {(['All', 'Pending Approval', 'Approved', 'Paid'] as const).map((st) => (
                     <button
                       key={st}
                       type="button"
@@ -639,13 +720,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                           : 'text-focus/80 hover:bg-slate-50'
                       )}
                     >
-                      <span>
-                        {st === 'All'
-                          ? 'All Status'
-                          : st === 'Paid'
-                          ? 'Fully Settled'
-                          : 'Pending / Active'}
-                      </span>
+                      <span>{st === 'All' ? 'All Statuses' : st}</span>
                       {statusFilter === st && (
                         <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
                       )}
@@ -655,11 +730,10 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               )}
             </div>
 
-            {/* Date Range Picker (presets hidden, period handled by Period dropdown) */}
+            {/* Date Range Picker */}
             <DateRangePicker
               value={dateRange}
               onChange={(newRange: DateRange) => setDateRange(newRange)}
-              hidePresets
             />
 
             {/* Company Scope Dropdown (Admin only) */}
@@ -672,7 +746,6 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                     'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
                     isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
                   )}
-                  aria-label="Filter loans by company"
                 >
                   <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
                   <span className="font-medium text-focus/90 truncate max-w-[150px]">
@@ -762,18 +835,29 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         </div>
       </div>
 
-      {/* 3. Total Loans KPI Card */}
+      {/* 2. Total Loans KPI Card */}
       <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
-        <div>
+        <div className="w-full max-w-[calc(100%-60px)]">
           <span className="text-xs font-medium text-muted-fg block">
-            Total Loans
+            {loanType === 'Borrower' ? 'Total Borrowed Amount' : 'Total Lent Capital'}
           </span>
-          <h3 className="text-xl sm:text-2xl font-bold text-focus mt-1 tabular-nums tracking-tight">
-            {formatPHP(kpis.totalLoans)}
-          </h3>
-          <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5">
-            Total loan financing and commitments for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-          </p>
+          {loading ? (
+            <div className="space-y-1.5 mt-2">
+              <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+              <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+            </div>
+          ) : (
+            <>
+              <h3 className="text-xl sm:text-2xl font-bold text-focus mt-1 tabular-nums tracking-tight">
+                {formatPHP(kpis.totalLoans)}
+              </h3>
+              <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                {loanType === 'Borrower'
+                  ? `Active borrowed principal across partners for ${displayedCompanyTitle}`
+                  : `Financing capital provided to subsidiary partners by ${displayedCompanyTitle}`}
+              </p>
+            </>
+          )}
         </div>
 
         <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-slate-100 border border-slate-200/80 flex items-center justify-center text-focus shrink-0 shadow-2xs">
@@ -781,83 +865,153 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         </div>
       </Card>
 
-      {/* 4. Diagrams Section: Horizontal Bar Graph only (per user request) */}
+      {/* 3. Diagram Section */}
       <div className="w-full">
-        <LoanHorizontalBarChart
-          loans={filteredLoans}
-          companyScope={selectedCompany}
-          className="w-full"
-        />
+        {loading ? (
+          <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
+            <div className="space-y-1.5 mb-4">
+              <div className="h-5 w-44 bg-slate-200/80 animate-pulse rounded-md" />
+              <div className="h-3.5 w-64 bg-slate-200/60 animate-pulse rounded-md" />
+            </div>
+            <div className="h-56 sm:h-64 w-full bg-slate-50/70 rounded-2xl flex flex-col items-center justify-center gap-3">
+              <div className="w-20 h-20 rounded-full border-4 border-slate-200 border-t-primary animate-spin opacity-60" />
+              <div className="h-3.5 w-40 bg-slate-200/70 animate-pulse rounded" />
+            </div>
+          </Card>
+        ) : (
+          <LoanHorizontalBarChart
+            loans={filteredLoans}
+            companyScope={selectedCompany}
+            className="w-full"
+          />
+        )}
       </div>
 
-      {/* 5. Summary Transactions in Loan */}
+      {/* 4. Summary Transactions Table Card */}
       <Card
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Grey Header Banner with Search Input for Loan Table */}
+        {/* Grey Header Banner with Search Input & Quick Status Filter for Lender */}
         <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
-              {selectedPeriod === 'Annually' ? 'Annual Loans' : `${selectedPeriod} Loans`}
+            <h2 className="text-sm sm:text-base font-bold text-focus leading-tight flex items-center gap-2">
+              <span>{loanType === 'Borrower' ? 'Borrower Loans' : 'Lender Loans'}</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-white border border-slate-200 font-semibold text-muted-fg">
+                {filteredLoans.length} record(s)
+              </span>
             </h2>
             <p className="text-xs text-muted-fg font-normal mt-0.5">
-              Here's the summary of loans in {displayedCompanyTitle}.
+              {loanType === 'Borrower'
+                ? `Loans requested by ${displayedCompanyTitle}`
+                : `Loans extended by ${displayedCompanyTitle}`}
             </p>
           </div>
 
-          {/* Search bar moved to table */}
-          <div className="relative w-full md:w-80 lg:w-[420px]">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
-            <Input
-              type="text"
-              placeholder="Search by ref no, cheque, particulars, category…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-9 h-10 text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Quick Segmented Filter for Lender: All / Pending Approval / Approved */}
+            {loanType === 'Lender' && (
+              <div className="inline-flex items-center p-1 rounded-xl bg-white border border-stroke/50 shadow-2xs text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setLenderQuickFilter('All')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg transition-colors cursor-pointer',
+                    lenderQuickFilter === 'All'
+                      ? 'bg-focus text-white'
+                      : 'text-muted-fg hover:text-focus'
+                  )}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLenderQuickFilter('Pending')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5',
+                    lenderQuickFilter === 'Pending'
+                      ? 'bg-amber-500 text-white'
+                      : 'text-muted-fg hover:text-focus'
+                  )}
+                >
+                  <span>Pending Approval</span>
+                  {kpis.pendingCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-900 font-bold">
+                      {kpis.pendingCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLenderQuickFilter('Approved')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg transition-colors cursor-pointer',
+                    lenderQuickFilter === 'Approved'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-muted-fg hover:text-focus'
+                  )}
+                >
+                  Approved
+                </button>
+              </div>
             )}
+
+            {/* Search bar */}
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+              <Input
+                type="text"
+                placeholder="Search ref no, company, purpose…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-9 h-10 text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Loan Table: only include Date, Cheque No., Particulars, Category, Amount and Actions column with equal spacing (16.6667% each) */}
+        {/* Loan Table */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table className="w-full table-fixed min-w-[850px]">
-            <colgroup>
-              <col style={{ width: '16.6667%' }} />
-              <col style={{ width: '16.6667%' }} />
-              <col style={{ width: '16.6667%' }} />
-              <col style={{ width: '16.6667%' }} />
-              <col style={{ width: '16.6667%' }} />
-              <col style={{ width: '16.6667%' }} />
-            </colgroup>
+          <Table className="w-full">
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead className="w-[16.6667%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>
-                <TableHead className="w-[16.6667%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                  CHEQUE NO.
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  REF NO.
                 </TableHead>
-                <TableHead className="w-[16.6667%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  {loanType === 'Borrower' ? 'LENDER COMPANY' : 'BORROWER COMPANY'}
+                </TableHead>
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="w-[16.6667%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                  CATEGORY
-                </TableHead>
-                <TableHead className="w-[16.6667%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   AMOUNT
                 </TableHead>
-                <TableHead className="w-[16.6667%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  DUE DATE
+                </TableHead>
+                {/* Interest Rate ONLY in Borrower Tab per user instructions */}
+                {loanType === 'Borrower' && (
+                  <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                    INTEREST RATE
+                  </TableHead>
+                )}
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  STATUS
+                </TableHead>
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -865,18 +1019,43 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="py-12 text-center text-xs sm:text-sm text-muted-fg animate-pulse"
-                  >
-                    Loading loan records…
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 5 }).map((_, idx) => (
+                  <TableRow key={idx} className="border-b border-slate-100">
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-24 bg-slate-200/60 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-28 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-36 bg-slate-200/70 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="h-4 w-20 bg-slate-200/60 animate-pulse rounded" />
+                    </TableCell>
+                    {loanType === 'Borrower' && (
+                      <TableCell className="px-4 py-4">
+                        <div className="h-4 w-12 bg-slate-200/60 animate-pulse rounded" />
+                      </TableCell>
+                    )}
+                    <TableCell className="px-4 py-4">
+                      <div className="h-5 w-24 bg-slate-200/60 animate-pulse rounded-full" />
+                    </TableCell>
+                    <TableCell className="px-4 py-4 text-center">
+                      <div className="h-7 w-16 bg-slate-200/60 animate-pulse rounded-lg mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ))
               ) : paginatedLoans.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={loanType === 'Borrower' ? 9 : 8}
                     className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
@@ -884,101 +1063,158 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                         <AlertCircle className="w-6 h-6 stroke-[1.5]" />
                       </div>
                       <p className="font-semibold text-focus text-sm sm:text-base">
-                        No loan records found
+                        No loan transaction yet
                       </p>
                       <p className="text-xs text-muted-fg leading-relaxed">
-                        There are no loan facilities recorded for {displayedCompanyTitle} matching your current filters. {isAuditor && 'Click "Add Loan" above to record a new transaction.'}
+                        There are no {loanType.toLowerCase()} loan records found for {displayedCompanyTitle} matching your current filters.
+                        {loanType === 'Borrower' && ' Click "Request Loan" above to initiate a new borrowing request.'}
                       </p>
                     </div>
                   </TableCell>
                 </TableRow>
               ) : (
                 paginatedLoans.map((loan) => {
-                  const isUnpaidOrPending = loan.status !== 'Paid'
+                  const isPending = loan.status === 'Pending Approval'
+                  const isApproved = loan.status === 'Approved'
+                  const isPaid = loan.status === 'Paid'
+
                   return (
                     <TableRow
                       key={loan.id}
                       id={`loan-row-${loan.id}`}
-                      onClick={() => handleRowClick(loan)}
                       className={cn(
-                        'border-b transition-all duration-200 cursor-pointer',
-                        isUnpaidOrPending
-                          ? 'bg-amber-50/80 hover:bg-amber-100/80 border-amber-200/70'
-                          : 'border-slate-100 hover:bg-slate-50/60',
+                        'border-b border-slate-100 hover:bg-slate-50/60 transition-colors',
+                        isPending && 'bg-amber-50/30 hover:bg-amber-50/60',
                         highlightedLoanId === loan.id &&
-                          'bg-amber-200/90 hover:bg-amber-200/90 ring-2 ring-amber-500 shadow-md font-semibold'
+                          'bg-amber-100/80 ring-2 ring-amber-400 font-semibold'
                       )}
-                      title={
-                        loanType === 'Lender'
-                          ? 'Click to view loan history and details'
-                          : isUnpaidOrPending
-                          ? `Unpaid / Pending Loan (${loan.status}) — Click to view details or update status`
-                          : 'Paid Loan — Click to view complete details'
-                      }
                     >
                       {/* 1. Date */}
-                      <TableCell className="w-[16.6667%] px-4 py-3.5 text-xs font-medium text-focus truncate text-left">
-                        <div className="flex items-center gap-1.5 truncate">
+                      <TableCell className="px-4 py-3.5 text-xs font-medium text-focus whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
                           <span>{loan.date}</span>
                           {highlightedLoanId === loan.id && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white shadow-xs animate-bounce shrink-0">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white animate-bounce">
                               NEW
                             </span>
                           )}
                         </div>
                       </TableCell>
 
-                      {/* 2. Cheque No */}
-                      <TableCell className="w-[16.6667%] px-4 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
-                        {loan.chequeNo || '—'}
+                      {/* 2. Ref No */}
+                      <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-mono whitespace-nowrap">
+                        {loan.refNo}
                       </TableCell>
 
-                      {/* 3. Particulars */}
-                      <TableCell className="w-[16.6667%] px-4 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={loan.particulars}>
-                        <span className="truncate block">{loan.particulars}</span>
+                      {/* 3. Partner Company (Lender if borrower view, Borrower if lender view) */}
+                      <TableCell className="px-4 py-3.5 text-xs text-focus font-semibold whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                          <span className="truncate max-w-[160px]">
+                            {loanType === 'Borrower' ? loan.lender : loan.borrower}
+                          </span>
+                        </div>
                       </TableCell>
 
-                      {/* 4. Category */}
-                      <TableCell className="w-[16.6667%] px-4 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
-                        {loan.category}
+                      {/* 4. Particulars */}
+                      <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-[220px] truncate" title={loan.particulars}>
+                        {loan.particulars}
                       </TableCell>
 
                       {/* 5. Amount */}
-                      <TableCell className="w-[16.6667%] px-4 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
+                      <TableCell className="px-4 py-3.5 text-xs font-bold tabular-nums whitespace-nowrap text-focus">
                         {formatPHP(loan.amount)}
                       </TableCell>
 
-                      {/* 6. Actions */}
-                      <TableCell
-                        className="w-[16.6667%] px-4 py-3.5 text-center whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center justify-center">
+                      {/* 6. Due Date */}
+                      <TableCell className="px-4 py-3.5 text-xs text-focus/80 whitespace-nowrap">
+                        {loan.dueDate || '—'}
+                      </TableCell>
+
+                      {/* 7. Interest Rate (Borrower tab only) */}
+                      {loanType === 'Borrower' && (
+                        <TableCell className="px-4 py-3.5 text-xs text-focus/90 whitespace-nowrap font-medium">
+                          {loan.interestRate !== undefined ? `${loan.interestRate}%` : '0%'}
+                        </TableCell>
+                      )}
+
+                      {/* 8. Status Badge */}
+                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-bold border shadow-2xs',
+                            isPending && 'bg-amber-50 text-amber-800 border-amber-200/80',
+                            isApproved && 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
+                            isPaid && 'bg-blue-50 text-blue-800 border-blue-200/80',
+                            loan.status === 'Overdue' && 'bg-rose-50 text-rose-800 border-rose-200/80'
+                          )}
+                        >
+                          {isPending && <Clock className="w-3 h-3 text-amber-600" />}
+                          {isApproved && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                          {isPaid && <Check className="w-3 h-3 text-blue-600" />}
+                          <span>{loan.status}</span>
+                        </span>
+                      </TableCell>
+
+                      {/* 9. Actions */}
+                      <TableCell className="px-4 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1.5">
                           {loanType === 'Lender' ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setHistoryLoan(loan)
-                                setIsHistoryModalOpen(true)
-                              }}
-                              className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-focus hover:bg-slate-100 cursor-pointer"
-                              title="View Loan History"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </Button>
+                            /* Lender Actions: Can approve pending loans */
+                            isPending ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => setApproveLoanItem(loan)}
+                                className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer"
+                                title="Approve this loan request"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Approve</span>
+                              </Button>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 text-2xs text-muted-fg font-medium cursor-default"
+                                title="Approved loan"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Authorized</span>
+                              </span>
+                            )
                           ) : (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteConfirmLoan(loan)}
-                              className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                              title="Delete Loan"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                            /* Borrower Actions: Can edit and delete ONLY IF still Pending Approval */
+                            isPending ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setEditLoan(loan)}
+                                  className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
+                                  title="Edit Loan (Allowed while Pending Approval)"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDeleteConfirmLoan(loan)}
+                                  className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                                  title="Delete Loan (Allowed while Pending Approval)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-2xs font-medium cursor-not-allowed"
+                                title={`Loan is ${loan.status} and locked from editing or deletion.`}
+                              >
+                                <Lock className="w-3 h-3 text-slate-400" />
+                                <span>Locked</span>
+                              </span>
+                            )
                           )}
                         </div>
                       </TableCell>
@@ -990,7 +1226,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           </Table>
         </div>
 
-        {/* 6. Pagination Footer */}
+        {/* Pagination Footer */}
         <div className="pt-4 mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
           <span className="font-medium text-focus/80">
             {filteredLoans.length === 0
@@ -1008,9 +1244,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               variant="outline"
               size="sm"
               disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40"
-              aria-label="Previous page"
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              className="h-8 px-2.5 rounded-lg cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
@@ -1020,9 +1255,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               variant="outline"
               size="sm"
               disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40"
-              aria-label="Next page"
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              className="h-8 px-2.5 rounded-lg cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
@@ -1035,100 +1269,85 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
         onSuccess={handleLoanAdded}
-        assignedCompany={isAuditor ? assignedCompany : selectedCompany}
-        companies={COMPANY_LIST}
+        assignedCompany={assignedCompany}
+        companies={companyNamesList}
       />
 
-      {/* Delete Confirmation Dialog */}
+      {/* Edit Loan Modal */}
+      <EditLoanModal
+        open={Boolean(editLoan)}
+        onOpenChange={(open) => !open && setEditLoan(null)}
+        loan={editLoan}
+        onSuccess={handleLoanUpdated}
+        companies={companyNamesList}
+      />
+
+      {/* Approve Loan Modal */}
+      <ApproveLoanModal
+        open={Boolean(approveLoanItem)}
+        onOpenChange={(open) => !open && setApproveLoanItem(null)}
+        loan={approveLoanItem}
+        onSuccess={handleLoanApproved}
+      />
+
+      {/* Delete Confirmation Modal */}
       <Dialog
-        open={!!deleteConfirmLoan}
+        open={Boolean(deleteConfirmLoan)}
         onOpenChange={(open) => !open && setDeleteConfirmLoan(null)}
       >
-        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-focus flex items-center gap-2 text-red-600">
-              <Trash2 className="w-5 h-5 text-red-600" />
-              <span>Confirm Deletion</span>
+        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
+          <DialogHeader className="text-left pb-2 pr-6">
+            <DialogTitle className="text-lg font-bold text-focus leading-tight">
+              Delete Loan Request
             </DialogTitle>
-            <DialogDescription className="text-xs text-muted-fg mt-1 leading-relaxed">
-              Are you sure you want to delete this loan record? This action will remove the record from the company ledger.
+            <DialogDescription className="text-xs text-muted-fg font-normal">
+              Are you sure you want to delete this pending loan request? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
 
           {deleteConfirmLoan && (
-            <div className="my-4 p-4 rounded-2xl bg-red-50/60 border border-red-200/60 space-y-1.5 text-xs">
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5 my-2">
               <div className="flex justify-between">
-                <span className="text-muted-fg">Particulars:</span>
-                <span className="font-semibold text-focus truncate max-w-[200px]">
-                  {deleteConfirmLoan.particulars}
-                </span>
+                <span className="text-muted-fg">Ref No:</span>
+                <span className="font-mono font-medium text-focus">{deleteConfirmLoan.refNo}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-fg">Borrower:</span>
+                <span className="font-medium text-focus">{deleteConfirmLoan.borrower}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-fg">Lender:</span>
+                <span className="font-medium text-focus">{deleteConfirmLoan.lender}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-fg">Amount:</span>
-                <span className="font-bold text-focus">
-                  {formatPHP(deleteConfirmLoan.amount)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-fg">Ref No:</span>
-                <span className="font-mono text-focus">{deleteConfirmLoan.refNo}</span>
+                <span className="font-bold text-red-600">{formatPHP(deleteConfirmLoan.amount)}</span>
               </div>
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2.5">
+          <div className="pt-2 flex items-center justify-end gap-2 border-t border-stroke/20">
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setDeleteConfirmLoan(null)}
-              disabled={isDeleting}
-              className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 cursor-pointer"
+              className="h-9 px-3 rounded-lg text-xs"
             >
               Cancel
             </Button>
             <Button
               type="button"
+              size="sm"
               onClick={handleConfirmDelete}
               disabled={isDeleting}
-              className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+              className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs"
             >
-              {isDeleting ? 'Deleting…' : 'Delete Record'}
+              {isDeleting ? 'Deleting…' : 'Delete'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Transaction Details & Audit Modal */}
-      <AuditTransactionModal
-        open={isAuditModalOpen}
-        onOpenChange={(open) => {
-          setIsAuditModalOpen(open)
-          if (!open) {
-            setSelectedLoan(null)
-            setSelectedTx(null)
-          }
-        }}
-        transaction={selectedTx}
-        loan={selectedLoan}
-        onLoanUpdated={handleLoanUpdated}
-        onOpenUpdateLoanStatus={(l) => setUpdateStatusLoan(l)}
-        editable={true}
-      />
-
-      {/* Update Loan Status Modal */}
-      <UpdateLoanStatusModal
-        open={!!updateStatusLoan}
-        onOpenChange={(open) => !open && setUpdateStatusLoan(null)}
-        loan={updateStatusLoan}
-        onSuccess={handleLoanUpdated}
-      />
-
-      {/* Loan History Modal for Lender (View Only) */}
-      <LoanHistoryModal
-        open={isHistoryModalOpen}
-        onOpenChange={setIsHistoryModalOpen}
-        loan={historyLoan}
-      />
     </div>
   )
 }

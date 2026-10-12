@@ -2,15 +2,23 @@ import type { DashboardTransactionItem } from './dashboardService'
 
 export interface LoanItem {
   id: string
+  loanId?: number
   refNo: string
   chequeNo?: string
   date: string // e.g. "10/01/26"
   rawDate: string // e.g. "2026-10-01"
+  dueDate?: string // e.g. "2026-12-31"
+  interestRate?: number // e.g. 5.0 (%)
+  interestType?: string // e.g. "simple"
   particulars: string
   category: string
   amount: number
-  company: string
-  status: 'Paid' | 'Pending' | 'Overdue'
+  borrowerId?: number
+  borrower: string // Borrower company name
+  lenderId?: number
+  lender: string // Lender company name
+  company: string // Selected context company
+  status: 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue'
   auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
   auditedBy?: string
   auditNotes?: string
@@ -23,182 +31,31 @@ export interface LoanItem {
 
 export interface NewLoanInput {
   date: string
-  chequeNo?: string
-  particulars: string
+  dueDate?: string
+  interestRate?: number
   amount: number
-  category: string
-  company: string
-  status: 'Paid' | 'Pending'
+  particulars: string
+  borrowerCompany: string
+  lenderCompany: string
+  category?: string
+  chequeNo?: string
+  status?: string
 }
 
-const INITIAL_LOANS: LoanItem[] = [
-  {
-    id: 'loan_1',
-    refNo: 'REF-202610-401',
-    chequeNo: 'CHK-99204',
-    date: '10/01/26',
-    rawDate: '2026-10-01',
-    particulars: 'Commercial Kitchen Heavy Equipment Term Loan Installment',
-    category: 'In-house',
-    amount: 25000,
-    company: 'MCT Kitchen',
-    status: 'Pending',
-    auditStatus: 'Flagged',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Variance detected between amortization schedule and billed interest rate.',
-    auditDate: '2026-10-04 16:40',
-    createdBy: 'Accounting Specialist (Elena Gomez)',
-    createdAt: '2026-10-01 10:00',
-    updatedAt: '2026-10-04 16:40',
-    type: 'Loan',
-  },
-  {
-    id: 'loan_2',
-    refNo: 'REF-202610-402',
-    chequeNo: 'CHK-88104',
-    date: '10/02/26',
-    rawDate: '2026-10-02',
-    particulars: 'Hotel Facility Expansion & Suite Renovation Facility',
-    category: 'Bank Transfer',
-    amount: 180000,
-    company: 'MCT Hotel',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Remi Lee',
-    auditNotes: 'BDO Term Loan draw verification confirmed with board resolution.',
-    auditDate: '2026-10-03 14:00',
-    createdBy: 'Head Auditor (Remi Lee)',
-    createdAt: '2026-10-02 09:30',
-    updatedAt: '2026-10-03 14:00',
-    type: 'Loan',
-  },
-  {
-    id: 'loan_3',
-    refNo: 'REF-202610-403',
-    chequeNo: 'CHK-77201',
-    date: '10/03/26',
-    rawDate: '2026-10-03',
-    particulars: 'Espresso Bar Machinery Lease-to-Own Repayment',
-    category: 'GCash',
-    amount: 32000,
-    company: 'JK Cafe',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Monthly equipment financing installment reconciled.',
-    auditDate: '2026-10-04 10:30',
-    createdBy: 'Store Manager (Carla Reyes)',
-    createdAt: '2026-10-03 11:15',
-    updatedAt: '2026-10-04 10:30',
-    type: 'Loan',
-  },
-  {
-    id: 'loan_4',
-    refNo: 'REF-202610-404',
-    chequeNo: 'CHK-99210',
-    date: '10/04/26',
-    rawDate: '2026-10-04',
-    particulars: 'Working Capital Revolving Facility Drawdown',
-    category: 'Cheque',
-    amount: 95000,
-    company: 'Annex Nine',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Loan disbursement check voucher stamped and validated.',
-    auditDate: '2026-10-05 15:00',
-    createdBy: 'Finance Manager (Luis Santos)',
-    createdAt: '2026-10-04 13:45',
-    updatedAt: '2026-10-05 15:00',
-    type: 'Loan',
-  },
-  {
-    id: 'loan_5',
-    refNo: 'REF-202610-405',
-    chequeNo: '',
-    date: '10/05/26',
-    rawDate: '2026-10-05',
-    particulars: 'Industrial Offset Press Modernization Financing',
-    category: 'In-house',
-    amount: 110000,
-    company: 'JK Printing',
-    status: 'Pending',
-    auditStatus: 'Pending Audit',
-    auditNotes: 'Awaiting updated bank debt amortization schedule.',
-    createdBy: 'Finance Officer (Maria Santos)',
-    createdAt: '2026-10-05 10:00',
-    updatedAt: '2026-10-05 10:00',
-    type: 'Loan',
-  },
-  {
-    id: 'loan_6',
-    refNo: 'REF-202610-406',
-    chequeNo: 'CHK-55102',
-    date: '10/06/26',
-    rawDate: '2026-10-06',
-    particulars: 'Commissary Cold Storage Fleet Vehicle Financing',
-    category: 'Maya',
-    amount: 45000,
-    company: 'MCT Kitchen',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Alex Cruz',
-    auditNotes: 'Commercial vehicle chattel mortgage monthly installment verified.',
-    auditDate: '2026-10-07 11:30',
-    createdBy: 'Logistics Supervisor (Mario Cruz)',
-    createdAt: '2026-10-06 08:30',
-    updatedAt: '2026-10-07 11:30',
-    type: 'Loan',
-  },
-  {
-    id: 'loan_7',
-    refNo: 'REF-202610-407',
-    chequeNo: 'CHK-44101',
-    date: '10/07/26',
-    rawDate: '2026-10-07',
-    particulars: 'Commercial Real Estate Refinancing Term Loan',
-    category: 'Bank Transfer',
-    amount: 220000,
-    company: 'Merillon',
-    status: 'Paid',
-    auditStatus: 'Verified',
-    auditedBy: 'Remi Lee',
-    auditNotes: 'Mortgage redemption schedule cleared.',
-    auditDate: '2026-10-08 09:00',
-    createdBy: 'Corporate Controller (Ana Lim)',
-    createdAt: '2026-10-07 15:00',
-    updatedAt: '2026-10-08 09:00',
-    type: 'Loan',
-  },
-  {
-    id: 'loan_8',
-    refNo: 'REF-202610-408',
-    chequeNo: '',
-    date: '10/08/26',
-    rawDate: '2026-10-08',
-    particulars: 'Emergency Short-term Liquidity Facility',
-    category: 'In-house',
-    amount: 35000,
-    company: 'Speedbox',
-    status: 'Pending',
-    auditStatus: 'Pending Audit',
-    auditNotes: 'Submitted for audit review.',
-    createdBy: 'Operations Lead (Danilo Cruz)',
-    createdAt: '2026-10-08 11:30',
-    updatedAt: '2026-10-08 11:30',
-    type: 'Loan',
-  },
-]
+export interface CompanyOption {
+  company_id: number
+  company_name: string
+}
 
-const LOANS_STORAGE_KEY = 'mct_loan_records_v1'
+const LOANS_STORAGE_KEY = 'mct_loan_records_v2'
 
 function loadStoredLoans(): LoanItem[] {
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem(LOANS_STORAGE_KEY)
-      if (stored) {
+      if (stored !== null) {
         const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed
         }
       }
@@ -206,7 +63,7 @@ function loadStoredLoans(): LoanItem[] {
       // ignore
     }
   }
-  return INITIAL_LOANS
+  return []
 }
 
 function saveStoredLoans(items: LoanItem[]): void {
@@ -221,15 +78,55 @@ function saveStoredLoans(items: LoanItem[]): void {
 
 let inMemoryLoans: LoanItem[] = loadStoredLoans()
 
+function mapBackendLoanToItem(l: any): LoanItem {
+  const rawDateStr = l.loan_date || '2026-10-01'
+  let displayDate = '10/01/26'
+  if (rawDateStr) {
+    const parts = rawDateStr.split('-')
+    if (parts.length === 3) {
+      displayDate = `${parts[1]}/${parts[2]}/${parts[0].slice(2)}`
+    }
+  }
+
+  const amt = Number(l.principal_amount || l.amount || 0)
+  const bName = l.borrower_name || l.borrower_company || `Company #${l.borrower || ''}`
+  const lName = l.lender_name || l.lender_company || `Company #${l.lender || ''}`
+
+  return {
+    id: `loan_${l.loan_id || l.id}`,
+    loanId: l.loan_id || l.id,
+    refNo: l.loan_ref_no || `LN-${l.loan_id || '001'}`,
+    chequeNo: l.cheque_no || '',
+    date: displayDate,
+    rawDate: rawDateStr,
+    dueDate: l.due_date || '',
+    interestRate: Number(l.interest_rate || 0),
+    interestType: l.interest_type || 'simple',
+    particulars: l.particulars || l.description || 'Inter-company term financing facility',
+    category: l.category || 'In-house',
+    amount: amt,
+    borrowerId: l.borrower,
+    borrower: bName,
+    lenderId: l.lender,
+    lender: lName,
+    company: bName,
+    status: l.status || 'Pending Approval',
+    auditStatus: l.status === 'Approved' || l.status === 'Paid' ? 'Verified' : 'Pending Audit',
+    type: 'Loan',
+    createdAt: l.created_at || new Date().toISOString(),
+    updatedAt: l.updated_at || new Date().toISOString(),
+  }
+}
+
 export const loanService = {
-  async getLoans(): Promise<LoanItem[]> {
+  async getCompanies(): Promise<CompanyOption[]> {
     try {
       const token =
         typeof window !== 'undefined'
           ? sessionStorage.getItem('mct_access_token')
           : null
 
-      const res = await fetch('/api/v1/loans', {
+      const res = await fetch('/api/v1/companies', {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -238,38 +135,125 @@ export const loanService = {
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data) && data.length > 0) {
-          const mapped: LoanItem[] = data.map((l: any) => ({
-            id: `loan_${l.loan_id || l.id}`,
-            refNo: `REF-LOAN-${l.loan_id}`,
-            chequeNo: '',
-            date: l.loan_date
-              ? new Date(l.loan_date).toLocaleDateString('en-US', {
-                  month: '2-digit',
-                  day: '2-digit',
-                  year: '2-digit',
-                })
-              : '10/01/26',
-            rawDate: l.loan_date || '2026-10-01',
-            particulars: l.purpose || 'Company Loan Facility',
-            category: 'In-house',
-            amount: Number(l.principal_amount || 0),
-            company: l.borrower_company_name || 'MCT Kitchen',
-            status: l.status === 'Fully Paid' ? 'Paid' : 'Pending',
-            auditStatus: 'Verified',
-            type: 'Loan',
-            createdAt: l.created_at || '2026-10-01 10:00',
+          return data.map((c: any) => ({
+            company_id: c.company_id,
+            company_name: c.company_name || c.name,
           }))
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch companies from backend:', err)
+    }
+
+    // Default fallback if endpoint fails
+    return [
+      { company_id: 1, company_name: 'MCT Kitchen' },
+      { company_id: 2, company_name: 'MCT Hotel' },
+      { company_id: 3, company_name: 'JK Cafe' },
+      { company_id: 4, company_name: 'Annex Nine' },
+      { company_id: 5, company_name: 'Merillon' },
+      { company_id: 6, company_name: 'JK Printing' },
+      { company_id: 7, company_name: 'Speedbox' },
+      { company_id: 8, company_name: 'JK Property and Ventures' },
+      { company_id: 9, company_name: 'Golden Sunburst Ventures' },
+    ]
+  },
+
+  async getLoans(params?: {
+    company?: string
+    scope?: 'borrower' | 'lender'
+    status?: string
+    start_date?: string
+    end_date?: string
+  }): Promise<LoanItem[]> {
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const query = new URLSearchParams()
+      if (params?.company && params.company !== 'All Companies') {
+        query.append('company_name', params.company)
+      }
+      if (params?.scope) query.append('scope', params.scope)
+      if (params?.status && params.status !== 'All') query.append('status', params.status)
+      if (params?.start_date) query.append('start_date', params.start_date)
+      if (params?.end_date) query.append('end_date', params.end_date)
+
+      const url = `/api/v1/loans${query.toString() ? `?${query.toString()}` : ''}`
+      const res = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          const mapped = data.map(mapBackendLoanToItem)
+          inMemoryLoans = mapped
+          saveStoredLoans(mapped)
           return mapped
         }
       }
-    } catch {
-      // fallback
+    } catch (err) {
+      console.warn('Backend GET /loans failed, falling back to local storage:', err)
     }
 
     return [...inMemoryLoans]
   },
 
   async addLoan(input: NewLoanInput): Promise<LoanItem> {
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const payload = {
+        borrower_company: input.borrowerCompany,
+        lender_company: input.lenderCompany,
+        principal_amount: input.amount,
+        interest_rate: input.interestRate || 0.0,
+        interest_type: 'simple',
+        loan_date: input.date,
+        due_date: input.dueDate || null,
+        description: input.particulars,
+        particulars: input.particulars,
+        status: input.status || 'Pending Approval',
+      }
+
+      const res = await fetch('/api/v1/loans', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const created = await res.json()
+        const mapped = mapBackendLoanToItem(created)
+        inMemoryLoans = [mapped, ...inMemoryLoans]
+        saveStoredLoans(inMemoryLoans)
+        return mapped
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        const errorMsg =
+          errData.detail ||
+          (typeof errData === 'string' ? errData : 'Failed to record loan entry.')
+        throw new Error(errorMsg)
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err
+      }
+      console.warn('Backend POST /loans failed, creating local record:', err)
+    }
+
     const rawDate = input.date
     const parts = rawDate.split('-')
     const formattedDate =
@@ -278,7 +262,7 @@ export const loanService = {
         : input.date
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-    const refNo = `REF-202610-${randomSuffix}`
+    const refNo = `LN-${rawDate.replace(/-/g, '')}-${randomSuffix}`
 
     const newLoan: LoanItem = {
       id: `loan_${Date.now()}`,
@@ -286,17 +270,19 @@ export const loanService = {
       chequeNo: input.chequeNo || '',
       date: formattedDate,
       rawDate: input.date,
+      dueDate: input.dueDate || '',
+      interestRate: input.interestRate || 0,
       particulars: input.particulars,
-      category: input.category,
+      category: input.category || 'In-house',
       amount: input.amount,
-      company: input.company,
-      status: input.status,
+      borrower: input.borrowerCompany,
+      lender: input.lenderCompany,
+      company: input.borrowerCompany,
+      status: (input.status as any) || 'Pending Approval',
       auditStatus: 'Pending Audit',
-      auditNotes: 'Newly recorded loan financing facility.',
-      createdBy: 'Finance Auditor (Alex Cruz)',
-      createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
       type: 'Loan',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     }
 
     inMemoryLoans = [newLoan, ...inMemoryLoans]
@@ -306,70 +292,176 @@ export const loanService = {
 
   async updateLoan(
     id: string,
-    updates: Partial<LoanItem>
+    updates: Partial<LoanItem> & { borrowerCompany?: string; lenderCompany?: string }
   ): Promise<LoanItem | null> {
-    const index = inMemoryLoans.findIndex((l) => l.id === id)
+    const numericId = id.replace(/^loan_/, '')
+    const payload: Record<string, any> = {}
+
+    if (updates.rawDate || (updates.date && updates.date.includes('-'))) {
+      payload.loan_date = updates.rawDate || updates.date
+    }
+    if (updates.dueDate) payload.due_date = updates.dueDate
+    if (updates.amount !== undefined) payload.principal_amount = updates.amount
+    if (updates.interestRate !== undefined) payload.interest_rate = updates.interestRate
+    if (updates.particulars) {
+      payload.particulars = updates.particulars
+      payload.description = updates.particulars
+    }
+    if (updates.lenderCompany || updates.lender) {
+      payload.lender_company = updates.lenderCompany || updates.lender
+    }
+    if (updates.status) payload.status = updates.status
+
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(`/api/v1/loans/${numericId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        const updated = await res.json()
+        const mapped = mapBackendLoanToItem(updated)
+        inMemoryLoans = inMemoryLoans.map((l) => (l.id === id || l.id === `loan_${numericId}` ? mapped : l))
+        saveStoredLoans(inMemoryLoans)
+        return mapped
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.detail || 'Failed to update loan.')
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err
+      }
+      console.warn('Backend PUT /loans failed, updating locally:', err)
+    }
+
+    const index = inMemoryLoans.findIndex((l) => l.id === id || l.id === `loan_${numericId}`)
     if (index === -1) return null
 
     const existing = inMemoryLoans[index]
-    let displayDate = existing.date
-    let rawDate = existing.rawDate
-    if (updates.date && updates.date.includes('-')) {
-      const [year, month, day] = updates.date.split('-')
-      if (month && day) {
-        displayDate = `${month}/${day}/${year?.slice(2) || '26'}`
-        rawDate = updates.date
-      }
-    } else if (updates.date) {
-      displayDate = updates.date
-    }
-
-    const amountVal = updates.amount !== undefined ? updates.amount : existing.amount
-
     const updated: LoanItem = {
       ...existing,
       ...updates,
-      date: displayDate,
-      rawDate: rawDate,
-      amount: amountVal,
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      updatedAt: new Date().toISOString(),
     }
-
     inMemoryLoans[index] = updated
     saveStoredLoans(inMemoryLoans)
     return updated
   },
 
+  async approveLoan(id: string): Promise<LoanItem> {
+    const numericId = id.replace(/^loan_/, '')
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(`/api/v1/loans/${numericId}/approve`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      if (res.ok) {
+        const approved = await res.json()
+        const mapped = mapBackendLoanToItem(approved)
+        inMemoryLoans = inMemoryLoans.map((l) => (l.id === id || l.id === `loan_${numericId}` ? mapped : l))
+        saveStoredLoans(inMemoryLoans)
+        return mapped
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.detail || 'Failed to approve loan.')
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err
+      }
+      console.warn('Backend PATCH /loans/approve failed, approving locally:', err)
+    }
+
+    const index = inMemoryLoans.findIndex((l) => l.id === id || l.id === `loan_${numericId}`)
+    if (index !== -1) {
+      inMemoryLoans[index].status = 'Approved'
+      saveStoredLoans(inMemoryLoans)
+      return inMemoryLoans[index]
+    }
+    throw new Error('Loan record not found')
+  },
+
   async deleteLoan(id: string): Promise<boolean> {
-    inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id)
+    const numericId = id.replace(/^loan_/, '')
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch(`/api/v1/loans/${numericId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      if (res.ok) {
+        inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id && l.id !== `loan_${numericId}`)
+        saveStoredLoans(inMemoryLoans)
+        return true
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.detail || 'Failed to delete loan.')
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err
+      }
+      console.warn('Backend DELETE /loans failed, deleting locally:', err)
+    }
+
+    inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id && l.id !== `loan_${numericId}`)
     saveStoredLoans(inMemoryLoans)
     return true
   },
 
-  exportCsv(items: LoanItem[], filename = 'loan_report.csv') {
-    const headers = [
-      'Date',
-      'Ref No',
-      'Cheque No',
-      'Particulars',
-      'Category',
-      'Amount',
-      'Company',
-      'Status',
-      'Audit Status',
-    ]
+  exportCsv(items: LoanItem[], scope: 'Borrower' | 'Lender', filename = 'loan_report.csv') {
+    const isBorrower = scope === 'Borrower'
 
-    const rows = items.map((l) => [
-      l.date,
-      l.refNo,
-      l.chequeNo || '—',
-      `"${l.particulars.replace(/"/g, '""')}"`,
-      l.category,
-      l.amount,
-      l.company,
-      l.status,
-      l.auditStatus,
-    ])
+    const headers = isBorrower
+      ? ['Date', 'Ref No', 'Lender Company', 'Particulars', 'Amount', 'Due Date', 'Interest Rate']
+      : ['Date', 'Ref No', 'Borrower Company', 'Particulars', 'Amount', 'Due Date', 'Status']
+
+    const rows = items.map((l) =>
+      isBorrower
+        ? [
+            l.date,
+            l.refNo,
+            l.lender || '—',
+            `"${(l.particulars || '').replace(/"/g, '""')}"`,
+            l.amount,
+            l.dueDate || '—',
+            `${l.interestRate || 0}%`,
+          ]
+        : [
+            l.date,
+            l.refNo,
+            l.borrower || '—',
+            `"${(l.particulars || '').replace(/"/g, '""')}"`,
+            l.amount,
+            l.dueDate || '—',
+            l.status,
+          ]
+    )
 
     const csvContent =
       '\uFEFF' +
@@ -386,22 +478,24 @@ export const loanService = {
     URL.revokeObjectURL(url)
   },
 
-  exportPdf(items: LoanItem[], company = 'MCT Kitchen') {
+  exportPdf(items: LoanItem[], company = 'MCT Kitchen', scope: 'Borrower' | 'Lender' = 'Borrower') {
     const printWindow = window.open('', '_blank')
     if (!printWindow) return
 
     const totalAmount = items.reduce((sum, l) => sum + (l.amount || 0), 0)
+    const isBorrower = scope === 'Borrower'
 
     const rowsHtml = items
       .map(
         (l) => `
         <tr>
           <td>${l.date}</td>
-          <td>${l.chequeNo || '—'}</td>
+          <td>${l.refNo}</td>
+          <td>${isBorrower ? l.lender : l.borrower}</td>
           <td>${l.particulars}</td>
-          <td>${l.category}</td>
           <td style="text-align: right;">₱${l.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
-          <td>${l.status}</td>
+          <td>${l.dueDate || '—'}</td>
+          ${isBorrower ? `<td>${l.interestRate || 0}%</td>` : `<td>${l.status}</td>`}
         </tr>
       `
       )
@@ -411,7 +505,7 @@ export const loanService = {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Loan Summary Report — ${company}</title>
+          <title>${scope} Loans Report — ${company}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #0B0F2B; }
             h1 { font-size: 20px; margin-bottom: 4px; color: #960C01; }
@@ -424,16 +518,17 @@ export const loanService = {
         </head>
         <body>
           <h1>MCT Group of Companies</h1>
-          <p>Loan Summary Report for <strong>${company}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
+          <p>${scope} Loan Report for <strong>${company}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
           <table>
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Cheque No.</th>
+                <th>Ref No.</th>
+                <th>${isBorrower ? 'Lender Company' : 'Borrower Company'}</th>
                 <th>Particulars</th>
-                <th>Category</th>
                 <th style="text-align: right;">Amount</th>
-                <th>Status</th>
+                <th>Due Date</th>
+                <th>${isBorrower ? 'Interest Rate' : 'Status'}</th>
               </tr>
             </thead>
             <tbody>
@@ -442,7 +537,7 @@ export const loanService = {
           </table>
           <div class="summary">
             <div><strong>Total Records:</strong> ${items.length}</div>
-            <div><strong>Total Loan Financing:</strong> ₱${totalAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+            <div><strong>Total Amount:</strong> ₱${totalAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
           </div>
           <script>
             window.onload = function() {
@@ -462,16 +557,14 @@ export const loanService = {
       chequeNo: loan.chequeNo,
       date: loan.date,
       type: 'Loan',
-      company: loan.company,
+      company: loan.borrower,
       description: loan.particulars,
       particulars: loan.particulars,
       amount: loan.amount,
       withdrawal: loan.amount,
       deposit: 0,
-      category: (['GCash', 'Maya', 'PayMongo', 'Panda', 'In-house'].includes(loan.category)
-        ? loan.category
-        : 'In-house') as any,
-      status: loan.status,
+      category: 'In-house',
+      status: loan.status === 'Approved' ? 'Paid' : 'Pending',
       auditStatus: loan.auditStatus,
       auditedBy: loan.auditedBy,
       auditNotes: loan.auditNotes,

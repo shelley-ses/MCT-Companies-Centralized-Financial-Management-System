@@ -63,9 +63,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class NotificationType:
+    LOAN_PENDING_APPROVAL    = "LOAN_PENDING_APPROVAL"     # approval required / pending
     LOAN_OVERDUE             = "LOAN_OVERDUE"
     LOAN_DUE_TODAY           = "LOAN_DUE_TODAY"
     LOAN_DUE_TOMORROW        = "LOAN_DUE_TOMORROW"
+    LOAN_DUE_SOON            = "LOAN_DUE_SOON"             # due within 7 days
     LOAN_REPAYMENT_RECEIVED  = "LOAN_REPAYMENT_RECEIVED"   # lender sees this
     LOAN_REPAYMENT_SENT      = "LOAN_REPAYMENT_SENT"       # borrower sees this
     LOAN_FULLY_SETTLED       = "LOAN_FULLY_SETTLED"        # both parties
@@ -82,6 +84,14 @@ def _make_id(*parts: Any) -> str:
     Format: "<type>-<part1>-<part2>-..."
     """
     return "-".join(str(p) for p in parts)
+
+
+def _normalize_dt(dt: Optional[datetime]) -> datetime:
+    if not dt:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _parse_details(details_str: Optional[str]) -> dict:
@@ -145,6 +155,7 @@ class NotificationService:
         """
         notifications: list[NotificationOut] = []
 
+        notifications.extend(self._pending_approval_notifications(company_id))
         notifications.extend(self._due_date_notifications(company_id))
         notifications.extend(self._repayment_notifications(company_id))
 
@@ -154,7 +165,7 @@ class NotificationService:
             notifications = [n for n in notifications if n.notification_type == nt]
 
         # Sort newest first, then paginate
-        notifications.sort(key=lambda n: n.created_at or datetime.min, reverse=True)
+        notifications.sort(key=lambda n: _normalize_dt(n.created_at), reverse=True)
         return notifications[offset: offset + limit]
 
     def get_unread_count(self, *, company_id: Optional[int] = None) -> int:
@@ -298,8 +309,106 @@ class NotificationService:
                             created_at=datetime.combine(today, datetime.min.time()),
                         ))
 
+                elif today < loan.due_date <= today + timedelta(days=7):
+                    # ── Due soon (near: within 7 days) ───────────────────────
+                    days_left = (loan.due_date - today).days
+                    if company_id is None or company_id == loan.borrower:
+                        results.append(NotificationOut(
+                            notification_id=_make_id(NotificationType.LOAN_DUE_SOON, "borrower", loan.loan_id),
+                            notification_type=NotificationType.LOAN_DUE_SOON,
+                            title=f"Loan Payment Due Soon ({days_left} Days)",
+                            message=(
+                                f"Your loan from {lender_name} (Ref: {ref}) is due on "
+                                f"{loan.due_date.strftime('%b %d, %Y')} ({days_left} days left). "
+                                f"Outstanding balance: ₱{balance:,.2f}."
+                            ),
+                            company_id=loan.borrower,
+                            reference_type="loan",
+                            reference_id=loan.loan_id,
+                            is_read=False,
+                            created_at=datetime.combine(today, datetime.min.time()),
+                        ))
+
+                    if company_id is None or company_id == loan.lender:
+                        results.append(NotificationOut(
+                            notification_id=_make_id(NotificationType.LOAN_DUE_SOON, "lender", loan.loan_id),
+                            notification_type=NotificationType.LOAN_DUE_SOON,
+                            title=f"Loan Payment Expected Soon ({days_left} Days)",
+                            message=(
+                                f"{borrower_name}'s loan (Ref: {ref}) is due on "
+                                f"{loan.due_date.strftime('%b %d, %Y')} ({days_left} days left). "
+                                f"Outstanding balance: ₱{balance:,.2f}."
+                            ),
+                            company_id=loan.lender,
+                            reference_type="loan",
+                            reference_id=loan.loan_id,
+                            is_read=False,
+                            created_at=datetime.combine(today, datetime.min.time()),
+                        ))
+
             except Exception as exc:
                 logger.warning("Due-date notification error for loan %s: %s", loan.loan_id, exc)
+
+        return results
+
+    # ── Source B: pending approval notifications (live loan records) ─────────
+
+    def _pending_approval_notifications(
+        self, company_id: Optional[int]
+    ) -> list[NotificationOut]:
+        """
+        Check for loans whose status is 'Pending Approval'.
+        Lenders see an actionable notification that their approval is required.
+        Borrowers see that their submitted request is waiting for lender authorization.
+        """
+        q = self.db.query(Loan).filter(Loan.status.ilike("%pending%"))
+        if company_id is not None:
+            q = q.filter(or_(Loan.borrower == company_id, Loan.lender == company_id))
+        loans = q.all()
+        results: list[NotificationOut] = []
+
+        for loan in loans:
+            try:
+                borrower_name = _company_name(self.db, loan.borrower)
+                lender_name   = _company_name(self.db, loan.lender)
+                ref           = loan.loan_ref_no or str(loan.loan_id)
+                amount        = loan.principal_amount or Decimal("0.00")
+
+                # Lender sees request needing approval
+                if company_id is None or company_id == loan.lender:
+                    results.append(NotificationOut(
+                        notification_id=_make_id(NotificationType.LOAN_PENDING_APPROVAL, "lender", loan.loan_id),
+                        notification_type=NotificationType.LOAN_PENDING_APPROVAL,
+                        title="Loan Approval Required",
+                        message=(
+                            f"{borrower_name} requested an inter-company loan of ₱{amount:,.2f} "
+                            f"(Ref: {ref}) requiring your authorization."
+                        ),
+                        company_id=loan.lender,
+                        reference_type="loan",
+                        reference_id=loan.loan_id,
+                        is_read=False,
+                        created_at=loan.created_at or datetime.now(timezone.utc),
+                    ))
+
+                # Borrower sees request waiting for approval
+                if company_id is None or company_id == loan.borrower:
+                    results.append(NotificationOut(
+                        notification_id=_make_id(NotificationType.LOAN_PENDING_APPROVAL, "borrower", loan.loan_id),
+                        notification_type=NotificationType.LOAN_PENDING_APPROVAL,
+                        title="Loan Request Pending Approval",
+                        message=(
+                            f"Your loan request of ₱{amount:,.2f} to {lender_name} "
+                            f"(Ref: {ref}) is awaiting lender approval."
+                        ),
+                        company_id=loan.borrower,
+                        reference_type="loan",
+                        reference_id=loan.loan_id,
+                        is_read=False,
+                        created_at=loan.created_at or datetime.now(timezone.utc),
+                    ))
+            except Exception as exc:
+                logger.warning("Pending approval notification error for loan %s: %s", loan.loan_id, exc)
 
         return results
 
