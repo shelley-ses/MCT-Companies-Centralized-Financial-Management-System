@@ -4,6 +4,7 @@ export interface Company {
   email: string
   address: string
   contactPerson: string
+  contactPersonEmail?: string
   contactNumber: string
   telephoneNumber: string
   startingBalance: number
@@ -44,6 +45,7 @@ export interface CreateCompanyPayload {
   email: string
   address: string
   contactPerson: string
+  contactPersonEmail?: string
   contactNumber: string
   telephoneNumber: string
   startingBalance: number
@@ -661,7 +663,11 @@ export const employeeService = {
         current_balance: payload.currentBalance,
       }),
     })
-    return mapApiResponse(response, mapCompany)
+    const comp = await mapApiResponse(response, mapCompany)
+    if (payload.contactPersonEmail) {
+      comp.contactPersonEmail = payload.contactPersonEmail
+    }
+    return comp
   },
 
   async updateCompany(

@@ -19,17 +19,26 @@ export const createCompanySchema = z.object({
     .string()
     .trim()
     .min(1, 'Email is required')
-    .email('Please enter a valid email address'),
+    .email('Please enter a valid company email address'),
   address: z.string().trim().min(1, 'Address is required'),
   contactPerson: z.string().trim().min(1, 'Contact person is required'),
+  contactPersonEmail: z
+    .string()
+    .trim()
+    .min(1, 'Contact person email is required')
+    .email('Please enter a valid contact person email address'),
   contactNumber: z
     .string()
     .trim()
-    .max(11, 'Contact number must be at most 11 characters'),
+    .min(1, 'Contact number is required')
+    .regex(/^\d{11}$/, 'Contact number must be exactly 11 digits'),
   telephoneNumber: z
     .string()
     .trim()
-    .max(8, 'Telephone number must be at most 8 characters'),
+    .refine((val) => !val || /^\d{8}$/.test(val), {
+      message: 'Telephone number must be exactly 8 digits',
+    })
+    .optional(),
   startingBalance: z.number().min(0, 'Starting balance must be 0 or greater'),
   currentBalance: z.number().min(0, 'Current balance must be 0 or greater'),
   logoUrl: z.string().optional(),

@@ -107,21 +107,21 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   }, [companies, searchQuery])
 
   return (
-    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
+    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 lg:gap-4">
       {/* Title & Subtitle */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-focus">
+      <div className="min-w-0 shrink">
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-focus tracking-tight whitespace-nowrap">
           Financial Overview
         </h1>
-        <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5">
+        <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5 truncate max-w-md xl:max-w-xl">
           {isAuditor
             ? `Audit transactions and verify financial records for ${assignedCompany}.`
             : "Here's the summary of what's happening with MCT Group of Companies."}
         </p>
       </div>
 
-      {/* Uniform Filter Bar: Shared Date Picker + Company Scope */}
-      <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+      {/* Uniform Filter Bar: Shared Date Picker + Company Scope - strictly on one line */}
+      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-nowrap self-start lg:self-auto overflow-x-auto sm:overflow-visible max-w-full">
         {/* 1. Global Custom Date Picker (Single date or Custom range, no presets) */}
         <DateRangePicker
           value={filters.dateRange}
@@ -132,26 +132,26 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
         {/* 2. Company Scope: Locked to assigned company for Auditor, full dropdown for Admin */}
         {isAuditor ? (
-          <div className="inline-flex items-center gap-2 h-10 sm:h-11 px-4 rounded-full border border-stroke/60 bg-white text-focus text-xs sm:text-sm font-medium shadow-xs select-none">
+          <div className="inline-flex items-center gap-2 h-10 sm:h-11 px-3.5 sm:px-4 rounded-full border border-stroke/60 bg-white text-focus text-xs sm:text-sm font-medium shadow-xs select-none shrink-0 whitespace-nowrap">
             <Building2 className="h-4 w-4 text-primary shrink-0" />
-            <span className="font-semibold text-focus truncate max-w-[180px]">
+            <span className="font-semibold text-focus truncate max-w-[140px] sm:max-w-[180px]">
               Assigned: {assignedCompany}
             </span>
           </div>
         ) : (
-          <div ref={dropdownRef} className="relative inline-block">
+          <div ref={dropdownRef} className="relative inline-block shrink-0">
             <button
               type="button"
               onClick={() => setIsOpen((prev) => !prev)}
               className={cn(
-                'inline-flex items-center gap-2 h-10 sm:h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                'inline-flex items-center gap-2 h-10 sm:h-11 px-3.5 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
                 isOpen && 'ring-2 ring-focus/20 border-focus'
               )}
               aria-expanded={isOpen}
               aria-haspopup="listbox"
             >
               <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-              <span className="font-medium text-focus/90 truncate max-w-[150px] sm:max-w-[180px]">
+              <span className="font-medium text-focus/90 truncate max-w-[130px] sm:max-w-[160px]">
                 {filters.company}
               </span>
               <ChevronDown

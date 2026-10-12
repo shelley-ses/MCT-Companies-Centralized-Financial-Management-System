@@ -46,6 +46,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [profilePreview, setProfilePreview] = React.useState<string | null>(null)
+  const [formErrors, setFormErrors] = React.useState<Record<string, string>>({})
 
   // Edit form state
   const [formData, setFormData] = React.useState<CreateCompanyPayload>({
@@ -53,6 +54,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
     email: '',
     address: '',
     contactPerson: '',
+    contactPersonEmail: '',
     contactNumber: '',
     telephoneNumber: '',
     startingBalance: 0,
@@ -67,13 +69,15 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
         email: company.email,
         address: company.address,
         contactPerson: company.contactPerson,
+        contactPersonEmail: company.contactPersonEmail || '',
         contactNumber: company.contactNumber,
-        telephoneNumber: company.telephoneNumber,
+        telephoneNumber: company.telephoneNumber || '',
         startingBalance: company.startingBalance,
         currentBalance: company.currentBalance,
         logoUrl: company.logoUrl,
       })
       setProfilePreview(company.logoUrl || null)
+      setFormErrors({})
       setIsEditing(true)
     }
   }
@@ -97,6 +101,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
       setIsConfirmEditOpen(false)
       setIsConfirmDeleteOpen(false)
       setProfilePreview(null)
+      setFormErrors({})
     }
     onOpenChange(nextOpen)
   }
@@ -105,6 +110,21 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const errors: Record<string, string> = {}
+    if (!formData.contactNumber || !/^\d{11}$/.test(formData.contactNumber)) {
+      errors.contactNumber = 'Contact number must be exactly 11 digits'
+    }
+    if (formData.telephoneNumber && !/^\d{8}$/.test(formData.telephoneNumber)) {
+      errors.telephoneNumber = 'Telephone number must be exactly 8 digits'
+    }
+    if (formData.contactPersonEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.contactPersonEmail)) {
+      errors.contactPersonEmail = 'Please enter a valid email address'
+    }
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      return
+    }
+    setFormErrors({})
     setIsConfirmEditOpen(true)
   }
 
@@ -244,7 +264,9 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label htmlFor="edit-comp-contact-person" className="text-xs font-medium text-focus/80">Contact Person</Label>
+                    <Label htmlFor="edit-comp-contact-person" className="text-xs font-medium text-focus/80">
+                      Contact Person <span className="text-primary">*</span>
+                    </Label>
                     <Input
                       id="edit-comp-contact-person"
                       value={formData.contactPerson}
@@ -255,25 +277,75 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <Label htmlFor="edit-comp-contact-num" className="text-xs font-medium text-focus/80">Contact Number</Label>
+                    <Label htmlFor="edit-comp-contact-email" className="text-xs font-medium text-focus/80">
+                      Contact Person Email
+                    </Label>
                     <Input
-                      id="edit-comp-contact-num"
-                      value={formData.contactNumber}
-                      onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
+                      id="edit-comp-contact-email"
+                      type="email"
+                      value={formData.contactPersonEmail || ''}
+                      onChange={(e) => {
+                        setFormData({ ...formData, contactPersonEmail: e.target.value })
+                        if (formErrors.contactPersonEmail) setFormErrors((prev) => ({ ...prev, contactPersonEmail: '' }))
+                      }}
+                      placeholder="person@company.com"
                       className="h-10 rounded-xl text-sm"
-                      required
                     />
+                    {formErrors.contactPersonEmail && (
+                      <p className="text-xs text-rose-500">{formErrors.contactPersonEmail}</p>
+                    )}
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="edit-comp-tel-num" className="text-xs font-medium text-focus/80">Telephone Number</Label>
-                  <Input
-                    id="edit-comp-tel-num"
-                    value={formData.telephoneNumber}
-                    onChange={(e) => setFormData({ ...formData, telephoneNumber: e.target.value })}
-                    className="h-10 rounded-xl text-sm"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-comp-contact-num" className="text-xs font-medium text-focus/80">
+                      Contact Number <span className="text-primary">*</span>
+                      <span className="text-[10px] text-muted-fg ml-1">(11 digits)</span>
+                    </Label>
+                    <Input
+                      id="edit-comp-contact-num"
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={11}
+                      value={formData.contactNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 11)
+                        setFormData({ ...formData, contactNumber: val })
+                        if (formErrors.contactNumber) setFormErrors((prev) => ({ ...prev, contactNumber: '' }))
+                      }}
+                      placeholder="09171234567"
+                      className="h-10 rounded-xl text-sm"
+                      required
+                    />
+                    {formErrors.contactNumber && (
+                      <p className="text-xs text-rose-500">{formErrors.contactNumber}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-comp-tel-num" className="text-xs font-medium text-focus/80">
+                      Telephone Number
+                      <span className="text-[10px] text-muted-fg ml-1">(Optional, 8 digits)</span>
+                    </Label>
+                    <Input
+                      id="edit-comp-tel-num"
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={8}
+                      value={formData.telephoneNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 8)
+                        setFormData({ ...formData, telephoneNumber: val })
+                        if (formErrors.telephoneNumber) setFormErrors((prev) => ({ ...prev, telephoneNumber: '' }))
+                      }}
+                      placeholder="81234567"
+                      className="h-10 rounded-xl text-sm"
+                    />
+                    {formErrors.telephoneNumber && (
+                      <p className="text-xs text-rose-500">{formErrors.telephoneNumber}</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -363,6 +435,15 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
                   <span className="font-medium text-muted-fg text-sm shrink-0">
+                    Contact Person Email:
+                  </span>
+                  <span className="font-semibold text-focus text-sm text-right break-all">
+                    {company.contactPersonEmail || '—'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 py-0.5">
+                  <span className="font-medium text-muted-fg text-sm shrink-0">
                     Contact Number:
                   </span>
                   <span className="font-semibold text-focus text-sm text-right tabular-nums">
@@ -381,7 +462,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
                   <span className="font-medium text-muted-fg text-sm shrink-0">
-                    Email:
+                    Company Email:
                   </span>
                   <span className="font-semibold text-focus text-sm text-right break-all">
                     {company.email || '—'}

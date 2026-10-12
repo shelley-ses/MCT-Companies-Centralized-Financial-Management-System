@@ -21,6 +21,7 @@ export interface DateRangePickerProps {
   value: DateRange
   onChange: (range: DateRange) => void
   className?: string
+  hidePresets?: boolean
 }
 
 export interface DatePresetOption {
@@ -110,6 +111,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   value,
   onChange,
   className,
+  hidePresets = false,
 }) => {
   const presets = React.useMemo(() => getDatePresets(), [])
 
@@ -244,76 +246,78 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   }, [isCustomRange, value.startDate, value.endDate])
 
   return (
-    <div className={cn('inline-flex flex-wrap items-center gap-2 sm:gap-2.5', className)}>
+    <div className={cn('inline-flex items-center gap-2 sm:gap-2.5 shrink-0 flex-nowrap', className)}>
       {/* 1. Preset Dropdown (Last 7 days, Last 30 days, This Month, etc. or 'Custom') */}
-      <div className="relative inline-block" ref={presetDropdownRef}>
-        <button
-          type="button"
-          onClick={() => {
-            setIsPresetOpen((prev) => !prev)
-            setIsCalendarOpen(false)
-          }}
-          className={cn(
-            'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-            isPresetOpen && 'ring-2 ring-focus/20 border-focus'
-          )}
-          aria-expanded={isPresetOpen}
-          aria-haspopup="listbox"
-          aria-label="Filter by time period preset"
-        >
-          <Clock className="h-4 w-4 text-muted-fg shrink-0" />
-          <span className="font-semibold text-focus/90">
-            {activePresetLabel}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0 ml-0.5" />
-        </button>
+      {!hidePresets && (
+        <div className="relative inline-block shrink-0" ref={presetDropdownRef}>
+          <button
+            type="button"
+            onClick={() => {
+              setIsPresetOpen((prev) => !prev)
+              setIsCalendarOpen(false)
+            }}
+            className={cn(
+              'inline-flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
+              isPresetOpen && 'ring-2 ring-focus/20 border-focus'
+            )}
+            aria-expanded={isPresetOpen}
+            aria-haspopup="listbox"
+            aria-label="Filter by time period preset"
+          >
+            <Clock className="h-4 w-4 text-muted-fg shrink-0" />
+            <span className="font-semibold text-focus/90">
+              {activePresetLabel}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0 ml-0.5" />
+          </button>
 
-        {isPresetOpen && (
-          <div className="absolute left-0 top-full mt-2 w-52 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-            <div className="pb-2 mb-1 border-b border-stroke/20 px-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
-                Preset Periods
-              </span>
-            </div>
-            <div className="space-y-1">
-              {presets.map((preset) => {
-                const isSelected = activePresetLabel === preset.label
-                return (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => handleSelectPreset(preset)}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer',
-                      isSelected
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-focus/80 hover:bg-surface'
-                    )}
-                  >
-                    <span>{preset.label}</span>
-                    {isSelected && (
+          {isPresetOpen && (
+            <div className="absolute left-0 top-full mt-2 w-52 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+              <div className="pb-2 mb-1 border-b border-stroke/20 px-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
+                  Preset Periods
+                </span>
+              </div>
+              <div className="space-y-1">
+                {presets.map((preset) => {
+                  const isSelected = activePresetLabel === preset.label
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => handleSelectPreset(preset)}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer',
+                        isSelected
+                          ? 'bg-primary/10 text-primary font-semibold'
+                          : 'text-focus/80 hover:bg-surface'
+                      )}
+                    >
+                      <span>{preset.label}</span>
+                      {isSelected && (
+                        <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                      )}
+                    </button>
+                  )
+                })}
+
+                {/* Custom indicator option */}
+                {isCustomRange && (
+                  <div className="pt-1 mt-1 border-t border-stroke/20">
+                    <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary">
+                      <span>Custom Selection</span>
                       <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                    )}
-                  </button>
-                )
-              })}
-
-              {/* Custom indicator option */}
-              {isCustomRange && (
-                <div className="pt-1 mt-1 border-t border-stroke/20">
-                  <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary">
-                    <span>Custom Selection</span>
-                    <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* 2. Custom Date Picker beside the preset dropdown */}
-      <div className="relative inline-block" ref={calendarPopoverRef}>
+      <div className="relative inline-block shrink-0" ref={calendarPopoverRef}>
         <button
           type="button"
           onClick={() => {
@@ -321,7 +325,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
             setIsPresetOpen(false)
           }}
           className={cn(
-            'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+            'inline-flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
             (isCalendarOpen || isCustomRange) &&
               'ring-2 ring-primary/20 border-primary text-primary',
             isCustomRange && 'bg-primary/5 font-semibold'

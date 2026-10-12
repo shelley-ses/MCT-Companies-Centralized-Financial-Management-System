@@ -4,8 +4,11 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { SalesPage } from '@/pages/SalesPage'
 import { ExpensePage } from '@/pages/ExpensePage'
 import { LoanPage } from '@/pages/LoanPage'
+import { TransactionPage } from '@/pages/TransactionPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { EmployeePage } from '@/pages/EmployeePage'
+import { ActivityLogPage } from '@/pages/ActivityLogPage'
+import { SettingsPage } from '@/pages/SettingsPage'
 import { AppShell } from '@/components/layout/AppShell'
 import {
   ProtectedRoute,
@@ -81,7 +84,7 @@ export const router = createBrowserRouter([
     path: '/sales/annual',
     element: <Navigate to="/sales" replace />,
   },
-  // Expense, Loan, Employee, Settings
+  // Expense, Loan, Employee, Activity Log, Settings
   {
     path: '/expense',
     element: (
@@ -101,6 +104,40 @@ export const router = createBrowserRouter([
         </AppShell>
       </ProtectedRoute>
     ),
+  },
+  {
+    path: '/loan/borrower',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <LoanPage initialType="Borrower" />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/loan/lender',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <LoanPage initialType="Lender" />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/transaction',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <TransactionPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/transactions',
+    element: <Navigate to="/transaction" replace />,
   },
   {
     path: '/employee',
@@ -123,11 +160,27 @@ export const router = createBrowserRouter([
     element: <Navigate to="/employee" replace />,
   },
   {
+    path: '/activity-log',
+    element: (
+      <ProtectedRoute>
+        <AdminOnlyRoute>
+          <AppShell>
+            <ActivityLogPage />
+          </AppShell>
+        </AdminOnlyRoute>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/activity',
+    element: <Navigate to="/activity-log" replace />,
+  },
+  {
     path: '/settings',
     element: (
       <ProtectedRoute>
         <AppShell>
-          <PlaceholderPage title="Settings" />
+          <SettingsPage />
         </AppShell>
       </ProtectedRoute>
     ),

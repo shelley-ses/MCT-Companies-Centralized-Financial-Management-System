@@ -1,7 +1,9 @@
 import * as React from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft,
   ChevronRight,
+  ArrowRight,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import {
@@ -35,6 +37,7 @@ export const RecentTransactionsCard: React.FC<RecentTransactionsCardProps> = ({
   companyName = 'MCT Kitchen',
   transactions = [],
 }) => {
+  const navigate = useNavigate()
   const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
   const [isModalOpen, setIsModalOpen] = React.useState(false)
 
@@ -78,14 +81,26 @@ export const RecentTransactionsCard: React.FC<RecentTransactionsCardProps> = ({
         className
       )}
     >
-      {/* 1. Grey Header Banner matching the Sales Table */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5">
-        <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
-          Recent Transactions
-        </h2>
-        <p className="text-xs text-muted-fg font-normal mt-0.5">
-          Here's the summary of recent transactions in {displayedTitle}.
-        </p>
+      {/* 1. Grey Header Banner matching the Sales Table with View All Button */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
+            Recent Transactions
+          </h2>
+          <p className="text-xs text-muted-fg font-normal mt-0.5">
+            Here's the summary of recent transactions in {displayedTitle}.
+          </p>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => navigate('/transaction')}
+          className="h-9 px-4 rounded-xl border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-focus shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+        >
+          <span>View All</span>
+          <ArrowRight className="h-3.5 w-3.5 text-muted-fg" />
+        </Button>
       </div>
 
       {/* 2. Table matching the Sales table columns:
