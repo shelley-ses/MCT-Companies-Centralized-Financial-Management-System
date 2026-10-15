@@ -35,7 +35,7 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['InterVariable', 'Inter', 'sans-serif'],
+        sans: ['"Inter Variable"', 'InterVariable', 'Inter', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
       },
       fontSize: {
         heading: ['clamp(2.5rem, 3.33vw, 4rem)', { lineHeight: '1.1' }],
@@ -114,10 +114,10 @@ export default {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'sphere-float-1': 'sphere-float-1 13s ease-in-out infinite',
-        'sphere-float-2': 'sphere-float-2 17s ease-in-out infinite',
-        'sphere-float-3': 'sphere-float-3 15s ease-in-out infinite',
-        'sphere-float-accent': 'sphere-float-accent 11s ease-in-out infinite',
+        'sphere-float-1': 'sphere-float-1 6s ease-in-out infinite',
+        'sphere-float-2': 'sphere-float-2 8s ease-in-out infinite',
+        'sphere-float-3': 'sphere-float-3 7s ease-in-out infinite',
+        'sphere-float-accent': 'sphere-float-accent 5s ease-in-out infinite',
       },
     },
   },

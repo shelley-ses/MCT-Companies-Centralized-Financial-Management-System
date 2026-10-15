@@ -18,20 +18,47 @@
 }
 
 @layer base {
+  html, body {
+    font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
   body {
     background-color: var(--background);
     color: var(--focus);
-    font-family: 'InterVariable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     margin: 0;
     padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @keyframes marquee {
+    0% {
+      transform: translateX(0%);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  .animate-marquee {
+    display: flex;
+    width: max-content;
+    animation: marquee 35s linear infinite;
+  }
+
+  .animate-marquee:hover {
+    animation-play-state: paused;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .animate-sphere-float-1,
     .animate-sphere-float-2,
     .animate-sphere-float-3,
-    .animate-sphere-float-accent {
+    .animate-sphere-float-accent,
+    .animate-marquee {
       animation: none !important;
     }
   }
