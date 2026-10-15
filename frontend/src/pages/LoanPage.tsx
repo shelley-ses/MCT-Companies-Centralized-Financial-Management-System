@@ -20,8 +20,6 @@ import {
   CheckCircle2,
   Clock,
   Lock,
-  ArrowRight,
-  Bell,
 } from 'lucide-react'
 import { UpdateLoanStatusModal } from '@/components/dashboard/UpdateLoanStatusModal'
 import { LoanHistoryModal } from '@/components/dashboard/LoanHistoryModal'
@@ -85,8 +83,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     if (path.includes('borrower')) return 'Borrower'
     return initialType
   })
-  const [isLoanTypeDropdownOpen, setIsLoanTypeDropdownOpen] = React.useState(false)
-  const loanTypeDropdownRef = React.useRef<HTMLDivElement>(null)
+
 
   // Sync loanType with URL changes
   React.useEffect(() => {
@@ -113,13 +110,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   )
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
-    preset: 'this_month',
+    preset: 'This Month',
     label: 'This Month',
     startDate: '2026-10-01',
     endDate: '2026-10-31',
   })
-  const [statusFilter, setStatusFilter] = React.useState<string>('All')
-  const [lenderQuickFilter, setLenderQuickFilter] = React.useState<'All' | 'Pending' | 'Approved'>('All')
   const [searchQuery, setSearchQuery] = React.useState('')
   const [currentPage, setCurrentPage] = React.useState(1)
 
@@ -127,13 +122,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
   const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = React.useState(false)
-  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false)
   const [companySearch, setCompanySearch] = React.useState('')
 
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
   const companyDropdownRef = React.useRef<HTMLDivElement>(null)
   const periodDropdownRef = React.useRef<HTMLDivElement>(null)
-  const statusDropdownRef = React.useRef<HTMLDivElement>(null)
   const tableCardRef = React.useRef<HTMLDivElement>(null)
 
   // Modals & Action state
@@ -188,7 +181,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         break
       case 'Monthly':
         setDateRange({
-          preset: 'this_month',
+          preset: 'This Month',
           label: 'This Month',
           startDate: `${currYear}-${currMonth}-01`,
           endDate: `${currYear}-${currMonth}-31`,
@@ -258,21 +251,12 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     loadLoans()
   }, [loadLoans])
 
-  // Count pending approvals for the active company (where they are lender)
-  const pendingLenderApprovalsCount = React.useMemo(() => {
-    const targetComp = (isAuditor ? assignedCompany : selectedCompany).toLowerCase()
-    return loans.filter((l) => {
-      const isTargetLender = targetComp === 'all companies' || l.lender.toLowerCase() === targetComp
-      return isTargetLender && l.status === 'Pending Approval'
-    }).length
-  }, [loans, isAuditor, assignedCompany, selectedCompany])
+
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node
-      if (loanTypeDropdownRef.current && !loanTypeDropdownRef.current.contains(target)) {
-        setIsLoanTypeDropdownOpen(false)
-      }
+
       if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) {
         setIsExportDropdownOpen(false)
       }
@@ -281,9 +265,6 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
       }
       if (periodDropdownRef.current && !periodDropdownRef.current.contains(target)) {
         setIsPeriodDropdownOpen(false)
-      }
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(target)) {
-        setIsStatusDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -307,17 +288,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           }
         }
 
-        // Quick filter in Lender tab (All, Pending, Approved)
-        if (loanType === 'Lender' && lenderQuickFilter !== 'All') {
-          if (lenderQuickFilter === 'Pending' && item.status !== 'Pending Approval') return false
-          if (lenderQuickFilter === 'Approved' && item.status !== 'Approved') return false
-        }
-
         if (!isDateInRange(item.rawDate || item.date, dateRange.startDate, dateRange.endDate)) {
-          return false
-        }
-
-        if (statusFilter !== 'All' && item.status !== statusFilter) {
           return false
         }
 
@@ -353,11 +324,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [loans, isAuditor, assignedCompany, selectedCompany, loanType, lenderQuickFilter, dateRange, statusFilter, searchQuery])
+  }, [loans, isAuditor, assignedCompany, selectedCompany, loanType, dateRange, searchQuery])
 
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod, loanType, lenderQuickFilter])
+  }, [dateRange, searchQuery, selectedCompany, selectedPeriod, loanType])
 
   // Total Loans KPI
   const kpis = React.useMemo(() => {
@@ -393,7 +364,6 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const handleLoanAdded = (newItem: LoanItem) => {
     setLoans((prev) => [newItem, ...prev])
     setSearchQuery('')
-    setStatusFilter('All')
 
     const newDateIso = newItem.rawDate || normalizeDateToYYYYMMDD(newItem.date)
     if (!isDateInRange(newDateIso, dateRange.startDate, dateRange.endDate)) {
@@ -470,58 +440,21 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
       {/* 1. Header & Controls */}
       <div className="space-y-3">
         {/* Top Row: Action Buttons (Export & Add Loan) */}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          {/* Left: Pending Approval notification alert badge */}
-          {pendingLenderApprovalsCount > 0 ? (
-            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs shadow-2xs animate-in fade-in">
-              <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-ping" />
-              <span className="font-semibold">{pendingLenderApprovalsCount} loan request(s) awaiting lender approval.</span>
-              {loanType !== 'Lender' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoanType('Lender')
-                    setLenderQuickFilter('Pending')
-                  }}
-                  className="font-bold underline text-amber-800 hover:text-amber-950 ml-1 inline-flex items-center gap-1 cursor-pointer"
-                >
-                  Review now <ArrowRight className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          ) : (
-            <div />
-          )}
-
+        <div className="flex items-center justify-end gap-3 flex-wrap">
           <div className="flex items-center gap-2.5 sm:gap-3 ml-auto">
-            {/* Export Dropdown Button */}
+            {/* Export Dropdown Button (White style) */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant={!isAuditor ? 'default' : 'outline'}
+                variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
-                  !isAuditor
-                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
-                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-                )}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    !isAuditor ? 'text-white' : 'text-focus/70'
-                  )}
-                />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 ml-0.5',
-                    !isAuditor ? 'text-white/90' : 'text-muted-fg'
-                  )}
-                />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -573,72 +506,6 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
           {/* Filter Toolbar */}
           <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
-            {/* Dropdown Filter for: Borrower / Lender */}
-            <div ref={loanTypeDropdownRef} className="relative inline-block">
-              <button
-                type="button"
-                onClick={() => setIsLoanTypeDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isLoanTypeDropdownOpen && 'ring-2 ring-focus/20 border-focus'
-                )}
-                aria-label="Filter by Borrower or Lender"
-              >
-                <Landmark className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90">
-                  {loanType}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
-                    isLoanTypeDropdownOpen && 'transform rotate-180'
-                  )}
-                />
-              </button>
-
-              {isLoanTypeDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoanType('Borrower')
-                      setIsLoanTypeDropdownOpen(false)
-                    }}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                      loanType === 'Borrower'
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-focus/80 hover:bg-slate-50'
-                    )}
-                  >
-                    <span>Borrower</span>
-                    {loanType === 'Borrower' && (
-                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoanType('Lender')
-                      setIsLoanTypeDropdownOpen(false)
-                    }}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                      loanType === 'Lender'
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-focus/80 hover:bg-slate-50'
-                    )}
-                  >
-                    <span>Lender</span>
-                    {loanType === 'Lender' && (
-                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Period Dropdown */}
             <div ref={periodDropdownRef} className="relative inline-block">
               <button
                 type="button"
@@ -682,58 +549,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               )}
             </div>
 
-            {/* Status Dropdown */}
-            <div ref={statusDropdownRef} className="relative inline-block">
-              <button
-                type="button"
-                onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
-                )}
-              >
-                <span className="font-medium text-focus/90">
-                  {statusFilter === 'All' ? 'Status' : statusFilter}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
-                    isStatusDropdownOpen && 'transform rotate-180'
-                  )}
-                />
-              </button>
-
-              {isStatusDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {(['All', 'Pending Approval', 'Approved', 'Paid'] as const).map((st) => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => {
-                        setStatusFilter(st)
-                        setIsStatusDropdownOpen(false)
-                      }}
-                      className={cn(
-                        'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                        statusFilter === st
-                          ? 'bg-primary/10 text-primary font-semibold'
-                          : 'text-focus/80 hover:bg-slate-50'
-                      )}
-                    >
-                      <span>{st === 'All' ? 'All Statuses' : st}</span>
-                      {statusFilter === st && (
-                        <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Date Range Picker */}
+            {/* Unified Date Range Picker (presets hidden, period handled by Period dropdown) */}
             <DateRangePicker
               value={dateRange}
               onChange={(newRange: DateRange) => setDateRange(newRange)}
+              hidePresets
             />
 
             {/* Company Scope Dropdown (Admin only) */}
@@ -892,7 +712,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Grey Header Banner with Search Input & Quick Status Filter for Lender */}
+        {/* Grey Header Banner with Extended Search Input */}
         <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h2 className="text-sm sm:text-base font-bold text-focus leading-tight flex items-center gap-2">
@@ -908,63 +728,16 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
             </p>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Quick Segmented Filter for Lender: All / Pending Approval / Approved */}
-            {loanType === 'Lender' && (
-              <div className="inline-flex items-center p-1 rounded-xl bg-white border border-stroke/50 shadow-2xs text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setLenderQuickFilter('All')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg transition-colors cursor-pointer',
-                    lenderQuickFilter === 'All'
-                      ? 'bg-focus text-white'
-                      : 'text-muted-fg hover:text-focus'
-                  )}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLenderQuickFilter('Pending')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5',
-                    lenderQuickFilter === 'Pending'
-                      ? 'bg-amber-500 text-white'
-                      : 'text-muted-fg hover:text-focus'
-                  )}
-                >
-                  <span>Pending Approval</span>
-                  {kpis.pendingCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-900 font-bold">
-                      {kpis.pendingCount}
-                    </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLenderQuickFilter('Approved')}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg transition-colors cursor-pointer',
-                    lenderQuickFilter === 'Approved'
-                      ? 'bg-emerald-600 text-white'
-                      : 'text-muted-fg hover:text-focus'
-                  )}
-                >
-                  Approved
-                </button>
-              </div>
-            )}
-
-            {/* Search bar */}
-            <div className="relative w-full md:w-72">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            {/* Extended Search bar for Borrower & Lender */}
+            <div className="relative w-full sm:w-80 md:w-96 lg:w-[480px]">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
               <Input
                 type="text"
                 placeholder="Search ref no, company, purpose…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-9 h-10 text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
+                className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
               />
               {searchQuery && (
                 <button
@@ -979,39 +752,60 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           </div>
         </div>
 
-        {/* Loan Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table className="w-full">
+        {/* Loan Table: table-fixed with explicit column percentages to eliminate horizontal scrolling */}
+        <div className="w-full rounded-xl border border-slate-100 overflow-hidden">
+          <Table className="w-full table-fixed">
+            <colgroup>
+              {loanType === 'Borrower' ? (
+                <>
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '11%' }} />
+                </>
+              ) : (
+                <>
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '13%' }} />
+                </>
+              )}
+            </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   DATE
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   REF NO.
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   {loanType === 'Borrower' ? 'LENDER COMPANY' : 'BORROWER COMPANY'}
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   AMOUNT
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   DUE DATE
                 </TableHead>
                 {/* Interest Rate ONLY in Borrower Tab per user instructions */}
                 {loanType === 'Borrower' && (
-                  <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                    INTEREST RATE
+                  <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap" title="Interest Rate">
+                    INT. RATE
                   </TableHead>
                 )}
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                  STATUS
-                </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -1021,41 +815,38 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               {loading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <TableRow key={idx} className="border-b border-slate-100">
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-2 py-3.5">
+                      <div className="h-4 w-14 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-24 bg-slate-200/60 animate-pulse rounded" />
+                    <TableCell className="px-2 py-3.5">
+                      <div className="h-4 w-18 bg-slate-200/60 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-28 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-2 py-3.5">
+                      <div className="h-4 w-22 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-36 bg-slate-200/70 animate-pulse rounded" />
+                    <TableCell className="px-2 py-3.5">
+                      <div className="h-4 w-24 bg-slate-200/70 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-2 py-3.5">
+                      <div className="h-4 w-16 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/60 animate-pulse rounded" />
+                    <TableCell className="px-2 py-3.5">
+                      <div className="h-4 w-16 bg-slate-200/60 animate-pulse rounded" />
                     </TableCell>
                     {loanType === 'Borrower' && (
-                      <TableCell className="px-4 py-4">
-                        <div className="h-4 w-12 bg-slate-200/60 animate-pulse rounded" />
+                      <TableCell className="px-2 py-3.5">
+                        <div className="h-4 w-10 bg-slate-200/60 animate-pulse rounded" />
                       </TableCell>
                     )}
-                    <TableCell className="px-4 py-4">
-                      <div className="h-5 w-24 bg-slate-200/60 animate-pulse rounded-full" />
-                    </TableCell>
-                    <TableCell className="px-4 py-4 text-center">
-                      <div className="h-7 w-16 bg-slate-200/60 animate-pulse rounded-lg mx-auto" />
+                    <TableCell className="px-2 py-3.5 text-center">
+                      <div className="h-6 w-12 bg-slate-200/60 animate-pulse rounded-lg mx-auto" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : paginatedLoans.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={loanType === 'Borrower' ? 9 : 8}
+                    colSpan={loanType === 'Borrower' ? 8 : 7}
                     className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
@@ -1075,26 +866,26 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               ) : (
                 paginatedLoans.map((loan) => {
                   const isPending = loan.status === 'Pending Approval'
-                  const isApproved = loan.status === 'Approved'
-                  const isPaid = loan.status === 'Paid'
 
                   return (
                     <TableRow
                       key={loan.id}
                       id={`loan-row-${loan.id}`}
                       className={cn(
-                        'border-b border-slate-100 hover:bg-slate-50/60 transition-colors',
-                        isPending && 'bg-amber-50/30 hover:bg-amber-50/60',
+                        'border-b transition-colors',
+                        isPending
+                          ? 'bg-amber-50/70 hover:bg-amber-100/60 border-amber-200/50'
+                          : 'border-slate-100 hover:bg-slate-50/60',
                         highlightedLoanId === loan.id &&
-                          'bg-amber-100/80 ring-2 ring-amber-400 font-semibold'
+                          'bg-amber-100/90 ring-2 ring-amber-400 font-semibold'
                       )}
                     >
                       {/* 1. Date */}
-                      <TableCell className="px-4 py-3.5 text-xs font-medium text-focus whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
+                      <TableCell className="px-2 py-3 text-xs font-medium text-focus whitespace-nowrap">
+                        <div className="flex items-center gap-1">
                           <span>{loan.date}</span>
                           {highlightedLoanId === loan.id && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white animate-bounce">
+                            <span className="inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold bg-[#960C01] text-white animate-bounce">
                               NEW
                             </span>
                           )}
@@ -1102,63 +893,47 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       </TableCell>
 
                       {/* 2. Ref No */}
-                      <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-mono whitespace-nowrap">
+                      <TableCell className="px-2 py-3 text-xs text-focus/90 font-mono truncate">
                         {loan.refNo}
                       </TableCell>
 
                       {/* 3. Partner Company (Lender if borrower view, Borrower if lender view) */}
-                      <TableCell className="px-4 py-3.5 text-xs text-focus font-semibold whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
+                      <TableCell className="px-2 py-3 text-xs text-focus font-semibold">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                          <span className="truncate max-w-[160px]">
+                          <span className="truncate" title={loanType === 'Borrower' ? loan.lender : loan.borrower}>
                             {loanType === 'Borrower' ? loan.lender : loan.borrower}
                           </span>
                         </div>
                       </TableCell>
 
                       {/* 4. Particulars */}
-                      <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-[220px] truncate" title={loan.particulars}>
-                        {loan.particulars}
+                      <TableCell className="px-2 py-3 text-xs text-focus/90 font-normal">
+                        <span className="truncate block" title={loan.particulars}>
+                          {loan.particulars}
+                        </span>
                       </TableCell>
 
                       {/* 5. Amount */}
-                      <TableCell className="px-4 py-3.5 text-xs font-bold tabular-nums whitespace-nowrap text-focus">
+                      <TableCell className="px-2 py-3 text-xs font-bold tabular-nums whitespace-nowrap text-focus">
                         {formatPHP(loan.amount)}
                       </TableCell>
 
                       {/* 6. Due Date */}
-                      <TableCell className="px-4 py-3.5 text-xs text-focus/80 whitespace-nowrap">
+                      <TableCell className="px-2 py-3 text-xs text-focus/80 whitespace-nowrap">
                         {loan.dueDate || '—'}
                       </TableCell>
 
                       {/* 7. Interest Rate (Borrower tab only) */}
                       {loanType === 'Borrower' && (
-                        <TableCell className="px-4 py-3.5 text-xs text-focus/90 whitespace-nowrap font-medium">
+                        <TableCell className="px-2 py-3 text-xs text-focus/90 whitespace-nowrap font-medium">
                           {loan.interestRate !== undefined ? `${loan.interestRate}%` : '0%'}
                         </TableCell>
                       )}
 
-                      {/* 8. Status Badge */}
-                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
-                        <span
-                          className={cn(
-                            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-bold border shadow-2xs',
-                            isPending && 'bg-amber-50 text-amber-800 border-amber-200/80',
-                            isApproved && 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
-                            isPaid && 'bg-blue-50 text-blue-800 border-blue-200/80',
-                            loan.status === 'Overdue' && 'bg-rose-50 text-rose-800 border-rose-200/80'
-                          )}
-                        >
-                          {isPending && <Clock className="w-3 h-3 text-amber-600" />}
-                          {isApproved && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
-                          {isPaid && <Check className="w-3 h-3 text-blue-600" />}
-                          <span>{loan.status}</span>
-                        </span>
-                      </TableCell>
-
-                      {/* 9. Actions */}
-                      <TableCell className="px-4 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1.5">
+                      {/* 8. Actions */}
+                      <TableCell className="px-2 py-3 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
                           {loanType === 'Lender' ? (
                             /* Lender Actions: Can approve pending loans */
                             isPending ? (
@@ -1166,7 +941,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                                 type="button"
                                 size="sm"
                                 onClick={() => setApproveLoanItem(loan)}
-                                className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer"
+                                className="h-7 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer"
                                 title="Approve this loan request"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1208,7 +983,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                               </>
                             ) : (
                               <span
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-2xs font-medium cursor-not-allowed"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 text-2xs font-medium cursor-not-allowed"
                                 title={`Loan is ${loan.status} and locked from editing or deletion.`}
                               >
                                 <Lock className="w-3 h-3 text-slate-400" />

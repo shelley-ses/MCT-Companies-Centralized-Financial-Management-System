@@ -29,11 +29,21 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 }) => {
   const { user } = useSession()
   const location = useLocation()
-  // Sales collapsible group is expanded by default per specification and mockup
-  const [isSalesOpen, setIsSalesOpen] = React.useState(true)
+  // Collapsible groups open state
+  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>(() => ({
+    sales: location.pathname.startsWith('/sales'),
+    loan: location.pathname.startsWith('/loan') || true,
+  }))
 
-  // Determine if current route is within Sales
-  const isSalesActive = location.pathname.startsWith('/sales')
+  // Auto-expand group if current path is within it
+  React.useEffect(() => {
+    const currentPath = location.pathname.toLowerCase()
+    if (currentPath.startsWith('/sales')) {
+      setOpenGroups((prev) => ({ ...prev, sales: true }))
+    } else if (currentPath.startsWith('/loan')) {
+      setOpenGroups((prev) => ({ ...prev, loan: true }))
+    }
+  }, [location.pathname])
 
   const userRole = user?.role === 'Company Auditor' ? 'Company Auditor' : 'Admin'
 
@@ -88,23 +98,28 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             {filteredMainItems.map((item: NavItem) => {
               const Icon = item.icon
 
-              // Collapsible Sales group with sub-items
+              // Collapsible navigation group with sub-items (e.g. Loan -> Borrower, Lender)
               if (item.subItems && item.subItems.length > 0) {
+                const isGroupActive = location.pathname.startsWith(item.href)
+                const isGroupOpen = openGroups[item.id] ?? true
+
                 return (
                   <Collapsible
                     key={item.id}
-                    open={isSalesOpen}
-                    onOpenChange={setIsSalesOpen}
+                    open={isGroupOpen}
+                    onOpenChange={(isOpen) =>
+                      setOpenGroups((prev) => ({ ...prev, [item.id]: isOpen }))
+                    }
                     className="w-full space-y-0.5"
                   >
                     <CollapsibleTrigger
                       className={cn(
-                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                        isSalesActive
+                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus cursor-pointer',
+                        isGroupActive
                           ? 'text-primary bg-primary/10'
                           : 'text-focus hover:bg-surface'
                       )}
-                      aria-expanded={isSalesOpen}
+                      aria-expanded={isGroupOpen}
                     >
                       <div className="flex items-center gap-3">
                         <Icon className="h-4.5 w-4.5 shrink-0" />
@@ -113,7 +128,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                       <ChevronDown
                         className={cn(
                           'h-3.5 w-3.5 shrink-0 transition-transform duration-200 text-muted-fg',
-                          isSalesOpen && 'rotate-180'
+                          isGroupOpen && 'rotate-180'
                         )}
                         aria-hidden="true"
                       />

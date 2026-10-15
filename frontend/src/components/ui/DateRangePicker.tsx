@@ -138,11 +138,19 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
   const activePresetLabel = React.useMemo(() => {
     if (value.preset === 'Custom') return 'Custom'
-    if (value.preset) return value.preset
     const matched = presets.find(
       (p) => p.startDate === value.startDate && p.endDate === value.endDate
     )
     if (matched) return matched.label
+    if (value.preset) {
+      const matchByName = presets.find(
+        (p) =>
+          p.label.toLowerCase() === value.preset?.toLowerCase() ||
+          p.label.toLowerCase().replace(/\s+/g, '_') === value.preset?.toLowerCase()
+      )
+      if (matchByName) return matchByName.label
+      return value.preset
+    }
     if (value.startDate || value.endDate) return 'Custom'
     return 'All Dates'
   }, [value.preset, value.startDate, value.endDate, presets])
