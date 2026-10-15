@@ -50,6 +50,7 @@ import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
+import { useNavigate } from 'react-router-dom'
 
 const DEFAULT_COMPANIES = [
   'All Companies',
@@ -71,6 +72,7 @@ type PeriodType = (typeof PERIOD_OPTIONS)[number]
 const ITEMS_PER_PAGE = 10
 
 export const SalesPage: React.FC = () => {
+  const navigate = useNavigate()
   const { user } = useSession()
   const isAuditor = user?.role === 'Company Auditor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
@@ -459,7 +461,7 @@ export const SalesPage: React.FC = () => {
             {isAuditor && (
               <Button
                 type="button"
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => navigate('/sales/add')}
                 className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
               >
                 <Plus className="h-4 w-4 shrink-0" />

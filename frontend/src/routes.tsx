@@ -10,6 +10,7 @@ import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { EmployeePage } from '@/pages/EmployeePage'
 import { ActivityLogPage } from '@/pages/ActivityLogPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { AddTransactionSheetPage } from '@/pages/AddTransactionSheetPage'
 import { AppShell } from '@/components/layout/AppShell'
 import {
   ProtectedRoute,
@@ -85,6 +86,16 @@ export const router = createBrowserRouter([
     path: '/sales/annual',
     element: <Navigate to="/sales" replace />,
   },
+  {
+    path: '/sales/add',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <AddTransactionSheetPage initialType="Sales" />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
   // Expense, Loan, Employee, Activity Log, Settings
   {
     path: '/expense',
@@ -92,6 +103,16 @@ export const router = createBrowserRouter([
       <ProtectedRoute>
         <AppShell>
           <ExpensePage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/expense/add',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <AddTransactionSheetPage initialType="Expense" />
         </AppShell>
       </ProtectedRoute>
     ),

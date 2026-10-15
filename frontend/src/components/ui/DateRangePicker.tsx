@@ -22,6 +22,7 @@ export interface DateRangePickerProps {
   onChange: (range: DateRange) => void
   className?: string
   hidePresets?: boolean
+  compact?: boolean
 }
 
 export interface DatePresetOption {
@@ -112,6 +113,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   onChange,
   className,
   hidePresets = false,
+  compact = false,
 }) => {
   const presets = React.useMemo(() => getDatePresets(), [])
 
@@ -265,18 +267,21 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               setIsCalendarOpen(false)
             }}
             className={cn(
-              'inline-flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
+              'inline-flex items-center rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
+              compact
+                ? 'h-9 px-2.5 sm:px-3 text-xs gap-1.5'
+                : 'h-10 sm:h-11 px-3 sm:px-4 text-xs sm:text-sm gap-2',
               isPresetOpen && 'ring-2 ring-focus/20 border-focus'
             )}
             aria-expanded={isPresetOpen}
             aria-haspopup="listbox"
             aria-label="Filter by time period preset"
           >
-            <Clock className="h-4 w-4 text-muted-fg shrink-0" />
+            <Clock className={cn('shrink-0 text-muted-fg', compact ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
             <span className="font-semibold text-focus/90">
               {activePresetLabel}
             </span>
-            <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0 ml-0.5" />
+            <ChevronDown className="h-3 w-3 text-muted-fg shrink-0 ml-0.5" />
           </button>
 
           {isPresetOpen && (
@@ -333,7 +338,10 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
             setIsPresetOpen(false)
           }}
           className={cn(
-            'inline-flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
+            'inline-flex items-center rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
+            compact
+              ? 'h-9 px-2.5 sm:px-3 text-xs gap-1.5'
+              : 'h-10 sm:h-11 px-3 sm:px-4 text-xs sm:text-sm gap-2',
             (isCalendarOpen || isCustomRange) &&
               'ring-2 ring-primary/20 border-primary text-primary',
             isCustomRange && 'bg-primary/5 font-semibold'
@@ -344,16 +352,16 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         >
           <CalendarIcon
             className={cn(
-              'h-4 w-4 shrink-0',
+              compact ? 'h-3.5 w-3.5 shrink-0' : 'h-4 w-4 shrink-0',
               isCustomRange ? 'text-primary' : 'text-muted-fg'
             )}
           />
-          <span className="font-semibold truncate max-w-[170px] sm:max-w-[210px]">
+          <span className={cn('font-semibold truncate', compact ? 'max-w-[120px] sm:max-w-[160px]' : 'max-w-[170px] sm:max-w-[210px]')}>
             {customPillLabel}
           </span>
           <ChevronDown
             className={cn(
-              'h-3.5 w-3.5 shrink-0 ml-0.5',
+              'h-3 w-3 shrink-0 ml-0.5',
               isCustomRange ? 'text-primary' : 'text-muted-fg'
             )}
           />

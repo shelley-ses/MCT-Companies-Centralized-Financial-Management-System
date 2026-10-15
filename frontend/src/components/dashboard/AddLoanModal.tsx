@@ -172,14 +172,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
       errors.borrower = 'Borrower company is required.'
     }
 
-    if (!lenderCompany.trim()) {
-      errors.lender = 'Lender company is required.'
-    } else if (
-      borrowerCompany.trim().toLowerCase() === lenderCompany.trim().toLowerCase()
-    ) {
-      errors.lender = 'Borrower and lender cannot be the same company.'
-    }
-
     const cleanedAmount = amount.replace(/,/g, '').trim()
     const parsedAmount = parseFloat(cleanedAmount)
     if (!cleanedAmount || isNaN(parsedAmount) || parsedAmount < 1.0) {
@@ -202,6 +194,11 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
     setError('')
     try {
       const parsedAmount = parseFloat(amount.replace(/,/g, ''))
+      const autoLender =
+        lenderCompany && lenderCompany.toLowerCase() !== borrowerCompany.toLowerCase()
+          ? lenderCompany
+          : (allCompanyNames.find((c) => c.toLowerCase() !== borrowerCompany.toLowerCase()) || 'MCT Group')
+
       const payload: NewLoanInput = {
         date: date.trim() || formatToYYYYMMDD(new Date()),
         dueDate: dueDate.trim() || undefined,
@@ -209,7 +206,7 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
         particulars: particulars.trim(),
         amount: parsedAmount,
         borrowerCompany: borrowerCompany.trim(),
-        lenderCompany: lenderCompany.trim(),
+        lenderCompany: autoLender,
         status: 'Pending Approval',
       }
       const created = await loanService.addLoan(payload)
@@ -287,7 +284,7 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
               </div>
 
               {/* 3. Borrower Company (Automatic from account) */}
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 col-span-1 sm:col-span-2">
                 <Label className="text-xs font-semibold text-focus block">
                   Borrower Company
                 </Label>
@@ -300,51 +297,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
                     Automatic (Account)
                   </span>
                 </div>
-              </div>
-
-              {/* 4. Lender Company */}
-              <div className="space-y-1.5 relative" ref={lenderRef}>
-                <Label className="text-xs font-semibold text-focus block">
-                  Lender Company <span className="text-red-500">*</span>
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => setIsLenderOpen((p) => !p)}
-                  className={cn(
-                    'w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium flex items-center justify-between shadow-xs transition-colors cursor-pointer',
-                    isLenderOpen && 'ring-2 ring-focus/20 border-focus'
-                  )}
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <Building2 className="w-4 h-4 text-muted-fg shrink-0" />
-                    <span className="truncate">{lenderCompany || 'Select Lender Company'}</span>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-muted-fg shrink-0" />
-                </button>
-
-                {isLenderOpen && (
-                  <div className="absolute left-0 top-full mt-1.5 w-full bg-white rounded-xl border border-stroke/30 shadow-xl p-1.5 z-50 max-h-48 overflow-y-auto">
-                    {availableLenders.map((name) => (
-                      <button
-                        key={name}
-                        type="button"
-                        onClick={() => {
-                          setLenderCompany(name)
-                          setIsLenderOpen(false)
-                          if (fieldErrors.lender) setFieldErrors((p) => ({ ...p, lender: undefined }))
-                        }}
-                        className={cn(
-                          'w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left cursor-pointer',
-                          lenderCompany === name ? 'bg-primary/10 text-primary font-semibold' : 'text-focus/80 hover:bg-slate-50'
-                        )}
-                      >
-                        <span className="truncate">{name}</span>
-                        {lenderCompany === name && <Check className="w-3.5 h-3.5 text-primary ml-2 shrink-0" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {fieldErrors.lender && <p className="text-2xs text-red-500">{fieldErrors.lender}</p>}
               </div>
 
               {/* 5. Principal Amount */}
@@ -457,10 +409,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
               <span className="font-bold text-focus">{borrowerCompany}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-fg font-medium">Lender:</span>
-              <span className="font-bold text-focus">{lenderCompany}</span>
-            </div>
-            <div className="flex justify-between">
               <span className="text-muted-fg font-medium">Principal Amount:</span>
               <span className="font-bold text-emerald-600 tabular-nums">
                 {formatPHP(parseFloat(amount.replace(/,/g, '')) || 0)}
@@ -487,7 +435,7 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
           </div>
 
           <p className="text-2xs text-muted-fg">
-            * Note: This loan request will be placed in <strong>Pending Approval</strong> until confirmed by <strong>{lenderCompany}</strong>.
+            * Note: This loan request will be placed in <strong>Pending Approval</strong> until confirmed by management.
           </p>
 
           <div className="pt-2 flex items-center justify-end gap-2 border-t border-stroke/20">
