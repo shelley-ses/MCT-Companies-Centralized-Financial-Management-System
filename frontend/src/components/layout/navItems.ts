@@ -54,6 +54,18 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     href: '/loan',
     icon: HandCoins,
     roles: ['Admin', 'Company Auditor'],
+    subItems: [
+      {
+        id: 'borrower',
+        title: 'Borrower',
+        href: '/loan/borrower',
+      },
+      {
+        id: 'lender',
+        title: 'Lender',
+        href: '/loan/lender',
+      },
+    ],
   },
   {
     id: 'transaction',

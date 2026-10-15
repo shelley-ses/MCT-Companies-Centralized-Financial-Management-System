@@ -97,13 +97,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/loan',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <LoanPage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
+    element: <Navigate to="/loan/borrower" replace />,
   },
   {
     path: '/loan/borrower',
