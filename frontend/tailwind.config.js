@@ -35,7 +35,7 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['InterVariable', 'Inter', 'sans-serif'],
+        sans: ['"Inter Variable"', 'InterVariable', 'Inter', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
       },
       fontSize: {
         heading: ['clamp(2.5rem, 3.33vw, 4rem)', { lineHeight: '1.1' }],

@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, Building2, TrendingUp, Receipt, HandCoins, BookOpen } from 'lucide-react'
 import { GradientCircle } from '@/components/auth/GradientCircle'
 import { useSession } from '@/hooks/useSession'
 import logo2Url from '@/assets/LOGO2.png'
@@ -26,33 +26,36 @@ const FEATURE_CARDS: FeatureCardItem[] = [
     id: 'centralized-financial',
     title: 'Centralized Financial Management',
     description:
-      'Consolidates financial oversight across all MCT subsidiaries into a unified executive dashboard in real-time, for complete visibility into group-wide cash flows, balances, and multi-tenant performance metrics.',
+      'Consolidates financial oversight across all MCT subsidiaries into a unified executive dashboard in real-time.',
   },
   {
     id: 'sales-management',
     title: 'Sales Management',
     description:
-      'Tracks revenue inflows, customer deposits, and billings/collections across diverse multi-industry business units. Features flexible period filtering, payment status monitoring, and run-rate financial trend reports.',
+      'Tracks revenue inflows, customer deposits, and billings/collections across diverse multi-industry business units.',
   },
   {
     id: 'expense-management',
     title: 'Expense Management',
     description:
-      'Streamlines operational outflow tracking by categorizing departmental and entity-level expenditures. Enables prompt verification and audit review to keep company spending transparent and accountable.',
+      'Streamlines operational outflow tracking by categorizing departmental and entity-level expenditures.',
   },
   {
     id: 'inter-company-loans',
     title: 'Inter-Company Loans',
     description:
-      'Facilitates internal financing between subsidiaries with dedicated borrower and lender perspectives. Provides customizable repayment tracking, due date alerts, and comprehensive historical audit trails to minimize conflict of interest.',
+      'Facilitates internal financing between subsidiaries with dedicated borrower and lender perspectives. ',
   },
   {
     id: 'transaction-ledger',
     title: 'Transaction Ledger',
     description:
-      'Archives sales, expenses, and loan records into an upright, comprehensive multi-lingual ledger. Offers multi-parameter search sorting, export of ready financial statements for effortless reporting and compliance.',
+      'Archives sales, expenses, and loan records into an upright, comprehensive multi-lingual ledger.',
   },
 ]
+
+// Icons are matched by card order. Reorder if your FEATURE_CARDS order differs.
+const FEATURE_ICONS = [Building2, TrendingUp, Receipt, HandCoins, BookOpen]
 
 interface CarouselCompany {
   id: string
@@ -240,11 +243,10 @@ export const LandingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleScrollTo('hero')}
-                className={`relative transition-colors cursor-pointer py-1 ${
-                  activeNav === 'hero'
-                    ? 'text-[#960C01] font-bold'
-                    : 'text-slate-700 hover:text-[#960C01] font-semibold'
-                }`}
+                className={`relative transition-colors cursor-pointer py-1 ${activeNav === 'hero'
+                  ? 'text-[#960C01] font-bold'
+                  : 'text-slate-700 hover:text-[#960C01] font-semibold'
+                  }`}
               >
                 Home
                 {activeNav === 'hero' && (
@@ -256,11 +258,10 @@ export const LandingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleScrollTo('features')}
-                className={`relative transition-colors cursor-pointer py-1 ${
-                  activeNav === 'features'
-                    ? 'text-[#960C01] font-bold'
-                    : 'text-slate-700 hover:text-[#960C01] font-semibold'
-                }`}
+                className={`relative transition-colors cursor-pointer py-1 ${activeNav === 'features'
+                  ? 'text-[#960C01] font-bold'
+                  : 'text-slate-700 hover:text-[#960C01] font-semibold'
+                  }`}
               >
                 Features
                 {activeNav === 'features' && (
@@ -272,11 +273,10 @@ export const LandingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleScrollTo('companies')}
-                className={`relative transition-colors cursor-pointer py-1 ${
-                  activeNav === 'companies'
-                    ? 'text-[#960C01] font-bold'
-                    : 'text-slate-700 hover:text-[#960C01] font-semibold'
-                }`}
+                className={`relative transition-colors cursor-pointer py-1 ${activeNav === 'companies'
+                  ? 'text-[#960C01] font-bold'
+                  : 'text-slate-700 hover:text-[#960C01] font-semibold'
+                  }`}
               >
                 MCT Companies
                 {activeNav === 'companies' && (
@@ -313,27 +313,24 @@ export const LandingPage: React.FC = () => {
             <button
               type="button"
               onClick={() => handleScrollTo('hero')}
-              className={`w-full text-left py-2 font-bold ${
-                activeNav === 'hero' ? 'text-[#960C01]' : 'text-slate-700'
-              }`}
+              className={`w-full text-left py-2 font-bold ${activeNav === 'hero' ? 'text-[#960C01]' : 'text-slate-700'
+                }`}
             >
               Home
             </button>
             <button
               type="button"
               onClick={() => handleScrollTo('features')}
-              className={`w-full text-left py-2 font-bold ${
-                activeNav === 'features' ? 'text-[#960C01]' : 'text-slate-700'
-              }`}
+              className={`w-full text-left py-2 font-bold ${activeNav === 'features' ? 'text-[#960C01]' : 'text-slate-700'
+                }`}
             >
               Features
             </button>
             <button
               type="button"
               onClick={() => handleScrollTo('companies')}
-              className={`w-full text-left py-2 font-bold ${
-                activeNav === 'companies' ? 'text-[#960C01]' : 'text-slate-700'
-              }`}
+              className={`w-full text-left py-2 font-bold ${activeNav === 'companies' ? 'text-[#960C01]' : 'text-slate-700'
+                }`}
             >
               MCT Companies
             </button>
@@ -351,88 +348,34 @@ export const LandingPage: React.FC = () => {
         )}
       </header>
 
-      {/* 2. Hero Section with Exact Login Spheres & Assets v1.png, v2.png, v3.png */}
+      {/* 2. Hero Section */}
       <section
         ref={heroRef}
         id="hero"
         onMouseMove={handleHeroMouseMove}
         onMouseLeave={handleHeroMouseLeave}
-        className="relative overflow-hidden bg-white min-h-[580px] sm:min-h-[640px] lg:min-h-[720px] flex items-center justify-start pt-28 sm:pt-32 pb-16 sm:pb-24 scroll-mt-20"
+        className="relative overflow-hidden bg-white flex items-center pt-28 sm:pt-32 pb-16 sm:pb-24 scroll-mt-20 min-h-[580px] lg:min-h-[700px]"
       >
-        {/* Floating Gradient Spheres: Re-using the exact GradientCircle from auth/login with lively parallax */}
-        {/* Sphere 1: Top-Left (cutting off top-left corner) */}
+        {/* Sphere 1: small, top-left, kept away from the headline */}
         <div
-          className="absolute top-20 sm:top-24 -left-12 sm:-left-16 lg:-left-20 w-36 sm:w-48 lg:w-56 aspect-square pointer-events-none z-0 transition-transform duration-700 ease-out will-change-transform"
-          style={{
-            transform: `translate3d(${mouseOffset.x * 24}px, ${mouseOffset.y * 24}px, 0)`,
-          }}
+          className="absolute -top-10 -left-16 w-36 sm:w-44 lg:w-48 aspect-square pointer-events-none z-0 transition-transform duration-700 ease-out will-change-transform"
+          style={{ transform: `translate3d(${mouseOffset.x * 20}px, ${mouseOffset.y * 20}px, 0)` }}
         >
-          <GradientCircle variant="1" hasShadow={false} className="w-full h-full opacity-90" />
+          <GradientCircle variant="1" hasShadow={false} className="w-full h-full opacity-80" />
         </div>
 
-        {/* Sphere 2: Massive Right Sphere (dominating right half) */}
+        {/* Sphere 2: large, bottom-right, sits BEHIND the dashboard */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 -right-24 sm:-right-16 lg:right-[-60px] w-[360px] sm:w-[500px] lg:w-[620px] aspect-square pointer-events-none z-0 transition-transform duration-1000 ease-out will-change-transform"
-          style={{
-            transform: `translate3d(${mouseOffset.x * -28}px, ${mouseOffset.y * -20}px, 0)`,
-          }}
+          className="absolute -bottom-32 -right-24 lg:-right-10 w-[320px] sm:w-[420px] lg:w-[520px] aspect-square pointer-events-none z-0 transition-transform duration-1000 ease-out will-change-transform"
+          style={{ transform: `translate3d(${mouseOffset.x * -24}px, ${mouseOffset.y * -16}px, 0)` }}
         >
-          <GradientCircle variant="2" hasShadow={false} className="w-full h-full opacity-95" />
+          <GradientCircle variant="2" hasShadow={false} className="w-full h-full opacity-90" />
         </div>
 
-        {/* Sphere 3: Bottom-Left (large, clean sphere, no text) */}
-        <div
-          className="absolute -bottom-20 sm:-bottom-24 left-6 sm:left-16 lg:left-24 w-56 sm:w-72 lg:w-84 aspect-square pointer-events-none z-0 transition-transform duration-800 ease-out will-change-transform"
-          style={{
-            transform: `translate3d(${mouseOffset.x * 30}px, ${mouseOffset.y * 32}px, 0)`,
-          }}
-        >
-          <GradientCircle variant="3" hasShadow={false} className="w-full h-full opacity-90" />
-        </div>
-
-        {/* Sphere 4: Bottom-Right (partially offscreen at bottom right) */}
-        <div
-          className="absolute -bottom-24 sm:-bottom-28 right-8 sm:right-24 lg:right-36 w-60 sm:w-76 lg:w-96 aspect-square pointer-events-none z-0 transition-transform duration-600 ease-out will-change-transform"
-          style={{
-            transform: `translate3d(${mouseOffset.x * -16}px, ${mouseOffset.y * 18}px, 0)`,
-          }}
-        >
-          <GradientCircle variant="accent" hasShadow={false} className="w-full h-full opacity-85" />
-        </div>
-
-        {/* Floating Outline Icons using authentic user assets v1.png, v2.png, v3.png */}
-        {/* v3.png: Tilted 3-Bar Chart (above headline, towards right) */}
-        <div className="absolute top-[22%] sm:top-[24%] left-[48%] sm:left-[50%] lg:left-[48%] pointer-events-none z-10 transition-transform duration-300">
-          <img
-            src={v3Url}
-            alt="Growth Metrics"
-            className="w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 object-contain"
-          />
-        </div>
-
-        {/* v1.png: Currency Cycle Circle (left of headline) */}
-        <div className="absolute top-[48%] sm:top-[50%] left-[2%] sm:left-[4%] lg:left-[5%] pointer-events-none z-10 transition-transform duration-300">
-          <img
-            src={v1Url}
-            alt="Currency Cycle"
-            className="w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 object-contain"
-          />
-        </div>
-
-        {/* v2.png: Hand Holding Coin (to the right of Get Started button) */}
-        <div className="absolute bottom-[24%] sm:bottom-[26%] left-[54%] sm:left-[56%] lg:left-[54%] pointer-events-none z-10 transition-transform duration-300">
-          <img
-            src={v2Url}
-            alt="Hand Holding Coin"
-            className="w-12 h-12 sm:w-14 sm:h-14 lg:w-16 lg:h-16 object-contain"
-          />
-        </div>
-
-        {/* Hero Content Container - aligned to the left */}
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-          <div className="max-w-2xl text-left">
-            {/* Main Headline */}
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-[62px] font-black text-[#960C01] leading-[1.08] tracking-tight">
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
+          {/* LEFT: copy */}
+          <div className="text-left">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-[62px] font-black text-[#960C01] leading-[1.12] tracking-tight">
               One Vision.
               <br />
               Diverse Ventures.
@@ -440,123 +383,202 @@ export const LandingPage: React.FC = () => {
               Shared Success.
             </h1>
 
-            {/* Subtitle */}
-            <p className="text-sm sm:text-base md:text-lg text-[#960C01]/85 font-medium mt-4 sm:mt-5 leading-relaxed max-w-lg">
+            <p className="text-base sm:text-lg text-slate-700 font-medium mt-5 leading-relaxed max-w-md">
               One place to track sales, expenses and loans across all MCT companies.
             </p>
 
-            {/* Get Started Button with radius 15 - positioned on the left */}
-            <div className="mt-6 sm:mt-7 flex items-center justify-start">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={handleAuthAction}
-                className="inline-flex items-center justify-center px-8 py-2.5 rounded-[15px] bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white text-sm sm:text-base font-bold shadow-md hover:shadow-lg transition-all cursor-pointer"
+                className="inline-flex items-center justify-center px-8 py-3.5 rounded-[15px] bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white text-base font-bold shadow-lg shadow-[#960C01]/25 hover:shadow-xl transition-all cursor-pointer"
               >
                 Get Started
               </button>
+              <a
+                href="#companies"
+                className="inline-flex items-center justify-center px-8 py-3.5 rounded-[15px] border-2 border-[#960C01]/30 text-[#960C01] text-base font-bold hover:bg-red-50 hover:border-[#960C01]/60 transition-all"
+              >
+                View Companies
+              </a>
+            </div>
+          </div>
+
+          {/* RIGHT: dashboard mockup with the icons as orbiting badges */}
+          <div
+            className="relative mx-auto w-full max-w-md lg:max-w-none transition-transform duration-500 ease-out will-change-transform"
+            style={{ transform: `translate3d(${mouseOffset.x * -10}px, ${mouseOffset.y * -10}px, 0)` }}
+          >
+            {/* Icon badges (v1, v2, v3) */}
+            <div className="absolute -top-6 -left-4 z-20 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white shadow-xl ring-1 ring-black/5 animate-bounce [animation-duration:4s]">
+              <img src={v3Url} alt="Growth Metrics" className="h-8 w-8 sm:h-9 sm:w-9 object-contain" />
+            </div>
+            <div className="absolute top-1/2 -right-4 sm:-right-6 z-20 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white shadow-xl ring-1 ring-black/5 animate-bounce [animation-duration:5s]">
+              <img src={v2Url} alt="Hand Holding Coin" className="h-8 w-8 sm:h-9 sm:w-9 object-contain" />
+            </div>
+            <div className="absolute -bottom-6 left-8 z-20 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white shadow-xl ring-1 ring-black/5 animate-bounce [animation-duration:4.5s]">
+              <img src={v1Url} alt="Currency Cycle" className="h-8 w-8 sm:h-9 sm:w-9 object-contain" />
+            </div>
+
+            {/* Dashboard card */}
+            <div className="relative rounded-3xl bg-white/90 backdrop-blur p-5 sm:p-6 shadow-2xl shadow-[#960C01]/20 ring-1 ring-black/5">
+              {/* Window dots + title */}
+              <div className="flex items-center justify-between">
+                <div className="flex gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#960C01]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-300" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
+                </div>
+                <span className="text-xs font-semibold text-slate-500">Group Overview</span>
+              </div>
+
+              {/* Stat tiles (placeholder numbers) */}
+              <div className="mt-5 grid grid-cols-3 gap-3">
+                {[
+                  { label: "Sales", value: "₱2.4M", tone: "text-emerald-600" },
+                  { label: "Expenses", value: "₱1.1M", tone: "text-[#960C01]" },
+                  { label: "Loans", value: "₱640K", tone: "text-slate-700" },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[11px] font-medium text-slate-500">{s.label}</p>
+                    <p className={`mt-1 text-base sm:text-lg font-extrabold ${s.tone}`}>{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Mini bar chart */}
+              <div className="mt-5 rounded-xl bg-slate-50 p-4">
+                <p className="text-[11px] font-medium text-slate-500">Monthly revenue</p>
+                <div className="mt-3 flex h-28 items-end gap-2">
+                  {[40, 55, 45, 70, 60, 85, 75].map((h, i) => (
+                    <div
+                      key={i}
+                      style={{ height: `${h}%` }}
+                      className={`flex-1 rounded-t-md ${i === 5 ? "bg-[#960C01]" : "bg-[#960C01]/25"
+                        }`}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 3. Features Section with Interactive Staggered Animations */}
+      {/* 3. Features Section */}
       <section
         ref={featuresRef}
         id="features"
-        className="relative bg-[#960C01] text-white py-18 sm:py-24 px-4 sm:px-6 lg:px-8 overflow-hidden scroll-mt-20"
+        className="relative bg-gradient-to-br from-[#7a0901] via-[#960C01] to-[#b31208] text-white py-16 sm:py-24 px-4 sm:px-6 lg:px-8 overflow-hidden scroll-mt-20"
       >
-        {/* Soft Ambient Floating Orbs in Background */}
+        {/* Ambient orbs */}
         <div
           className="absolute -top-24 -right-24 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none animate-pulse"
-          style={{ animationDuration: '6s' }}
+          style={{ animationDuration: "6s" }}
         />
         <div
           className="absolute -bottom-24 -left-24 w-96 h-96 bg-black/20 rounded-full blur-3xl pointer-events-none animate-pulse"
-          style={{ animationDuration: '8s' }}
+          style={{ animationDuration: "8s" }}
+        />
+
+        {/* Subtle dot pattern */}
+        <div
+          className="absolute inset-0 opacity-[0.07] pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(#fff 1px, transparent 1px)",
+            backgroundSize: "22px 22px",
+          }}
         />
 
         <div className="max-w-7xl mx-auto relative z-10">
-          {/* Section Header with smooth entrance */}
+          {/* Header */}
           <div
-            className={`text-center max-w-3xl mx-auto transition-all duration-700 ease-out ${
-              featuresInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
-            }`}
+            className={`text-center max-w-3xl mx-auto transition-all duration-700 ease-out ${featuresInView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+              }`}
           >
             <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-widest uppercase">
-              FEATURES
+              Features
             </h2>
-            <p className="text-white/85 text-xs sm:text-sm md:text-base font-normal mt-2.5 leading-relaxed">
+            <div className="mx-auto mt-3 h-1 w-12 rounded-full bg-white/70" />
+            <p className="text-white/85 text-xs sm:text-sm md:text-base font-normal mt-4 leading-relaxed">
               A unified financial command center designed for the MCT Group of Companies,
-              consolidating multi-entity revenue, operational disbursements, and inter-company lending
-              into a single, audit-ready platform.
+              consolidating multi-entity revenue, operational disbursements, and inter-company
+              lending into a single, audit-ready platform.
             </p>
           </div>
 
-          {/* 5 Feature Cards Grid with Staggered Entrance & Micro-animations */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-5 mt-10 sm:mt-12">
-            {FEATURE_CARDS.map((card, idx) => (
-              <div
-                key={card.id}
-                style={{ transitionDelay: `${idx * 110}ms` }}
-                className={`rounded-2xl bg-white text-slate-800 p-5 sm:p-6 shadow-xl flex flex-col justify-between border border-white/40 hover:-translate-y-3 hover:shadow-2xl hover:shadow-black/30 transition-all duration-300 group cursor-pointer ${
-                  featuresInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-                }`}
-              >
-                <div>
-                  {/* Decorative Top Slider Node Graphic with hover expansion */}
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="w-3.5 h-3.5 rounded-full bg-slate-300 group-hover:bg-[#960C01] group-hover:scale-125 transition-all duration-300 shrink-0" />
-                    <div className="h-0.5 w-16 group-hover:w-24 bg-slate-200 group-hover:bg-[#960C01]/30 transition-all duration-300 rounded" />
+          {/* Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-5 mt-10 sm:mt-14">
+            {FEATURE_CARDS.map((card, idx) => {
+              const Icon = FEATURE_ICONS[idx % FEATURE_ICONS.length];
+
+              return (
+                /* Outer wrapper handles the staggered entrance only */
+                <div
+                  key={card.id}
+                  style={{ transitionDelay: featuresInView ? `${idx * 110}ms` : "0ms" }}
+                  className={`transition-all duration-700 ease-out ${featuresInView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+                    }`}
+                >
+                  {/* Inner card handles hover, so the stagger delay doesn't slow it down */}
+                  <div className="group relative h-full overflow-hidden rounded-2xl bg-white text-slate-800 p-5 sm:p-6 shadow-xl border border-white/40 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-black/40">
+                    {/* Top accent bar */}
+                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#960C01] to-red-400 origin-left scale-x-30 group-hover:scale-x-100 transition-transform duration-500" />
+
+                    {/* Faint step number */}
+                    <span className="absolute right-4 top-3 text-5xl font-black text-slate-100 select-none transition-colors duration-300 group-hover:text-red-100">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
+
+                    {/* Icon badge */}
+                    <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-[#960C01] transition-all duration-300 group-hover:bg-[#960C01] group-hover:text-white group-hover:rotate-3 group-hover:scale-105">
+                      <Icon className="h-6 w-6" strokeWidth={2} />
+                    </div>
+
+                    {/* Title */}
+                    <h3 className="relative mt-5 text-sm sm:text-base font-extrabold text-[#960C01] leading-snug tracking-tight">
+                      {card.title}
+                    </h3>
+
+                    {/* Description */}
+                    <p className="relative mt-3 text-xs sm:text-[13px] text-slate-600 leading-relaxed">
+                      {card.description}
+                    </p>
                   </div>
-
-                  {/* Card Title */}
-                  <h3 className="text-sm sm:text-base font-extrabold text-[#960C01] leading-snug tracking-tight group-hover:translate-x-0.5 transition-transform duration-300">
-                    {card.title}
-                  </h3>
-
-                  {/* Card Body Description */}
-                  <p className="text-xs text-slate-600 font-normal leading-relaxed mt-3">
-                    {card.description}
-                  </p>
                 </div>
-
-                {/* Decorative Bottom Slider Node Graphic with hover expansion */}
-                <div className="flex items-center justify-end gap-2 mt-6 pt-3 border-t border-slate-100">
-                  <div className="h-0.5 w-16 group-hover:w-24 bg-slate-200 group-hover:bg-[#960C01]/30 transition-all duration-300 rounded" />
-                  <span className="w-3.5 h-3.5 rounded-full bg-slate-300 group-hover:bg-[#960C01] group-hover:scale-125 transition-all duration-300 shrink-0" />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* 4. One Name, Many Companies / Built on Trust and Service (Curved Carousel Centered) */}
+      {/* 4. One Name, Many Companies */}
       <section
         id="companies"
-        className="relative bg-white min-h-[calc(100vh-80px)] flex flex-col justify-center pt-16 sm:pt-20 md:pt-24 pb-10 sm:pb-14 overflow-hidden scroll-mt-20"
+        className="relative bg-white flex flex-col pt-12 sm:pt-16 pb-6 sm:pb-8 overflow-hidden scroll-mt-20"
       >
-        {/* Section Heading Centered with comfortable spacing */}
-        <div className="max-w-4xl mx-auto text-center px-4 mb-4 sm:mb-6 shrink-0">
-          <span className="text-xs sm:text-sm font-semibold text-slate-800 tracking-tight block">
+        {/* Heading */}
+        <div className="max-w-4xl mx-auto text-center px-4 mb-2 sm:mb-4 shrink-0">
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 tracking-wide block">
             One Name, Many Companies
           </span>
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-[#960C01] mt-0.5 tracking-tight">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-[#960C01] mt-1 tracking-tight">
             Built on Trust and Service
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-xl mx-auto leading-relaxed">
-            Explore the companies under the <strong className="text-slate-700 font-semibold">MCT Group</strong>,
-            each committed to delivering dependable service, together.
+          <p className="text-xs sm:text-sm text-slate-600 mt-2 max-w-3xl mx-auto leading-relaxed">
+            Explore the companies under the{" "}
+            <strong className="text-slate-800 font-semibold">MCT Group</strong>, each
+            committed to delivering dependable service, together.
           </p>
         </div>
 
-        {/* Carousel Curved Container: Full-bleed horizontal photo ribbon under top & bottom concave white waves */}
+        {/* Curved carousel */}
         <div
-          className="relative w-full overflow-hidden bg-white group cursor-pointer my-auto"
+          className="relative w-full overflow-hidden bg-white group"
           onMouseEnter={() => setIsCarouselPaused(true)}
           onMouseLeave={() => setIsCarouselPaused(false)}
         >
-          {/* Top White Curved Cutout (Dips down towards center) */}
+          {/* Top curve */}
           <div className="absolute top-0 left-0 right-0 w-full overflow-hidden leading-none z-20 pointer-events-none">
             <svg
               className="relative block w-full h-10 sm:h-14 md:h-20 text-white fill-current"
@@ -567,7 +589,7 @@ export const LandingPage: React.FC = () => {
             </svg>
           </div>
 
-          {/* Bottom White Curved Cutout (Arches up towards center) */}
+          {/* Bottom curve */}
           <div className="absolute bottom-0 left-0 right-0 w-full overflow-hidden leading-none z-20 pointer-events-none">
             <svg
               className="relative block w-full h-10 sm:h-14 md:h-20 text-white fill-current"
@@ -578,32 +600,36 @@ export const LandingPage: React.FC = () => {
             </svg>
           </div>
 
-          {/* Infinite Moving Marquee Track */}
-          <div
-            ref={carouselTrackRef}
-            className="flex items-center overflow-x-hidden select-none"
-          >
-            {/* Duplicated list for seamless infinite horizontal scroll */}
+          {/* Marquee track */}
+          <div ref={carouselTrackRef} className="flex items-center overflow-x-hidden select-none">
             <div
               className="flex items-center gap-0 animate-marquee"
-              style={{
-                animationPlayState: isCarouselPaused ? 'paused' : 'running',
-              }}
+              style={{ animationPlayState: isCarouselPaused ? "paused" : "running" }}
             >
-              {[...CAROUSEL_COMPANIES, ...CAROUSEL_COMPANIES, ...CAROUSEL_COMPANIES].map((company, index) => (
-                <div
-                  key={`${company.id}-${index}`}
-                  className="relative w-[220px] sm:w-[260px] md:w-[300px] lg:w-[340px] h-[300px] sm:h-[360px] md:h-[400px] shrink-0 overflow-hidden group/item cursor-pointer"
-                >
-                  <img
-                    src={company.image}
-                    alt={company.name}
-                    className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover/item:scale-115"
-                  />
-                  {/* Subtle darkening tint on hover for depth */}
-                  <div className="absolute inset-0 bg-black/0 group-hover/item:bg-black/10 transition-colors duration-300 pointer-events-none" />
-                </div>
-              ))}
+              {[...CAROUSEL_COMPANIES, ...CAROUSEL_COMPANIES, ...CAROUSEL_COMPANIES].map(
+                (company, index) => (
+                  <div
+                    key={`${company.id}-${index}`}
+                    className="relative w-[260px] sm:w-[340px] md:w-[400px] lg:w-[480px] h-[300px] sm:h-[360px] md:h-[400px] shrink-0 overflow-hidden group/item"
+                  >
+                    <img
+                      src={company.image}
+                      alt={company.name}
+                      className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover/item:scale-[1.15]"
+                    />
+
+                    {/* Hover tint */}
+                    <div className="absolute inset-0 bg-black/0 group-hover/item:bg-black/10 transition-colors duration-300 pointer-events-none" />
+
+                    {/* Company label (sits above the bottom curve) */}
+                    <div className="absolute inset-x-0 bottom-14 md:bottom-16 z-10 px-4 text-center pointer-events-none">
+                      <span className="inline-block rounded-full bg-black/55 backdrop-blur-sm px-4 py-1.5 text-xs sm:text-sm font-semibold text-white">
+                        {company.name}
+                      </span>
+                    </div>
+                  </div>
+                )
+              )}
             </div>
           </div>
         </div>
