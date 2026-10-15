@@ -62,7 +62,20 @@ import { useLocation } from 'react-router-dom'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
 
-const PERIOD_OPTIONS = ['Daily', 'Monthly', 'Quarterly', 'Annually'] as const
+const COMPANY_LIST = [
+  'All Companies',
+  'MCT Kitchen',
+  'MCT Hotel',
+  'JK Cafe',
+  'Annex Nine',
+  'Merillon',
+  'JK Printing',
+  'Speedbox',
+  'JK Property and Ventures',
+  'Golden Sunburst Ventures',
+]
+
+const PERIOD_OPTIONS = ['All Periods', 'Daily', 'Monthly', 'Quarterly', 'Annually'] as const
 type PeriodOption = (typeof PERIOD_OPTIONS)[number]
 
 const ITEMS_PER_PAGE = 10
@@ -108,6 +121,9 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
     isAuditor ? assignedCompany : 'All Companies'
   )
+  const [statusFilter, setStatusFilter] = React.useState<
+    'All' | 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue'
+  >('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
     preset: 'This Month',
@@ -122,11 +138,13 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
   const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = React.useState(false)
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false)
   const [companySearch, setCompanySearch] = React.useState('')
 
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
   const companyDropdownRef = React.useRef<HTMLDivElement>(null)
   const periodDropdownRef = React.useRef<HTMLDivElement>(null)
+  const statusDropdownRef = React.useRef<HTMLDivElement>(null)
   const tableCardRef = React.useRef<HTMLDivElement>(null)
 
   // Modals & Action state
@@ -160,8 +178,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   }, [])
 
   const companyNamesList = React.useMemo(() => {
-    const list = dbCompanies.map((c) => c.company_name)
-    return ['All Companies', ...list]
+    if (dbCompanies.length > 0) {
+      const list = dbCompanies.map((c) => c.company_name).filter(Boolean)
+      return Array.from(new Set(['All Companies', ...list, ...COMPANY_LIST]))
+    }
+    return COMPANY_LIST
   }, [dbCompanies])
 
   const handlePeriodChange = (period: PeriodOption) => {
@@ -171,6 +192,14 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     const [currYear, currMonth] = currentToday.split('-')
 
     switch (period) {
+      case 'All Periods':
+        setDateRange({
+          preset: 'all',
+          label: 'All Periods',
+          startDate: null,
+          endDate: null,
+        })
+        break
       case 'Daily':
         setDateRange({
           preset: 'today',
@@ -179,14 +208,16 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           endDate: currentToday,
         })
         break
-      case 'Monthly':
+      case 'Monthly': {
+        const lastDay = new Date(parseInt(currYear, 10), parseInt(currMonth, 10), 0).getDate()
         setDateRange({
           preset: 'This Month',
           label: 'This Month',
           startDate: `${currYear}-${currMonth}-01`,
-          endDate: `${currYear}-${currMonth}-31`,
+          endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
         })
         break
+      }
       case 'Quarterly': {
         const monthNum = parseInt(currMonth, 10)
         let qStartMonth = '01'
@@ -266,6 +297,9 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
       if (periodDropdownRef.current && !periodDropdownRef.current.contains(target)) {
         setIsPeriodDropdownOpen(false)
       }
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(target)) {
+        setIsStatusDropdownOpen(false)
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -277,19 +311,29 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
       .filter((item) => {
         // Tab separation: Borrower vs Lender
         const currentTargetCompany = isAuditor
-          ? assignedCompany.toLowerCase()
-          : selectedCompany.toLowerCase()
+          ? (assignedCompany || '').trim().toLowerCase()
+          : (selectedCompany || '').trim().toLowerCase()
 
-        if (currentTargetCompany !== 'all companies') {
+        if (currentTargetCompany && currentTargetCompany !== 'all companies') {
           if (loanType === 'Borrower') {
-            if (item.borrower.toLowerCase() !== currentTargetCompany) return false
+            if ((item.borrower || '').trim().toLowerCase() !== currentTargetCompany) return false
           } else {
-            if (item.lender.toLowerCase() !== currentTargetCompany) return false
+            if ((item.lender || '').trim().toLowerCase() !== currentTargetCompany) return false
           }
         }
 
         if (!isDateInRange(item.rawDate || item.date, dateRange.startDate, dateRange.endDate)) {
           return false
+        }
+
+        if (statusFilter !== 'All') {
+          const itemStatus = (item.status || '').trim().toLowerCase()
+          const filterStatus = statusFilter.trim().toLowerCase()
+          if (filterStatus === 'pending') {
+            if (!itemStatus.includes('pending')) return false
+          } else if (itemStatus !== filterStatus) {
+            return false
+          }
         }
 
         if (searchQuery.trim()) {
@@ -324,11 +368,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [loans, isAuditor, assignedCompany, selectedCompany, loanType, dateRange, searchQuery])
+  }, [loans, isAuditor, assignedCompany, selectedCompany, loanType, dateRange, statusFilter, searchQuery])
 
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [dateRange, searchQuery, selectedCompany, selectedPeriod, loanType])
+  }, [dateRange, searchQuery, selectedCompany, selectedPeriod, loanType, statusFilter])
 
   // Total Loans KPI
   const kpis = React.useMemo(() => {
@@ -504,29 +548,34 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
             </p>
           </div>
 
-          {/* Filter Toolbar */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
-            <div ref={periodDropdownRef} className="relative inline-block">
+          {/* Filter Toolbar - Compact single line without overflow clipping */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0 self-start lg:self-auto relative z-30 overflow-visible">
+            {/* Period Dropdown */}
+            <div ref={periodDropdownRef} className="relative inline-block shrink-0">
               <button
                 type="button"
-                onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
+                onClick={() => {
+                  setIsPeriodDropdownOpen((prev) => !prev)
+                  setIsStatusDropdownOpen(false)
+                  setIsCompanyDropdownOpen(false)
+                }}
                 className={cn(
-                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                  'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
                   isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
                 )}
               >
-                <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
+                <Calendar className="h-3.5 w-3.5 text-muted-fg shrink-0" />
                 <span className="font-medium text-focus/90">{selectedPeriod}</span>
                 <ChevronDown
                   className={cn(
-                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
+                    'h-3 w-3 text-muted-fg shrink-0 transition-transform duration-200',
                     isPeriodDropdownOpen && 'transform rotate-180'
                   )}
                 />
               </button>
 
               {isPeriodDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                <div className="absolute left-0 top-full mt-2 w-40 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
                   {PERIOD_OPTIONS.map((period) => (
                     <button
                       key={period}
@@ -549,29 +598,86 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               )}
             </div>
 
-            {/* Unified Date Range Picker (presets hidden, period handled by Period dropdown) */}
+            {/* Status Dropdown */}
+            <div ref={statusDropdownRef} className="relative inline-block shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsStatusDropdownOpen((prev) => !prev)
+                  setIsPeriodDropdownOpen(false)
+                  setIsCompanyDropdownOpen(false)
+                }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus whitespace-nowrap shrink-0',
+                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                )}
+              >
+                <span className="font-medium text-focus/90">
+                  {statusFilter === 'All' ? 'Status' : statusFilter}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'h-3 w-3 text-muted-fg shrink-0 transition-transform duration-200',
+                    isStatusDropdownOpen && 'transform rotate-180'
+                  )}
+                />
+              </button>
+
+              {isStatusDropdownOpen && (
+                <div className="absolute left-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  {(['All', 'Pending Approval', 'Approved', 'Paid', 'Pending', 'Overdue'] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(st)
+                        setIsStatusDropdownOpen(false)
+                      }}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                        statusFilter === st
+                          ? 'bg-primary/10 text-primary font-semibold'
+                          : 'text-focus/80 hover:bg-slate-50'
+                      )}
+                    >
+                      <span>{st === 'All' ? 'All Status' : st}</span>
+                      {statusFilter === st && (
+                        <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Unified Date Range Picker (presets hidden, compact size) */}
             <DateRangePicker
               value={dateRange}
               onChange={(newRange: DateRange) => setDateRange(newRange)}
               hidePresets
+              compact
             />
 
             {/* Company Scope Dropdown (Admin only) */}
             {!isAuditor && (
-              <div ref={companyDropdownRef} className="relative inline-block">
+              <div ref={companyDropdownRef} className="relative inline-block shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
+                  onClick={() => {
+                    setIsCompanyDropdownOpen((prev) => !prev)
+                    setIsPeriodDropdownOpen(false)
+                    setIsStatusDropdownOpen(false)
+                  }}
                   className={cn(
-                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                    'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
                     isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
                   )}
                 >
-                  <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                  <span className="font-medium text-focus/90 truncate max-w-[150px]">
+                  <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                  <span className="font-medium text-focus/90 truncate max-w-[110px] sm:max-w-[130px]">
                     {selectedCompany}
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                  <ChevronDown className="h-3 w-3 text-muted-fg shrink-0" />
                   {selectedCompany !== 'All Companies' && (
                     <span
                       onClick={(e) => {
@@ -581,7 +687,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
                       title="Reset to All Companies"
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-2.5 w-2.5" />
                     </span>
                   )}
                 </button>

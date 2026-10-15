@@ -163,16 +163,31 @@ export const expenseService = {
         const data = await res.json()
         if (Array.isArray(data)) {
           const mapped = data.map(mapBackendExpenseToItem)
-          inMemoryExpenses = mapped
-          saveStoredExpenses(mapped)
-          return mapped
+          if (!params?.company || params.company === 'All Companies') {
+            inMemoryExpenses = mapped
+            saveStoredExpenses(mapped)
+            return mapped
+          } else {
+            const otherCompaniesExpenses = inMemoryExpenses.filter(
+              (e) => e.company.toLowerCase() !== params.company!.toLowerCase()
+            )
+            inMemoryExpenses = [...mapped, ...otherCompaniesExpenses]
+            saveStoredExpenses(inMemoryExpenses)
+            return mapped
+          }
         }
       }
     } catch (err) {
       console.warn('Backend GET /expenses failed, falling back to local storage:', err)
     }
 
-    return [...inMemoryExpenses]
+    const list =
+      !params?.company || params.company === 'All Companies'
+        ? [...inMemoryExpenses]
+        : inMemoryExpenses.filter(
+            (e) => e.company.toLowerCase() === params.company!.toLowerCase()
+          )
+    return list
   },
 
   async addExpense(input: NewExpenseInput): Promise<ExpenseItem> {

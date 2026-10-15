@@ -51,6 +51,8 @@ import {
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
+import { useNavigate } from 'react-router-dom'
+import { loanService } from '@/services/loanService'
 
 const COMPANY_LIST = [
   'All Companies',
@@ -71,6 +73,7 @@ type PeriodOption = (typeof PERIOD_OPTIONS)[number]
 const ITEMS_PER_PAGE = 10
 
 export const ExpensePage: React.FC = () => {
+  const navigate = useNavigate()
   const { user } = useSession()
   const isAuditor = user?.role === 'Company Auditor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
@@ -78,10 +81,28 @@ export const ExpensePage: React.FC = () => {
   const [expenses, setExpenses] = React.useState<ExpenseItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
+  // Dynamic companies list
+  const [companyList, setCompanyList] = React.useState<string[]>(COMPANY_LIST)
+
+  React.useEffect(() => {
+    let mounted = true
+    loanService.getCompanies().then((companies) => {
+      if (mounted && companies.length > 0) {
+        const names = companies.map((c) => c.company_name).filter(Boolean)
+        const combined = Array.from(new Set(['All Companies', ...names, ...COMPANY_LIST]))
+        setCompanyList(combined)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   // Filter state
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
     isAuditor ? assignedCompany : 'All Companies'
   )
+  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Overdue'>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
     preset: 'this_month',
@@ -96,11 +117,13 @@ export const ExpensePage: React.FC = () => {
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
   const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = React.useState(false)
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false)
   const [companySearch, setCompanySearch] = React.useState('')
 
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
   const companyDropdownRef = React.useRef<HTMLDivElement>(null)
   const periodDropdownRef = React.useRef<HTMLDivElement>(null)
+  const statusDropdownRef = React.useRef<HTMLDivElement>(null)
   const tableCardRef = React.useRef<HTMLDivElement>(null)
 
   // Modals & Action state
@@ -130,14 +153,16 @@ export const ExpensePage: React.FC = () => {
           endDate: currentToday,
         })
         break
-      case 'Monthly':
+      case 'Monthly': {
+        const lastDay = new Date(parseInt(currYear, 10), parseInt(currMonth, 10), 0).getDate()
         setDateRange({
           preset: 'this_month',
           label: 'This Month',
           startDate: `${currYear}-${currMonth}-01`,
-          endDate: `${currYear}-${currMonth}-31`,
+          endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
         })
         break
+      }
       case 'Quarterly': {
         const monthNum = parseInt(currMonth, 10)
         let qStartMonth = '01'
@@ -213,6 +238,9 @@ export const ExpensePage: React.FC = () => {
       if (periodDropdownRef.current && !periodDropdownRef.current.contains(target)) {
         setIsPeriodDropdownOpen(false)
       }
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(target)) {
+        setIsStatusDropdownOpen(false)
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -222,11 +250,19 @@ export const ExpensePage: React.FC = () => {
   const filteredExpenses = React.useMemo(() => {
     return expenses
       .filter((item) => {
-        if (!isAuditor && selectedCompany !== 'All Companies' && item.company !== selectedCompany) {
+        if (
+          !isAuditor &&
+          selectedCompany !== 'All Companies' &&
+          item.company.trim().toLowerCase() !== selectedCompany.trim().toLowerCase()
+        ) {
           return false
         }
 
         if (!isDateInRange(item.rawDate || item.date, dateRange.startDate, dateRange.endDate)) {
+          return false
+        }
+
+        if (statusFilter !== 'All' && item.status !== statusFilter) {
           return false
         }
 
@@ -262,11 +298,11 @@ export const ExpensePage: React.FC = () => {
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [expenses, isAuditor, selectedCompany, dateRange, searchQuery])
+  }, [expenses, isAuditor, selectedCompany, dateRange, statusFilter, searchQuery])
 
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [dateRange, searchQuery, selectedCompany, selectedPeriod])
+  }, [dateRange, searchQuery, selectedCompany, selectedPeriod, statusFilter])
 
   // Total Expense KPI
   const kpis = React.useMemo(() => {
@@ -365,11 +401,11 @@ export const ExpensePage: React.FC = () => {
   }
 
   const filteredCompanyList = React.useMemo(() => {
-    if (!companySearch.trim()) return COMPANY_LIST
-    return COMPANY_LIST.filter((c) =>
+    if (!companySearch.trim()) return companyList
+    return companyList.filter((c) =>
       c.toLowerCase().includes(companySearch.toLowerCase().trim())
     )
-  }, [companySearch])
+  }, [companySearch, companyList])
 
   const displayedCompanyTitle = isAuditor
     ? assignedCompany
@@ -440,7 +476,7 @@ export const ExpensePage: React.FC = () => {
             {isAuditor && (
               <Button
                 type="button"
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => navigate('/expense/add')}
                 className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
               >
                 <Plus className="h-4 w-4 shrink-0" />
@@ -499,6 +535,60 @@ export const ExpensePage: React.FC = () => {
                     >
                       <span>{period}</span>
                       {selectedPeriod === period && (
+                        <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Status Dropdown */}
+            <div ref={statusDropdownRef} className="relative inline-block">
+              <button
+                type="button"
+                onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
+                className={cn(
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                )}
+              >
+                <span className="font-medium text-focus/90">
+                  {statusFilter === 'All' ? 'Status' : statusFilter}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
+                    isStatusDropdownOpen && 'transform rotate-180'
+                  )}
+                />
+              </button>
+
+              {isStatusDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  {(['All', 'Paid', 'Pending', 'Overdue'] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(st)
+                        setIsStatusDropdownOpen(false)
+                      }}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                        statusFilter === st
+                          ? 'bg-primary/10 text-primary font-semibold'
+                          : 'text-focus/80 hover:bg-slate-50'
+                      )}
+                    >
+                      <span>
+                        {st === 'All'
+                          ? 'All Status'
+                          : st === 'Paid'
+                          ? 'Paid / Settled'
+                          : st}
+                      </span>
+                      {statusFilter === st && (
                         <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
                       )}
                     </button>
