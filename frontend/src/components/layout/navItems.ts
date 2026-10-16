@@ -14,6 +14,7 @@ export interface NavSubItem {
   id: string
   title: string
   href: string
+  roles?: string[]
 }
 
 export interface NavItem {
@@ -55,14 +56,22 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
     subItems: [
       {
+        id: 'company-loans',
+        title: 'Company Loans',
+        href: '/loan/company',
+        roles: ['Admin'],
+      },
+      {
         id: 'borrower',
         title: 'Borrower',
         href: '/loan/borrower',
+        roles: ['Finance', 'Company', 'Company Auditor'],
       },
       {
         id: 'lender',
         title: 'Lender',
         href: '/loan/lender',
+        roles: ['Finance', 'Company', 'Company Auditor'],
       },
     ],
   },
@@ -98,4 +107,3 @@ export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
     roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
   },
 ] as const
-
