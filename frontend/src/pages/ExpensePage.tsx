@@ -492,7 +492,7 @@ export const ExpensePage: React.FC = () => {
               Expense
             </h1>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Comprehensive breakdown of operational expenses, cost audits, and company outflows.
+              Comprehensive breakdown of operational expenses.
             </p>
           </div>
 
@@ -584,8 +584,8 @@ export const ExpensePage: React.FC = () => {
                         {st === 'All'
                           ? 'All Status'
                           : st === 'Paid'
-                          ? 'Paid / Settled'
-                          : st}
+                            ? 'Paid / Settled'
+                            : st}
                       </span>
                       {statusFilter === st && (
                         <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
@@ -605,98 +605,98 @@ export const ExpensePage: React.FC = () => {
 
             {/* Company Scope Dropdown */}
             <div ref={companyDropdownRef} className="relative inline-block">
-                <button
-                  type="button"
-                  onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
-                  className={cn(
-                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                    isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
-                  )}
-                  aria-label="Filter expenses by company"
-                >
-                  <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                  <span className="font-medium text-focus/90 truncate max-w-[150px]">
-                    {selectedCompany}
+              <button
+                type="button"
+                onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
+                className={cn(
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                  isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                )}
+                aria-label="Filter expenses by company"
+              >
+                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                <span className="font-medium text-focus/90 truncate max-w-[150px]">
+                  {selectedCompany}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                {selectedCompany !== 'All Companies' && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedCompany('All Companies')
+                    }}
+                    className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
+                    title="Reset to All Companies"
+                  >
+                    <X className="h-3 w-3" />
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                  {selectedCompany !== 'All Companies' && (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setSelectedCompany('All Companies')
-                      }}
-                      className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
-                      title="Reset to All Companies"
-                    >
-                      <X className="h-3 w-3" />
-                    </span>
-                  )}
-                </button>
+                )}
+              </button>
 
-                {isCompanyDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-68 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-stroke/20 px-1">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
-                        Filter By Company
-                      </span>
-                      {selectedCompany !== 'All Companies' && (
+              {isCompanyDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-68 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-stroke/20 px-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
+                      Filter By Company
+                    </span>
+                    {selectedCompany !== 'All Companies' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCompany('All Companies')
+                          setIsCompanyDropdownOpen(false)
+                        }}
+                        className="text-xs text-primary hover:underline font-semibold cursor-pointer"
+                      >
+                        Clear Filter
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="px-1 pb-2">
+                    <Input
+                      type="text"
+                      placeholder="Search company…"
+                      value={companySearch}
+                      onChange={(e) => setCompanySearch(e.target.value)}
+                      className="h-8 text-xs rounded-lg"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="space-y-0.5 max-h-56 overflow-y-auto pr-0.5">
+                    {filteredCompanyList.length === 0 ? (
+                      <div className="py-4 text-center text-xs text-muted-fg">
+                        No matching companies
+                      </div>
+                    ) : (
+                      filteredCompanyList.map((c) => (
                         <button
+                          key={c}
                           type="button"
                           onClick={() => {
-                            setSelectedCompany('All Companies')
+                            setSelectedCompany(c)
                             setIsCompanyDropdownOpen(false)
+                            setCompanySearch('')
                           }}
-                          className="text-xs text-primary hover:underline font-semibold cursor-pointer"
+                          className={cn(
+                            'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                            selectedCompany === c
+                              ? 'bg-primary/10 text-primary font-semibold'
+                              : 'text-focus/80 hover:bg-slate-50'
+                          )}
                         >
-                          Clear Filter
+                          <span className="truncate">{c}</span>
+                          {selectedCompany === c && (
+                            <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                          )}
                         </button>
-                      )}
-                    </div>
-
-                    <div className="px-1 pb-2">
-                      <Input
-                        type="text"
-                        placeholder="Search company…"
-                        value={companySearch}
-                        onChange={(e) => setCompanySearch(e.target.value)}
-                        className="h-8 text-xs rounded-lg"
-                        autoFocus
-                      />
-                    </div>
-
-                    <div className="space-y-0.5 max-h-56 overflow-y-auto pr-0.5">
-                      {filteredCompanyList.length === 0 ? (
-                        <div className="py-4 text-center text-xs text-muted-fg">
-                          No matching companies
-                        </div>
-                      ) : (
-                        filteredCompanyList.map((c) => (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={() => {
-                              setSelectedCompany(c)
-                              setIsCompanyDropdownOpen(false)
-                              setCompanySearch('')
-                            }}
-                            className={cn(
-                              'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                              selectedCompany === c
-                                ? 'bg-primary/10 text-primary font-semibold'
-                                : 'text-focus/80 hover:bg-slate-50'
-                            )}
-                          >
-                            <span className="truncate">{c}</span>
-                            {selectedCompany === c && (
-                              <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                            )}
-                          </button>
-                        ))
-                      )}
-                    </div>
+                      ))
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -892,7 +892,7 @@ export const ExpensePage: React.FC = () => {
                     className={cn(
                       'border-b border-slate-100 hover:bg-slate-50/60 transition-all duration-300 cursor-pointer',
                       highlightedExpenseId === expense.id &&
-                        'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
+                      'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
                     )}
                     title="Click to view complete details"
                   >

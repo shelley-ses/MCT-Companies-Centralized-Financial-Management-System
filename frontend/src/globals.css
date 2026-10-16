@@ -62,4 +62,9 @@
       animation: none !important;
     }
   }
+
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    margin: auto 0;
+  }
 }

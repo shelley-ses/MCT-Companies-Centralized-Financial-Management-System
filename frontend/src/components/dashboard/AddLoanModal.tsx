@@ -88,7 +88,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
       : allCompanyNames[0] || 'MCT Kitchen'
 
   const [date, setDate] = React.useState(formatToYYYYMMDD(new Date()))
-  const [dueDate, setDueDate] = React.useState('')
   const [interestRate, setInterestRate] = React.useState('0')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
@@ -104,7 +103,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   const [error, setError] = React.useState('')
   const [fieldErrors, setFieldErrors] = React.useState<{
     date?: string
-    dueDate?: string
     particulars?: string
     amount?: string
     borrower?: string
@@ -135,7 +133,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
     if (open) {
       const todayStr = formatToYYYYMMDD(new Date())
       setDate(todayStr)
-      setDueDate('')
       setInterestRate('0')
       setParticulars('')
       setAmount('')
@@ -204,7 +201,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
 
       const payload: NewLoanInput = {
         date: date.trim() || formatToYYYYMMDD(new Date()),
-        dueDate: dueDate.trim() || undefined,
         interestRate: isCompanyUser ? 0.0 : parseFloat(interestRate) || 0.0,
         particulars: particulars.trim(),
         amount: parsedAmount,
@@ -257,38 +253,38 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* 1. Loan Date */}
-              <div className="space-y-1.5">
+              {/* 1. Loan Date (extended to full width) */}
+              <div className="space-y-1.5 col-span-1 sm:col-span-2">
                 <Label className="text-xs font-semibold text-focus block">
                   Loan Date <span className="text-red-500">*</span>
                 </Label>
-                <Input
-                  type="date"
-                  value={date}
-                  onChange={(e) => {
-                    setDate(e.target.value)
-                    if (fieldErrors.date) setFieldErrors((p) => ({ ...p, date: undefined }))
-                  }}
-                  className={cn('h-10 text-xs sm:text-sm rounded-xl', fieldErrors.date && 'border-red-500')}
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    type="date"
+                    value={date}
+                    max={formatToYYYYMMDD(new Date())}
+                    onChange={(e) => {
+                      setDate(e.target.value)
+                      if (fieldErrors.date) setFieldErrors((p) => ({ ...p, date: undefined }))
+                    }}
+                    onClick={(e) => e.currentTarget.showPicker?.()}
+                    className={cn(
+                      'h-10 px-3.5 py-0 text-xs sm:text-sm rounded-xl cursor-pointer w-full',
+                      'flex items-center',
+                      '[&::-webkit-calendar-picker-indicator]:cursor-pointer',
+                      '[&::-webkit-calendar-picker-indicator]:opacity-70 hover:[&::-webkit-calendar-picker-indicator]:opacity-100',
+                      '[&::-webkit-calendar-picker-indicator]:my-auto',
+                      '[&::-webkit-calendar-picker-indicator]:h-4 [&::-webkit-calendar-picker-indicator]:w-4',
+                      '[&::-webkit-calendar-picker-indicator]:transition-opacity',
+                      fieldErrors.date && 'border-red-500'
+                    )}
+                    required
+                  />
+                </div>
                 {fieldErrors.date && <p className="text-2xs text-red-500">{fieldErrors.date}</p>}
               </div>
 
-              {/* 2. Due Date */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-focus block">
-                  Due Date (Repayment)
-                </Label>
-                <Input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="h-10 text-xs sm:text-sm rounded-xl"
-                />
-              </div>
-
-              {/* 3. Borrower Company (Automatic from account) */}
+              {/* 2. Borrower Company (Automatic from account) */}
               <div className="space-y-1.5 col-span-1 sm:col-span-2">
                 <Label className="text-xs font-semibold text-focus block">
                   Borrower Company
@@ -486,12 +482,6 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
               <span className="text-muted-fg font-medium">Date:</span>
               <span className="font-medium text-focus">{date}</span>
             </div>
-            {dueDate && (
-              <div className="flex justify-between">
-                <span className="text-muted-fg font-medium">Due Date:</span>
-                <span className="font-medium text-focus">{dueDate}</span>
-              </div>
-            )}
             <div className="pt-2 border-t border-slate-200">
               <span className="text-muted-fg block">Purpose:</span>
               <span className="font-medium text-focus italic">{particulars}</span>
