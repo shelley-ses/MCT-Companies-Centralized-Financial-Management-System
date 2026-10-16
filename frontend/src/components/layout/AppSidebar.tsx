@@ -109,8 +109,15 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             {filteredMainItems.map((item: NavItem) => {
               const Icon = item.icon
 
+              const roleSubItems = item.subItems?.filter(
+                (subItem) =>
+                  !subItem.roles ||
+                  subItem.roles.includes(userRole) ||
+                  subItem.roles.includes(user?.role || '')
+              )
+
               // Collapsible navigation group with sub-items (e.g. Loan -> Borrower, Lender)
-              if (item.subItems && item.subItems.length > 0) {
+              if (roleSubItems && roleSubItems.length > 0) {
                 const isGroupActive = location.pathname.startsWith(item.href)
                 const isGroupOpen = openGroups[item.id] ?? true
 
@@ -146,14 +153,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     </CollapsibleTrigger>
 
                     <CollapsibleContent className="space-y-0.5 pl-9 pt-0.5 pb-0.5">
-                      {item.subItems
-                        .filter(
-                          (subItem) =>
-                            !subItem.roles ||
-                            subItem.roles.includes(userRole) ||
-                            subItem.roles.includes(user?.role || '')
-                        )
-                        .map((subItem) => (
+                      {roleSubItems.map((subItem) => (
                         <NavLink
                           key={subItem.id}
                           to={subItem.href}

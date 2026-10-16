@@ -7,7 +7,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { formatPHP } from '@/lib/format'
 import {
   loanService,
-  type CompanyLoan,
   type CompanyLoanGroup,
   type CompanyOption,
 } from '@/services/loanService'

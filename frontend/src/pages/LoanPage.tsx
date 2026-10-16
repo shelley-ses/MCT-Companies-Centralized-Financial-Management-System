@@ -45,6 +45,7 @@ import { AddLoanModal } from '@/components/dashboard/AddLoanModal'
 import { EditLoanModal } from '@/components/dashboard/EditLoanModal'
 import { ApproveLoanModal } from '@/components/dashboard/ApproveLoanModal'
 import { LoanHorizontalBarChart } from '@/components/dashboard/LoanHorizontalBarChart'
+import { AdminCompanyLoansView } from '@/components/dashboard/AdminCompanyLoansView'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import {
@@ -108,8 +109,12 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
   // Dynamic document title
   React.useEffect(() => {
-    document.title = `${loanType} Loans - MCT Centralized Financial System`
-  }, [loanType])
+    if (isAdmin) {
+      document.title = 'Company Loans - MCT Centralized Financial System'
+    } else {
+      document.title = `${loanType} Loans - MCT Centralized Financial System`
+    }
+  }, [isAdmin, loanType])
 
   const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
   const [loans, setLoans] = React.useState<LoanItem[]>([])
@@ -462,6 +467,28 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     : selectedCompany === 'All Companies'
     ? 'All Subsidiaries'
     : selectedCompany
+
+  if (isAdmin) {
+    return (
+      <>
+        <AdminCompanyLoansView
+          assignedCompany={assignedCompany}
+          companyNamesList={companyNamesList}
+          dbCompanies={dbCompanies}
+          onRequestLoan={() => setIsAddModalOpen(true)}
+        />
+
+        {/* Add Loan Modal */}
+        <AddLoanModal
+          open={isAddModalOpen}
+          onOpenChange={setIsAddModalOpen}
+          onSuccess={handleLoanAdded}
+          assignedCompany={assignedCompany}
+          companies={companyNamesList}
+        />
+      </>
+    )
+  }
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">

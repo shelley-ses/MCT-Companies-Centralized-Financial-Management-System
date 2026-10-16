@@ -5,7 +5,6 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { SalesPage } from '@/pages/SalesPage'
 import { ExpensePage } from '@/pages/ExpensePage'
 import { LoanPage } from '@/pages/LoanPage'
-import { CompanyLoansPage } from '@/pages/CompanyLoansPage'
 import { TransactionPage } from '@/pages/TransactionPage'
 import { EmployeePage } from '@/pages/EmployeePage'
 import { ActivityLogPage } from '@/pages/ActivityLogPage'
@@ -119,19 +118,17 @@ export const router = createBrowserRouter([
   },
   {
     path: '/loan',
-    element: <Navigate to="/loan/borrower" replace />,
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <LoanPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/loan/company',
-    element: (
-      <ProtectedRoute>
-        <AdminOnlyRoute>
-          <AppShell>
-            <CompanyLoansPage />
-          </AppShell>
-        </AdminOnlyRoute>
-      </ProtectedRoute>
-    ),
+    element: <Navigate to="/loan" replace />,
   },
   {
     path: '/loan/borrower',
