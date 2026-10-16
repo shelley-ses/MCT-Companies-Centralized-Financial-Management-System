@@ -49,6 +49,7 @@ import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
+import { getParticularsSummary } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 
@@ -76,12 +77,23 @@ export const SalesPage: React.FC = () => {
   const { user } = useSession()
   const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
   const isFinance = user?.role === 'Finance'
+  const isAdmin = user?.role === 'Admin'
+  const isCompanyScoped = !isAdmin && !isFinance
   const isAuditor = isCompanyUser
   const canAdd = isCompanyUser || isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Filter state
-  const [selectedCompany, setSelectedCompany] = React.useState<string>('All Companies')
+  const [selectedCompany, setSelectedCompany] = React.useState<string>(
+    isCompanyScoped ? assignedCompany : 'All Companies'
+  )
+
+  // Keep selectedCompany in sync if user profile loads after initial render
+  React.useEffect(() => {
+    if (isCompanyScoped && user?.assignedCompany) {
+      setSelectedCompany(user.assignedCompany)
+    }
+  }, [isCompanyScoped, user?.assignedCompany])
   const [dateRange, setDateRange] = React.useState<DateRange>({
     startDate: '2026-10-01',
     endDate: '2026-10-31',
@@ -209,16 +221,17 @@ export const SalesPage: React.FC = () => {
   const loadSales = React.useCallback(async () => {
     setLoading(true)
     try {
-      const data = await salesService.getSales(
-        selectedCompany === 'All Companies' ? undefined : selectedCompany
-      )
+      const targetCompany = isCompanyScoped
+        ? assignedCompany
+        : (selectedCompany === 'All Companies' ? undefined : selectedCompany)
+      const data = await salesService.getSales(targetCompany)
       setSales(data)
     } catch (err) {
       console.error('Failed to load sales data:', err)
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany])
+  }, [isCompanyScoped, assignedCompany, selectedCompany])
 
   React.useEffect(() => {
     loadSales()
@@ -247,12 +260,14 @@ export const SalesPage: React.FC = () => {
 
   // Client-side filtering and sorting (latest first)
   const filteredSales = React.useMemo(() => {
+    const targetCompany = isCompanyScoped ? assignedCompany : selectedCompany
+
     return sales
       .filter((item) => {
         // 1. Company filter
         if (
-          selectedCompany !== 'All Companies' &&
-          item.company?.toLowerCase() !== selectedCompany.toLowerCase()
+          targetCompany !== 'All Companies' &&
+          (item.company || '').toLowerCase().trim() !== targetCompany.toLowerCase().trim()
         ) {
           return false
         }
@@ -392,10 +407,11 @@ export const SalesPage: React.FC = () => {
     setIsAuditModalOpen(true)
   }
 
-  const displayedCompanyTitle =
-    selectedCompany === 'All Companies'
-      ? 'MCT Group of Companies'
-      : selectedCompany
+  const displayedCompanyTitle = isCompanyScoped
+    ? assignedCompany
+    : selectedCompany === 'All Companies'
+    ? 'MCT Group of Companies'
+    : selectedCompany
 
   return (
     <div className="space-y-6 pb-10 max-w-7xl mx-auto animate-in fade-in duration-300">
@@ -588,8 +604,14 @@ export const SalesPage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope Dropdown (Available for Auditor, Finance, and Admin) */}
-            <div ref={companyDropdownRef} className="relative inline-block">
+            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor/Company Employee */}
+            {isCompanyScoped ? (
+              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs">
+                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                <span className="font-semibold text-focus/90">{assignedCompany}</span>
+              </div>
+            ) : (
+              <div ref={companyDropdownRef} className="relative inline-block">
                 <button
                   type="button"
                   onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
@@ -694,6 +716,7 @@ export const SalesPage: React.FC = () => {
                   </div>
                 )}
               </div>
+            )}
           </div>
         </div>
       </div>
@@ -920,7 +943,20 @@ export const SalesPage: React.FC = () => {
 
                     {/* 4. Particulars */}
                     <TableCell className="w-[17%] px-3.5 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={sale.particulars}>
-                      <span className="truncate block">{sale.particulars}</span>
+                      {(() => {
+                        const summary = getParticularsSummary(sale.particulars, sale.items)
+                        if (summary.count > 1) {
+                          return (
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="truncate block font-medium">{summary.firstItemName}</span>
+                              <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                +{summary.count - 1} more
+                              </span>
+                            </div>
+                          )
+                        }
+                        return <span className="truncate block">{summary.firstItemName}</span>
+                      })()}
                     </TableCell>
 
                     {/* 5. Deposit */}

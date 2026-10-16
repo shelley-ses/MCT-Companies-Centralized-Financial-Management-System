@@ -7,8 +7,10 @@ import {
   AlertCircle,
   Loader2,
   CheckCircle2,
+  Receipt,
 } from 'lucide-react'
 import { UpdateLoanStatusModal } from './UpdateLoanStatusModal'
+import { parseParticulars } from '@/utils/particularsUtils'
 import {
   Dialog,
   DialogContent,
@@ -210,8 +212,6 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   const activeExpense = currentExpense || expense
   const activeLoan = currentLoan || loan
 
-  if (!activeTx && !activeSale && !activeExpense && !activeLoan) return null
-
   const isExpense = Boolean(activeExpense || activeTx?.type === 'Expense')
   const isLoan = Boolean(activeLoan || activeTx?.type === 'Loan')
 
@@ -231,8 +231,9 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     activeSale?.chequeNo || activeExpense?.chequeNo || activeLoan?.chequeNo || activeTx?.chequeNo || '—'
   const displayParticulars =
     activeSale?.particulars || activeExpense?.particulars || activeLoan?.particulars || activeTx?.particulars || activeTx?.description || '—'
-  const displayStatus =
-    activeSale?.status || activeExpense?.status || activeLoan?.status || activeTx?.status || '—'
+  const displayStatus = isExpense
+    ? 'Paid'
+    : (activeSale?.status || activeExpense?.status || activeLoan?.status || activeTx?.status || '—')
   const displayCreatedAt =
     activeSale?.createdAt || activeExpense?.createdAt || activeLoan?.createdAt || activeTx?.createdAt
 
@@ -248,6 +249,27 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     : isExpense
     ? (activeExpense?.netAmount ?? withdrawalVal)
     : ((depositVal || 0) - (withdrawalVal || 0))
+
+  // Itemized particulars parsing (for transactions with 1, 3, or >5 particulars)
+  const rawItems = activeSale?.items || activeExpense?.items || activeTx?.items
+  const rawParticularsText = displayParticulars
+  const parsedParticularItems = React.useMemo(() => {
+    return parseParticulars(
+      rawParticularsText,
+      rawItems,
+      isLoan ? loanVal : isExpense ? (withdrawalVal || netAmount) : (depositVal || netAmount)
+    )
+  }, [rawParticularsText, rawItems, isLoan, isExpense, loanVal, withdrawalVal, depositVal, netAmount])
+
+  const hasMultipleParticulars = parsedParticularItems.length > 1
+
+  const totalItemQuantity = React.useMemo(() => {
+    return parsedParticularItems.reduce((sum, item) => sum + (item.quantity || 1), 0)
+  }, [parsedParticularItems])
+
+  const totalItemAmount = React.useMemo(() => {
+    return parsedParticularItems.reduce((sum, item) => sum + (item.total || 0), 0)
+  }, [parsedParticularItems])
 
   const handleCancel = () => {
     if (activeSale) {
@@ -393,6 +415,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     }
   }
 
+  if (!activeTx && !activeSale && !activeExpense && !activeLoan) return null
+
   return (
     <Dialog
       open={open}
@@ -407,8 +431,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     >
       <DialogContent
         className={cn(
-          'rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl transition-all duration-200',
-          isEditing ? 'sm:max-w-[520px]' : 'sm:max-w-[480px]'
+          'rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl transition-all duration-200 max-h-[92vh] overflow-y-auto',
+          isEditing ? 'sm:max-w-[540px]' : (hasMultipleParticulars ? 'sm:max-w-[640px]' : 'sm:max-w-[480px]')
         )}
       >
         {/* Header */}
@@ -492,7 +516,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               </Label>
               <Input
                 type="text"
-                placeholder="e.g. Catering Deposit"
+                placeholder={isExpense ? "e.g. Office Supplies" : isLoan ? "e.g. Loan Commitment" : "e.g. Catering Deposit"}
                 value={particulars}
                 onChange={(e) => {
                   setParticulars(e.target.value)
@@ -710,15 +734,87 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                 </span>
               </div>
 
-              {/* 3. Particulars */}
-              <div className="flex items-start justify-between gap-3 py-1.5 border-b border-stroke/10">
-                <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                  Particulars:
-                </span>
-                <span className="text-xs font-medium text-focus text-right max-w-[260px] line-clamp-2">
-                  {displayParticulars}
-                </span>
-              </div>
+              {/* 3. Particulars Section */}
+              {hasMultipleParticulars ? (
+                <div className="py-2.5 border-b border-stroke/10 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-focus">
+                      <Receipt className="w-3.5 h-3.5 text-[#960C01]" />
+                      <span>Itemized Particulars</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                      {parsedParticularItems.length} particulars recorded
+                    </span>
+                  </div>
+
+                  {/* Responsive Scrollable Container */}
+                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 overflow-hidden shadow-2xs">
+                    <div className="max-h-[220px] sm:max-h-[260px] overflow-y-auto divide-y divide-slate-100">
+                      <table className="w-full text-left text-xs table-fixed">
+                        <colgroup>
+                          <col style={{ width: '8%' }} />
+                          <col style={{ width: '46%' }} />
+                          <col style={{ width: '14%' }} />
+                          <col style={{ width: '16%' }} />
+                          <col style={{ width: '16%' }} />
+                        </colgroup>
+                        <thead className="bg-slate-100/90 sticky top-0 text-[10px] uppercase font-bold text-muted-fg border-b border-slate-200/80 z-10">
+                          <tr>
+                            <th className="py-2 px-2 text-center">#</th>
+                            <th className="py-2 px-2">Particulars / Item</th>
+                            <th className="py-2 px-2 text-center">Qty</th>
+                            <th className="py-2 px-2 text-right">Price</th>
+                            <th className="py-2 px-2 text-right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {parsedParticularItems.map((item, idx) => (
+                            <tr key={item.id || idx} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="py-2 px-2 text-center font-mono text-[11px] text-muted-fg">
+                                {idx + 1}
+                              </td>
+                              <td className="py-2 px-2 font-medium text-focus break-words leading-tight" title={item.particulars}>
+                                {item.particulars}
+                              </td>
+                              <td className="py-2 px-2 text-center font-semibold text-focus/80 tabular-nums">
+                                {item.quantity}
+                              </td>
+                              <td className="py-2 px-2 text-right text-muted-fg tabular-nums whitespace-nowrap text-[11px]">
+                                {item.unitPrice > 0 ? formatPHP(item.unitPrice) : '—'}
+                              </td>
+                              <td className="py-2 px-2 text-right font-bold text-focus tabular-nums whitespace-nowrap">
+                                {formatPHP(item.total)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Summary row */}
+                    <div className="bg-slate-100/95 border-t border-slate-200 px-3 py-2 flex items-center justify-between text-xs">
+                      <span className="text-muted-fg font-medium">
+                        Total items: <strong className="text-focus">{parsedParticularItems.length}</strong> ({totalItemQuantity} units)
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-bold text-muted-fg">Sum:</span>
+                        <span className="font-bold text-focus text-sm tabular-nums">
+                          {formatPHP(totalItemAmount || (depositVal || withdrawalVal || loanVal))}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-3 py-1.5 border-b border-stroke/10">
+                  <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                    Particulars:
+                  </span>
+                  <span className="text-xs font-medium text-focus text-right max-w-[280px]">
+                    {displayParticulars}
+                  </span>
+                </div>
+              )}
 
               {/* 4. Category */}
               <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">

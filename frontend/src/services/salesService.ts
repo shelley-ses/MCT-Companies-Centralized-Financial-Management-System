@@ -1,5 +1,6 @@
 import type { DashboardTransactionItem } from './dashboardService'
 import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { type ParticularItem, parseParticulars } from '@/utils/particularsUtils'
 
 export interface SalesItem {
   id: string
@@ -13,6 +14,7 @@ export interface SalesItem {
   netAmount: number
   category: string
   company: string
+  items?: ParticularItem[]
   status: 'Paid' | 'Pending' | 'Overdue'
   auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
   auditedBy?: string
@@ -32,6 +34,7 @@ export interface NewSalesInput {
   category: string
   company: string
   status: 'Paid' | 'Pending'
+  items?: ParticularItem[]
 }
 
 const INITIAL_SALES: SalesItem[] = [
@@ -697,6 +700,8 @@ function mapBackendSaleToItem(b: any): SalesItem {
     chequeNo = parts[1].replace(']', '').trim()
   }
 
+  const parsedItems = parseParticulars(particulars, null, amt)
+
   return {
     id: String(b.sales_id),
     refNo: chequeNo || `REF-${b.sales_id}`,
@@ -709,6 +714,7 @@ function mapBackendSaleToItem(b: any): SalesItem {
     netAmount: amt,
     category: b.category_name || 'None',
     company: b.company_name || 'MCT Kitchen',
+    items: parsedItems,
     status: 'Paid',
     auditStatus: 'Verified',
     createdBy: 'Company Auditor',
@@ -798,6 +804,9 @@ export const salesService = {
       if (res.ok) {
         const created = await res.json()
         const newItem = mapBackendSaleToItem(created)
+        if (input.items && input.items.length > 0) {
+          newItem.items = input.items
+        }
         inMemorySales = [newItem, ...inMemorySales]
         return newItem
       } else {
@@ -827,6 +836,7 @@ export const salesService = {
         netAmount: input.amount,
         category: input.category || 'None',
         company: input.company,
+        items: input.items || parseParticulars(input.particulars, null, input.amount),
         status: input.status,
         auditStatus: 'Verified',
         createdBy: 'Company Auditor',
@@ -1073,6 +1083,7 @@ export const salesService = {
       createdAt: sale.createdAt,
       updatedAt: sale.updatedAt,
       attachments: [],
+      items: sale.items || parseParticulars(sale.particulars, null, sale.deposit),
     }
   },
 }

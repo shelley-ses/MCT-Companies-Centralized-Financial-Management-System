@@ -21,6 +21,7 @@ interface DashboardHeaderProps {
   filters: DashboardFilterState
   onFiltersChange: (newFilters: DashboardFilterState) => void
   companies?: string[]
+  isCompanyScoped?: boolean
 }
 
 const DEFAULT_COMPANIES = [
@@ -40,6 +41,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   filters,
   onFiltersChange,
   companies = DEFAULT_COMPANIES,
+  isCompanyScoped = false,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -125,8 +127,16 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           }}
         />
 
-        {/* 2. Company Scope: Available for both Auditor and Admin, defaulting to All Companies */}
-        <div ref={dropdownRef} className="relative inline-block shrink-0">
+        {/* 2. Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor/Company Employee */}
+        {isCompanyScoped ? (
+          <div className="inline-flex items-center gap-2 h-10 sm:h-11 px-3.5 sm:px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
+            <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+            <span className="font-semibold text-focus/90 truncate max-w-[160px]">
+              {filters.company}
+            </span>
+          </div>
+        ) : (
+          <div ref={dropdownRef} className="relative inline-block shrink-0">
             <button
               type="button"
               onClick={() => setIsOpen((prev) => !prev)}
@@ -239,6 +249,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               </div>
             )}
           </div>
+        )}
       </div>
     </div>
   )

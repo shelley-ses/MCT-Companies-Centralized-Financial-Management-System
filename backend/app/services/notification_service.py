@@ -425,21 +425,20 @@ class NotificationService:
         We join to the Loan table to resolve borrower/lender IDs and names.
         """
         # Fetch relevant audit log entries
-        q = (
-            self.db.query(AuditLog)
-            .filter(
-                AuditLog.action == "LOAN_UPDATED",
-                AuditLog.details.isnot(None),
-            )
-            .order_by(AuditLog.created_at.desc())
-            # Pull a generous window; we filter further below
-            .limit(500)
+        q = self.db.query(AuditLog).filter(
+            AuditLog.action == "LOAN_UPDATED",
+            AuditLog.details.isnot(None),
         )
         if company_id is not None:
             # Pre-filter by company_id stored in the audit log row
             q = q.filter(AuditLog.company_id == company_id)
 
-        audit_rows = q.all()
+        audit_rows = (
+            q.order_by(AuditLog.created_at.desc())
+            # Pull a generous window; we filter further below
+            .limit(500)
+            .all()
+        )
         results: list[NotificationOut] = []
 
         for row in audit_rows:

@@ -1,5 +1,16 @@
 import type { DashboardTransactionItem } from './dashboardService'
 
+export interface LoanRepaymentRecord {
+  id: string
+  paymentDate: string
+  amount: number
+  remainingBalance: number
+  referenceNo?: string
+  paymentMethod?: string
+  notes?: string
+  createdAt?: string
+}
+
 export interface LoanItem {
   id: string
   loanId?: number
@@ -13,12 +24,15 @@ export interface LoanItem {
   particulars: string
   category: string
   amount: number
+  totalPaid?: number
+  outstandingBalance?: number
+  repayments?: LoanRepaymentRecord[]
   borrowerId?: number
   borrower: string // Borrower company name
   lenderId?: number
   lender: string // Lender company name
   company: string // Selected context company
-  status: 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue'
+  status: 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid'
   auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
   auditedBy?: string
   auditNotes?: string
@@ -145,6 +159,24 @@ function mapBackendLoanToItem(l: any): LoanItem {
     lName = CANONICAL_COMPANIES_LOOKUP[lId] || (l.lender ? `Company #${l.lender}` : 'Pending Finance Assignment')
   }
 
+  const totalPaid = Number(l.total_paid || l.totalPaid || 0)
+  const outstanding = Number(
+    l.outstanding_balance !== undefined
+      ? l.outstanding_balance
+      : l.outstandingBalance !== undefined
+      ? l.outstandingBalance
+      : Math.max(0, amt - totalPaid)
+  )
+
+  let finalStatus = l.status || 'Pending Approval'
+  if (finalStatus !== 'Pending Approval' && finalStatus !== 'Overdue') {
+    if (outstanding <= 0 && (totalPaid > 0 || finalStatus === 'Paid')) {
+      finalStatus = 'Paid'
+    } else if (totalPaid > 0 && outstanding > 0) {
+      finalStatus = 'Partially Paid'
+    }
+  }
+
   return {
     id: `loan_${l.loan_id || l.id}`,
     loanId: l.loan_id || l.id,
@@ -158,12 +190,15 @@ function mapBackendLoanToItem(l: any): LoanItem {
     particulars: l.particulars || l.description || 'Inter-company term financing facility',
     category: l.category || 'In-house',
     amount: amt,
+    totalPaid,
+    outstandingBalance: outstanding,
+    repayments: l.repayments || [],
     borrowerId: l.borrower,
     borrower: bName,
     lenderId: l.lender,
     lender: lName,
     company: bName,
-    status: l.status || 'Pending Approval',
+    status: finalStatus,
     auditStatus: l.status === 'Approved' || l.status === 'Paid' ? 'Verified' : 'Pending Audit',
     type: 'Loan',
     createdAt: l.created_at || new Date().toISOString(),
@@ -518,6 +553,80 @@ export const loanService = {
     inMemoryLoans[index] = updated
     saveStoredLoans(inMemoryLoans)
     return updated
+  },
+
+  async recordRepayment(
+    id: string,
+    repayment: {
+      amount: number
+      paymentDate: string
+      referenceNo?: string
+      paymentMethod?: string
+      notes?: string
+    }
+  ): Promise<LoanItem> {
+    const numericId = id.replace(/^loan_/, '')
+    const token =
+      typeof window !== 'undefined'
+        ? sessionStorage.getItem('mct_access_token')
+        : null
+
+    if (/^\d+$/.test(numericId)) {
+      try {
+        const res = await fetch(`/api/v1/loans/${numericId}/repayments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            amount: repayment.amount,
+            payment_date: repayment.paymentDate,
+            reference_no: repayment.referenceNo || null,
+            notes: repayment.notes || null,
+          }),
+        })
+        if (res.ok) {
+          // Success from backend
+        }
+      } catch (err) {
+        console.warn('Backend POST /loans/.../repayments failed, recording locally:', err)
+      }
+    }
+
+    const index = inMemoryLoans.findIndex((l) => l.id === id || l.id === `loan_${numericId}`)
+    if (index === -1) {
+      throw new Error('Loan record not found.')
+    }
+
+    const loan = inMemoryLoans[index]
+    const currentPaid = (loan.totalPaid || 0) + Number(repayment.amount)
+    const newRemaining = Math.max(0, loan.amount - currentPaid)
+    const newStatus = newRemaining <= 0 ? 'Paid' : 'Partially Paid'
+
+    const repRecord: LoanRepaymentRecord = {
+      id: `rep_${Date.now()}`,
+      paymentDate: repayment.paymentDate,
+      amount: Number(repayment.amount),
+      remainingBalance: newRemaining,
+      referenceNo: repayment.referenceNo || `REP-${Date.now().toString().slice(-4)}`,
+      paymentMethod: repayment.paymentMethod || 'Cash',
+      notes: repayment.notes || '',
+      createdAt: new Date().toISOString(),
+    }
+
+    const updatedLoan: LoanItem = {
+      ...loan,
+      totalPaid: currentPaid,
+      outstandingBalance: newRemaining,
+      status: newStatus,
+      repayments: [repRecord, ...(loan.repayments || [])],
+      updatedAt: new Date().toISOString(),
+    }
+
+    inMemoryLoans[index] = updatedLoan
+    saveStoredLoans(inMemoryLoans)
+    return updatedLoan
   },
 
   async approveLoan(

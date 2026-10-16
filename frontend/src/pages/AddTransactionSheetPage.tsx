@@ -29,6 +29,7 @@ import { loanService, type CompanyOption } from '@/services/loanService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
+import { formatParticularsString, type ParticularItem } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 
 interface ParticularsRow {
@@ -90,6 +91,14 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
     isAuditor ? assignedCompany : 'MCT Kitchen'
   )
+
+  // Keep selectedCompany in sync if user profile loads after initial render
+  React.useEffect(() => {
+    if (isAuditor && user?.assignedCompany) {
+      setSelectedCompany(user.assignedCompany)
+    }
+  }, [isAuditor, user?.assignedCompany])
+
   const [category, setCategory] = React.useState<string>('Cash')
   const [chequeNo, setChequeNo] = React.useState<string>('')
   const [status, setStatus] = React.useState<'Paid' | 'Pending'>('Paid')
@@ -241,42 +250,42 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
     setIsSubmitting(true)
     try {
+      // Map valid sheet rows to structured ParticularItems
+      const itemizedParticulars: ParticularItem[] = validItems.map((item, idx) => ({
+        id: item.id || `item-${idx}`,
+        particulars: item.particulars.trim(),
+        quantity: item.numericQty,
+        unitPrice: item.numericPrice,
+        total: item.rowTotal,
+      }))
+
+      // Combine into formatted particulars text
+      const formattedParticulars = formatParticularsString(itemizedParticulars)
+
       if (transactionType === 'Sales') {
-        // Submit each valid row
-        for (const item of validItems) {
-          const formattedParticulars =
-            item.numericQty > 1
-              ? `${item.particulars.trim()} (${item.numericQty}x @ ₱${item.numericPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })})`
-              : item.particulars.trim()
-
-          await salesService.addSale({
-            company: companyToUse,
-            date,
-            particulars: formattedParticulars,
-            amount: item.rowTotal,
-            category: category === 'None' ? 'None' : category,
-            chequeNo: chequeNo.trim() || undefined,
-            status,
-          })
-        }
+        // Record all particulars consolidated as ONE single entry
+        await salesService.addSale({
+          company: companyToUse,
+          date,
+          particulars: formattedParticulars,
+          amount: grandTotal,
+          category: category === 'None' ? 'None' : category,
+          chequeNo: chequeNo.trim() || undefined,
+          status,
+          items: itemizedParticulars,
+        })
       } else {
-        // Submit each valid row as Expense
-        for (const item of validItems) {
-          const formattedParticulars =
-            item.numericQty > 1
-              ? `${item.particulars.trim()} (${item.numericQty}x @ ₱${item.numericPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })})`
-              : item.particulars.trim()
-
-          await expenseService.addExpense({
-            company: companyToUse,
-            date,
-            particulars: formattedParticulars,
-            amount: item.rowTotal,
-            category: category === 'None' ? 'In-house' : category,
-            chequeNo: chequeNo.trim() || undefined,
-            status,
-          })
-        }
+        // Record all particulars consolidated as ONE single entry
+        await expenseService.addExpense({
+          company: companyToUse,
+          date,
+          particulars: formattedParticulars,
+          amount: grandTotal,
+          category: category === 'None' ? 'In-house' : category,
+          chequeNo: chequeNo.trim() || undefined,
+          status,
+          items: itemizedParticulars,
+        })
       }
 
       setSuccessBanner({
@@ -375,7 +384,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
         <div className="flex items-center gap-3 p-4 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-900 text-sm font-medium shadow-xs animate-in fade-in-50 duration-200">
           <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
           <div className="flex-1">
-            <strong>Successfully recorded {successBanner.count} items!</strong> Total:{' '}
+            <strong>Successfully recorded 1 {successBanner.type} entry with {successBanner.count} particulars!</strong> Total:{' '}
             <span className="font-bold">{formatPHP(successBanner.total)}</span>. Redirecting to{' '}
             {successBanner.type} summary...
           </div>
