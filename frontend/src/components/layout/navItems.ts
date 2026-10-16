@@ -56,12 +56,6 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
     subItems: [
       {
-        id: 'company-loans',
-        title: 'Company Loans',
-        href: '/loan/company',
-        roles: ['Admin'],
-      },
-      {
         id: 'borrower',
         title: 'Borrower',
         href: '/loan/borrower',
