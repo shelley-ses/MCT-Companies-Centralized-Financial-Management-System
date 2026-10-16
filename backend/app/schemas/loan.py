@@ -97,3 +97,32 @@ class LoanStatementOut(BaseModel):
     status: str
     repayments: List[LoanRepaymentOut] = []
 
+
+class CompanyLoanOut(LoanOut):
+    category: str
+    total_paid: Decimal
+    outstanding_balance: Decimal
+    payment_status: str
+    interest_display: str
+
+
+class CompanyLoanGroupOut(BaseModel):
+    borrower: int
+    lender: Optional[int] = None
+    borrower_name: str
+    lender_name: str
+    category: str
+    total_loan_amount: Decimal
+    total_paid: Decimal
+    outstanding_balance: Decimal
+    interest_display: str
+    payment_status: str
+    loan_count: int
+    loans: List[CompanyLoanOut]
+
+
+class CompanyLoanListOut(BaseModel):
+    items: List[CompanyLoanGroupOut]
+    total: int
+    offset: int
+    limit: int

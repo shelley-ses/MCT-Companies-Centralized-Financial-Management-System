@@ -47,6 +47,34 @@ export interface CompanyOption {
   company_name: string
 }
 
+export interface CompanyLoan extends LoanItem {
+  category: string
+  totalPaid: number
+  outstandingBalance: number
+  paymentStatus: 'Unpaid' | 'Partially Paid' | 'Fully Paid' | 'Overdue'
+}
+
+export interface CompanyLoanResult {
+  items: CompanyLoanGroup[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export interface CompanyLoanGroup {
+  key: string
+  borrower: string
+  lender: string
+  category: string
+  totalLoanAmount: number
+  totalPaid: number
+  outstandingBalance: number
+  interestDisplay: string
+  paymentStatus: string
+  loanCount: number
+  loans: CompanyLoan[]
+}
+
 const LOANS_STORAGE_KEY = 'mct_loan_records_v2'
 
 function loadStoredLoans(): LoanItem[] {
@@ -144,6 +172,114 @@ function mapBackendLoanToItem(l: any): LoanItem {
 }
 
 export const loanService = {
+  async getCompanyLoans(params: {
+    companyId?: number
+    borrowerId?: number
+    lenderId?: number
+    category?: string
+    reference?: string
+    particulars?: string
+    paymentStatus?: string
+    startDate?: string
+    endDate?: string
+    offset?: number
+    limit?: number
+  } = {}): Promise<CompanyLoanResult> {
+    const token = typeof window !== 'undefined'
+      ? sessionStorage.getItem('mct_access_token')
+      : null
+    const query = new URLSearchParams()
+    const values: Record<string, string | number | undefined> = {
+      company_id: params.companyId,
+      borrower_id: params.borrowerId,
+      lender_id: params.lenderId,
+      category: params.category,
+      reference: params.reference,
+      particulars: params.particulars,
+      payment_status: params.paymentStatus,
+      start_date: params.startDate,
+      end_date: params.endDate,
+      offset: params.offset,
+      limit: params.limit,
+    }
+    Object.entries(values).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    })
+    const response = await fetch(`/api/v1/loans/company?${query.toString()}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.detail || 'Unable to load company loans.')
+    }
+    const result = await response.json()
+    return {
+      ...result,
+      items: result.items.map((group: any) => ({
+        key: `${group.borrower}-${group.lender || 'external'}-${group.category}`,
+        borrower: group.borrower_name,
+        lender: group.lender_name,
+        category: group.category,
+        totalLoanAmount: Number(group.total_loan_amount || 0),
+        totalPaid: Number(group.total_paid || 0),
+        outstandingBalance: Number(group.outstanding_balance || 0),
+        interestDisplay: group.interest_display,
+        paymentStatus: group.payment_status,
+        loanCount: group.loan_count,
+        loans: group.loans.map((loan: any) => ({
+          ...mapBackendLoanToItem(loan),
+          category: loan.category,
+          totalPaid: Number(loan.total_paid || 0),
+          outstandingBalance: Number(loan.outstanding_balance || 0),
+          paymentStatus: loan.payment_status,
+        })),
+      })),
+    }
+  },
+
+  async getCompanyLoanStatement(loanId: number) {
+    const token = typeof window !== 'undefined'
+      ? sessionStorage.getItem('mct_access_token')
+      : null
+    const response = await fetch(`/api/v1/loans/${loanId}/statement`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+    if (!response.ok) throw new Error('Unable to load the loan repayment timeline.')
+    return response.json()
+  },
+
+  async exportCompanyLoans(params: Parameters<typeof this.getCompanyLoans>[0] = {}) {
+    const token = typeof window !== 'undefined'
+      ? sessionStorage.getItem('mct_access_token')
+      : null
+    const query = new URLSearchParams()
+    const values: Record<string, string | number | undefined> = {
+      company_id: params.companyId,
+      borrower_id: params.borrowerId,
+      lender_id: params.lenderId,
+      category: params.category,
+      reference: params.reference,
+      particulars: params.particulars,
+      payment_status: params.paymentStatus,
+      start_date: params.startDate,
+      end_date: params.endDate,
+    }
+    Object.entries(values).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    })
+    const response = await fetch(`/api/v1/loans/company/export?${query.toString()}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+    if (!response.ok) throw new Error('Unable to export company loans.')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'company-loans.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+  },
+
   async getCompanies(): Promise<CompanyOption[]> {
     try {
       const token =

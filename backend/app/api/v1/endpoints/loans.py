@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from typing import List, Optional
 from datetime import date, datetime
 from decimal import Decimal
@@ -17,7 +17,10 @@ from app.schemas.loan import (
     LoanRepaymentCreate,
     LoanRepaymentOut,
     LoanStatementOut,
+    CompanyLoanOut,
+    CompanyLoanListOut,
 )
+from app.core.dependencies import AdminUser, CurrentUser
 from app.services.finance_service import FinanceService, FinanceCalculator
 from app.services.audit_service import AuditAction, log_transaction
 
@@ -79,6 +82,243 @@ def resolve_company_id(
         if comp:
             return comp.company_id
     return None
+
+
+def _company_loan_query(
+    db: Session,
+    borrower_id: Optional[int],
+    lender_id: Optional[int],
+    company_id: Optional[int],
+    category: Optional[str],
+    reference: Optional[str],
+    particulars: Optional[str],
+    payment_status: Optional[str],
+    start_date: Optional[date],
+    end_date: Optional[date],
+):
+    query = db.query(Loan)
+    if borrower_id:
+        query = query.filter(Loan.borrower == borrower_id)
+    if lender_id:
+        query = query.filter(Loan.lender == lender_id)
+    if company_id:
+        query = query.filter(or_(Loan.borrower == company_id, Loan.lender == company_id))
+    query = query.filter(func.lower(Loan.status).in_(["approved", "paid", "overdue"]))
+    if reference:
+        query = query.filter(Loan.loan_ref_no.ilike(f"%{reference.strip()}%"))
+    if particulars:
+        query = query.filter(Loan.description.ilike(f"%{particulars.strip()}%"))
+    if start_date:
+        query = query.filter(Loan.loan_date >= start_date)
+    if end_date:
+        query = query.filter(Loan.loan_date <= end_date)
+    return query
+
+
+LOAN_CATEGORIES = ("Rent", "Electricity", "Water Bill", "Internet", "Operating Supplies")
+
+
+def _loan_category(description: Optional[str]) -> Optional[str]:
+    text = (description or "").lower()
+    aliases = {
+        "Rent": ("rent", "lease"),
+        "Electricity": ("electricity", "electric", "power", "meralco"),
+        "Water Bill": ("water", "maynilad", "manila water"),
+        "Internet": ("internet", "wifi", "wi-fi", "broadband"),
+        "Operating Supplies": ("operating supplies", "supplies", "utility", "utilities"),
+    }
+    for category, keywords in aliases.items():
+        if any(keyword in text for keyword in keywords):
+            return category
+    return None
+
+
+def _company_loan_item(loan: Loan, company_names: dict[int, str], db: Session) -> CompanyLoanOut:
+    principal = Decimal(str(loan.principal_amount or 0))
+    interest = FinanceCalculator.calculate_loan_interest(
+        principal, Decimal(str(loan.interest_rate or 0))
+    )
+    total_payable = FinanceCalculator.calculate_loan_total_payable(principal, interest)
+    total_paid = Decimal(str(
+        db.query(func.coalesce(func.sum(LoanRepayment.amount), 0))
+        .filter(LoanRepayment.loan_id == loan.loan_id, LoanRepayment.status != "pending")
+        .scalar() or 0
+    ))
+    outstanding = FinanceCalculator.calculate_loan_remaining_balance(total_payable, total_paid)
+    if outstanding <= 0:
+        payment_status = "Fully Paid"
+    elif loan.due_date and loan.due_date < date.today():
+        payment_status = "Overdue"
+    elif total_paid > 0:
+        payment_status = "Partially Paid"
+    else:
+        payment_status = "Unpaid"
+    category = _loan_category(loan.description) or "Operating Supplies"
+    interest_display = f"{loan.interest_rate or Decimal('0.00')}%"
+    return CompanyLoanOut(
+        loan_id=loan.loan_id,
+        borrower=loan.borrower,
+        lender=loan.lender,
+        borrower_name=company_names.get(loan.borrower) or f"Company #{loan.borrower}",
+        lender_name=company_names.get(loan.lender) if loan.lender else "External Lender",
+        loan_ref_no=loan.loan_ref_no,
+        principal_amount=principal,
+        amount=principal,
+        interest_rate=Decimal(str(loan.interest_rate or 0)),
+        interest_type=loan.interest_type or "simple",
+        loan_date=loan.loan_date,
+        due_date=loan.due_date,
+        description=loan.description,
+        particulars=loan.description,
+        status=loan.status,
+        category=category,
+        total_paid=total_paid,
+        outstanding_balance=outstanding,
+        payment_status=payment_status,
+        interest_display=interest_display,
+        created_at=loan.created_at,
+        updated_at=loan.updated_at,
+    )
+
+
+def _group_company_loans(
+    loans: list[Loan], company_names: dict[int, str], db: Session
+) -> list[dict]:
+    groups: dict[tuple[int, Optional[int], str], list[CompanyLoanOut]] = {}
+    for loan in loans:
+        item = _company_loan_item(loan, company_names, db)
+        key = (item.borrower, item.lender, item.category)
+        groups.setdefault(key, []).append(item)
+
+    result = []
+    for (borrower, lender, category), items in groups.items():
+        rates = {item.interest_rate for item in items}
+        outstanding = sum((item.outstanding_balance for item in items), Decimal("0.00"))
+        total_paid = sum((item.total_paid for item in items), Decimal("0.00"))
+        statuses = {item.payment_status for item in items}
+        if "Overdue" in statuses:
+            payment_status = "Overdue"
+        elif outstanding <= 0:
+            payment_status = "Fully Paid"
+        elif "Partially Paid" in statuses or "Fully Paid" in statuses:
+            payment_status = "Partially Paid"
+        else:
+            payment_status = "Unpaid"
+        interest_display = (
+            f"{next(iter(rates))}%"
+            if len(rates) == 1
+            else "Multiple rates"
+        )
+        result.append({
+            "borrower": borrower,
+            "lender": lender,
+            "borrower_name": items[0].borrower_name,
+            "lender_name": items[0].lender_name,
+            "category": category,
+            "total_loan_amount": sum((item.principal_amount for item in items), Decimal("0.00")),
+            "total_paid": total_paid,
+            "outstanding_balance": outstanding,
+            "interest_display": interest_display,
+            "payment_status": payment_status,
+            "loan_count": len(items),
+            "loans": items,
+        })
+    return result
+
+
+@router.get("/company", response_model=CompanyLoanListOut, summary="List approved company loans for administrators")
+def get_company_loans(
+    _admin: AdminUser,
+    borrower_id: Optional[int] = Query(None),
+    lender_id: Optional[int] = Query(None),
+    company_id: Optional[int] = Query(None),
+    category: Optional[str] = Query(None),
+    reference: Optional[str] = Query(None),
+    particulars: Optional[str] = Query(None),
+    payment_status: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    company_names = {c.company_id: c.company_name for c in db.query(Company).all()}
+    query = _company_loan_query(
+        db, borrower_id, lender_id, company_id, category, reference,
+        particulars, payment_status, start_date, end_date,
+    )
+    groups = _group_company_loans(
+        query.order_by(Loan.loan_date.desc(), Loan.loan_id.desc()).all(),
+        company_names,
+        db,
+    )
+    if category and category.lower() != "all":
+        groups = [group for group in groups if group["category"].lower() == category.lower()]
+    if payment_status and payment_status.lower() != "all":
+        groups = [group for group in groups if group["payment_status"].lower() == payment_status.lower()]
+    total = len(groups)
+    items = groups[offset:offset + limit]
+    return CompanyLoanListOut(
+        items=items,
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/company/export", summary="Export approved company loans as CSV")
+def export_company_loans(
+    _admin: AdminUser,
+    borrower_id: Optional[int] = Query(None),
+    lender_id: Optional[int] = Query(None),
+    company_id: Optional[int] = Query(None),
+    category: Optional[str] = Query(None),
+    reference: Optional[str] = Query(None),
+    particulars: Optional[str] = Query(None),
+    payment_status: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+) -> Response:
+    import csv
+    import io
+
+    company_names = {c.company_id: c.company_name for c in db.query(Company).all()}
+    query = _company_loan_query(
+        db, borrower_id, lender_id, company_id, category, reference,
+        particulars, payment_status, start_date, end_date,
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Borrower Company", "Lender Company", "Category", "Total Loan Amount",
+        "Total Paid", "Outstanding Balance", "Interest Rate", "Status",
+    ])
+    groups = _group_company_loans(
+        query.order_by(Loan.loan_date.desc(), Loan.loan_id.desc()).all(),
+        company_names,
+        db,
+    )
+    if category and category.lower() != "all":
+        groups = [group for group in groups if group["category"].lower() == category.lower()]
+    if payment_status and payment_status.lower() != "all":
+        groups = [group for group in groups if group["payment_status"].lower() == payment_status.lower()]
+    for group in groups:
+        writer.writerow([
+            group["borrower_name"],
+            group["lender_name"],
+            group["category"],
+            group["total_loan_amount"],
+            group["total_paid"],
+            group["outstanding_balance"],
+            group["interest_display"],
+            group["payment_status"],
+        ])
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="company-loans.csv"'},
+    )
 
 
 @router.get("", response_model=List[LoanOut], summary="List loans from Supabase / DB")
@@ -633,7 +873,13 @@ def delete_loan(loan_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{loan_id}/statement", response_model=LoanStatementOut, summary="Get full loan statement and amortized balance")
-def get_loan_statement(loan_id: int, db: Session = Depends(get_db)):
+def get_loan_statement(loan_id: int, current_user: CurrentUser, db: Session = Depends(get_db)):
+    loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan not found")
+    if not current_user["is_admin"] and current_user.get("role") not in {"admin", "audit", "finance"}:
+        if current_user.get("company_id") not in {loan.borrower, loan.lender}:
+            raise HTTPException(status_code=403, detail="You are not authorized to view this loan.")
     service = FinanceService(db)
     statement = service.get_loan_statement(loan_id)
     if not statement:
@@ -674,6 +920,6 @@ def create_loan_repayment(loan_id: int, repayment_in: LoanRepaymentCreate, reque
         user_id=None, company_id=loan.borrower,
         ip_address=request.client.host if request.client else "unknown",
         record_id=loan_id, record_type="loan_repayment",
-        extra={"repayment_id": repayment.repayment_id, "amount": float(repayment.amount), "remaining_balance": float(new_remaining)},
+        extra={"repayment_id": repayment.loan_repayment_id, "amount": float(repayment.amount), "remaining_balance": float(new_remaining)},
     )
     return repayment

@@ -146,7 +146,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     </CollapsibleTrigger>
 
                     <CollapsibleContent className="space-y-0.5 pl-9 pt-0.5 pb-0.5">
-                      {item.subItems.map((subItem) => (
+                      {item.subItems
+                        .filter(
+                          (subItem) =>
+                            !subItem.roles ||
+                            subItem.roles.includes(userRole) ||
+                            subItem.roles.includes(user?.role || '')
+                        )
+                        .map((subItem) => (
                         <NavLink
                           key={subItem.id}
                           to={subItem.href}
