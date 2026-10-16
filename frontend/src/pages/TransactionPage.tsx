@@ -34,8 +34,9 @@ import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 
 export const TransactionPage: React.FC = () => {
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
-  const isAuditor = isCompanyUser
+  const isFinance = user?.role === 'Finance'
+  const isAdmin = user?.role === 'Admin'
+  const isCompanyScoped = !isAdmin && !isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const [transactions, setTransactions] = React.useState<DashboardTransactionItem[]>([])
@@ -80,10 +81,11 @@ export const TransactionPage: React.FC = () => {
   // Fetch all transactions across Sales, Expenses, and Loans
   const fetchAllTransactions = React.useCallback(async () => {
     try {
+      const targetCompany = isCompanyScoped ? assignedCompany : undefined
       const [salesData, expenseData, loanData] = await Promise.all([
-        salesService.getSales(),
-        expenseService.getExpenses(),
-        loanService.getLoans(),
+        salesService.getSales(targetCompany),
+        expenseService.getExpenses({ company: targetCompany }),
+        loanService.getLoans({ company: targetCompany }),
       ])
 
       const unifiedSales: DashboardTransactionItem[] = salesData.map((s) => ({
@@ -180,7 +182,12 @@ export const TransactionPage: React.FC = () => {
   const filteredTransactions = React.useMemo(() => {
     let result = transactions
 
-    // Auditor and Admin see all companies by default
+    // Company employees and supervisors only see their assigned company
+    if (isCompanyScoped) {
+      result = result.filter(
+        (t) => (t.company || '').toLowerCase().trim() === assignedCompany.toLowerCase().trim()
+      )
+    }
 
     // Search query
     const q = searchQuery.toLowerCase().trim()
@@ -218,7 +225,7 @@ export const TransactionPage: React.FC = () => {
     return result
   }, [
     transactions,
-    isAuditor,
+    isCompanyScoped,
     assignedCompany,
     searchQuery,
     dateRange,
@@ -371,7 +378,7 @@ export const TransactionPage: React.FC = () => {
     setIsExportDropdownOpen(false)
   }
 
-  const displayedTitle = 'MCT Group of Companies'
+  const displayedTitle = isCompanyScoped ? assignedCompany : 'MCT Group of Companies'
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
@@ -382,7 +389,9 @@ export const TransactionPage: React.FC = () => {
             Transactions
           </h1>
           <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-            Consolidated record of all transactions in chronological order
+            {isCompanyScoped
+              ? `Financial transactions record for ${assignedCompany}`
+              : 'Consolidated record of all transactions in chronological order'}
           </p>
         </div>
 

@@ -17,7 +17,7 @@ import {
   AlertCircle,
   X,
   CheckCircle2,
-  Lock,
+  HandCoins,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,6 +44,7 @@ import {
 import { AddLoanModal } from '@/components/dashboard/AddLoanModal'
 import { EditLoanModal } from '@/components/dashboard/EditLoanModal'
 import { ApproveLoanModal } from '@/components/dashboard/ApproveLoanModal'
+import { RecordPaymentModal } from '@/components/dashboard/RecordPaymentModal'
 import { LoanHorizontalBarChart } from '@/components/dashboard/LoanHorizontalBarChart'
 import { AdminCompanyLoansView } from '@/components/dashboard/AdminCompanyLoansView'
 import { useSession } from '@/hooks/useSession'
@@ -124,6 +125,13 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
     isAuditor ? assignedCompany : 'All Companies'
   )
+
+  // Keep selectedCompany in sync if user profile loads after initial render
+  React.useEffect(() => {
+    if (isAuditor && user?.assignedCompany) {
+      setSelectedCompany(user.assignedCompany)
+    }
+  }, [isAuditor, user?.assignedCompany])
   const [statusFilter, setStatusFilter] = React.useState<
     'All' | 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue'
   >('All')
@@ -156,6 +164,10 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [approveLoanItem, setApproveLoanItem] = React.useState<LoanItem | null>(null)
   const [deleteConfirmLoan, setDeleteConfirmLoan] = React.useState<LoanItem | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
+
+  // Payment modal state for borrower loans (supervisor and company employees)
+  const [paymentLoan, setPaymentLoan] = React.useState<LoanItem | null>(null)
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = React.useState(false)
 
   const [highlightedLoanId, setHighlightedLoanId] = React.useState<string | null>(null)
 
@@ -441,6 +453,28 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     }, 3000)
   }
 
+  const handleLoanPaid = (updatedLoan: LoanItem) => {
+    setLoans((prev) => prev.map((l) => (l.id === updatedLoan.id ? updatedLoan : l)))
+    setPaymentLoan(updatedLoan)
+    setHighlightedLoanId(updatedLoan.id)
+    setTimeout(() => {
+      setHighlightedLoanId(null)
+    }, 3000)
+  }
+
+  const handleRowClick = (loan: LoanItem) => {
+    if (loan.status === 'Pending Approval') {
+      if (canApprove) {
+        setApproveLoanItem(loan)
+      } else {
+        setEditLoan(loan)
+      }
+    } else {
+      setPaymentLoan(loan)
+      setIsPaymentModalOpen(true)
+    }
+  }
+
   const handleConfirmDelete = async () => {
     if (!deleteConfirmLoan) return
     try {
@@ -669,8 +703,15 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               compact
             />
 
-            {/* Company Scope Dropdown (Admin only) */}
-            {!isAuditor && (
+            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor/Company Employee */}
+            {isAuditor ? (
+              <div className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs font-medium shadow-xs shrink-0 whitespace-nowrap">
+                <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                <span className="font-semibold text-focus/90 truncate max-w-[130px]">
+                  {assignedCompany}
+                </span>
+              </div>
+            ) : (
               <div ref={companyDropdownRef} className="relative inline-block shrink-0">
                 <button
                   type="button"
@@ -988,14 +1029,16 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                     <TableRow
                       key={loan.id}
                       id={`loan-row-${loan.id}`}
+                      onClick={() => handleRowClick(loan)}
                       className={cn(
-                        'border-b transition-colors',
+                        'border-b transition-colors cursor-pointer',
                         isPending
                           ? 'bg-amber-50/70 hover:bg-amber-100/60 border-amber-200/50'
-                          : 'border-slate-100 hover:bg-slate-50/60',
+                          : 'border-slate-100 hover:bg-slate-50/80',
                         highlightedLoanId === loan.id &&
                           'bg-amber-100/90 ring-2 ring-amber-400 font-semibold'
                       )}
+                      title="Click row to update payment or view details"
                     >
                       {/* 1. Date */}
                       <TableCell className="px-2 py-3 text-xs font-medium text-focus whitespace-nowrap">
@@ -1033,7 +1076,17 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
                       {/* 5. Amount */}
                       <TableCell className="px-2 py-3 text-xs font-bold tabular-nums whitespace-nowrap text-focus">
-                        {formatPHP(loan.amount)}
+                        <div>{formatPHP(loan.amount)}</div>
+                        {loan.totalPaid !== undefined && loan.totalPaid > 0 && (
+                          <div
+                            className="text-[10px] font-semibold text-blue-600 mt-0.5 truncate"
+                            title={`Paid: ${formatPHP(loan.totalPaid)} | Remaining: ${formatPHP(
+                              loan.outstandingBalance ?? Math.max(0, loan.amount - loan.totalPaid)
+                            )}`}
+                          >
+                            Bal: {formatPHP(loan.outstandingBalance ?? Math.max(0, loan.amount - loan.totalPaid))}
+                          </div>
+                        )}
                       </TableCell>
 
                       {/* 6. Due Date */}
@@ -1048,9 +1101,9 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                         </TableCell>
                       )}
 
-                      {/* 8. Actions */}
+                      {/* 8. Actions / Status */}
                       <TableCell className="px-2 py-3 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5">
                           {/* Finance & Admin: Can approve pending loans and assign lender */}
                           {canApprove && isPending && (
                             <Button
@@ -1117,14 +1170,44 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                             </>
                           )}
 
+                          {/* Approved / Active / Partially Paid / Paid: allow recording payment */}
                           {!isPending && (
-                            <span
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 text-2xs font-medium cursor-not-allowed"
-                              title={`Loan is ${loan.status} and locked.`}
-                            >
-                              <Lock className="w-3 h-3 text-slate-400" />
-                              <span>{loan.status}</span>
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {loan.status === 'Paid' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Paid</span>
+                                </span>
+                              ) : loan.status === 'Partially Paid' ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => {
+                                    setPaymentLoan(loan)
+                                    setIsPaymentModalOpen(true)
+                                  }}
+                                  className="h-7 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 text-xs font-semibold cursor-pointer shadow-2xs"
+                                  title="Record partial or full payment on this loan"
+                                >
+                                  <HandCoins className="w-3.5 h-3.5 mr-1 text-blue-600" />
+                                  <span>Partially Paid</span>
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => {
+                                    setPaymentLoan(loan)
+                                    setIsPaymentModalOpen(true)
+                                  }}
+                                  className="h-7 px-2.5 rounded-lg bg-[#960C01]/10 hover:bg-[#960C01] hover:text-white text-[#960C01] border border-[#960C01]/20 text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
+                                  title="Record partial or full payment on this loan"
+                                >
+                                  <HandCoins className="w-3.5 h-3.5 mr-1" />
+                                  <span>Pay / Update</span>
+                                </Button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </TableCell>
@@ -1259,6 +1342,17 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Record / Update Payment Modal */}
+      <RecordPaymentModal
+        open={isPaymentModalOpen}
+        onOpenChange={(open) => {
+          setIsPaymentModalOpen(open)
+          if (!open) setPaymentLoan(null)
+        }}
+        loan={paymentLoan}
+        onLoanPaid={handleLoanPaid}
+      />
     </div>
   )
 }

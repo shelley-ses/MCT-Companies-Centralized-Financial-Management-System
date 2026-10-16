@@ -590,12 +590,15 @@ def delete_expense(expense_id: int, request: Request, db: Session = Depends(get_
         db.delete(expense)
         db.commit()
 
-    log_transaction(
-        db, AuditAction.EXPENSE_DELETED,
-        user_id=None, company_id=deleted_company_id,
-        ip_address=request.client.host if request.client else "unknown",
-        record_id=expense_id, record_type="expense",
-    )
+    try:
+        log_transaction(
+            db, AuditAction.EXPENSE_DELETED,
+            user_id=None, company_id=deleted_company_id,
+            ip_address=request.client.host if request.client else "unknown",
+            record_id=expense_id, record_type="expense",
+        )
+    except Exception as e:
+        print(f"Audit log error on expense delete: {e}")
 
     return {
         "message": "Expense deleted successfully",

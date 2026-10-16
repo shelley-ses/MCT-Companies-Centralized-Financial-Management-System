@@ -1,4 +1,5 @@
 import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import type { ParticularItem } from '@/utils/particularsUtils'
 
 export interface DashboardKpis {
   totalSales: number
@@ -50,7 +51,7 @@ export interface DashboardTransactionItem {
   withdrawal: number
   deposit: number
   category: TransactionCategory
-  status: 'Paid' | 'Pending' | 'Overdue'
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid'
   auditStatus: AuditStatus
   auditedBy?: string
   auditNotes?: string
@@ -59,6 +60,7 @@ export interface DashboardTransactionItem {
   createdAt?: string
   updatedAt?: string
   attachments?: string[]
+  items?: ParticularItem[]
 }
 
 export interface DashboardData {

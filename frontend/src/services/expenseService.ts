@@ -1,4 +1,16 @@
 import type { DashboardTransactionItem } from './dashboardService'
+import { type ParticularItem, parseParticulars } from '@/utils/particularsUtils'
+
+export interface ExpenseRepaymentRecord {
+  id: string
+  paymentDate: string
+  amount: number
+  remainingBalance: number
+  referenceNo?: string
+  paymentMethod?: string
+  notes?: string
+  createdAt?: string
+}
 
 export interface ExpenseItem {
   id: string
@@ -11,7 +23,11 @@ export interface ExpenseItem {
   netAmount: number
   category: string
   company: string
-  status: 'Paid' | 'Pending' | 'Overdue'
+  items?: ParticularItem[]
+  totalPaid?: number
+  outstandingBalance?: number
+  repayments?: ExpenseRepaymentRecord[]
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid'
   auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
   auditedBy?: string
   auditNotes?: string
@@ -30,6 +46,7 @@ export interface NewExpenseInput {
   category: string
   company: string
   status: 'Paid' | 'Pending'
+  items?: ParticularItem[]
 }
 
 const EXPENSES_STORAGE_KEY = 'mct_expense_records_v1'
@@ -75,6 +92,8 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
 
   const amt = Number(exp.amount || exp.withdrawal || 0)
   const isPending = (exp.unpaid_balance !== undefined && Number(exp.unpaid_balance) > 0) || exp.status === 'Pending'
+  const partText = exp.particulars || exp.description || 'Expense Outflow'
+  const parsedItems = parseParticulars(partText, null, amt)
 
   return {
     id: `exp_${exp.expense_id || exp.id}`,
@@ -82,11 +101,12 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
     chequeNo: exp.cheque_no || exp.cheque_number || '',
     date: displayDate,
     rawDate: rawDateStr,
-    particulars: exp.particulars || exp.description || 'Expense Outflow',
+    particulars: partText,
     withdrawal: amt,
     netAmount: amt,
     category: exp.category_name || exp.category || 'In-house',
     company: exp.company_name || exp.company || 'MCT Kitchen',
+    items: parsedItems,
     status: isPending ? 'Pending' : 'Paid',
     auditStatus: 'Verified',
     type: 'Expense',
@@ -228,6 +248,9 @@ export const expenseService = {
       if (res.ok) {
         const created = await res.json()
         const mapped = mapBackendExpenseToItem(created)
+        if (input.items && input.items.length > 0) {
+          mapped.items = input.items
+        }
         inMemoryExpenses = [mapped, ...inMemoryExpenses]
         saveStoredExpenses(inMemoryExpenses)
         return mapped
@@ -256,6 +279,7 @@ export const expenseService = {
       netAmount: input.amount,
       category: input.category,
       company: input.company,
+      items: input.items || parseParticulars(input.particulars, null, input.amount),
       status: input.status,
       auditStatus: 'Pending Audit',
       auditNotes: 'Newly recorded expense transaction.',
@@ -350,6 +374,53 @@ export const expenseService = {
       rawDate: rawDate,
       withdrawal: finalWithdrawal,
       netAmount: finalWithdrawal,
+      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+    }
+
+    inMemoryExpenses[index] = updated
+    saveStoredExpenses(inMemoryExpenses)
+    return updated
+  },
+
+  async recordExpensePayment(
+    id: string,
+    payment: {
+      amount: number
+      paymentDate: string
+      referenceNo?: string
+      paymentMethod?: string
+      notes?: string
+    }
+  ): Promise<ExpenseItem> {
+    const numericId = id.replace(/^exp_/, '')
+    const index = inMemoryExpenses.findIndex((e) => e.id === id || e.id === `exp_${numericId}`)
+    if (index === -1) {
+      throw new Error('Expense record not found.')
+    }
+
+    const exp = inMemoryExpenses[index]
+    const totalAmount = exp.withdrawal || exp.netAmount || 0
+    const currentPaid = (exp.totalPaid || 0) + Number(payment.amount)
+    const newRemaining = Math.max(0, totalAmount - currentPaid)
+    const newStatus = newRemaining <= 0 ? 'Paid' : 'Partially Paid'
+
+    const repRecord: ExpenseRepaymentRecord = {
+      id: `rep_exp_${Date.now()}`,
+      paymentDate: payment.paymentDate,
+      amount: Number(payment.amount),
+      remainingBalance: newRemaining,
+      referenceNo: payment.referenceNo || `PAY-${Date.now().toString().slice(-4)}`,
+      paymentMethod: payment.paymentMethod || 'Cash',
+      notes: payment.notes || '',
+      createdAt: new Date().toISOString(),
+    }
+
+    const updated: ExpenseItem = {
+      ...exp,
+      totalPaid: currentPaid,
+      outstandingBalance: newRemaining,
+      status: newStatus,
+      repayments: [repRecord, ...(exp.repayments || [])],
       updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
     }
 
@@ -521,6 +592,7 @@ export const expenseService = {
       createdAt: expense.createdAt,
       updatedAt: expense.updatedAt,
       attachments: [],
+      items: expense.items || parseParticulars(expense.particulars, null, expense.withdrawal || expense.netAmount),
     }
   },
 }

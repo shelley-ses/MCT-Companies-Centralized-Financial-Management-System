@@ -11,7 +11,6 @@ import {
   FileSpreadsheet,
   FileText,
   Trash2,
-  Pencil,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
@@ -50,6 +49,7 @@ import {
 } from '@/services/expenseService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
+import { getParticularsSummary } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { loanService } from '@/services/loanService'
@@ -77,6 +77,8 @@ export const ExpensePage: React.FC = () => {
   const { user } = useSession()
   const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
   const isFinance = user?.role === 'Finance'
+  const isAdmin = user?.role === 'Admin'
+  const isCompanyScoped = !isAdmin && !isFinance
   const isAuditor = isCompanyUser
   const canAdd = isCompanyUser || isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
@@ -102,7 +104,16 @@ export const ExpensePage: React.FC = () => {
   }, [])
 
   // Filter state
-  const [selectedCompany, setSelectedCompany] = React.useState<string>('All Companies')
+  const [selectedCompany, setSelectedCompany] = React.useState<string>(
+    isCompanyScoped ? assignedCompany : 'All Companies'
+  )
+
+  // Keep selectedCompany in sync if user profile loads after initial render
+  React.useEffect(() => {
+    if (isCompanyScoped && user?.assignedCompany) {
+      setSelectedCompany(user.assignedCompany)
+    }
+  }, [isCompanyScoped, user?.assignedCompany])
   const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Overdue'>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
@@ -136,7 +147,6 @@ export const ExpensePage: React.FC = () => {
   const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
   const [selectedExpense, setSelectedExpense] = React.useState<ExpenseItem | null>(null)
   const [isAuditModalOpen, setIsAuditModalOpen] = React.useState(false)
-  const [isEditingModal, setIsEditingModal] = React.useState(false)
   const [highlightedExpenseId, setHighlightedExpenseId] = React.useState<string | null>(null)
 
   const handlePeriodChange = (period: PeriodOption) => {
@@ -212,8 +222,11 @@ export const ExpensePage: React.FC = () => {
   const loadExpenses = React.useCallback(async () => {
     try {
       setLoading(true)
+      const targetCompany = isCompanyScoped
+        ? assignedCompany
+        : (selectedCompany === 'All Companies' ? undefined : selectedCompany)
       const data = await expenseService.getExpenses({
-        company: selectedCompany === 'All Companies' ? undefined : selectedCompany,
+        company: targetCompany,
       })
       setExpenses(data)
     } catch (err) {
@@ -221,7 +234,7 @@ export const ExpensePage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany])
+  }, [isCompanyScoped, assignedCompany, selectedCompany])
 
   React.useEffect(() => {
     loadExpenses()
@@ -249,11 +262,13 @@ export const ExpensePage: React.FC = () => {
 
   // Client-side filtering and sorting
   const filteredExpenses = React.useMemo(() => {
+    const targetCompany = isCompanyScoped ? assignedCompany : selectedCompany
+
     return expenses
       .filter((item) => {
         if (
-          selectedCompany !== 'All Companies' &&
-          item.company.trim().toLowerCase() !== selectedCompany.trim().toLowerCase()
+          targetCompany !== 'All Companies' &&
+          item.company.trim().toLowerCase() !== targetCompany.trim().toLowerCase()
         ) {
           return false
         }
@@ -365,15 +380,11 @@ export const ExpensePage: React.FC = () => {
   const handleOpenRow = (expense: ExpenseItem) => {
     setSelectedExpense(expense)
     setSelectedTx(expenseService.toDashboardTransaction(expense))
-    setIsEditingModal(false)
     setIsAuditModalOpen(true)
   }
 
-  const handleEditRow = (expense: ExpenseItem) => {
-    setSelectedExpense(expense)
-    setSelectedTx(expenseService.toDashboardTransaction(expense))
-    setIsEditingModal(true)
-    setIsAuditModalOpen(true)
+  const handleRowClick = (expense: ExpenseItem) => {
+    handleOpenRow(expense)
   }
 
   const handleExpenseUpdated = (updatedItem: ExpenseItem) => {
@@ -407,10 +418,11 @@ export const ExpensePage: React.FC = () => {
     )
   }, [companySearch, companyList])
 
-  const displayedCompanyTitle =
-    selectedCompany === 'All Companies'
-      ? 'All Subsidiaries'
-      : selectedCompany
+  const displayedCompanyTitle = isCompanyScoped
+    ? assignedCompany
+    : selectedCompany === 'All Companies'
+    ? 'All Subsidiaries'
+    : selectedCompany
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">
@@ -603,8 +615,14 @@ export const ExpensePage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope Dropdown */}
-            <div ref={companyDropdownRef} className="relative inline-block">
+            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor/Company Employee */}
+            {isCompanyScoped ? (
+              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs">
+                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                <span className="font-semibold text-focus/90">{assignedCompany}</span>
+              </div>
+            ) : (
+              <div ref={companyDropdownRef} className="relative inline-block">
               <button
                 type="button"
                 onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
@@ -697,6 +715,7 @@ export const ExpensePage: React.FC = () => {
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
       </div>
@@ -807,28 +826,28 @@ export const ExpensePage: React.FC = () => {
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[10%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>
-                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[17%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   COMPANY
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CHEQUE NO.
                 </TableHead>
-                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[17%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   WITHDRAWAL
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CATEGORY
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   NET AMOUNT
                 </TableHead>
-                <TableHead className="w-[8%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                <TableHead className="w-[8%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -888,11 +907,11 @@ export const ExpensePage: React.FC = () => {
                   <TableRow
                     key={expense.id}
                     id={`expense-row-${expense.id}`}
-                    onClick={() => handleOpenRow(expense)}
+                    onClick={() => handleRowClick(expense)}
                     className={cn(
                       'border-b border-slate-100 hover:bg-slate-50/60 transition-all duration-300 cursor-pointer',
                       highlightedExpenseId === expense.id &&
-                      'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
+                        'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
                     )}
                     title="Click to view complete details"
                   >
@@ -909,10 +928,11 @@ export const ExpensePage: React.FC = () => {
                     </TableCell>
 
                     {/* 2. Company */}
-                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs font-medium text-focus/90 truncate text-left" title={expense.company}>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200/60 max-w-full truncate">
-                        {expense.company || '—'}
-                      </span>
+                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs font-semibold text-focus truncate text-left" title={expense.company}>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <span className="truncate">{expense.company}</span>
+                      </div>
                     </TableCell>
 
                     {/* 3. Cheque No */}
@@ -922,7 +942,20 @@ export const ExpensePage: React.FC = () => {
 
                     {/* 4. Particulars */}
                     <TableCell className="w-[17%] px-3.5 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={expense.particulars}>
-                      <span className="truncate block">{expense.particulars}</span>
+                      {(() => {
+                        const summary = getParticularsSummary(expense.particulars, expense.items)
+                        if (summary.count > 1) {
+                          return (
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="truncate block font-medium">{summary.firstItemName}</span>
+                              <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                +{summary.count - 1} more
+                              </span>
+                            </div>
+                          )
+                        }
+                        return <span className="truncate block">{summary.firstItemName}</span>
+                      })()}
                     </TableCell>
 
                     {/* 5. Withdrawal */}
@@ -945,17 +978,7 @@ export const ExpensePage: React.FC = () => {
                       className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEditRow(expense)}
-                          className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-primary hover:bg-primary/10 cursor-pointer"
-                          title="Edit Expense"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
+                      <div className="flex items-center justify-center">
                         <Button
                           type="button"
                           variant="ghost"
@@ -1082,7 +1105,7 @@ export const ExpensePage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Transaction Details & Audit Modal */}
+      {/* Transaction Details & Audit Modal (with direct editing, Cancel & Save Changes) */}
       <AuditTransactionModal
         open={isAuditModalOpen}
         onOpenChange={(open) => {
@@ -1090,14 +1113,12 @@ export const ExpensePage: React.FC = () => {
           if (!open) {
             setSelectedExpense(null)
             setSelectedTx(null)
-            setIsEditingModal(false)
           }
         }}
         transaction={selectedTx}
         expense={selectedExpense}
         onExpenseUpdated={handleExpenseUpdated}
         editable={true}
-        initialIsEditing={isEditingModal}
       />
     </div>
   )

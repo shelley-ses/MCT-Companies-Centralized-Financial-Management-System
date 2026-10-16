@@ -23,8 +23,12 @@ import {
 } from '@/services/dashboardService'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { useSession } from '@/hooks/useSession'
 
 export const DashboardPage: React.FC = () => {
+  const { user } = useSession()
+  const isCompanyScoped = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const [filters, setFilters] = React.useState<DashboardFilterState>(() => ({
     dateRange: {
@@ -32,8 +36,18 @@ export const DashboardPage: React.FC = () => {
       endDate: null,
       label: 'All Dates',
     },
-    company: 'All Companies',
+    company: isCompanyScoped ? assignedCompany : 'All Companies',
   }))
+
+  // Keep filters.company in sync if user profile loads after initial render
+  React.useEffect(() => {
+    if (isCompanyScoped && user?.assignedCompany) {
+      setFilters((prev) => ({
+        ...prev,
+        company: user.assignedCompany || 'MCT Kitchen',
+      }))
+    }
+  }, [isCompanyScoped, user?.assignedCompany])
 
   const [loading, setLoading] = React.useState<boolean>(true)
   const [data, setData] = React.useState<DashboardData | null>(null)
@@ -71,12 +85,14 @@ export const DashboardPage: React.FC = () => {
   const filteredTransactions = React.useMemo(() => {
     if (!data?.recentTransactions) return []
 
+    const targetCompany = isCompanyScoped ? assignedCompany : filters.company
+
     return data.recentTransactions
       .filter((tx) => {
         // 1. Company filter
         if (
-          filters.company !== 'All Companies' &&
-          tx.company !== filters.company
+          targetCompany !== 'All Companies' &&
+          (tx.company || '').toLowerCase().trim() !== targetCompany.toLowerCase().trim()
         ) {
           return false
         }
@@ -95,7 +111,7 @@ export const DashboardPage: React.FC = () => {
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [data?.recentTransactions, filters.company, filters.dateRange])
+  }, [data?.recentTransactions, isCompanyScoped, assignedCompany, filters.company, filters.dateRange])
 
   // Dynamic KPI calculations responding to filtered transactions
   const { totalExpenses, totalIncome, netIncome, overdueCount, dueSoonCount } =
@@ -142,6 +158,7 @@ export const DashboardPage: React.FC = () => {
       <DashboardHeader
         filters={filters}
         onFiltersChange={(newFilters) => setFilters(newFilters)}
+        isCompanyScoped={isCompanyScoped}
       />
 
       {/* 3. KPI Cards (Admin and Company Auditor):

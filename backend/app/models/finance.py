@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, BigInteger, String, Text, Numeric, Date, DateTime, ForeignKey
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from app.db.session import Base
 
 class Category(Base):
@@ -38,7 +38,8 @@ class Sale(Base):
     company_id = Column(Integer, nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("category.category_id", ondelete="SET NULL"), nullable=True)
     transaction_date = Column(Date, nullable=False)
-    cheque_no = Column(String(100), nullable=True)
+    cheque_no = Column("cheque_number", String(100), nullable=True)
+    cheque_number = synonym("cheque_no")
     amount = Column(Numeric(15, 2), nullable=False)
     particulars = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -57,8 +58,8 @@ class Expense(Base):
     created_by = Column(Integer, nullable=True)
     expense_date = Column(Date, nullable=False)
     reference_no = Column(String(100), nullable=True)
-    cheque_no = Column(String(100), nullable=True)
-    cheque_number = Column(String(100), nullable=True)
+    cheque_no = Column("cheque_number", String(100), nullable=True)
+    cheque_number = synonym("cheque_no")
     amount = Column(Numeric(15, 2), nullable=False)
     amount_paid = Column(Numeric(15, 2), default=0.00)
     description = Column(Text, nullable=True)

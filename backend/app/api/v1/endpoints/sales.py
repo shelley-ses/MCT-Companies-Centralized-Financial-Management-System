@@ -691,12 +691,15 @@ def delete_sale(sales_id: int, request: Request, db: Session = Depends(get_db)):
         db.delete(sale)
         db.commit()
 
-    log_transaction(
-        db, AuditAction.SALE_DELETED,
-        user_id=None, company_id=deleted_company_id,
-        ip_address=request.client.host if request.client else "unknown",
-        record_id=sales_id, record_type="sale",
-    )
+    try:
+        log_transaction(
+            db, AuditAction.SALE_DELETED,
+            user_id=None, company_id=deleted_company_id,
+            ip_address=request.client.host if request.client else "unknown",
+            record_id=sales_id, record_type="sale",
+        )
+    except Exception as e:
+        print(f"Audit log error on sale delete: {e}")
 
     return {
         "message": "Sale deleted successfully",
