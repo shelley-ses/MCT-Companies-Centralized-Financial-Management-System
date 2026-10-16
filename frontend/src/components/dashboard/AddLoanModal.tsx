@@ -15,9 +15,8 @@ import {
   Check,
   AlertCircle,
   Building2,
-  Calendar,
-  Percent,
 } from 'lucide-react'
+import { useSession } from '@/hooks/useSession'
 import {
   loanService,
   type NewLoanInput,
@@ -55,6 +54,9 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   assignedCompany,
   companies: propsCompanies,
 }) => {
+  const { user } = useSession()
+  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+
   const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
 
   // Fetch companies from DB
@@ -194,19 +196,20 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
     setError('')
     try {
       const parsedAmount = parseFloat(amount.replace(/,/g, ''))
-      const autoLender =
-        lenderCompany && lenderCompany.toLowerCase() !== borrowerCompany.toLowerCase()
-          ? lenderCompany
-          : (allCompanyNames.find((c) => c.toLowerCase() !== borrowerCompany.toLowerCase()) || 'MCT Group')
+      const chosenLender = isCompanyUser
+        ? undefined
+        : lenderCompany && lenderCompany.toLowerCase() !== borrowerCompany.toLowerCase()
+        ? lenderCompany
+        : undefined
 
       const payload: NewLoanInput = {
         date: date.trim() || formatToYYYYMMDD(new Date()),
         dueDate: dueDate.trim() || undefined,
-        interestRate: parseFloat(interestRate) || 0.0,
+        interestRate: isCompanyUser ? 0.0 : parseFloat(interestRate) || 0.0,
         particulars: particulars.trim(),
         amount: parsedAmount,
         borrowerCompany: borrowerCompany.trim(),
-        lenderCompany: autoLender,
+        lenderCompany: chosenLender,
         status: 'Pending Approval',
       }
       const created = await loanService.addLoan(payload)
@@ -234,10 +237,12 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
               </div>
               <div>
                 <DialogTitle className="text-xl sm:text-2xl font-bold text-focus leading-tight">
-                  Record New Loan
+                  {isCompanyUser ? 'Request Inter-Company Loan' : 'Record Inter-Company Loan'}
                 </DialogTitle>
                 <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
-                  Borrowing request for <span className="font-semibold text-focus">{borrowerCompany}</span>
+                  {isCompanyUser
+                    ? `Submit loan request for ${borrowerCompany}. Finance will review and fund.`
+                    : `Borrowing facility for ${borrowerCompany}`}
                 </DialogDescription>
               </div>
             </div>
@@ -299,8 +304,65 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
                 </div>
               </div>
 
+              {/* 4. Lender Company */}
+              {isCompanyUser ? (
+                <div className="space-y-1.5 col-span-1 sm:col-span-2">
+                  <Label className="text-xs font-semibold text-focus block">
+                    Lender Company
+                  </Label>
+                  <div className="h-10 px-3 rounded-xl border border-dashed border-stroke/70 bg-amber-50/50 text-focus text-xs sm:text-sm font-medium flex items-center justify-between shadow-2xs select-none">
+                    <span className="italic text-muted-fg text-xs">
+                      To be reviewed and chosen by Finance upon loan approval
+                    </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                      Assigned by Finance
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5 col-span-1 sm:col-span-2" ref={lenderRef}>
+                  <Label className="text-xs font-semibold text-focus block">
+                    Lender Company
+                  </Label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsLenderOpen((prev) => !prev)}
+                      className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white hover:bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-2xs flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <Building2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span className="truncate">{lenderCompany || 'Select Lender Company…'}</span>
+                      </div>
+                      <ChevronDown className="w-4 h-4 text-muted-fg shrink-0" />
+                    </button>
+                    {isLenderOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 max-h-52 overflow-y-auto">
+                        {availableLenders.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                              setLenderCompany(c)
+                              setIsLenderOpen(false)
+                            }}
+                            className={cn(
+                              'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-left cursor-pointer',
+                              lenderCompany === c ? 'bg-emerald-50 text-emerald-800 font-semibold' : 'text-focus hover:bg-slate-50'
+                            )}
+                          >
+                            <span>{c}</span>
+                            {lenderCompany === c && <Check className="w-3.5 h-3.5 text-emerald-600 ml-2" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* 5. Principal Amount */}
-              <div className="space-y-1.5">
+              <div className={cn("space-y-1.5", isCompanyUser ? "col-span-1 sm:col-span-2" : "col-span-1")}>
                 <Label className="text-xs font-semibold text-focus block">
                   Principal Amount (₱) <span className="text-red-500">*</span>
                 </Label>
@@ -330,26 +392,28 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
                 {fieldErrors.amount && <p className="text-2xs text-red-500">{fieldErrors.amount}</p>}
               </div>
 
-              {/* 6. Interest Rate */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-focus block">
-                  Interest Rate (%)
-                </Label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    placeholder="0.0"
-                    value={interestRate}
-                    onChange={(e) => setInterestRate(e.target.value)}
-                    className="pr-7 h-10 text-xs sm:text-sm rounded-xl tabular-nums"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg text-xs font-bold pointer-events-none">
-                    %
-                  </span>
+              {/* 6. Interest Rate (Admin/Finance only) */}
+              {!isCompanyUser && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-focus block">
+                    Interest Rate (%)
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="0.0"
+                      value={interestRate}
+                      onChange={(e) => setInterestRate(e.target.value)}
+                      className="pr-7 h-10 text-xs sm:text-sm rounded-xl tabular-nums"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg text-xs font-bold pointer-events-none">
+                      %
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 7. Particulars / Purpose */}
               <div className="space-y-1.5 sm:col-span-2">
@@ -384,7 +448,7 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
                 type="submit"
                 className="h-10 px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer"
               >
-                Record Loan
+                {isCompanyUser ? 'Submit Loan Request' : 'Record Loan'}
               </Button>
             </div>
           </form>

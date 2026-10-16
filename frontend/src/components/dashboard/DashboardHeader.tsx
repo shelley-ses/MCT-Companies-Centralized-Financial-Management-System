@@ -10,7 +10,6 @@ import {
   DateRangePicker,
   type DateRange,
 } from '@/components/ui/DateRangePicker'
-import { useSession } from '@/hooks/useSession'
 import { cn } from '@/lib/utils'
 
 export interface DashboardFilterState {
@@ -42,10 +41,6 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   onFiltersChange,
   companies = DEFAULT_COMPANIES,
 }) => {
-  const { user } = useSession()
-  const isAuditor = user?.role === 'Company Auditor'
-  const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
-
   const [isOpen, setIsOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const dropdownRef = React.useRef<HTMLDivElement>(null)
@@ -114,9 +109,9 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           Financial Overview
         </h1>
         <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5 truncate max-w-md xl:max-w-xl">
-          {isAuditor
-            ? `Audit transactions and verify financial records for ${assignedCompany}.`
-            : "Here's the summary of what's happening with MCT Group of Companies."}
+          {filters.company !== 'All Companies'
+            ? `Audit transactions and verify financial records for ${filters.company}.`
+            : "Here's the consolidated financial summary across all MCT Group of Companies."}
         </p>
       </div>
 
@@ -130,16 +125,8 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           }}
         />
 
-        {/* 2. Company Scope: Locked to assigned company for Auditor, full dropdown for Admin */}
-        {isAuditor ? (
-          <div className="inline-flex items-center gap-2 h-10 sm:h-11 px-3.5 sm:px-4 rounded-full border border-stroke/60 bg-white text-focus text-xs sm:text-sm font-medium shadow-xs select-none shrink-0 whitespace-nowrap">
-            <Building2 className="h-4 w-4 text-primary shrink-0" />
-            <span className="font-semibold text-focus truncate max-w-[140px] sm:max-w-[180px]">
-              Assigned: {assignedCompany}
-            </span>
-          </div>
-        ) : (
-          <div ref={dropdownRef} className="relative inline-block shrink-0">
+        {/* 2. Company Scope: Available for both Auditor and Admin, defaulting to All Companies */}
+        <div ref={dropdownRef} className="relative inline-block shrink-0">
             <button
               type="button"
               onClick={() => setIsOpen((prev) => !prev)}
@@ -252,7 +239,6 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               </div>
             )}
           </div>
-        )}
       </div>
     </div>
   )

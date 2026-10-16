@@ -39,7 +39,8 @@ export const UpdateLoanStatusModal: React.FC<UpdateLoanStatusModalProps> = ({
 
   React.useEffect(() => {
     if (loan) {
-      setSelectedStatus(loan.status || 'Paid')
+      const fallback = loan.status === 'Overdue' ? 'Overdue' : loan.status === 'Pending' ? 'Pending' : 'Paid'
+      setSelectedStatus(fallback)
       setRemarks(loan.auditNotes || '')
       setError('')
     }

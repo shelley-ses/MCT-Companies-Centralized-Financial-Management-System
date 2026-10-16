@@ -75,7 +75,10 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
     if (!pendingValues) return
     try {
       setIsSubmitting(true)
-      const created = await employeeService.createCompany(pendingValues)
+      const created = await employeeService.createCompany({
+        ...pendingValues,
+        telephoneNumber: pendingValues.telephoneNumber || '',
+      })
       onSuccess?.(created)
       setIsConfirmOpen(false)
       onOpenChange(false)

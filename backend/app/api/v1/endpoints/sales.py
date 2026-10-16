@@ -12,12 +12,30 @@ from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
+CANONICAL_COMPANY_MAP = {
+    1: "MCT Kitchen",
+    2: "MCT Kitchen",
+    3: "MCT Hotel",
+    4: "JK Cafe",
+    5: "JK Cafe",
+    6: "Annex Nine",
+    7: "Merillon",
+    8: "JK Printing",
+    9: "Speedbox",
+    10: "JK Property and Ventures",
+    11: "Golden Sunburst Ventures",
+    12: "Southern Brew",
+}
+
 def get_supabase_mappings(client):
+    company_map = dict(CANONICAL_COMPANY_MAP)
     try:
         companies = client.table("company").select("company_id, company_name").execute().data or []
-        company_map = {c["company_id"]: c["company_name"] for c in companies}
+        for c in companies:
+            if c.get("company_id") and c.get("company_name"):
+                company_map[c["company_id"]] = c["company_name"]
     except Exception:
-        company_map = {}
+        pass
 
     try:
         categories = client.table("category").select("category_id, name").execute().data or []

@@ -2,7 +2,7 @@ import type { SignInFormValues } from '@/lib/validation/auth'
 import logo2Url from '@/assets/LOGO2.png'
 import { encryptPayload } from '@/services/payloadEncryption'
 
-export type UserRole = 'Admin' | 'Company Auditor'
+export type UserRole = 'Admin' | 'Finance' | 'Company' | 'Company Auditor'
 
 /**
  * User session model
@@ -41,7 +41,7 @@ export interface SeededAccount {
 }
 
 export const SEEDED_ACCOUNTS: SeededAccount[] = [
-  // Admin accounts (Head of Audit and company owner)
+  // 1. Audit / Admin accounts (Head of Audit and company owner)
   {
     id: 'usr_admin_01',
     fullName: 'Remi Lee',
@@ -58,28 +58,54 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     assignedCompany: 'All Companies',
     avatarUrl: logo2Url,
   },
-  // Company Auditor account for MCT Kitchen
+  // 2. Finance accounts (New role: approves loans and selects lending company)
+  {
+    id: 'usr_finance_01',
+    fullName: 'Finance Officer',
+    email: 'finance@mct.com',
+    role: 'Finance',
+    assignedCompany: 'All Companies',
+    avatarUrl: logo2Url,
+  },
+  {
+    id: 'usr_finance_02',
+    fullName: 'Finance Manager',
+    email: 'finance.manager@mct.com',
+    role: 'Finance',
+    assignedCompany: 'All Companies',
+    avatarUrl: logo2Url,
+  },
+  // 3. Company accounts (like temporaryemployee@gmail.com: requests loans only)
+  {
+    id: 'usr_kitchen_00',
+    fullName: 'Temporary Employee',
+    email: 'temporaryemployee@gmail.com',
+    role: 'Company',
+    assignedCompany: 'MCT Kitchen',
+    avatarUrl: logo2Url,
+  },
   {
     id: 'usr_kitchen_01',
     fullName: 'Temporary Employee',
     email: 'temporary.employee@mct.com',
-    role: 'Company Auditor',
+    role: 'Company',
     assignedCompany: 'MCT Kitchen',
     avatarUrl: logo2Url,
   },
-  // Company Auditor account for MCT Hotel
   {
     id: 'usr_hotel_01',
     fullName: 'Temporary Employee 1',
     email: 'temporary.employee1@mct.com',
-    role: 'Company Auditor',
+    role: 'Company',
     assignedCompany: 'MCT Hotel',
     avatarUrl: logo2Url,
   },
 ]
 
 export const ADMIN_USER: User = SEEDED_ACCOUNTS[0]
-export const AUDITOR_USER: User = SEEDED_ACCOUNTS[2]
+export const FINANCE_USER: User = SEEDED_ACCOUNTS[2]
+export const COMPANY_USER: User = SEEDED_ACCOUNTS[4]
+export const AUDITOR_USER: User = SEEDED_ACCOUNTS[4]
 const SESSION_STORAGE_KEY = 'mct_session_user'
 const ACCESS_TOKEN_KEY = 'mct_access_token'
 const LAST_ACTIVITY_KEY = 'mct_last_activity'
@@ -196,15 +222,31 @@ function mapUser(user: {
   email: string
   name: string
   is_admin: boolean
+  role?: string
   company_name?: string | null
 }): User {
-  const role: UserRole = user.is_admin ? 'Admin' : 'Company Auditor'
+  let role: UserRole = 'Company'
+  const rawRole = (user.role || '').toLowerCase()
+  if (user.is_admin || rawRole === 'admin' || rawRole === 'audit') {
+    role = 'Admin'
+  } else if (rawRole === 'finance') {
+    role = 'Finance'
+  } else {
+    role = 'Company'
+  }
+
+  const assignedCompany = role === 'Admin'
+    ? 'All Companies'
+    : role === 'Finance'
+    ? (user.company_name || 'All Companies')
+    : (user.company_name || 'MCT Kitchen')
+
   return {
     id: String(user.user_id),
     fullName: user.name,
     email: user.email,
     role: role,
-    assignedCompany: user.is_admin ? 'All Companies' : (user.company_name || 'MCT Kitchen'),
+    assignedCompany: assignedCompany,
     avatarUrl: logo2Url,
   }
 }

@@ -73,7 +73,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const location = useLocation()
   const { user } = useSession()
 
-  const isAuditor = user?.role === 'Company Auditor'
+  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isAuditor = isCompanyUser
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Strict transaction type determined by initialType or URL path (Sales stays in Sales, Expense stays in Expense)

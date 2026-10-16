@@ -21,30 +21,19 @@ import {
   dashboardService,
   type DashboardData,
 } from '@/services/dashboardService'
-import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 
 export const DashboardPage: React.FC = () => {
-  const { user } = useSession()
-  const isAuditor = user?.role === 'Company Auditor'
-  const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const [filters, setFilters] = React.useState<DashboardFilterState>(() => ({
     dateRange: {
-      startDate: '2026-10-01',
-      endDate: '2026-10-05',
-      label: '10/01/2026 - 10/05/2026',
+      startDate: null,
+      endDate: null,
+      label: 'All Dates',
     },
-    company: isAuditor ? assignedCompany : 'All Companies',
+    company: 'All Companies',
   }))
-
-  // Ensure Company Auditor is locked to their assigned company
-  React.useEffect(() => {
-    if (isAuditor && filters.company !== assignedCompany) {
-      setFilters((prev) => ({ ...prev, company: assignedCompany }))
-    }
-  }, [isAuditor, assignedCompany, filters.company])
 
   const [loading, setLoading] = React.useState<boolean>(true)
   const [data, setData] = React.useState<DashboardData | null>(null)

@@ -7,33 +7,149 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { CheckCircle2, AlertCircle, Building2, Calendar, FileText } from 'lucide-react'
-import { loanService, type LoanItem } from '@/services/loanService'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  CheckCircle2,
+  AlertCircle,
+  Building2,
+  ChevronDown,
+  Check,
+  ShieldCheck,
+} from 'lucide-react'
+import {
+  loanService,
+  type LoanItem,
+  type CompanyOption,
+} from '@/services/loanService'
 import { formatPHP } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 interface ApproveLoanModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   loan: LoanItem | null
   onSuccess: (approvedLoan: LoanItem) => void
+  companies?: string[]
 }
+
+const DEFAULT_COMPANY_LIST = [
+  'MCT Kitchen',
+  'MCT Hotel',
+  'JK Cafe',
+  'Annex Nine',
+  'Merillon',
+  'JK Printing',
+  'Speedbox',
+  'JK Property and Ventures',
+  'Golden Sunburst Ventures',
+]
 
 export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
   open,
   onOpenChange,
   loan,
   onSuccess,
+  companies: propsCompanies,
 }) => {
+  const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
+  const [selectedLender, setSelectedLender] = React.useState('')
+  const [interestRate, setInterestRate] = React.useState('0')
+  const [dueDate, setDueDate] = React.useState('')
+  const [isLenderDropdownOpen, setIsLenderDropdownOpen] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [error, setError] = React.useState('')
+  const lenderDropdownRef = React.useRef<HTMLDivElement>(null)
+
+  // Fetch registered companies
+  React.useEffect(() => {
+    let mounted = true
+    loanService.getCompanies().then((res) => {
+      if (mounted && res.length > 0) {
+        setDbCompanies(res)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const allCompanyNames = React.useMemo(() => {
+    if (dbCompanies.length > 0) {
+      return dbCompanies.map((c) => c.company_name).filter(Boolean)
+    }
+    if (propsCompanies && propsCompanies.length > 0) {
+      return propsCompanies.filter((c) => c !== 'All Companies')
+    }
+    return DEFAULT_COMPANY_LIST
+  }, [dbCompanies, propsCompanies])
+
+  // Filter out borrower company so borrower cannot loan to itself
+  const eligibleLenders = React.useMemo(() => {
+    if (!loan) return allCompanyNames
+    const borrowerNorm = (loan.borrower || '').trim().toLowerCase()
+    return allCompanyNames.filter((c) => c.trim().toLowerCase() !== borrowerNorm)
+  }, [allCompanyNames, loan])
+
+  // Reset / initialize modal state when opened
+  React.useEffect(() => {
+    if (open && loan) {
+      setError('')
+      setIsSubmitting(false)
+      setIsLenderDropdownOpen(false)
+      setInterestRate(String(loan.interestRate || 0))
+      setDueDate(loan.dueDate || '')
+
+      const initialLender =
+        loan.lender &&
+        !loan.lender.toLowerCase().includes('pending') &&
+        loan.lender.toLowerCase() !== (loan.borrower || '').toLowerCase()
+          ? loan.lender
+          : eligibleLenders[0] || 'MCT Hotel'
+
+      setSelectedLender(initialLender)
+    }
+  }, [open, loan, eligibleLenders])
+
+  // Close dropdown on outside click
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        lenderDropdownRef.current &&
+        !lenderDropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsLenderDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   if (!loan) return null
 
   const handleApprove = async () => {
-    setIsSubmitting(true)
     setError('')
+    if (!selectedLender.trim()) {
+      setError('Please choose what company will provide this loan.')
+      return
+    }
+
+    if (
+      selectedLender.trim().toLowerCase() ===
+      (loan.borrower || '').trim().toLowerCase()
+    ) {
+      setError('Lender company cannot be the same as the borrower company.')
+      return
+    }
+
+    setIsSubmitting(true)
     try {
-      const approved = await loanService.approveLoan(loan.id)
+      const parsedInterest = parseFloat(interestRate) || 0
+      const approved = await loanService.approveLoan(loan.id, {
+        lenderCompany: selectedLender.trim(),
+        interestRate: parsedInterest,
+        dueDate: dueDate.trim() || undefined,
+      })
       onSuccess(approved)
       onOpenChange(false)
     } catch (err: any) {
@@ -45,24 +161,25 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
+      <DialogContent className="sm:max-w-[520px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
         <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-xs">
+              <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <DialogTitle className="text-lg sm:text-xl font-bold text-focus leading-tight">
-                Approve Loan Request
+                Review & Approve Loan
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-fg font-normal">
-                Confirmation from <span className="font-semibold text-focus">{loan.lender}</span> (Lender)
+                Finance authorization for borrowing request from{' '}
+                <span className="font-semibold text-focus">{loan.borrower}</span>
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="space-y-4 pt-2">
+        <div className="space-y-4 pt-1">
           {error && (
             <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -70,39 +187,142 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
             </div>
           )}
 
+          {/* Loan Request Summary Card */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 text-xs">
             <div className="flex justify-between items-center">
-              <span className="text-muted-fg font-medium">Borrower Company:</span>
-              <span className="font-bold text-focus">{loan.borrower}</span>
+              <span className="text-muted-fg font-medium">Borrower (Requester):</span>
+              <span className="font-bold text-focus flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-primary" />
+                {loan.borrower}
+              </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-muted-fg font-medium">Principal Amount:</span>
-              <span className="font-bold text-emerald-600 text-sm tabular-nums">{formatPHP(loan.amount)}</span>
+              <span className="text-muted-fg font-medium">Requested Principal:</span>
+              <span className="font-bold text-emerald-600 text-sm tabular-nums">
+                {formatPHP(loan.amount)}
+              </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-muted-fg font-medium">Loan Date:</span>
+              <span className="text-muted-fg font-medium">Request Date:</span>
               <span className="font-medium text-focus">{loan.date}</span>
             </div>
-            {loan.dueDate && (
-              <div className="flex justify-between items-center">
-                <span className="text-muted-fg font-medium">Due Date:</span>
-                <span className="font-medium text-focus">{loan.dueDate}</span>
-              </div>
-            )}
-            {loan.interestRate !== undefined && loan.interestRate > 0 && (
-              <div className="flex justify-between items-center">
-                <span className="text-muted-fg font-medium">Interest Rate:</span>
-                <span className="font-bold text-primary">{loan.interestRate}%</span>
-              </div>
-            )}
             <div className="pt-2 border-t border-slate-200/60">
-              <span className="text-muted-fg block mb-0.5">Particulars / Purpose:</span>
+              <span className="text-muted-fg block mb-0.5">Purpose / Particulars:</span>
               <p className="font-medium text-focus italic">{loan.particulars}</p>
             </div>
           </div>
 
-          <p className="text-xs text-slate-500 leading-relaxed">
-            By approving this loan request, you acknowledge and authorize the transfer of financing from <strong>{loan.lender}</strong> to <strong>{loan.borrower}</strong>. Once approved, the borrower will no longer be able to edit or delete this loan.
+          {/* FINANCE DECISION CONTROLS */}
+          <div className="space-y-3.5 pt-1">
+            {/* 1. Choose Lender Company */}
+            <div className="space-y-1.5" ref={lenderDropdownRef}>
+              <Label className="text-xs font-semibold text-focus flex items-center justify-between">
+                <span>
+                  Choose Lending Company <span className="text-red-500">*</span>
+                </span>
+                <span className="text-[11px] text-muted-fg font-normal">
+                  (Who will finance this loan)
+                </span>
+              </Label>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsLenderDropdownOpen((prev) => !prev)}
+                  className={cn(
+                    'w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white hover:bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-2xs flex items-center justify-between transition-colors cursor-pointer',
+                    isLenderDropdownOpen && 'ring-2 ring-emerald-500/20 border-emerald-600'
+                  )}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Building2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="truncate font-semibold text-focus">
+                      {selectedLender || 'Select lending company…'}
+                    </span>
+                  </div>
+                  <ChevronDown
+                    className={cn(
+                      'w-4 h-4 text-muted-fg shrink-0 transition-transform duration-200',
+                      isLenderDropdownOpen && 'rotate-180'
+                    )}
+                  />
+                </button>
+
+                {isLenderDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-56 overflow-y-auto">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-fg px-2 py-1">
+                      Available Subsidiaries
+                    </p>
+                    {eligibleLenders.map((comp) => (
+                      <button
+                        key={comp}
+                        type="button"
+                        onClick={() => {
+                          setSelectedLender(comp)
+                          setIsLenderDropdownOpen(false)
+                        }}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                          selectedLender === comp
+                            ? 'bg-emerald-50 text-emerald-800 font-semibold'
+                            : 'text-focus/90 hover:bg-slate-50'
+                        )}
+                      >
+                        <span className="truncate">{comp}</span>
+                        {selectedLender === comp && (
+                          <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0 ml-2" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Optional Terms: Due Date and Interest Rate */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Repayment Due Date
+                </Label>
+                <div className="relative">
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="h-10 text-xs sm:text-sm rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Interest Rate (%)
+                </Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0.0"
+                    value={interestRate}
+                    onChange={(e) => setInterestRate(e.target.value)}
+                    className="pr-7 h-10 text-xs sm:text-sm rounded-xl tabular-nums"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg text-xs font-bold pointer-events-none">
+                    %
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-2xs sm:text-xs text-slate-500 leading-relaxed pt-1">
+            As Finance, approving this loan will designate{' '}
+            <strong className="text-focus">{selectedLender || 'the selected lender'}</strong> as
+            the financing partner for{' '}
+            <strong className="text-focus">{loan.borrower}</strong>. Status will become{' '}
+            <span className="font-semibold text-emerald-700">Approved</span> and locked.
           </p>
 
           <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-stroke/20">
@@ -117,11 +337,11 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
             <Button
               type="button"
               onClick={handleApprove}
-              disabled={isSubmitting}
-              className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer flex items-center gap-1.5"
+              disabled={isSubmitting || !selectedLender}
+              className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isSubmitting ? 'Approving…' : 'Confirm & Approve'}</span>
+              <span>{isSubmitting ? 'Approving…' : 'Approve & Fund Loan'}</span>
             </Button>
           </div>
         </div>

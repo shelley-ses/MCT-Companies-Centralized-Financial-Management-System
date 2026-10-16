@@ -75,7 +75,10 @@ const ITEMS_PER_PAGE = 10
 export const ExpensePage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const isAuditor = user?.role === 'Company Auditor'
+  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isFinance = user?.role === 'Finance'
+  const isAuditor = isCompanyUser
+  const canAdd = isCompanyUser || isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const [expenses, setExpenses] = React.useState<ExpenseItem[]>([])
@@ -99,9 +102,7 @@ export const ExpensePage: React.FC = () => {
   }, [])
 
   // Filter state
-  const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isAuditor ? assignedCompany : 'All Companies'
-  )
+  const [selectedCompany, setSelectedCompany] = React.useState<string>('All Companies')
   const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Overdue'>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
@@ -212,7 +213,7 @@ export const ExpensePage: React.FC = () => {
     try {
       setLoading(true)
       const data = await expenseService.getExpenses({
-        company: isAuditor ? assignedCompany : (selectedCompany === 'All Companies' ? undefined : selectedCompany),
+        company: selectedCompany === 'All Companies' ? undefined : selectedCompany,
       })
       setExpenses(data)
     } catch (err) {
@@ -220,7 +221,7 @@ export const ExpensePage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [isAuditor, assignedCompany, selectedCompany])
+  }, [selectedCompany])
 
   React.useEffect(() => {
     loadExpenses()
@@ -251,7 +252,6 @@ export const ExpensePage: React.FC = () => {
     return expenses
       .filter((item) => {
         if (
-          !isAuditor &&
           selectedCompany !== 'All Companies' &&
           item.company.trim().toLowerCase() !== selectedCompany.trim().toLowerCase()
         ) {
@@ -322,7 +322,7 @@ export const ExpensePage: React.FC = () => {
   }, [filteredExpenses])
 
   // Export handlers
-  const companyForExport = isAuditor ? assignedCompany : selectedCompany
+  const companyForExport = selectedCompany
 
   const handleExportCsv = () => {
     expenseService.exportCsv(
@@ -407,11 +407,10 @@ export const ExpensePage: React.FC = () => {
     )
   }, [companySearch, companyList])
 
-  const displayedCompanyTitle = isAuditor
-    ? assignedCompany
-    : selectedCompany === 'All Companies'
-    ? 'All Subsidiaries'
-    : selectedCompany
+  const displayedCompanyTitle =
+    selectedCompany === 'All Companies'
+      ? 'All Subsidiaries'
+      : selectedCompany
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">
@@ -472,8 +471,8 @@ export const ExpensePage: React.FC = () => {
               )}
             </div>
 
-            {/* Add Expense Button (Exclusively for Company Auditor; Admin has no Add Expense button) */}
-            {isAuditor && (
+            {/* Add Expense Button (Exclusively for operational users: Company and Finance; Admin has no Add Expense button) */}
+            {canAdd && (
               <Button
                 type="button"
                 onClick={() => navigate('/expense/add')}
@@ -604,9 +603,8 @@ export const ExpensePage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope Dropdown (Admin only) */}
-            {!isAuditor && (
-              <div ref={companyDropdownRef} className="relative inline-block">
+            {/* Company Scope Dropdown */}
+            <div ref={companyDropdownRef} className="relative inline-block">
                 <button
                   type="button"
                   onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
@@ -699,7 +697,6 @@ export const ExpensePage: React.FC = () => {
                   </div>
                 )}
               </div>
-            )}
           </div>
         </div>
       </div>
@@ -795,39 +792,43 @@ export const ExpensePage: React.FC = () => {
           </div>
         </div>
 
-        {/* Expense Table: equal spacing across all 7 columns (deposit replaced with withdrawal) */}
+        {/* Expense Table: equal spacing across all 8 columns including Company */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table className="w-full table-fixed min-w-[900px]">
             <colgroup>
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '8%' }} />
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  COMPANY
+                </TableHead>
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CHEQUE NO.
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   WITHDRAWAL
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CATEGORY
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   NET AMOUNT
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                <TableHead className="w-[8%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -837,25 +838,28 @@ export const ExpensePage: React.FC = () => {
               {loading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <TableRow key={idx} className="border-b border-slate-100">
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-16 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-24 bg-slate-200/60 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-28 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-36 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-20 bg-slate-200/60 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/70 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-32 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-5 w-20 bg-slate-200/60 animate-pulse rounded-full" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-16 bg-slate-200/70 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-5 w-16 bg-slate-200/60 animate-pulse rounded-full" />
                     </TableCell>
-                    <TableCell className="px-4 py-4 text-center">
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-16 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-3.5 py-4 text-center">
                       <div className="h-6 w-14 bg-slate-200/60 animate-pulse rounded-md mx-auto" />
                     </TableCell>
                   </TableRow>
@@ -863,7 +867,7 @@ export const ExpensePage: React.FC = () => {
               ) : paginatedExpenses.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
@@ -893,7 +897,7 @@ export const ExpensePage: React.FC = () => {
                     title="Click to view complete details"
                   >
                     {/* 1. Date */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-medium text-focus truncate text-left">
+                    <TableCell className="w-[10%] px-3.5 py-3.5 text-xs font-medium text-focus truncate text-left">
                       <div className="flex items-center gap-1.5 truncate">
                         <span>{expense.date}</span>
                         {highlightedExpenseId === expense.id && (
@@ -904,34 +908,41 @@ export const ExpensePage: React.FC = () => {
                       </div>
                     </TableCell>
 
-                    {/* 2. Cheque No */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
+                    {/* 2. Company */}
+                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs font-medium text-focus/90 truncate text-left" title={expense.company}>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200/60 max-w-full truncate">
+                        {expense.company || '—'}
+                      </span>
+                    </TableCell>
+
+                    {/* 3. Cheque No */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
                       {expense.chequeNo || '—'}
                     </TableCell>
 
-                    {/* 3. Particulars */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={expense.particulars}>
+                    {/* 4. Particulars */}
+                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={expense.particulars}>
                       <span className="truncate block">{expense.particulars}</span>
                     </TableCell>
 
-                    {/* 4. Withdrawal */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-semibold text-left tabular-nums whitespace-nowrap text-red-600">
+                    {/* 5. Withdrawal */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs font-semibold text-left tabular-nums whitespace-nowrap text-red-600">
                       {expense.withdrawal > 0 ? formatPHP(expense.withdrawal) : ''}
                     </TableCell>
 
-                    {/* 5. Category */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
+                    {/* 6. Category */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
                       {expense.category}
                     </TableCell>
 
-                    {/* 6. Net Amount */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
+                    {/* 7. Net Amount */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
                       {formatPHP(expense.netAmount)}
                     </TableCell>
 
-                    {/* 7. Actions */}
+                    {/* 8. Actions */}
                     <TableCell
-                      className="w-[14.2857%] px-4 py-3.5 text-center whitespace-nowrap"
+                      className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-center gap-1">

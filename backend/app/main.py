@@ -22,6 +22,11 @@ app.add_middleware(
 # Include API Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+@app.on_event("startup")
+def on_startup():
+    from app.db.session import init_db
+    init_db()
+
 @app.get("/", tags=["Root"])
 def root():
     return {

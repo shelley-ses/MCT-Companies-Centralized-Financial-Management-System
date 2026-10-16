@@ -8,7 +8,7 @@ class Loan(Base):
 
     loan_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
     borrower = Column(BigInteger, nullable=False, index=True)  # Company_ID of borrower
-    lender = Column(BigInteger, nullable=False, index=True)    # Company_ID of lender
+    lender = Column(BigInteger, nullable=True, index=True)    # Company_ID of lender, assigned by Finance upon approval
     loan_ref_no = Column(String(100), unique=True, nullable=True)
     principal_amount = Column(Numeric(15, 2), nullable=False)
     interest_rate = Column(Numeric(5, 2), default=0.00)

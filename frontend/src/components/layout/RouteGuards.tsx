@@ -70,8 +70,8 @@ export const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
     )
   }
 
-  // Company Auditor has no access to Company / User Management (Admin only)
-  if (user?.role === 'Company Auditor') {
+  // Only Admin has access to Company / User Management and Audit Activity Log
+  if (user?.role !== 'Admin') {
     return <Navigate to="/dashboard" replace />
   }
 

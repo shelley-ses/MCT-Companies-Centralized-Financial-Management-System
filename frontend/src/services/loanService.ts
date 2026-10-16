@@ -36,7 +36,7 @@ export interface NewLoanInput {
   amount: number
   particulars: string
   borrowerCompany: string
-  lenderCompany: string
+  lenderCompany?: string
   category?: string
   chequeNo?: string
   status?: string
@@ -78,6 +78,21 @@ function saveStoredLoans(items: LoanItem[]): void {
 
 let inMemoryLoans: LoanItem[] = loadStoredLoans()
 
+const CANONICAL_COMPANIES_LOOKUP: Record<string, string> = {
+  '1': 'MCT Kitchen',
+  '2': 'MCT Kitchen',
+  '3': 'MCT Hotel',
+  '4': 'JK Cafe',
+  '5': 'JK Cafe',
+  '6': 'Annex Nine',
+  '7': 'Merillon',
+  '8': 'JK Printing',
+  '9': 'Speedbox',
+  '10': 'JK Property and Ventures',
+  '11': 'Golden Sunburst Ventures',
+  '12': 'Southern Brew',
+}
+
 function mapBackendLoanToItem(l: any): LoanItem {
   const rawDateStr = l.loan_date || '2026-10-01'
   let displayDate = '10/01/26'
@@ -89,8 +104,18 @@ function mapBackendLoanToItem(l: any): LoanItem {
   }
 
   const amt = Number(l.principal_amount || l.amount || 0)
-  const bName = l.borrower_name || l.borrower_company || `Company #${l.borrower || ''}`
-  const lName = l.lender_name || l.lender_company || `Company #${l.lender || ''}`
+  
+  let bName = l.borrower_name || l.borrower_company || ''
+  if (!bName || bName.startsWith('Company #')) {
+    const bId = String(l.borrower || '').replace(/\D/g, '')
+    bName = CANONICAL_COMPANIES_LOOKUP[bId] || (l.borrower ? `Company #${l.borrower}` : 'MCT Kitchen')
+  }
+
+  let lName = l.lender_name || l.lender_company || ''
+  if (!lName || lName.startsWith('Company #')) {
+    const lId = String(l.lender || '').replace(/\D/g, '')
+    lName = CANONICAL_COMPANIES_LOOKUP[lId] || (l.lender ? `Company #${l.lender}` : 'Pending Finance Assignment')
+  }
 
   return {
     id: `loan_${l.loan_id || l.id}`,
@@ -136,7 +161,7 @@ export const loanService = {
         const data = await res.json()
         if (Array.isArray(data) && data.length > 0) {
           return data.map((c: any) => ({
-            company_id: c.company_id,
+            company_id: c.company_id ?? c.id,
             company_name: c.company_name || c.name,
           }))
         }
@@ -147,15 +172,16 @@ export const loanService = {
 
     // Default fallback if endpoint fails
     return [
-      { company_id: 1, company_name: 'MCT Kitchen' },
-      { company_id: 2, company_name: 'MCT Hotel' },
-      { company_id: 3, company_name: 'JK Cafe' },
-      { company_id: 4, company_name: 'Annex Nine' },
-      { company_id: 5, company_name: 'Merillon' },
-      { company_id: 6, company_name: 'JK Printing' },
-      { company_id: 7, company_name: 'Speedbox' },
-      { company_id: 8, company_name: 'JK Property and Ventures' },
-      { company_id: 9, company_name: 'Golden Sunburst Ventures' },
+      { company_id: 2, company_name: 'MCT Kitchen' },
+      { company_id: 3, company_name: 'MCT Hotel' },
+      { company_id: 5, company_name: 'JK Cafe' },
+      { company_id: 6, company_name: 'Annex Nine' },
+      { company_id: 7, company_name: 'Merillon' },
+      { company_id: 8, company_name: 'JK Printing' },
+      { company_id: 9, company_name: 'Speedbox' },
+      { company_id: 10, company_name: 'JK Property and Ventures' },
+      { company_id: 11, company_name: 'Golden Sunburst Ventures' },
+      { company_id: 12, company_name: 'Southern Brew' },
     ]
   },
 
@@ -276,7 +302,7 @@ export const loanService = {
       category: input.category || 'In-house',
       amount: input.amount,
       borrower: input.borrowerCompany,
-      lender: input.lenderCompany,
+      lender: input.lenderCompany || 'Pending Finance Assignment',
       company: input.borrowerCompany,
       status: (input.status as any) || 'Pending Approval',
       auditStatus: 'Pending Audit',
@@ -358,8 +384,22 @@ export const loanService = {
     return updated
   },
 
-  async approveLoan(id: string): Promise<LoanItem> {
+  async approveLoan(
+    id: string,
+    approvalData?: {
+      lenderCompany?: string
+      interestRate?: number
+      dueDate?: string
+      notes?: string
+    }
+  ): Promise<LoanItem> {
     const numericId = id.replace(/^loan_/, '')
+    const payload: Record<string, any> = {}
+    if (approvalData?.lenderCompany) payload.lender_company = approvalData.lenderCompany
+    if (approvalData?.interestRate !== undefined) payload.interest_rate = approvalData.interestRate
+    if (approvalData?.dueDate) payload.due_date = approvalData.dueDate
+    if (approvalData?.notes) payload.notes = approvalData.notes
+
     try {
       const token =
         typeof window !== 'undefined'
@@ -372,6 +412,7 @@ export const loanService = {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         const approved = await res.json()
@@ -393,6 +434,15 @@ export const loanService = {
     const index = inMemoryLoans.findIndex((l) => l.id === id || l.id === `loan_${numericId}`)
     if (index !== -1) {
       inMemoryLoans[index].status = 'Approved'
+      if (approvalData?.lenderCompany) {
+        inMemoryLoans[index].lender = approvalData.lenderCompany
+      }
+      if (approvalData?.interestRate !== undefined) {
+        inMemoryLoans[index].interestRate = approvalData.interestRate
+      }
+      if (approvalData?.dueDate) {
+        inMemoryLoans[index].dueDate = approvalData.dueDate
+      }
       saveStoredLoans(inMemoryLoans)
       return inMemoryLoans[index]
     }
