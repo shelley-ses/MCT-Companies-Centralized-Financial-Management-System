@@ -13,6 +13,7 @@ from app.schemas.loan import (
     LoanCreate,
     LoanOut,
     LoanUpdate,
+    LoanApproveRequest,
     LoanRepaymentCreate,
     LoanRepaymentOut,
     LoanStatementOut,
@@ -22,14 +23,43 @@ from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
-def get_supabase_company_mapping(client):
-    try:
-        companies = client.table("company").select("company_id, company_name").execute().data or []
-        id_to_name = {c["company_id"]: c["company_name"] for c in companies}
-        name_to_id = {c["company_name"].strip().lower(): c["company_id"] for c in companies}
-    except Exception:
-        id_to_name = {}
-        name_to_id = {}
+CANONICAL_COMPANY_MAP = {
+    1: "MCT Kitchen",
+    2: "MCT Kitchen",
+    3: "MCT Hotel",
+    4: "JK Cafe",
+    5: "JK Cafe",
+    6: "Annex Nine",
+    7: "Merillon",
+    8: "JK Printing",
+    9: "Speedbox",
+    10: "JK Property and Ventures",
+    11: "Golden Sunburst Ventures",
+    12: "Southern Brew",
+}
+
+def get_supabase_company_mapping(client, db: Optional[Session] = None):
+    id_to_name = dict(CANONICAL_COMPANY_MAP)
+    name_to_id = {v.strip().lower(): k for k, v in CANONICAL_COMPANY_MAP.items()}
+
+    if db:
+        try:
+            comps = db.query(Company).all()
+            for c in comps:
+                id_to_name[c.company_id] = c.company_name
+                name_to_id[c.company_name.strip().lower()] = c.company_id
+        except Exception:
+            pass
+
+    if client:
+        try:
+            companies = client.table("company").select("company_id, company_name").execute().data or []
+            for c in companies:
+                id_to_name[c["company_id"]] = c["company_name"]
+                name_to_id[c["company_name"].strip().lower()] = c["company_id"]
+        except Exception:
+            pass
+
     return id_to_name, name_to_id
 
 
@@ -64,7 +94,7 @@ def get_loans(
 ):
     try:
         client = get_supabase_admin_client()
-        id_to_name, name_to_id = get_supabase_company_mapping(client)
+        id_to_name, name_to_id = get_supabase_company_mapping(client, db)
 
         resolved_target_cid = None
         if company_name and company_name.lower() != "all companies":
@@ -72,9 +102,9 @@ def get_loans(
 
         sb_query = client.table("loan").select("*")
 
-        if borrower_id:
+        if isinstance(borrower_id, int):
             sb_query = sb_query.eq("borrower", borrower_id)
-        if lender_id:
+        if isinstance(lender_id, int):
             sb_query = sb_query.eq("lender", lender_id)
 
         if resolved_target_cid:
@@ -86,12 +116,12 @@ def get_loans(
                 # Matches either borrower or lender
                 sb_query = sb_query.or_(f"borrower.eq.{resolved_target_cid},lender.eq.{resolved_target_cid}")
 
-        if status and status.lower() != "all":
+        if isinstance(status, str) and status.lower() != "all":
             sb_query = sb_query.eq("status", status)
 
-        if start_date:
+        if isinstance(start_date, (date, datetime)):
             sb_query = sb_query.gte("loan_date", start_date.isoformat())
-        if end_date:
+        if isinstance(end_date, (date, datetime)):
             sb_query = sb_query.lte("loan_date", end_date.isoformat())
 
         res = sb_query.order("loan_date", desc=True).order("loan_id", desc=True).execute()
@@ -110,7 +140,7 @@ def get_loans(
                     borrower=b_id,
                     lender=l_id,
                     borrower_name=id_to_name.get(b_id) or f"Company #{b_id}",
-                    lender_name=id_to_name.get(l_id) or f"Company #{l_id}",
+                    lender_name=id_to_name.get(l_id) if l_id else "Pending Finance Assignment",
                     loan_ref_no=r.get("loan_ref_no"),
                     principal_amount=p_amt,
                     amount=p_amt,
@@ -137,9 +167,9 @@ def get_loans(
             if comp:
                 resolved_target_cid = comp.company_id
 
-        if borrower_id:
+        if isinstance(borrower_id, int):
             query = query.filter(Loan.borrower == borrower_id)
-        if lender_id:
+        if isinstance(lender_id, int):
             query = query.filter(Loan.lender == lender_id)
 
         if resolved_target_cid:
@@ -150,12 +180,12 @@ def get_loans(
             else:
                 query = query.filter(or_(Loan.borrower == resolved_target_cid, Loan.lender == resolved_target_cid))
 
-        if status and status.lower() != "all":
+        if isinstance(status, str) and status.lower() != "all":
             query = query.filter(Loan.status == status)
 
-        if start_date:
+        if isinstance(start_date, (date, datetime)):
             query = query.filter(Loan.loan_date >= start_date)
-        if end_date:
+        if isinstance(end_date, (date, datetime)):
             query = query.filter(Loan.loan_date <= end_date)
 
         loans = query.order_by(Loan.loan_date.desc(), Loan.loan_id.desc()).all()
@@ -169,7 +199,7 @@ def get_loans(
                 borrower=l.borrower,
                 lender=l.lender,
                 borrower_name=comp_map.get(l.borrower) or f"Company #{l.borrower}",
-                lender_name=comp_map.get(l.lender) or f"Company #{l.lender}",
+                lender_name=comp_map.get(l.lender) if l.lender else "Pending Finance Assignment",
                 loan_ref_no=l.loan_ref_no,
                 principal_amount=l.principal_amount,
                 amount=l.principal_amount,
@@ -199,14 +229,12 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
         pass
 
     borrower_id = resolve_company_id(loan_in.borrower, loan_in.borrower_company, name_to_id, db)
-    lender_id = resolve_company_id(loan_in.lender, loan_in.lender_company, name_to_id, db)
+    lender_id = resolve_company_id(loan_in.lender, loan_in.lender_company, name_to_id, db) if (loan_in.lender or loan_in.lender_company) else None
 
     if not borrower_id:
         raise HTTPException(status_code=400, detail="Borrower company could not be resolved.")
-    if not lender_id:
-        raise HTTPException(status_code=400, detail="Lender company could not be resolved.")
 
-    if borrower_id == lender_id:
+    if lender_id and borrower_id == lender_id:
         raise HTTPException(status_code=400, detail="Borrower and lender cannot be the same company.")
 
     if loan_in.principal_amount < Decimal("1.00"):
@@ -243,31 +271,33 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
         except Exception as e:
             print(f"Supabase insert loan error: {e}")
 
-    # Mirror or create in SQLite
-    sqlite_loan = Loan(
-        loan_id=created_row["loan_id"] if created_row else None,
-        borrower=borrower_id,
-        lender=lender_id,
-        loan_ref_no=ref_no,
-        principal_amount=loan_in.principal_amount,
-        interest_rate=loan_in.interest_rate or Decimal("0.00"),
-        interest_type=loan_in.interest_type or "simple",
-        loan_date=loan_in.loan_date,
-        due_date=loan_in.due_date,
-        description=desc,
-        status="Pending Approval",
-    )
-    try:
-        db.add(sqlite_loan)
-        db.commit()
-        db.refresh(sqlite_loan)
-    except Exception as e:
-        db.rollback()
-        print(f"SQLite mirror insert loan error: {e}")
+    final_id = created_row["loan_id"] if created_row else None
 
-    final_id = created_row["loan_id"] if created_row else sqlite_loan.loan_id
+    # Mirror into SQLite if Supabase inserted, or insert into db if Supabase was unavailable
+    if not created_row or (db.bind and db.bind.dialect.name == "sqlite"):
+        sqlite_loan = Loan(
+            loan_id=created_row["loan_id"] if created_row else None,
+            borrower=borrower_id,
+            lender=lender_id,
+            loan_ref_no=ref_no,
+            principal_amount=loan_in.principal_amount,
+            interest_rate=loan_in.interest_rate or Decimal("0.00"),
+            interest_type=loan_in.interest_type or "simple",
+            loan_date=loan_in.loan_date,
+            due_date=loan_in.due_date,
+            description=desc,
+            status="Pending Approval",
+        )
+        try:
+            db.add(sqlite_loan)
+            db.commit()
+            db.refresh(sqlite_loan)
+            final_id = final_id or sqlite_loan.loan_id
+        except Exception as e:
+            db.rollback()
+            print(f"Database mirror insert loan error: {e}")
     b_name = id_to_name.get(borrower_id) or loan_in.borrower_company or f"Company #{borrower_id}"
-    l_name = id_to_name.get(lender_id) or loan_in.lender_company or f"Company #{lender_id}"
+    l_name = id_to_name.get(lender_id) if lender_id else (loan_in.lender_company or "Pending Finance Assignment")
 
     try:
         log_transaction(
@@ -416,21 +446,74 @@ def update_loan(loan_id: int, loan_update: LoanUpdate, db: Session = Depends(get
     return LoanOut.model_validate(sql_loan)
 
 
-@router.patch("/{loan_id}/approve", response_model=LoanOut, summary="Lender approves a pending loan request")
-@router.post("/{loan_id}/approve", response_model=LoanOut, summary="Lender approves a pending loan request")
-def approve_loan(loan_id: int, db: Session = Depends(get_db)):
+@router.patch("/{loan_id}/approve", response_model=LoanOut, summary="Finance approves a pending loan request and assigns lender")
+@router.post("/{loan_id}/approve", response_model=LoanOut, summary="Finance approves a pending loan request and assigns lender")
+def approve_loan(
+    loan_id: int,
+    approval_in: Optional[LoanApproveRequest] = None,
+    db: Session = Depends(get_db)
+):
     client = None
+    name_to_id = {}
+    id_to_name = {}
     try:
         client = get_supabase_admin_client()
+        id_to_name, name_to_id = get_supabase_company_mapping(client, db)
     except Exception:
         pass
+
+    sql_loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
+    existing_row = None
+    if client:
+        try:
+            res = client.table("loan").select("*").eq("loan_id", loan_id).execute()
+            if res.data and len(res.data) > 0:
+                existing_row = res.data[0]
+        except Exception:
+            pass
+
+    if not existing_row and not sql_loan:
+        raise HTTPException(status_code=404, detail="Loan not found.")
+
+    borrower_id = (existing_row.get("borrower") if existing_row else None) or (sql_loan.borrower if sql_loan else None)
+
+    # Determine assigned lender
+    new_lender_id = None
+    if approval_in and (approval_in.lender or approval_in.lender_company):
+        new_lender_id = resolve_company_id(approval_in.lender, approval_in.lender_company, name_to_id, db)
+
+    current_lender = (existing_row.get("lender") if existing_row else None) or (sql_loan.lender if sql_loan else None)
+    final_lender_id = new_lender_id or current_lender
+
+    if not final_lender_id:
+        raise HTTPException(
+            status_code=400,
+            detail="A lending company must be selected by Finance to approve this loan.",
+        )
+
+    if borrower_id and final_lender_id == borrower_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Lender company cannot be the same as the borrower company.",
+        )
+
+    update_payload = {
+        "status": "Approved",
+        "lender": final_lender_id,
+        "updated_at": datetime.now().isoformat(),
+    }
+    if approval_in:
+        if approval_in.interest_rate is not None:
+            update_payload["interest_rate"] = float(approval_in.interest_rate)
+        if approval_in.due_date is not None:
+            update_payload["due_date"] = approval_in.due_date.isoformat()
 
     updated_row = None
     if client:
         try:
             sb_res = (
                 client.table("loan")
-                .update({"status": "Approved", "updated_at": datetime.now().isoformat()})
+                .update(update_payload)
                 .eq("loan_id", loan_id)
                 .execute()
             )
@@ -439,61 +522,61 @@ def approve_loan(loan_id: int, db: Session = Depends(get_db)):
         except Exception as e:
             print(f"Supabase approve loan error: {e}")
 
-    sql_loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
     if sql_loan:
         sql_loan.status = "Approved"
+        sql_loan.lender = final_lender_id
+        if approval_in and approval_in.interest_rate is not None:
+            sql_loan.interest_rate = Decimal(str(approval_in.interest_rate))
+        if approval_in and approval_in.due_date is not None:
+            sql_loan.due_date = approval_in.due_date
         db.commit()
         db.refresh(sql_loan)
 
-    if not updated_row and not sql_loan:
-        raise HTTPException(status_code=404, detail="Loan not found.")
-
-    id_to_name = {}
-    if client:
+    if not id_to_name and client:
         id_to_name, _ = get_supabase_company_mapping(client)
 
-    if updated_row:
-        b_id = updated_row.get("borrower")
-        l_id = updated_row.get("lender")
-        p_amt = Decimal(str(updated_row.get("principal_amount") or 0.0))
-        return LoanOut(
-            loan_id=updated_row["loan_id"],
-            borrower=b_id,
-            lender=l_id,
-            borrower_name=id_to_name.get(b_id) or f"Company #{b_id}",
-            lender_name=id_to_name.get(l_id) or f"Company #{l_id}",
-            loan_ref_no=updated_row.get("loan_ref_no"),
-            principal_amount=p_amt,
-            amount=p_amt,
-            interest_rate=Decimal(str(updated_row.get("interest_rate") or 0.0)),
-            interest_type=updated_row.get("interest_type") or "simple",
-            loan_date=updated_row.get("loan_date"),
-            due_date=updated_row.get("due_date"),
-            description=updated_row.get("description"),
-            particulars=updated_row.get("description"),
-            status="Approved",
-            created_at=updated_row.get("created_at"),
-            updated_at=updated_row.get("updated_at"),
-        )
+    if not id_to_name:
+        comps = db.query(Company).all()
+        id_to_name = {c.company_id: c.company_name for c in comps}
+
+    final_source = updated_row or {
+        "loan_id": sql_loan.loan_id,
+        "borrower": sql_loan.borrower,
+        "lender": sql_loan.lender,
+        "loan_ref_no": sql_loan.loan_ref_no,
+        "principal_amount": float(sql_loan.principal_amount),
+        "interest_rate": float(sql_loan.interest_rate or 0.0),
+        "interest_type": sql_loan.interest_type,
+        "loan_date": sql_loan.loan_date,
+        "due_date": sql_loan.due_date,
+        "description": sql_loan.description,
+        "status": "Approved",
+        "created_at": sql_loan.created_at,
+        "updated_at": sql_loan.updated_at,
+    }
+
+    b_id = final_source.get("borrower")
+    l_id = final_source.get("lender")
+    p_amt = Decimal(str(final_source.get("principal_amount") or 0.0))
 
     return LoanOut(
-        loan_id=sql_loan.loan_id,
-        borrower=sql_loan.borrower,
-        lender=sql_loan.lender,
-        borrower_name=f"Company #{sql_loan.borrower}",
-        lender_name=f"Company #{sql_loan.lender}",
-        loan_ref_no=sql_loan.loan_ref_no,
-        principal_amount=sql_loan.principal_amount,
-        amount=sql_loan.principal_amount,
-        interest_rate=sql_loan.interest_rate or Decimal("0.00"),
-        interest_type=sql_loan.interest_type or "simple",
-        loan_date=sql_loan.loan_date,
-        due_date=sql_loan.due_date,
-        description=sql_loan.description,
-        particulars=sql_loan.description,
+        loan_id=final_source["loan_id"],
+        borrower=b_id,
+        lender=l_id,
+        borrower_name=id_to_name.get(b_id) or f"Company #{b_id}",
+        lender_name=id_to_name.get(l_id) if l_id else "Pending Finance Assignment",
+        loan_ref_no=final_source.get("loan_ref_no"),
+        principal_amount=p_amt,
+        amount=p_amt,
+        interest_rate=Decimal(str(final_source.get("interest_rate") or 0.0)),
+        interest_type=final_source.get("interest_type") or "simple",
+        loan_date=final_source.get("loan_date"),
+        due_date=final_source.get("due_date"),
+        description=final_source.get("description"),
+        particulars=final_source.get("description"),
         status="Approved",
-        created_at=sql_loan.created_at,
-        updated_at=sql_loan.updated_at,
+        created_at=final_source.get("created_at") or datetime.now(),
+        updated_at=final_source.get("updated_at") or datetime.now(),
     )
 
 

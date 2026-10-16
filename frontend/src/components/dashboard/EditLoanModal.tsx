@@ -15,15 +15,12 @@ import {
   Check,
   AlertCircle,
   Building2,
-  Calendar,
-  Percent,
 } from 'lucide-react'
 import {
   loanService,
   type LoanItem,
   type CompanyOption,
 } from '@/services/loanService'
-import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface EditLoanModalProps {

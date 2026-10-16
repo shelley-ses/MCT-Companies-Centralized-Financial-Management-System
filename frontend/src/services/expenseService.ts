@@ -32,8 +32,6 @@ export interface NewExpenseInput {
   status: 'Paid' | 'Pending'
 }
 
-const INITIAL_EXPENSES: ExpenseItem[] = []
-
 const EXPENSES_STORAGE_KEY = 'mct_expense_records_v1'
 
 function loadStoredExpenses(): ExpenseItem[] {

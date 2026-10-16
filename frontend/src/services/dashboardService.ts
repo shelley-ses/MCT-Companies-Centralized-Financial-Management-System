@@ -703,33 +703,48 @@ export const dashboardService = {
   async getDashboardData(filters?: {
     company?: string
   }): Promise<DashboardData> {
+    // Artificial slight latency for smooth realistic feel
     await new Promise((resolve) => setTimeout(resolve, 150))
 
     let transactions = [...inMemoryTransactions]
     const isCompanySpecific = filters?.company && filters.company !== 'All Companies'
 
     if (isCompanySpecific) {
-      transactions = transactions.filter((t) => t.company === filters.company)
+      transactions = transactions.filter(
+        (t) => t.company?.toLowerCase() === filters.company!.toLowerCase()
+      )
     }
 
+    // Consolidated KPI Totals (or filtered by company if chosen)
     const totalSales =
-      transactions.reduce((sum, t) => sum + (t.deposit || 0), 0) ||
-      (isCompanySpecific ? 80500 : 120000)
+      transactions
+        .filter((t) => t.type === 'Sales' || t.type === 'Income')
+        .reduce((sum, t) => sum + (t.deposit || t.amount || 0), 0) ||
+      (isCompanySpecific ? 85000 : 1350000)
 
     const totalExpense =
-      transactions.reduce((sum, t) => sum + (t.withdrawal || 0), 0) ||
-      (isCompanySpecific ? 24200 : 120000)
+      transactions
+        .filter((t) => t.type === 'Expense')
+        .reduce((sum, t) => sum + (t.withdrawal || t.amount || 0), 0) ||
+      (isCompanySpecific ? 24000 : 335000)
 
     const totalLoan =
       transactions
         .filter((t) => t.type === 'Loan')
-        .reduce((sum, t) => sum + t.amount, 0) || (isCompanySpecific ? 25000 : 120000)
+        .reduce((sum, t) => sum + (t.amount || t.withdrawal || 0), 0) ||
+      (isCompanySpecific ? 25000 : 120000)
 
     const overdueLoans = transactions.filter(
-      (t) => t.status === 'Overdue' || t.auditStatus === 'Flagged'
+      (t) =>
+        t.type === 'Loan' &&
+        (t.status === 'Overdue' || t.auditStatus === 'Flagged')
     ).length
-    const dueSoon = transactions.filter((t) => t.status === 'Pending').length
 
+    const dueSoon = transactions.filter(
+      (t) => t.type === 'Loan' && t.status === 'Pending'
+    ).length
+
+    // Sort transactions latest first
     transactions.sort((a, b) => {
       const dateA = normalizeDateToYYYYMMDD(a.date)
       const dateB = normalizeDateToYYYYMMDD(b.date)
@@ -743,8 +758,8 @@ export const dashboardService = {
         totalSales,
         totalExpense,
         totalLoan,
-        overdueLoans: Math.max(overdueLoans, 1),
-        dueSoon: Math.max(dueSoon, 1),
+        overdueLoans: Math.max(overdueLoans, 2),
+        dueSoon: Math.max(dueSoon, 3),
       },
       weeklySales: INITIAL_WEEKLY_SALES,
       expenses: INITIAL_EXPENSES,

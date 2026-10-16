@@ -6,14 +6,10 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
-  FileText,
   Info,
   ShieldCheck,
-  Landmark,
-  User,
   CreditCard,
   Hash,
-  X,
 } from 'lucide-react'
 import {
   Dialog,
@@ -41,7 +37,7 @@ export const LoanHistoryModal: React.FC<LoanHistoryModalProps> = ({
 }) => {
   if (!loan) return null
 
-  const categoryColor = CATEGORY_COLORS[loan.category] || '#64748B'
+  const categoryColor = (CATEGORY_COLORS as Record<string, string>)[loan.category] || '#64748B'
 
   const getStatusBadge = (status: string) => {
     switch (status) {

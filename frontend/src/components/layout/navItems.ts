@@ -4,7 +4,6 @@ import {
   CircleDollarSign,
   HandCoins,
   ArrowLeftRight,
-  Users,
   Building2,
   History,
   Settings,
@@ -32,28 +31,28 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     title: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
-    roles: ['Admin', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
   },
   {
     id: 'sales',
     title: 'Sales',
     href: '/sales',
     icon: BarChart3,
-    roles: ['Admin', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
   },
   {
     id: 'expense',
     title: 'Expense',
     href: '/expense',
     icon: CircleDollarSign,
-    roles: ['Admin', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
   },
   {
     id: 'loan',
     title: 'Loan',
     href: '/loan',
     icon: HandCoins,
-    roles: ['Admin', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
     subItems: [
       {
         id: 'borrower',
@@ -72,7 +71,7 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     title: 'Transaction',
     href: '/transaction',
     icon: ArrowLeftRight,
-    roles: ['Admin', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
   },
 ] as const
 
@@ -96,7 +95,7 @@ export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
     title: 'Settings',
     href: '/settings',
     icon: Settings,
-    roles: ['Admin', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
   },
 ] as const
 

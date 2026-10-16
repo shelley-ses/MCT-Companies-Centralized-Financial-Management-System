@@ -34,7 +34,8 @@ import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 
 export const TransactionPage: React.FC = () => {
   const { user } = useSession()
-  const isAuditor = user?.role === 'Company Auditor'
+  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isAuditor = isCompanyUser
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const [transactions, setTransactions] = React.useState<DashboardTransactionItem[]>([])
@@ -146,7 +147,7 @@ export const TransactionPage: React.FC = () => {
         withdrawal: l.amount || 0,
         deposit: 0,
         category: l.category as any,
-        status: l.status,
+        status: (l.status === 'Approved' || l.status === 'Paid') ? 'Paid' : l.status === 'Overdue' ? 'Overdue' : 'Pending',
         auditStatus: l.auditStatus,
         auditedBy: l.auditedBy,
         auditNotes: l.auditNotes,
@@ -179,12 +180,7 @@ export const TransactionPage: React.FC = () => {
   const filteredTransactions = React.useMemo(() => {
     let result = transactions
 
-    // Auditor scoped to their assigned company
-    if (isAuditor) {
-      result = result.filter(
-        (t) => t.company.toLowerCase() === assignedCompany.toLowerCase()
-      )
-    }
+    // Auditor and Admin see all companies by default
 
     // Search query
     const q = searchQuery.toLowerCase().trim()
@@ -255,6 +251,7 @@ export const TransactionPage: React.FC = () => {
   const handleExportCsv = () => {
     const headers = [
       'DATE',
+      'COMPANY',
       'CHEQUE NO.',
       'PARTICULARS',
       'WITHDRAWAL',
@@ -267,6 +264,7 @@ export const TransactionPage: React.FC = () => {
       const net = (t.deposit || 0) - (t.withdrawal || 0)
       return [
         `"${t.date}"`,
+        `"${(t.company || '').replace(/"/g, '""')}"`,
         `"${t.chequeNo || '—'}"`,
         `"${(t.particulars || t.description).replace(/"/g, '""')}"`,
         t.withdrawal > 0 ? t.withdrawal : 0,
@@ -306,6 +304,7 @@ export const TransactionPage: React.FC = () => {
               return `
         <tr>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.date}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${tx.company || '—'}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${tx.chequeNo || '—'}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.particulars || tx.description}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #dc2626;">${tx.withdrawal > 0 ? `₱${tx.withdrawal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}</td>
@@ -317,7 +316,7 @@ export const TransactionPage: React.FC = () => {
             })
             .join('')
 
-    const displayedTitle = isAuditor ? assignedCompany : 'MCT Group of Companies'
+    const displayedTitle = 'MCT Group of Companies'
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -344,6 +343,7 @@ export const TransactionPage: React.FC = () => {
             <thead>
               <tr>
                 <th>Date</th>
+                <th>Company</th>
                 <th>Cheque No.</th>
                 <th>Particulars</th>
                 <th style="text-align: right;">Withdrawal</th>
@@ -371,7 +371,7 @@ export const TransactionPage: React.FC = () => {
     setIsExportDropdownOpen(false)
   }
 
-  const displayedTitle = isAuditor ? assignedCompany : 'MCT Group of Companies'
+  const displayedTitle = 'MCT Group of Companies'
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
@@ -522,6 +522,9 @@ export const TransactionPage: React.FC = () => {
                   DATE
                 </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                  COMPANY
+                </TableHead>
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
                   CHEQUE NO.
                 </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
@@ -547,6 +550,7 @@ export const TransactionPage: React.FC = () => {
                 Array.from({ length: 10 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md" /></TableCell>
+                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-28 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-24 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-52 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
@@ -558,7 +562,7 @@ export const TransactionPage: React.FC = () => {
               ) : displayedTransactions.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-12 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     No transactions found for the selected filter criteria.
@@ -580,7 +584,14 @@ export const TransactionPage: React.FC = () => {
                         {tx.date}
                       </TableCell>
 
-                      {/* 2. Cheque No. */}
+                      {/* 2. Company */}
+                      <TableCell className="px-4 py-3.5 text-xs font-medium text-focus/90 truncate max-w-[160px]" title={tx.company}>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-200/60 max-w-full truncate">
+                          {tx.company || '—'}
+                        </span>
+                      </TableCell>
+
+                      {/* 3. Cheque No. */}
                       <TableCell className="px-4 py-3.5 text-xs text-focus/90 whitespace-nowrap font-mono">
                         {tx.chequeNo || '—'}
                       </TableCell>

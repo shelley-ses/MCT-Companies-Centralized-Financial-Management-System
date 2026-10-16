@@ -13,12 +13,30 @@ from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
+CANONICAL_COMPANY_MAP = {
+    1: "MCT Kitchen",
+    2: "MCT Kitchen",
+    3: "MCT Hotel",
+    4: "JK Cafe",
+    5: "JK Cafe",
+    6: "Annex Nine",
+    7: "Merillon",
+    8: "JK Printing",
+    9: "Speedbox",
+    10: "JK Property and Ventures",
+    11: "Golden Sunburst Ventures",
+    12: "Southern Brew",
+}
+
 def get_supabase_mappings(client):
+    company_map = dict(CANONICAL_COMPANY_MAP)
     try:
         companies = client.table("company").select("company_id, company_name").execute().data or []
-        company_map = {c["company_id"]: c["company_name"] for c in companies}
+        for c in companies:
+            if c.get("company_id") and c.get("company_name"):
+                company_map[c["company_id"]] = c["company_name"]
     except Exception:
-        company_map = {}
+        pass
 
     try:
         categories = client.table("category").select("category_id, name").execute().data or []
@@ -73,7 +91,7 @@ def get_expenses(
                 created_by=row.get("created_by"),
                 expense_date=row.get("expense_date"),
                 reference_no=row.get("reference_no"),
-                cheque_no=row.get("cheque_number") or row.get("cheque_no") or (row.get("reference_no") if (row.get("reference_no") or "").startswith("CHK") else None),
+                cheque_no=row.get("cheque_number") or row.get("cheque_no") or (row.get("reference_no") if not (row.get("reference_no") or "").startswith("REF-") else None),
                 amount=row.get("amount") or 0.0,
                 amount_paid=row.get("amount_paid") or 0.0,
                 unpaid_balance=Decimal(str(row.get("amount") or 0.0)) - Decimal(str(row.get("amount_paid") or 0.0)),
@@ -120,7 +138,7 @@ def get_expenses(
                 created_by=exp.created_by,
                 expense_date=exp.expense_date,
                 reference_no=exp.reference_no,
-                cheque_no=exp.reference_no if (exp.reference_no or "").startswith("CHK") else None,
+                cheque_no=exp.cheque_number or exp.cheque_no or (exp.reference_no if not (exp.reference_no or "").startswith("REF-") else None),
                 amount=exp.amount,
                 amount_paid=exp.amount_paid or Decimal("0.00"),
                 unpaid_balance=exp.amount - (exp.amount_paid or Decimal("0.00")),
@@ -145,7 +163,7 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
         raise HTTPException(status_code=400, detail="Particulars is required.")
 
     cheque = (expense_in.cheque_no or expense_in.chequeNo or "").strip() or None
-    ref = expense_in.reference_no or cheque or f"REF-{expense_in.expense_date.strftime('%Y%m%d')}"
+    ref = expense_in.reference_no or (f"CHK-{cheque}" if cheque else f"REF-{expense_in.expense_date.strftime('%Y%m%d')}")
 
     try:
         client = get_supabase_admin_client()
@@ -168,6 +186,10 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
             if target_company_name:
                 ins_comp = client.table("company").insert({
                     "company_name": target_company_name.strip(),
+                    "location": "Metro Manila, Philippines",
+                    "contact_person": f"{target_company_name} Manager",
+                    "contact_number": "09123456789",
+                    "email": "info@mct.com",
                     "starting_balance": 0.00,
                     "current_balance": 0.00
                 }).execute()
@@ -205,6 +227,7 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
             "created_by": expense_in.created_by,
             "expense_date": expense_in.expense_date.isoformat(),
             "reference_no": ref,
+            "cheque_number": cheque,
             "amount": float(expense_in.amount),
             "amount_paid": float(expense_in.amount_paid or 0.0),
             "description": parts,
@@ -236,6 +259,8 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
                 created_by=expense_in.created_by,
                 expense_date=expense_in.expense_date,
                 reference_no=ref,
+                cheque_no=cheque,
+                cheque_number=cheque,
                 amount=expense_in.amount,
                 amount_paid=expense_in.amount_paid or Decimal("0.00"),
                 description=parts
@@ -262,7 +287,7 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
             created_by=created_row.get("created_by"),
             expense_date=created_row.get("expense_date"),
             reference_no=created_row.get("reference_no"),
-            cheque_no=cheque or (created_row.get("reference_no") if (created_row.get("reference_no") or "").startswith("CHK") else None),
+            cheque_no=created_row.get("cheque_number") or cheque or (created_row.get("reference_no") if not (created_row.get("reference_no") or "").startswith("REF-") else None),
             amount=created_row.get("amount"),
             amount_paid=created_row.get("amount_paid") or 0.0,
             unpaid_balance=Decimal(str(created_row.get("amount") or 0.0)) - Decimal(str(created_row.get("amount_paid") or 0.0)),
@@ -330,7 +355,7 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
             created_by=expense.created_by,
             expense_date=expense.expense_date,
             reference_no=expense.reference_no,
-            cheque_no=cheque or (expense.reference_no if (expense.reference_no or "").startswith("CHK") else None),
+            cheque_no=expense.cheque_number or expense.cheque_no or cheque or (expense.reference_no if not (expense.reference_no or "").startswith("REF-") else None),
             amount=expense.amount,
             amount_paid=expense.amount_paid or Decimal("0.00"),
             unpaid_balance=expense.amount - (expense.amount_paid or Decimal("0.00")),
@@ -357,7 +382,7 @@ def get_expense(expense_id: int, db: Session = Depends(get_db)):
                 created_by=row.get("created_by"),
                 expense_date=row.get("expense_date"),
                 reference_no=row.get("reference_no"),
-                cheque_no=row.get("cheque_number") or row.get("cheque_no") or (row.get("reference_no") if (row.get("reference_no") or "").startswith("CHK") else None),
+                cheque_no=row.get("cheque_number") or row.get("cheque_no") or (row.get("reference_no") if not (row.get("reference_no") or "").startswith("REF-") else None),
                 amount=row.get("amount") or 0.0,
                 amount_paid=row.get("amount_paid") or 0.0,
                 unpaid_balance=Decimal(str(row.get("amount") or 0.0)) - Decimal(str(row.get("amount_paid") or 0.0)),
@@ -392,7 +417,7 @@ def get_expense(expense_id: int, db: Session = Depends(get_db)):
         created_by=exp.created_by,
         expense_date=exp.expense_date,
         reference_no=exp.reference_no,
-        cheque_no=exp.reference_no if (exp.reference_no or "").startswith("CHK") else None,
+        cheque_no=exp.cheque_number or exp.cheque_no or (exp.reference_no if not (exp.reference_no or "").startswith("REF-") else None),
         amount=exp.amount,
         amount_paid=exp.amount_paid or Decimal("0.00"),
         unpaid_balance=exp.amount - (exp.amount_paid or Decimal("0.00")),
@@ -426,7 +451,10 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
 
     cheque = expense_in.cheque_no if expense_in.cheque_no is not None else expense_in.chequeNo
     if cheque is not None:
-        update_payload["reference_no"] = cheque.strip() if cheque.strip() else None
+        chq_val = cheque.strip() if cheque.strip() else None
+        update_payload["cheque_number"] = chq_val
+        if chq_val:
+            update_payload["reference_no"] = chq_val
     elif expense_in.reference_no is not None:
         update_payload["reference_no"] = expense_in.reference_no.strip() if expense_in.reference_no.strip() else None
 
@@ -474,6 +502,9 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
             expense.description = update_payload["description"]
         if "reference_no" in update_payload:
             expense.reference_no = update_payload["reference_no"]
+        if "cheque_number" in update_payload:
+            expense.cheque_number = update_payload["cheque_number"]
+            expense.cheque_no = update_payload["cheque_number"]
         if "category_id" in update_payload:
             expense.category_id = update_payload["category_id"]
         db.commit()
@@ -497,7 +528,7 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
             created_by=updated_row.get("created_by"),
             expense_date=updated_row.get("expense_date"),
             reference_no=updated_row.get("reference_no"),
-            cheque_no=cheque or (updated_row.get("reference_no") if (updated_row.get("reference_no") or "").startswith("CHK") else None),
+            cheque_no=updated_row.get("cheque_number") or cheque or (updated_row.get("reference_no") if not (updated_row.get("reference_no") or "").startswith("REF-") else None),
             amount=updated_row.get("amount"),
             amount_paid=updated_row.get("amount_paid") or 0.0,
             unpaid_balance=Decimal(str(updated_row.get("amount") or 0.0)) - Decimal(str(updated_row.get("amount_paid") or 0.0)),
@@ -528,7 +559,7 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
         created_by=expense.created_by,
         expense_date=expense.expense_date,
         reference_no=expense.reference_no,
-        cheque_no=expense.reference_no if (expense.reference_no or "").startswith("CHK") else None,
+        cheque_no=expense.cheque_number or expense.cheque_no or (expense.reference_no if not (expense.reference_no or "").startswith("REF-") else None),
         amount=expense.amount,
         amount_paid=expense.amount_paid or Decimal("0.00"),
         unpaid_balance=expense.amount - (expense.amount_paid or Decimal("0.00")),

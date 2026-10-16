@@ -57,6 +57,8 @@ class Expense(Base):
     created_by = Column(Integer, nullable=True)
     expense_date = Column(Date, nullable=False)
     reference_no = Column(String(100), nullable=True)
+    cheque_no = Column(String(100), nullable=True)
+    cheque_number = Column(String(100), nullable=True)
     amount = Column(Numeric(15, 2), nullable=False)
     amount_paid = Column(Numeric(15, 2), default=0.00)
     description = Column(Text, nullable=True)

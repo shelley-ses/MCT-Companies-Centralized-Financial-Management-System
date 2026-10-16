@@ -15,7 +15,6 @@ import {
   RotateCcw,
   Save,
   Check,
-  AlertCircle,
   KeyRound,
   ShieldAlert,
   Smartphone,
@@ -47,7 +46,8 @@ interface NotificationSettings {
 
 export const SettingsPage: React.FC = () => {
   const { user } = useSession()
-  const isAuditor = user?.role === 'Company Auditor'
+  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isAuditor = isCompanyUser
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Company data states

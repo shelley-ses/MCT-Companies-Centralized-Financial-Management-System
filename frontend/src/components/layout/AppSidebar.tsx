@@ -45,16 +45,27 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     }
   }, [location.pathname])
 
-  const userRole = user?.role === 'Company Auditor' ? 'Company Auditor' : 'Admin'
+  const userRole =
+    user?.role === 'Finance'
+      ? 'Finance'
+      : user?.role === 'Company' || user?.role === 'Company Auditor'
+      ? 'Company'
+      : 'Admin'
 
   const filteredMainItems = React.useMemo(
-    () => MAIN_NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(userRole)),
-    [userRole]
+    () =>
+      MAIN_NAV_ITEMS.filter(
+        (item) => !item.roles || item.roles.includes(userRole) || item.roles.includes(user?.role || '')
+      ),
+    [userRole, user?.role]
   )
 
   const filteredSecondaryItems = React.useMemo(
-    () => SECONDARY_NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(userRole)),
-    [userRole]
+    () =>
+      SECONDARY_NAV_ITEMS.filter(
+        (item) => !item.roles || item.roles.includes(userRole) || item.roles.includes(user?.role || '')
+      ),
+    [userRole, user?.role]
   )
 
   return (

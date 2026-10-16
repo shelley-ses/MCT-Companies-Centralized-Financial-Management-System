@@ -323,6 +323,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     setFieldErrors({})
     setIsSubmitting(true)
 
+    const parsedAmount = parseFloat(cleanAmount)
+
     try {
       const targetId =
         activeSale?.id || activeExpense?.id || activeLoan?.id || activeTx?.id

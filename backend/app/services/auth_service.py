@@ -52,45 +52,130 @@ def _mask_email(email: str) -> str:
 
 
 def _get_application_user(*, email: str | None = None, user_id: int | None = None) -> dict[str, object] | None:
-    query = get_supabase_admin_client().table("users").select(
-        "user_id,email,name,is_admin,company_id,created_at,updated_at,last_login_at"
-    )
-    if email is not None:
-        query = query.eq("email", email)
-    elif user_id is not None:
-        query = query.eq("user_id", user_id)
-    else:
-        return None
-    result = query.limit(1).execute().data
-    return result[0] if result else None
+    # 1. Try Supabase with role
+    try:
+        query = get_supabase_admin_client().table("users").select(
+            "user_id,email,name,is_admin,role,company_id,created_at,updated_at,last_login_at"
+        )
+        if email is not None:
+            query = query.eq("email", email)
+        elif user_id is not None:
+            query = query.eq("user_id", user_id)
+        else:
+            return None
+        result = query.limit(1).execute().data
+        if result:
+            return result[0]
+    except Exception:
+        pass
+
+    # 2. Try Supabase without role
+    try:
+        query = get_supabase_admin_client().table("users").select(
+            "user_id,email,name,is_admin,company_id,created_at,updated_at,last_login_at"
+        )
+        if email is not None:
+            query = query.eq("email", email)
+        elif user_id is not None:
+            query = query.eq("user_id", user_id)
+        result = query.limit(1).execute().data
+        if result:
+            return result[0]
+    except Exception:
+        pass
+
+    # 3. Fallback to local SQLite DB
+    try:
+        from app.db.session import SessionLocal
+        from app.models.user import User as UserModel
+        from sqlalchemy import func
+        db = SessionLocal()
+        if email is not None:
+            u = db.query(UserModel).filter(func.lower(UserModel.email) == email.strip().lower()).first()
+        elif user_id is not None:
+            u = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+        else:
+            u = None
+        if u:
+            res = {
+                "user_id": u.user_id,
+                "email": u.email,
+                "name": u.name,
+                "is_admin": u.is_admin,
+                "role": getattr(u, "role", "audit" if u.is_admin else "company") or ("audit" if u.is_admin else "company"),
+                "company_id": u.company_id,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            }
+            db.close()
+            return res
+        db.close()
+    except Exception:
+        pass
+
+    return None
 
 
 def _update_application_user_login(user_id: int) -> None:
-    get_supabase_admin_client().table("users").update(
-        {"last_login_at": datetime.now(timezone.utc).isoformat()}
-    ).eq("user_id", user_id).execute()
+    try:
+        get_supabase_admin_client().table("users").update(
+            {"last_login_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("user_id", user_id).execute()
+    except Exception:
+        pass
+    try:
+        from app.db.session import SessionLocal
+        from app.models.user import User as UserModel
+        db = SessionLocal()
+        u = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+        if u:
+            u.last_login_at = datetime.now(timezone.utc)
+            db.commit()
+        db.close()
+    except Exception:
+        pass
 
 
 def _application_user_response(user: dict[str, object]) -> UserResponse:
     company_name = None
     company_id = user.get("company_id")
     if company_id is not None:
-        company = (
-            get_supabase_admin_client()
-            .table("company")
-            .select("company_name")
-            .eq("company_id", company_id)
-            .limit(1)
-            .execute()
-            .data
-        )
-        company_name = company[0]["company_name"] if company else None
+        try:
+            company = (
+                get_supabase_admin_client()
+                .table("company")
+                .select("company_name")
+                .eq("company_id", company_id)
+                .limit(1)
+                .execute()
+                .data
+            )
+            company_name = company[0]["company_name"] if company else None
+        except Exception:
+            company_name = None
+
+        if not company_name:
+            try:
+                from app.db.session import SessionLocal
+                from app.models.company import Company
+                db = SessionLocal()
+                c = db.query(Company).filter(Company.company_id == company_id).first()
+                if c:
+                    company_name = c.company_name
+                db.close()
+            except Exception:
+                pass
+
+    user_role = str(user.get("role") or ("audit" if user.get("is_admin") else "company")).lower()
+
     return UserResponse(
         user_id=int(user["user_id"]),
         email=str(user["email"]),
         name=str(user["name"]),
         company_id=int(company_id) if company_id is not None else None,
         is_admin=bool(user["is_admin"]),
+        role=user_role,
         last_login_at=user.get("last_login_at"),
         created_at=user.get("created_at"),
         updated_at=user.get("updated_at"),
@@ -197,6 +282,7 @@ def create_jwt_token(
     email: str,
     is_admin: bool = False,
     company_id: Optional[int] = None,
+    role: Optional[str] = None,
     expires_delta_seconds: int | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
@@ -204,16 +290,19 @@ def create_jwt_token(
         expires_delta_seconds = settings.SESSION_IDLE_TIMEOUT_SECONDS
     expiration = now + timedelta(seconds=expires_delta_seconds)
 
+    user_role = str(role or ("audit" if is_admin else "company")).lower()
+
     payload = {
         "sub": str(user_id),
         "email": email,
         "aud": "authenticated",
-        "role": "admin" if is_admin else "authenticated",
+        "role": user_role,
         "iat": int(now.timestamp()),
         "exp": int(expiration.timestamp()),
         "jti": secrets.token_urlsafe(24),
         "app_metadata": {
             "is_admin": is_admin,
+            "role": user_role,
             "company_id": company_id,
             "provider": "email",
         },
@@ -261,12 +350,15 @@ def get_current_user_info(db: Session, user_id: int) -> UserResponse:
         if company:
             company_name = company.company_name
 
+    user_role = str(getattr(user, "role", "audit" if user.is_admin else "company") or ("audit" if user.is_admin else "company")).lower()
+
     return UserResponse(
         user_id=user.user_id,
         email=user.email,
         name=user.name,
         company_id=user.company_id,
         is_admin=user.is_admin,
+        role=user_role,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -402,11 +494,13 @@ def verify_login_otp(db: Session, otp_data: VerifyOtpRequest, ip_address: str, c
         user_info = _application_user_response(user)
     else:
         user_info = UserResponse(user_id=0, email=challenge["email"], name=challenge["email"].split("@")[0], company_id=None, is_admin=False)
+    user_role = str(user.get("role") or ("audit" if user.get("is_admin") else "company")).lower() if user else "company"
     access_token = create_jwt_token(
         user_id=int(user["user_id"]) if user else 1,
         email=challenge["email"],
         is_admin=bool(user["is_admin"]) if user else False,
         company_id=int(user["company_id"]) if user and user["company_id"] is not None else None,
+        role=user_role,
     )
 
     # Audit: OTP verified + login success

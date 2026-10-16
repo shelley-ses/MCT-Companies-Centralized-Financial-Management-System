@@ -47,7 +47,7 @@ export interface CreateCompanyPayload {
   contactPerson: string
   contactPersonEmail?: string
   contactNumber: string
-  telephoneNumber: string
+  telephoneNumber?: string
   startingBalance: number
   currentBalance: number
   logoUrl?: string

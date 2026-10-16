@@ -50,7 +50,8 @@ class UserService:
 
     #create a new user and return a UserResponse
     def create_user(self, user_in: UserCreate) -> UserResponse:
-        self._validate_user_assignment(user_in.company_id, user_in.is_admin)
+        user_role = str(user_in.role or ("audit" if user_in.is_admin else "company")).lower()
+        self._validate_user_assignment(user_in.company_id, user_in.is_admin, user_role)
         self._ensure_company_exists(user_in.company_id)
         self._ensure_email_available(user_in.email)
         auth_user_id = self._create_auth_user(user_in, user_in.email)
@@ -59,7 +60,8 @@ class UserService:
             name=user_in.name.strip(),
             email=user_in.email,
             company_id=user_in.company_id,
-            is_admin=user_in.is_admin,
+            is_admin=user_in.is_admin or (user_role in ["audit", "admin"]),
+            role=user_role,
         )
         try:
             self.db.add(user)
@@ -87,7 +89,8 @@ class UserService:
         update_data = user_in.model_dump(exclude_unset=True)
         company_id = update_data.get("company_id", user.company_id)
         is_admin = update_data.get("is_admin", user.is_admin)
-        self._validate_user_assignment(company_id, is_admin)
+        role = update_data.get("role", getattr(user, "role", "company"))
+        self._validate_user_assignment(company_id, is_admin, role)
         self._ensure_company_exists(company_id)
 
         auth_changes = {}
@@ -137,12 +140,14 @@ class UserService:
                     Company.company_id == user.company_id
                 ).first()
                 company_name = company.company_name if company else None
+            user_role = str(getattr(user, "role", "audit" if user.is_admin else "company") or ("audit" if user.is_admin else "company")).lower()
             return UserResponse(
                 user_id=user.user_id,
                 name=user.name,
                 email=user.email,
                 company_id=user.company_id,
                 is_admin=user.is_admin,
+                role=user_role,
                 last_login_at=user.last_login_at,
                 created_at=user.created_at,
                 updated_at=user.updated_at,
@@ -181,12 +186,13 @@ class UserService:
 
     #validate that the user assignment is consistent with business rules regarding admin status and company association
     @staticmethod
-    def _validate_user_assignment(company_id: int | None, is_admin: bool) -> None:
-        if is_admin and company_id is not None:
+    def _validate_user_assignment(company_id: int | None, is_admin: bool, role: str = "company") -> None:
+        r = (role or "").lower()
+        if (is_admin or r in ["audit", "admin"]) and company_id is not None:
             raise UserValidationError(
                 "An administrator cannot be assigned to a company."
             )
-        if not is_admin and company_id is None:
+        if r == "company" and not is_admin and company_id is None:
             raise UserValidationError(
                 "A company user must be assigned to a company."
             )

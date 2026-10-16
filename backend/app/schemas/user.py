@@ -7,6 +7,7 @@ class UserBase(BaseModel):
     email: EmailStr
     company_id: Optional[int] = None
     is_admin: bool = False
+    role: str = Field(default="company", description="Role of the user: company, finance, audit")
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=50)
@@ -16,6 +17,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     company_id: Optional[int] = None
     is_admin: Optional[bool] = None
+    role: Optional[str] = None
     password: Optional[str] = Field(default=None, min_length=8, max_length=50)
 
 class UserResponse(UserBase):

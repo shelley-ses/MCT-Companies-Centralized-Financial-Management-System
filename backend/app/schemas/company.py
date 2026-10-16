@@ -10,7 +10,7 @@ class CompanyBase(BaseModel):
     contact_person: str = Field(min_length=1, max_length=100)
     contact_number: Optional[str] = Field(default=None, max_length=11)
     phone: Optional[str] = Field(default=None, max_length=8)
-    email: EmailStr
+    email: Optional[str] = None
     starting_balance: Decimal = Field(decimal_places=2)
     current_balance: Decimal = Field(decimal_places=2)
 
@@ -23,7 +23,7 @@ class CompanyUpdate(BaseModel):
     contact_person: Optional[str] = Field(default=None, min_length=1, max_length=100)
     contact_number: Optional[str] = Field(default=None, max_length=11)
     phone: Optional[str] = Field(default=None, max_length=8)
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     starting_balance: Optional[Decimal] = Field(default=None, decimal_places=2)
     current_balance: Optional[Decimal] = Field(default=None, decimal_places=2)
 
@@ -34,7 +34,7 @@ class CompanyOut(BaseModel):
     contact_person: str
     contact_number: Optional[str] = None
     phone: Optional[str] = None
-    email: EmailStr
+    email: Optional[str] = None
     starting_balance: float
     current_balance: float
     total_revenue: float = 0.0

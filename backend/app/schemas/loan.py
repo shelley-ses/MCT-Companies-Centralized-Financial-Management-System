@@ -66,10 +66,17 @@ class LoanUpdate(BaseModel):
     particulars: Optional[str] = None
     status: Optional[str] = None
 
+class LoanApproveRequest(BaseModel):
+    lender: Optional[int] = Field(None, description="Company_ID of assigned lender")
+    lender_company: Optional[str] = Field(None, description="Company name of assigned lender")
+    interest_rate: Optional[Decimal] = Field(None, ge=0, decimal_places=2, description="Interest rate percentage")
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+
 class LoanOut(LoanBase):
     loan_id: int
     borrower: int
-    lender: int
+    lender: Optional[int] = None
     amount: Optional[Decimal] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

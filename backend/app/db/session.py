@@ -11,13 +11,22 @@ Base = declarative_base()
 
 # Database connection setup
 db_url = settings.DATABASE_URL
-if db_url and db_url.strip():
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg2://"):
-        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-    engine = create_engine(db_url, pool_pre_ping=True)
-else:
+engine = None
+from sqlalchemy.pool import NullPool
+
+if db_url and db_url.strip() and not db_url.startswith("sqlite"):
+    try:
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+        elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg2://"):
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        if "pooler.supabase.com:5432" in db_url:
+            db_url = db_url.replace(":5432", ":6543")
+        engine = create_engine(db_url, poolclass=NullPool, pool_pre_ping=True)
+    except Exception as e:
+        logger.warning(f"Failed to initialize database engine with {db_url}: {e}. Falling back to SQLite.")
+
+if engine is None:
     db_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "mct_financial.db")
     engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False})
 
@@ -58,8 +67,6 @@ def init_db():
         db.close()
     except Exception as e:
         logger.warning(f"Could not sync companies on init: {e}")
-
-init_db()
 
 # Dependency to get a database session for FastAPI endpoints
 def get_db() -> Generator:

@@ -74,13 +74,14 @@ const ITEMS_PER_PAGE = 10
 export const SalesPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const isAuditor = user?.role === 'Company Auditor'
+  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isFinance = user?.role === 'Finance'
+  const isAuditor = isCompanyUser
+  const canAdd = isCompanyUser || isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Filter state
-  const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isAuditor ? assignedCompany : 'All Companies'
-  )
+  const [selectedCompany, setSelectedCompany] = React.useState<string>('All Companies')
   const [dateRange, setDateRange] = React.useState<DateRange>({
     startDate: '2026-10-01',
     endDate: '2026-10-31',
@@ -209,7 +210,7 @@ export const SalesPage: React.FC = () => {
     setLoading(true)
     try {
       const data = await salesService.getSales(
-        isAuditor ? assignedCompany : selectedCompany
+        selectedCompany === 'All Companies' ? undefined : selectedCompany
       )
       setSales(data)
     } catch (err) {
@@ -217,7 +218,7 @@ export const SalesPage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [isAuditor, assignedCompany, selectedCompany])
+  }, [selectedCompany])
 
   React.useEffect(() => {
     loadSales()
@@ -248,11 +249,10 @@ export const SalesPage: React.FC = () => {
   const filteredSales = React.useMemo(() => {
     return sales
       .filter((item) => {
-        // 1. Company filter (if Admin)
+        // 1. Company filter
         if (
-          !isAuditor &&
           selectedCompany !== 'All Companies' &&
-          item.company !== selectedCompany
+          item.company?.toLowerCase() !== selectedCompany.toLowerCase()
         ) {
           return false
         }
@@ -392,11 +392,10 @@ export const SalesPage: React.FC = () => {
     setIsAuditModalOpen(true)
   }
 
-  const displayedCompanyTitle = isAuditor
-    ? assignedCompany
-    : selectedCompany === 'All Companies'
-    ? 'MCT Group of Companies'
-    : selectedCompany
+  const displayedCompanyTitle =
+    selectedCompany === 'All Companies'
+      ? 'MCT Group of Companies'
+      : selectedCompany
 
   return (
     <div className="space-y-6 pb-10 max-w-7xl mx-auto animate-in fade-in duration-300">
@@ -457,8 +456,8 @@ export const SalesPage: React.FC = () => {
               )}
             </div>
 
-            {/* Add Sales Button (Exclusively for Company Auditor; Admin side has NO Add Sales button per user request) */}
-            {isAuditor && (
+            {/* Add Sales Button (Exclusively for operational users: Company and Finance; Admin side has NO Add Sales button) */}
+            {canAdd && (
               <Button
                 type="button"
                 onClick={() => navigate('/sales/add')}
@@ -589,9 +588,8 @@ export const SalesPage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope Dropdown (Admin only - no "Assigned: MCT Kitchen" badge per user request) */}
-            {!isAuditor && (
-              <div ref={companyDropdownRef} className="relative inline-block">
+            {/* Company Scope Dropdown (Available for Auditor, Finance, and Admin) */}
+            <div ref={companyDropdownRef} className="relative inline-block">
                 <button
                   type="button"
                   onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
@@ -696,7 +694,6 @@ export const SalesPage: React.FC = () => {
                   </div>
                 )}
               </div>
-            )}
           </div>
         </div>
       </div>
@@ -796,35 +793,39 @@ export const SalesPage: React.FC = () => {
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table className="w-full table-fixed min-w-[900px]">
             <colgroup>
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
-              <col style={{ width: '14.2857%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '8%' }} />
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  COMPANY
+                </TableHead>
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CHEQUE NO.
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DEPOSIT
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CATEGORY
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   NET AMOUNT
                 </TableHead>
-                <TableHead className="w-[14.2857%] px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                <TableHead className="w-[8%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -834,33 +835,36 @@ export const SalesPage: React.FC = () => {
               {loading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <TableRow key={idx} className="border-b border-slate-100">
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-16 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-24 bg-slate-200/60 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-28 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-36 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-20 bg-slate-200/60 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/70 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-32 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-5 w-20 bg-slate-200/60 animate-pulse rounded-full" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-16 bg-slate-200/70 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-4 py-4">
-                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-5 w-16 bg-slate-200/60 animate-pulse rounded-full" />
                     </TableCell>
-                    <TableCell className="px-4 py-4 text-center">
-                      <div className="h-6 w-14 bg-slate-200/60 animate-pulse rounded-md mx-auto" />
+                    <TableCell className="px-3.5 py-4">
+                      <div className="h-4 w-16 bg-slate-200/80 animate-pulse rounded" />
+                    </TableCell>
+                    <TableCell className="px-3.5 py-4 text-center">
+                      <div className="h-6 w-10 bg-slate-200/60 animate-pulse rounded-md mx-auto" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : paginatedSales.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
@@ -890,7 +894,7 @@ export const SalesPage: React.FC = () => {
                     title="Click to view complete details"
                   >
                     {/* 1. Date */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-medium text-focus truncate text-left">
+                    <TableCell className="w-[10%] px-3.5 py-3.5 text-xs font-medium text-focus truncate text-left">
                       <div className="flex items-center gap-1.5 truncate">
                         <span>{sale.date}</span>
                         {highlightedSaleId === sale.id && (
@@ -901,34 +905,42 @@ export const SalesPage: React.FC = () => {
                       </div>
                     </TableCell>
 
-                    {/* 2. Cheque No */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
+                    {/* 2. Company */}
+                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs font-semibold text-focus truncate text-left" title={sale.company}>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <span className="truncate">{sale.company}</span>
+                      </div>
+                    </TableCell>
+
+                    {/* 3. Cheque No */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
                       {sale.chequeNo || '—'}
                     </TableCell>
 
-                    {/* 3. Particulars */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={sale.particulars}>
+                    {/* 4. Particulars */}
+                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={sale.particulars}>
                       <span className="truncate block">{sale.particulars}</span>
                     </TableCell>
 
-                    {/* 4. Deposit */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-semibold text-left tabular-nums whitespace-nowrap text-emerald-600">
+                    {/* 5. Deposit */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs font-semibold text-left tabular-nums whitespace-nowrap text-emerald-600">
                       {sale.deposit > 0 ? formatPHP(sale.deposit) : ''}
                     </TableCell>
 
-                    {/* 5. Category */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
+                    {/* 6. Category */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
                       {sale.category}
                     </TableCell>
 
-                    {/* 6. Net Amount */}
-                    <TableCell className="w-[14.2857%] px-4 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
+                    {/* 7. Net Amount */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
                       {formatPHP(sale.netAmount)}
                     </TableCell>
 
-                    {/* 7. Actions */}
+                    {/* 8. Actions */}
                     <TableCell
-                      className="w-[14.2857%] px-4 py-3.5 text-center whitespace-nowrap"
+                      className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-center">

@@ -9,6 +9,7 @@ class AuthenticatedUser(TypedDict):
     email: str | None
     company_id: int | None
     is_admin: bool
+    role: str
 
 
 VerifiedToken = Annotated[dict[str, Any], Depends(verify_token)]
@@ -21,12 +22,14 @@ def get_current_user(claims: VerifiedToken) -> AuthenticatedUser:
 
     company_id = _optional_positive_int(metadata.get("company_id"))
     is_admin = metadata.get("is_admin") is True
+    role = str(metadata.get("role") or ("audit" if is_admin else "company")).lower()
 
     return {
         "auth_user_id": claims["sub"],
         "email": claims.get("email") if isinstance(claims.get("email"), str) else None,
         "company_id": company_id,
         "is_admin": is_admin,
+        "role": role,
     }
 
 
@@ -34,7 +37,7 @@ CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 # require the current authenticated user to be a central administrator account.
 def require_admin_user(user: CurrentUser) -> AuthenticatedUser:
-    if not user["is_admin"] or user["company_id"] is not None:
+    if not user["is_admin"] and user.get("role") not in ["audit", "admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Central administrator access is required.",
@@ -45,9 +48,22 @@ def require_admin_user(user: CurrentUser) -> AuthenticatedUser:
 
 AdminUser = Annotated[AuthenticatedUser, Depends(require_admin_user)]
 
+# require Finance or Administrator role
+def require_finance_or_admin_user(user: CurrentUser) -> AuthenticatedUser:
+    role = user.get("role", "").lower()
+    if role not in ["finance", "audit", "admin"] and not user.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Finance or administrator access is required.",
+        )
+    return user
+
+
+FinanceOrAdminUser = Annotated[AuthenticatedUser, Depends(require_finance_or_admin_user)]
+
 # require the current authenticated user to be a company account.
 def require_company_user(user: CurrentUser) -> AuthenticatedUser:
-    if user["is_admin"] or user["company_id"] is None:
+    if (user["is_admin"] or user.get("role") in ["audit", "admin"]) and user["company_id"] is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Company account access is required.",
