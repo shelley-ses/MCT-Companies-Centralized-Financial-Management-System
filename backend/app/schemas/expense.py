@@ -19,6 +19,7 @@ class ExpenseCreate(ExpenseBase):
     company: Optional[str] = None
     category: Optional[str] = None
     chequeNo: Optional[str] = None
+    payment_method: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_required_fields(self):
@@ -46,6 +47,7 @@ class ExpenseCreate(ExpenseBase):
 class ExpenseUpdate(BaseModel):
     category_id: Optional[int] = None
     category: Optional[str] = None
+    payment_method: Optional[str] = None
     expense_date: Optional[date] = None
     reference_no: Optional[str] = None
     cheque_no: Optional[str] = None
@@ -84,6 +86,7 @@ class ExpenseOut(BaseModel):
     company_name: Optional[str] = None
     category_id: Optional[int] = None
     category_name: Optional[str] = None
+    payment_method: Optional[str] = None
     created_by: Optional[int] = None
     expense_date: date
     reference_no: Optional[str] = None

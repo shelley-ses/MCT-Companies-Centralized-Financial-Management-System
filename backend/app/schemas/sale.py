@@ -17,6 +17,7 @@ class SaleCreate(SaleBase):
     chequeNo: Optional[str] = None
     reference_no: Optional[str] = None
     description: Optional[str] = None
+    payment_method: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_required_fields(self):
@@ -43,6 +44,7 @@ class SaleCreate(SaleBase):
 class SaleUpdate(BaseModel):
     category_id: Optional[int] = None
     category: Optional[str] = None
+    payment_method: Optional[str] = None
     transaction_date: Optional[date] = None
     cheque_no: Optional[str] = None
     chequeNo: Optional[str] = None
@@ -64,6 +66,7 @@ class SaleOut(BaseModel):
     company_name: Optional[str] = None
     category_id: Optional[int] = None
     category_name: Optional[str] = None
+    payment_method: Optional[str] = None
     transaction_date: date
     cheque_no: Optional[str] = None
     amount: Decimal

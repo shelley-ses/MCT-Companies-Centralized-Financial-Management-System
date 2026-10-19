@@ -25,6 +25,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       document.title = 'Lender Loans - MCT Centralized Financial System'
     } else if (path.startsWith('/loan')) {
       document.title = 'Loan - MCT Centralized Financial System'
+    } else if (path.startsWith('/bills')) {
+      document.title = 'Bills - MCT Centralized Financial System'
     } else if (path.startsWith('/transaction')) {
       document.title = 'Transactions - MCT Centralized Financial System'
     } else if (path.startsWith('/activity-log')) {
@@ -39,8 +41,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       {/* Mobile Top Bar with Sheet Drawer (< lg) */}
       <MobileTopBar />
 
-      {/* Desktop Persistent Sidebar (>= lg) */}
-      <div className="hidden lg:flex shrink-0 h-screen sticky top-0">
+      {/* Desktop Persistent Sidebar Rail (>= lg) */}
+      <div className="hidden lg:block shrink-0 w-[72px] h-screen sticky top-0 z-40 relative">
         <AppSidebar />
       </div>
 

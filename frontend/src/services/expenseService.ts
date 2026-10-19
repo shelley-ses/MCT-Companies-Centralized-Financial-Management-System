@@ -22,6 +22,7 @@ export interface ExpenseItem {
   withdrawal: number
   netAmount: number
   category: string
+  paymentMethod?: string // e.g. Petty Cash, Cash, GCash, etc.
   company: string
   items?: ParticularItem[]
   totalPaid?: number
@@ -44,6 +45,7 @@ export interface NewExpenseInput {
   particulars: string
   amount: number
   category: string
+  paymentMethod?: string
   company: string
   status: 'Paid' | 'Pending'
   items?: ParticularItem[]
@@ -104,7 +106,8 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
     particulars: partText,
     withdrawal: amt,
     netAmount: amt,
-    category: exp.category_name || exp.category || 'In-house',
+    category: exp.category_name || exp.category || 'Petty Cash',
+    paymentMethod: exp.payment_method || undefined,
     company: exp.company_name || exp.company || 'MCT Kitchen',
     items: parsedItems,
     status: isPending ? 'Pending' : 'Paid',
@@ -131,7 +134,7 @@ export const expenseService = {
       })
       if (res.ok) {
         const data = await res.json()
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           return data
         }
       }
@@ -139,15 +142,44 @@ export const expenseService = {
       console.warn('Failed to fetch categories from backend:', err)
     }
     return [
-      { category_id: 1, name: 'GCash' },
-      { category_id: 2, name: 'Maya' },
-      { category_id: 3, name: 'PayMongo' },
-      { category_id: 4, name: 'Panda' },
-      { category_id: 5, name: 'In-house' },
-      { category_id: 6, name: 'Cheque' },
-      { category_id: 7, name: 'Bank Transfer' },
-      { category_id: 8, name: 'Cash' },
+      { category_id: 1, name: 'Petty Cash' },
+      { category_id: 2, name: 'Rendered Fee' },
+      { category_id: 3, name: 'BBMP Foundation' },
+      { category_id: 4, name: 'HDMF' },
+      { category_id: 5, name: 'Philhealth' },
+      { category_id: 6, name: 'Electricity' },
+      { category_id: 7, name: 'BIR' },
+      { category_id: 8, name: 'Payroll' },
+      { category_id: 9, name: 'SSS' },
+      { category_id: 10, name: 'Hotel Supplies' },
+      { category_id: 11, name: 'Revolving Funds' },
     ]
+  },
+
+  async createCategory(name: string, description?: string): Promise<{ category_id: number; name: string }> {
+    const cleaned = name.trim()
+    if (!cleaned) throw new Error('Category name cannot be empty')
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('mct_access_token')
+          : null
+
+      const res = await fetch('/api/v1/categories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ name: cleaned, description }),
+      })
+      if (res.ok) {
+        return await res.json()
+      }
+    } catch (err) {
+      console.warn('Failed to save category to backend:', err)
+    }
+    return { category_id: Date.now(), name: cleaned }
   },
 
   async getExpenses(params?: {
@@ -232,6 +264,7 @@ export const expenseService = {
         description: input.particulars,
         amount: input.amount,
         category: input.category,
+        payment_method: input.paymentMethod || null,
         cheque_no: input.chequeNo || null,
         reference_no: refNo,
       }
@@ -278,6 +311,7 @@ export const expenseService = {
       withdrawal: input.amount,
       netAmount: input.amount,
       category: input.category,
+      paymentMethod: input.paymentMethod,
       company: input.company,
       items: input.items || parseParticulars(input.particulars, null, input.amount),
       status: input.status,
@@ -319,6 +353,9 @@ export const expenseService = {
     }
     if (updates.category) {
       payload.category = updates.category
+    }
+    if (updates.paymentMethod !== undefined) {
+      payload.payment_method = updates.paymentMethod || null
     }
     if (updates.chequeNo !== undefined) {
       payload.cheque_no = updates.chequeNo
@@ -458,6 +495,31 @@ export const expenseService = {
     return true
   },
 
+  async updateExpenseAuditStatus(
+    id: string,
+    auditStatus: 'Verified' | 'Pending Audit' | 'Flagged',
+    auditedBy?: string
+  ): Promise<ExpenseItem | null> {
+    const today = new Date().toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+    })
+    const index = inMemoryExpenses.findIndex((e) => e.id === id)
+    if (index === -1) return null
+    const exp = inMemoryExpenses[index]
+    const updated: ExpenseItem = {
+      ...exp,
+      auditStatus,
+      auditedBy: auditStatus === 'Verified' ? (auditedBy || 'Admin') : undefined,
+      auditDate: auditStatus === 'Verified' ? today : undefined,
+      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+    }
+    inMemoryExpenses[index] = updated
+    saveStoredExpenses(inMemoryExpenses)
+    return updated
+  },
+
   exportCsv(items: ExpenseItem[], filename = 'expense_report.csv') {
     const headers = [
       'Date',
@@ -465,6 +527,7 @@ export const expenseService = {
       'Cheque No',
       'Particulars',
       'Withdrawal',
+      'Payment Method',
       'Category',
       'Net Amount',
       'Company',
@@ -476,6 +539,7 @@ export const expenseService = {
       e.chequeNo || '—',
       `"${e.particulars.replace(/"/g, '""')}"`,
       e.withdrawal,
+      e.paymentMethod || 'Cash',
       e.category,
       e.netAmount,
       e.company,
@@ -510,6 +574,7 @@ export const expenseService = {
           <td>${e.chequeNo || '—'}</td>
           <td>${e.particulars}</td>
           <td style="text-align: right;">₱${e.withdrawal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+          <td>${e.paymentMethod || 'Cash'}</td>
           <td>${e.category}</td>
           <td style="text-align: right;">₱${e.netAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
           <td>${e.status}</td>
@@ -543,6 +608,7 @@ export const expenseService = {
                 <th>Cheque No.</th>
                 <th>Particulars</th>
                 <th style="text-align: right;">Withdrawal</th>
+                <th>Payment Method</th>
                 <th>Category</th>
                 <th style="text-align: right;">Net Amount</th>
                 <th>Status</th>
@@ -580,9 +646,8 @@ export const expenseService = {
       amount: expense.withdrawal,
       withdrawal: expense.withdrawal,
       deposit: 0,
-      category: (['GCash', 'Maya', 'PayMongo', 'Panda', 'In-house'].includes(expense.category)
-        ? expense.category
-        : 'In-house') as any,
+      category: (expense.category || 'Petty Cash') as any,
+      paymentMethod: expense.paymentMethod,
       status: expense.status,
       auditStatus: expense.auditStatus,
       auditedBy: expense.auditedBy,

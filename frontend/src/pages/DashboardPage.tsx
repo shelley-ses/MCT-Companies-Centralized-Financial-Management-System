@@ -27,7 +27,10 @@ import { useSession } from '@/hooks/useSession'
 
 export const DashboardPage: React.FC = () => {
   const { user } = useSession()
-  const isCompanyScoped = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isCompanyScoped =
+    user?.role === 'Company' ||
+    user?.role === 'Company Auditor' ||
+    user?.role === 'Supervisor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const [filters, setFilters] = React.useState<DashboardFilterState>(() => ({

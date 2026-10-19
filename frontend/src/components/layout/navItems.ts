@@ -5,8 +5,10 @@ import {
   HandCoins,
   ArrowLeftRight,
   Building2,
+  Users,
   History,
   Settings,
+  ReceiptText,
 } from 'lucide-react'
 import type * as React from 'react'
 
@@ -32,49 +34,56 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
     title: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
-    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor', 'Audit'],
   },
   {
     id: 'sales',
     title: 'Sales',
     href: '/sales',
     icon: BarChart3,
-    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor', 'Audit'],
   },
   {
     id: 'expense',
     title: 'Expense',
     href: '/expense',
     icon: CircleDollarSign,
-    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor', 'Audit'],
   },
   {
     id: 'loan',
     title: 'Loan',
     href: '/loan',
     icon: HandCoins,
-    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor', 'Audit'],
     subItems: [
       {
         id: 'borrower',
         title: 'Borrower',
         href: '/loan/borrower',
-        roles: ['Finance', 'Company', 'Company Auditor'],
+        roles: ['Finance', 'Supervisor', 'Company', 'Company Auditor'],
       },
       {
         id: 'lender',
         title: 'Lender',
         href: '/loan/lender',
-        roles: ['Finance', 'Company', 'Company Auditor'],
+        roles: ['Finance', 'Supervisor', 'Company', 'Company Auditor'],
       },
     ],
+  },
+  {
+    id: 'bills',
+    title: 'Bills',
+    href: '/bills',
+    icon: ReceiptText,
+    roles: ['Admin', 'Finance', 'Supervisor', 'Company', 'Company Auditor', 'Audit'],
   },
   {
     id: 'transaction',
     title: 'Transaction',
     href: '/transaction',
     icon: ArrowLeftRight,
-    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor', 'Audit'],
   },
 ] as const
 
@@ -85,6 +94,13 @@ export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
     href: '/employee',
     icon: Building2,
     roles: ['Admin'], // Exclusively for Admin (Company Management)
+  },
+  {
+    id: 'users',
+    title: 'User Management',
+    href: '/users',
+    icon: Users,
+    roles: ['Admin'], // Exclusively for Admin (User Management)
   },
   {
     id: 'activity-log',
@@ -98,6 +114,6 @@ export const SECONDARY_NAV_ITEMS: readonly NavItem[] = [
     title: 'Settings',
     href: '/settings',
     icon: Settings,
-    roles: ['Admin', 'Finance', 'Company', 'Company Auditor'],
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor', 'Audit'],
   },
 ] as const

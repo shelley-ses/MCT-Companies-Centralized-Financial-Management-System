@@ -72,7 +72,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
     })
 
     transactions.forEach((tx) => {
-      const cat = tx.category || 'In-house'
+      const cat = tx.category || 'Petty Cash'
       const val = type === 'income' ? (tx.deposit || tx.amount || 0) : (tx.withdrawal || tx.amount || 0)
       sums[cat] = (sums[cat] || 0) + val
     })
@@ -80,10 +80,8 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
     const total = Object.values(sums).reduce((a, b) => a + b, 0)
 
     const extraColors: Record<string, string> = {
-      Cheque: '#8B5CF6',
-      'Bank Transfer': '#06B6D4',
-      Cash: '#10B981',
-      None: '#64748B',
+      General: '#64748B',
+      Other: '#767B89',
     }
 
     const allCategories = Array.from(
@@ -103,8 +101,8 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
   const title = type === 'income' ? 'Income Summary' : 'Expense Summary'
   const subtitle =
     type === 'income'
-      ? 'Deposit amounts broken down by payment category'
-      : 'Withdrawal amounts broken down by payment category'
+      ? 'Deposit amounts broken down by category'
+      : 'Withdrawal amounts broken down by category'
   const Icon = type === 'income' ? TrendingUp : RotateCw
   const iconBg = type === 'income' ? 'bg-primary' : 'bg-[#0B0F2B]'
 

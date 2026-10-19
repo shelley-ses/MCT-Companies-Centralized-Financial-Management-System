@@ -5,8 +5,10 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { SalesPage } from '@/pages/SalesPage'
 import { ExpensePage } from '@/pages/ExpensePage'
 import { LoanPage } from '@/pages/LoanPage'
+import { BillsPage } from '@/pages/BillsPage'
 import { TransactionPage } from '@/pages/TransactionPage'
 import { EmployeePage } from '@/pages/EmployeePage'
+import { UserManagementPage } from '@/pages/UserManagementPage'
 import { ActivityLogPage } from '@/pages/ActivityLogPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { AddTransactionSheetPage } from '@/pages/AddTransactionSheetPage'
@@ -151,6 +153,20 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: '/bills',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <BillsPage />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/loan/bills',
+    element: <Navigate to="/bills" replace />,
+  },
+  {
     path: '/transaction',
     element: (
       <ProtectedRoute>
@@ -177,12 +193,20 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: '/user-management',
-    element: <Navigate to="/employee" replace />,
+    path: '/users',
+    element: (
+      <ProtectedRoute>
+        <AdminOnlyRoute>
+          <AppShell>
+            <UserManagementPage />
+          </AppShell>
+        </AdminOnlyRoute>
+      </ProtectedRoute>
+    ),
   },
   {
-    path: '/users',
-    element: <Navigate to="/employee" replace />,
+    path: '/user-management',
+    element: <Navigate to="/users" replace />,
   },
   {
     path: '/activity-log',

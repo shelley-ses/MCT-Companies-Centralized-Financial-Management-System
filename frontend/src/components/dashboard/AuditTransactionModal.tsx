@@ -8,6 +8,7 @@ import {
   Loader2,
   CheckCircle2,
   Receipt,
+  RotateCcw,
 } from 'lucide-react'
 import { UpdateLoanStatusModal } from './UpdateLoanStatusModal'
 import { parseParticulars } from '@/utils/particularsUtils'
@@ -39,6 +40,7 @@ import {
 } from '@/services/loanService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/hooks/useSession'
 
 interface AuditTransactionModalProps {
   open: boolean
@@ -50,21 +52,48 @@ interface AuditTransactionModalProps {
   onExpenseUpdated?: (updatedItem: ExpenseItem) => void
   loan?: LoanItem | null
   onLoanUpdated?: (updatedItem: LoanItem) => void
+  onTransactionUpdated?: (updatedItem: DashboardTransactionItem) => void
   onOpenUpdateLoanStatus?: (loan: LoanItem | null) => void
   editable?: boolean
   initialIsEditing?: boolean
 }
 
-const DEFAULT_CATEGORY_OPTIONS = [
-  'None',
+const SALES_PAYMENT_METHODS = [
+  'Cash',
   'GCash',
   'Maya',
   'PayMongo',
   'Panda',
-  'In-house',
   'Cheque',
   'Bank Transfer',
+  'In-house',
+]
+
+const EXPENSE_PAYMENT_METHODS = [
   'Cash',
+  'GCash',
+  'Maya',
+  'PayMongo',
+  'Panda',
+  'Cheque',
+  'Bank Transfer',
+  'In-house',
+  'Petty Cash',
+]
+
+const DEFAULT_SPECIFIC_CATEGORIES = [
+  'General',
+  'Petty Cash',
+  'Rendered Fee',
+  'BBMP Foundation',
+  'HDMF',
+  'Philhealth',
+  'Electricity',
+  'BIR',
+  'Payroll',
+  'SSS',
+  'Hotel Supplies',
+  'Revolving Funds',
 ]
 
 export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
@@ -77,15 +106,20 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   onExpenseUpdated,
   loan,
   onLoanUpdated,
+  onTransactionUpdated,
   onOpenUpdateLoanStatus,
   editable = false,
   initialIsEditing = false,
 }) => {
+  const { user } = useSession()
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
+  const isEditable = Boolean(editable && !isAdmin)
+
   const [currentTx, setCurrentTx] = React.useState<DashboardTransactionItem | null>(transaction)
   const [currentSale, setCurrentSale] = React.useState<SalesItem | null>(sale || null)
   const [currentExpense, setCurrentExpense] = React.useState<ExpenseItem | null>(expense || null)
   const [currentLoan, setCurrentLoan] = React.useState<LoanItem | null>(loan || null)
-  const [isEditing, setIsEditing] = React.useState(Boolean(initialIsEditing && editable))
+  const [isEditing, setIsEditing] = React.useState(Boolean(initialIsEditing && isEditable))
   const [isUpdateLoanStatusOpen, setIsUpdateLoanStatusOpen] = React.useState(false)
 
   // Form states for editing
@@ -93,9 +127,12 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   const [chequeNo, setChequeNo] = React.useState('')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [category, setCategory] = React.useState('None')
-  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_CATEGORY_OPTIONS)
+  const [paymentMethod, setPaymentMethod] = React.useState('Cash')
+  const [category, setCategory] = React.useState('General')
+  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_SPECIFIC_CATEGORIES)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
+  const [newCategoryName, setNewCategoryName] = React.useState('')
+  const [isCreatingCategory, setIsCreatingCategory] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
 
   const [isSubmitting, setIsSubmitting] = React.useState(false)
@@ -116,7 +153,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       try {
         const cats = await expenseService.getCategories()
         if (isMounted && cats && cats.length > 0) {
-          const names = Array.from(new Set(['None', ...cats.map((c) => c.name)]))
+          const names = Array.from(new Set([...DEFAULT_SPECIFIC_CATEGORIES, ...cats.map((c) => c.name)]))
           setCategoryOptions(names)
         }
       } catch (err) {
@@ -140,7 +177,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   // Reset or initialize edit fields when modal opens or target changes
   React.useEffect(() => {
     if (open) {
-      setIsEditing(Boolean(initialIsEditing && editable))
+      setIsEditing(Boolean(initialIsEditing && isEditable))
       setError('')
       setFieldErrors({})
 
@@ -154,19 +191,22 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
         setChequeNo(activeSale.chequeNo || '')
         setParticulars(activeSale.particulars || '')
         setAmount(String(activeSale.deposit || activeSale.netAmount || ''))
-        setCategory(activeSale.category || 'None')
+        setCategory(activeSale.category || 'General')
+        setPaymentMethod(activeSale.paymentMethod || 'Cash')
       } else if (activeExpense) {
         setDate(activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date))
         setChequeNo(activeExpense.chequeNo || '')
         setParticulars(activeExpense.particulars || '')
         setAmount(String(activeExpense.withdrawal || activeExpense.netAmount || ''))
-        setCategory(activeExpense.category || 'None')
+        setCategory(activeExpense.category || 'General')
+        setPaymentMethod(activeExpense.paymentMethod || 'Cash')
       } else if (activeLoan) {
         setDate(activeLoan.rawDate || normalizeDateToYYYYMMDD(activeLoan.date))
         setChequeNo(activeLoan.chequeNo || '')
         setParticulars(activeLoan.particulars || '')
         setAmount(String(activeLoan.amount || ''))
-        setCategory(activeLoan.category || 'None')
+        setCategory(activeLoan.category || 'General')
+        setPaymentMethod('Cash')
       } else if (activeTx) {
         setDate(normalizeDateToYYYYMMDD(activeTx.date))
         setChequeNo(activeTx.chequeNo || '')
@@ -178,7 +218,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
             ? activeTx.amount || activeTx.withdrawal || ''
             : activeTx.deposit || activeTx.amount || ''
         setAmount(String(txAmount))
-        setCategory(activeTx.category || 'None')
+        setCategory(activeTx.category || 'General')
+        setPaymentMethod(activeTx.paymentMethod || 'Cash')
       }
     } else {
       setIsEditing(false)
@@ -207,6 +248,25 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     return categoryOptions.filter((opt) => opt.toLowerCase().includes(q))
   }, [category, categoryOptions])
 
+  const handleAddNewCategory = async () => {
+    const trimmed = newCategoryName.trim()
+    if (!trimmed) return
+    setIsCreatingCategory(true)
+    try {
+      await expenseService.createCategory(trimmed)
+      if (!categoryOptions.includes(trimmed)) {
+        setCategoryOptions((prev) => [...prev, trimmed])
+      }
+      setCategory(trimmed)
+      setNewCategoryName('')
+      setIsCategoryOpen(false)
+    } catch (err) {
+      console.error('Failed to create category:', err)
+    } finally {
+      setIsCreatingCategory(false)
+    }
+  }
+
   const activeTx = currentTx || transaction
   const activeSale = currentSale || sale
   const activeExpense = currentExpense || expense
@@ -221,7 +281,10 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     activeSale?.company || activeExpense?.company || activeLoan?.company || activeTx?.company || '—'
   const displayCategory = isEditing
     ? category
-    : activeSale?.category || activeExpense?.category || activeLoan?.category || activeTx?.category || 'None'
+    : activeSale?.category || activeExpense?.category || activeLoan?.category || activeTx?.category || 'General'
+  const displayPaymentMethod = isEditing
+    ? paymentMethod
+    : activeSale?.paymentMethod || activeExpense?.paymentMethod || activeTx?.paymentMethod || 'Cash'
   const categoryColor =
     CATEGORY_COLORS[displayCategory as keyof typeof CATEGORY_COLORS] || '#475569'
 
@@ -250,6 +313,138 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     ? (activeExpense?.netAmount ?? withdrawalVal)
     : ((depositVal || 0) - (withdrawalVal || 0))
 
+  const currentAuditStatus =
+    activeSale?.auditStatus ||
+    activeExpense?.auditStatus ||
+    activeLoan?.auditStatus ||
+    activeTx?.auditStatus ||
+    'Pending Audit'
+
+  const displayAuditedBy =
+    activeSale?.auditedBy ||
+    activeExpense?.auditedBy ||
+    activeLoan?.auditedBy ||
+    activeTx?.auditedBy
+
+  const displayAuditDate =
+    activeSale?.auditDate ||
+    activeExpense?.auditDate ||
+    activeLoan?.auditDate ||
+    activeTx?.auditDate
+
+  const handleMarkAudit = () => {
+    const today = new Date().toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+    })
+    const auditorName = user?.fullName || 'Admin'
+
+    if (activeSale) {
+      const updated: SalesItem = {
+        ...activeSale,
+        auditStatus: 'Verified',
+        auditedBy: auditorName,
+        auditDate: today,
+      }
+      setCurrentSale(updated)
+      setCurrentTx(salesService.toDashboardTransaction(updated))
+      salesService.updateSaleAuditStatus(updated.id, 'Verified', auditorName)
+      if (onSaleUpdated) onSaleUpdated(updated)
+    } else if (activeExpense) {
+      const updated: ExpenseItem = {
+        ...activeExpense,
+        auditStatus: 'Verified',
+        auditedBy: auditorName,
+        auditDate: today,
+      }
+      setCurrentExpense(updated)
+      setCurrentTx(expenseService.toDashboardTransaction(updated))
+      expenseService.updateExpenseAuditStatus(updated.id, 'Verified', auditorName)
+      if (onExpenseUpdated) onExpenseUpdated(updated)
+    } else if (activeLoan) {
+      const updated: LoanItem = {
+        ...activeLoan,
+        auditStatus: 'Verified',
+        auditedBy: auditorName,
+        auditDate: today,
+      }
+      setCurrentLoan(updated)
+      setCurrentTx(loanService.toDashboardTransaction(updated))
+      loanService.updateLoan(updated.id, { auditStatus: 'Verified', auditedBy: auditorName, auditDate: today })
+      if (onLoanUpdated) onLoanUpdated(updated)
+    } else if (activeTx) {
+      const updated: DashboardTransactionItem = {
+        ...activeTx,
+        auditStatus: 'Verified',
+        auditedBy: auditorName,
+        auditDate: today,
+      }
+      setCurrentTx(updated)
+      if (activeTx.type === 'Sales') {
+        salesService.updateSaleAuditStatus(activeTx.id, 'Verified', auditorName)
+      } else if (activeTx.type === 'Expense') {
+        expenseService.updateExpenseAuditStatus(activeTx.id, 'Verified', auditorName)
+      } else if (activeTx.type === 'Loan') {
+        loanService.updateLoan(activeTx.id, { auditStatus: 'Verified', auditedBy: auditorName, auditDate: today })
+      }
+      if (onTransactionUpdated) onTransactionUpdated(updated)
+    }
+  }
+
+  const handleUnmarkAudit = () => {
+    if (activeSale) {
+      const updated: SalesItem = {
+        ...activeSale,
+        auditStatus: 'Pending Audit',
+        auditedBy: undefined,
+        auditDate: undefined,
+      }
+      setCurrentSale(updated)
+      setCurrentTx(salesService.toDashboardTransaction(updated))
+      salesService.updateSaleAuditStatus(updated.id, 'Pending Audit')
+      if (onSaleUpdated) onSaleUpdated(updated)
+    } else if (activeExpense) {
+      const updated: ExpenseItem = {
+        ...activeExpense,
+        auditStatus: 'Pending Audit',
+        auditedBy: undefined,
+        auditDate: undefined,
+      }
+      setCurrentExpense(updated)
+      setCurrentTx(expenseService.toDashboardTransaction(updated))
+      expenseService.updateExpenseAuditStatus(updated.id, 'Pending Audit')
+      if (onExpenseUpdated) onExpenseUpdated(updated)
+    } else if (activeLoan) {
+      const updated: LoanItem = {
+        ...activeLoan,
+        auditStatus: 'Pending Audit',
+        auditedBy: undefined,
+        auditDate: undefined,
+      }
+      setCurrentLoan(updated)
+      setCurrentTx(loanService.toDashboardTransaction(updated))
+      loanService.updateLoan(updated.id, { auditStatus: 'Pending Audit', auditedBy: undefined, auditDate: undefined })
+      if (onLoanUpdated) onLoanUpdated(updated)
+    } else if (activeTx) {
+      const updated: DashboardTransactionItem = {
+        ...activeTx,
+        auditStatus: 'Pending Audit',
+        auditedBy: undefined,
+        auditDate: undefined,
+      }
+      setCurrentTx(updated)
+      if (activeTx.type === 'Sales') {
+        salesService.updateSaleAuditStatus(activeTx.id, 'Pending Audit')
+      } else if (activeTx.type === 'Expense') {
+        expenseService.updateExpenseAuditStatus(activeTx.id, 'Pending Audit')
+      } else if (activeTx.type === 'Loan') {
+        loanService.updateLoan(activeTx.id, { auditStatus: 'Pending Audit', auditedBy: undefined, auditDate: undefined })
+      }
+      if (onTransactionUpdated) onTransactionUpdated(updated)
+    }
+  }
+
   // Itemized particulars parsing (for transactions with 1, 3, or >5 particulars)
   const rawItems = activeSale?.items || activeExpense?.items || activeTx?.items
   const rawParticularsText = displayParticulars
@@ -277,19 +472,22 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       setChequeNo(activeSale.chequeNo || '')
       setParticulars(activeSale.particulars || '')
       setAmount(String(activeSale.deposit || activeSale.netAmount || ''))
-      setCategory(activeSale.category || 'None')
+      setCategory(activeSale.category || 'General')
+      setPaymentMethod(activeSale.paymentMethod || 'Cash')
     } else if (activeExpense) {
       setDate(activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date))
       setChequeNo(activeExpense.chequeNo || '')
       setParticulars(activeExpense.particulars || '')
       setAmount(String(activeExpense.withdrawal || activeExpense.netAmount || ''))
-      setCategory(activeExpense.category || 'None')
+      setCategory(activeExpense.category || 'General')
+      setPaymentMethod(activeExpense.paymentMethod || 'Cash')
     } else if (activeLoan) {
       setDate(activeLoan.rawDate || normalizeDateToYYYYMMDD(activeLoan.date))
       setChequeNo(activeLoan.chequeNo || '')
       setParticulars(activeLoan.particulars || '')
       setAmount(String(activeLoan.amount || ''))
-      setCategory(activeLoan.category || 'None')
+      setCategory(activeLoan.category || 'General')
+      setPaymentMethod('Cash')
     } else if (activeTx) {
       setDate(normalizeDateToYYYYMMDD(activeTx.date))
       setChequeNo(activeTx.chequeNo || '')
@@ -301,7 +499,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
           ? activeTx.amount || activeTx.withdrawal || ''
           : activeTx.deposit || activeTx.amount || ''
       setAmount(String(txAmount))
-      setCategory(activeTx.category || 'None')
+      setCategory(activeTx.category || 'General')
+      setPaymentMethod(activeTx.paymentMethod || 'Cash')
     }
     setError('')
     setFieldErrors({})
@@ -310,6 +509,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
 
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
+    if (!isEditable) return
     setError('')
     const errors: { date?: string; particulars?: string; amount?: string; category?: string } = {}
 
@@ -359,7 +559,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
           particulars: particulars.trim(),
           withdrawal: parsedAmount,
           netAmount: parsedAmount,
-          category: category.trim() || 'None',
+          paymentMethod: paymentMethod.trim() || 'Cash',
+          category: category.trim() || 'General',
         })
         if (!updatedExpenseItem) throw new Error('Expense item not found.')
         const updatedTxItem = expenseService.toDashboardTransaction(updatedExpenseItem)
@@ -376,7 +577,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
           chequeNo: chequeNo.trim(),
           particulars: particulars.trim(),
           amount: parsedAmount,
-          category: category.trim() || 'None',
+          category: category.trim() || 'General',
         })
         if (!updatedLoanItem) throw new Error('Loan item not found.')
         const updatedTxItem = loanService.toDashboardTransaction(updatedLoanItem)
@@ -393,7 +594,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
           chequeNo: chequeNo.trim(),
           particulars: particulars.trim(),
           amount: parsedAmount,
-          category: category.trim() || 'None',
+          paymentMethod: paymentMethod.trim() || 'Cash',
+          category: category.trim() || 'General',
         }
 
         const updatedSaleItem = await salesService.updateSale(targetId, payload)
@@ -447,14 +649,14 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
             </div>
             <div>
               <DialogTitle className="text-base sm:text-lg font-bold text-focus leading-tight">
-                {isEditing ? 'Edit Transaction Details' : 'Transaction Details'}
+                {isEditing ? 'Edit Transaction Details' : (isAdmin ? 'Audit Transaction Details' : 'Transaction Details')}
               </DialogTitle>
             </div>
           </div>
           <DialogDescription className="text-[11px] text-muted-fg font-normal mt-1">
             {isEditing
               ? 'Update the transaction details directly below, then save changes'
-              : 'Complete transaction record'}
+              : (isAdmin ? 'Complete audit record and transaction details' : 'Complete transaction record')}
           </DialogDescription>
         </DialogHeader>
 
@@ -534,7 +736,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               )}
             </div>
 
-            {/* Amount & Category */}
+            {/* Amount & Payment Method */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold text-focus block">
@@ -569,66 +771,121 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                 )}
               </div>
 
-              <div className="space-y-1" ref={categoryContainerRef}>
+              <div className="space-y-1">
                 <Label className="text-xs font-semibold text-focus block">
-                  Category
+                  Payment Method
                 </Label>
-                <div className="relative">
-                  <Input
-                    type="text"
-                    value={category}
-                    onChange={(e) => {
-                      setCategory(e.target.value)
-                      setIsCategoryOpen(true)
-                    }}
-                    onFocus={() => setIsCategoryOpen(true)}
-                    placeholder="Select category…"
-                    className="h-9 rounded-xl border-stroke/50 text-xs pr-8 font-medium bg-white"
-                  />
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={() => setIsCategoryOpen((prev) => !prev)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded cursor-pointer"
-                  >
-                    <ChevronDown
-                      className={cn(
-                        'w-3.5 h-3.5 transition-transform duration-200',
-                        isCategoryOpen && 'rotate-180'
-                      )}
-                    />
-                  </button>
-
-                  {isCategoryOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-stroke/30 shadow-2xl p-1.5 z-50 max-h-48 overflow-y-auto">
-                      <div className="space-y-0.5">
-                        {filteredCategoryOptions.map((opt) => (
-                          <button
-                            key={opt}
-                            type="button"
-                            onClick={() => {
-                              setCategory(opt)
-                              setIsCategoryOpen(false)
-                            }}
-                            className={cn(
-                              'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer',
-                              category.toLowerCase() === opt.toLowerCase()
-                                ? 'bg-primary/10 text-primary font-semibold'
-                                : 'text-focus/80 hover:bg-slate-50'
-                            )}
-                          >
-                            <span>{opt}</span>
-                            {category.toLowerCase() === opt.toLowerCase() && (
-                              <Check className="w-3.5 h-3.5 text-primary" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-stroke/50 text-xs px-2.5 font-medium bg-white focus:outline-none focus:ring-1 focus:ring-focus text-focus cursor-pointer"
+                >
+                  {(isExpense ? EXPENSE_PAYMENT_METHODS : SALES_PAYMENT_METHODS).map((pm) => (
+                    <option key={pm} value={pm}>
+                      {pm}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
+
+            {/* Category (Specific Category with Search and Add Specific Category) - Expense Only */}
+            {isExpense && (
+              <div className="space-y-1" ref={categoryContainerRef}>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-focus block">
+                  Category (Specific)
+                </Label>
+                <span className="text-[10px] text-muted-fg">Configurable dropdown</span>
+              </div>
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={category}
+                  onChange={(e) => {
+                    setCategory(e.target.value)
+                    setIsCategoryOpen(true)
+                  }}
+                  onFocus={() => setIsCategoryOpen(true)}
+                  placeholder="Select or enter category…"
+                  className="h-9 rounded-xl border-stroke/50 text-xs pr-8 font-medium bg-white"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setIsCategoryOpen((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded cursor-pointer"
+                >
+                  <ChevronDown
+                    className={cn(
+                      'w-3.5 h-3.5 transition-transform duration-200',
+                      isCategoryOpen && 'rotate-180'
+                    )}
+                  />
+                </button>
+
+                {isCategoryOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-stroke/30 shadow-2xl p-1.5 z-50 max-h-56 overflow-y-auto">
+                    <div className="space-y-0.5">
+                      {filteredCategoryOptions.map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => {
+                            setCategory(opt)
+                            setIsCategoryOpen(false)
+                          }}
+                          className={cn(
+                            'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer',
+                            category.toLowerCase() === opt.toLowerCase()
+                              ? 'bg-primary/10 text-primary font-semibold'
+                              : 'text-focus/80 hover:bg-slate-50'
+                          )}
+                        >
+                          <span>{opt}</span>
+                          {category.toLowerCase() === opt.toLowerCase() && (
+                            <Check className="w-3.5 h-3.5 text-primary" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Quick Add Custom Specific Category */}
+                    <div className="pt-2 mt-1.5 border-t border-stroke/20 px-1">
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="text"
+                          placeholder="+ Add specific category…"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handleAddNewCategory()
+                            }
+                          }}
+                          className="h-7 text-xs rounded-lg px-2 border-stroke/50"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={!newCategoryName.trim() || isCreatingCategory}
+                          onClick={handleAddNewCategory}
+                          className="h-7 px-2.5 text-[11px] rounded-lg bg-primary text-white hover:bg-primary/90 shrink-0 cursor-pointer"
+                        >
+                          {isCreatingCategory ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            'Add'
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            )}
 
             {/* Read-only Context (Company) */}
             <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
@@ -816,8 +1073,19 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                 </div>
               )}
 
-              {/* 4. Category */}
+              {/* Payment Method */}
               <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Payment Method:
+                </span>
+                <span className="text-xs font-semibold text-focus text-right">
+                  {displayPaymentMethod}
+                </span>
+              </div>
+
+              {/* 4. Category (Expense only) */}
+              {isExpense && (
+                <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
                 <span className="text-[11px] font-medium text-muted-fg shrink-0">
                   Category:
                 </span>
@@ -836,6 +1104,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                   {displayCategory}
                 </span>
               </div>
+              )}
 
               {/* 5. Company */}
               <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
@@ -867,6 +1136,31 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                 </span>
               </div>
 
+              {/* Audit Status */}
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                  Audit Status:
+                </span>
+                <div className="flex items-center gap-1.5 text-right">
+                  {currentAuditStatus === 'Verified' ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      <span>Audited</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs">
+                      <AlertCircle className="w-3 h-3 text-amber-600" />
+                      <span>Pending Audit</span>
+                    </span>
+                  )}
+                  {displayAuditedBy && currentAuditStatus === 'Verified' && (
+                    <span className="text-[10px] text-muted-fg italic">
+                      by {displayAuditedBy} {displayAuditDate ? `(${displayAuditDate})` : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+
               {/* 8. Created At (if present) */}
               {displayCreatedAt && (
                 <div className="flex items-center justify-between gap-3 py-1.5">
@@ -880,8 +1174,52 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               )}
             </div>
 
-            {/* View Mode Footer: Update Status & Edit Details Actions */}
-            {editable && (
+            {/* Admin Audit Actions: Unmark as Audit / Mark as Audited */}
+            {isAdmin && (
+              <div className="flex items-center justify-between gap-2.5 pt-3 mt-2 border-t border-stroke/20">
+                <div className="text-[11px] text-muted-fg font-medium">
+                  {currentAuditStatus === 'Verified' ? (
+                    <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      Verified and marked as Audited
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      Pending Audit Review
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {currentAuditStatus === 'Verified' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleUnmarkAudit}
+                      className="h-9 px-3.5 text-xs font-semibold rounded-xl border-amber-300 bg-amber-50/70 text-amber-800 hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                      title="Unmark as audit"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Unmark as Audit</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={handleMarkAudit}
+                      className="h-9 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                      title="Mark as Audited"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                      <span>Mark as Audited</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* View Mode Footer: Update Status & Edit Details Actions (Operational users) */}
+            {isEditable && (
               <div className="flex items-center justify-end gap-2.5 pt-3 mt-2 border-t border-stroke/20">
                 {isLoan && (
                   <Button

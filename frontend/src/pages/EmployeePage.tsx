@@ -68,10 +68,9 @@ export const EmployeePage: React.FC = () => {
       result = result.filter(
         (c) =>
           c.name.toLowerCase().includes(q) ||
-          c.email.toLowerCase().includes(q) ||
-          c.address.toLowerCase().includes(q) ||
-          c.contactPerson.toLowerCase().includes(q) ||
-          (c.contactPersonEmail && c.contactPersonEmail.toLowerCase().includes(q))
+          (c.address && c.address.toLowerCase().includes(q)) ||
+          (c.contactNumber && c.contactNumber.toLowerCase().includes(q)) ||
+          (c.telephoneNumber && c.telephoneNumber.toLowerCase().includes(q))
       )
     }
 
@@ -145,7 +144,7 @@ export const EmployeePage: React.FC = () => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
           <Input
             type="text"
-            placeholder="Search companies by name, email, contact person, or address..."
+            placeholder="Search companies by name, address, or contact number..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-11 sm:h-12 pl-11 pr-10 rounded-2xl border border-stroke/50 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-2 focus-visible:ring-focus w-full transition-all"

@@ -117,9 +117,6 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
     if (formData.telephoneNumber && !/^\d{8}$/.test(formData.telephoneNumber)) {
       errors.telephoneNumber = 'Telephone number must be exactly 8 digits'
     }
-    if (formData.contactPersonEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.contactPersonEmail)) {
-      errors.contactPersonEmail = 'Please enter a valid email address'
-    }
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
       return
@@ -240,18 +237,6 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="edit-comp-email" className="text-xs font-medium text-focus/80">Email</Label>
-                  <Input
-                    id="edit-comp-email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="h-10 rounded-xl text-sm"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-1">
                   <Label htmlFor="edit-comp-addr" className="text-xs font-medium text-focus/80">Address</Label>
                   <Input
                     id="edit-comp-addr"
@@ -260,41 +245,6 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                     className="h-10 rounded-xl text-sm"
                     required
                   />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="edit-comp-contact-person" className="text-xs font-medium text-focus/80">
-                      Contact Person <span className="text-primary">*</span>
-                    </Label>
-                    <Input
-                      id="edit-comp-contact-person"
-                      value={formData.contactPerson}
-                      onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                      className="h-10 rounded-xl text-sm"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label htmlFor="edit-comp-contact-email" className="text-xs font-medium text-focus/80">
-                      Contact Person Email
-                    </Label>
-                    <Input
-                      id="edit-comp-contact-email"
-                      type="email"
-                      value={formData.contactPersonEmail || ''}
-                      onChange={(e) => {
-                        setFormData({ ...formData, contactPersonEmail: e.target.value })
-                        if (formErrors.contactPersonEmail) setFormErrors((prev) => ({ ...prev, contactPersonEmail: '' }))
-                      }}
-                      placeholder="person@company.com"
-                      className="h-10 rounded-xl text-sm"
-                    />
-                    {formErrors.contactPersonEmail && (
-                      <p className="text-xs text-rose-500">{formErrors.contactPersonEmail}</p>
-                    )}
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -348,32 +298,17 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="edit-comp-start-bal" className="text-xs font-medium text-focus/80">Starting Balance (₱)</Label>
-                    <Input
-                      id="edit-comp-start-bal"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.startingBalance}
-                      onChange={(e) => setFormData({ ...formData, startingBalance: Number(e.target.value) })}
-                      className="h-10 rounded-xl text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label htmlFor="edit-comp-curr-bal" className="text-xs font-medium text-focus/80">Current Balance (₱)</Label>
-                    <Input
-                      id="edit-comp-curr-bal"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.currentBalance}
-                      onChange={(e) => setFormData({ ...formData, currentBalance: Number(e.target.value) })}
-                      className="h-10 rounded-xl text-sm"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-comp-start-bal" className="text-xs font-medium text-focus/80">Starting Balance (₱)</Label>
+                  <Input
+                    id="edit-comp-start-bal"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.startingBalance}
+                    onChange={(e) => setFormData({ ...formData, startingBalance: Number(e.target.value) })}
+                    className="h-10 rounded-xl text-sm"
+                  />
                 </div>
               </div>
 
@@ -384,14 +319,14 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                   variant="outline"
                   disabled={isSubmitting}
                   onClick={() => setIsEditing(false)}
-                  className="h-11 px-7 rounded-xl border border-stroke/50 text-focus hover:bg-surface font-medium text-sm transition-colors"
+                  className="h-11 px-7 rounded-xl border border-stroke/50 text-focus hover:bg-surface font-medium text-sm transition-colors cursor-pointer"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="h-11 px-7 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm flex items-center gap-2 shadow-sm transition-all"
+                  className="h-11 px-7 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm flex items-center gap-2 shadow-sm transition-all cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
@@ -424,21 +359,12 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
               {/* Properly Aligned Key-Value Details */}
               <div className="w-full space-y-3 pt-5 mt-4 border-t border-stroke/20 text-sm">
-                <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="font-medium text-muted-fg text-sm shrink-0">
-                    Contact Person:
+                <div className="flex items-start justify-between gap-4 py-0.5">
+                  <span className="font-medium text-muted-fg text-sm shrink-0 mt-0.5">
+                    Address:
                   </span>
-                  <span className="font-semibold text-focus text-sm text-right">
-                    {company.contactPerson || '—'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="font-medium text-muted-fg text-sm shrink-0">
-                    Contact Person Email:
-                  </span>
-                  <span className="font-semibold text-focus text-sm text-right break-all">
-                    {company.contactPersonEmail || '—'}
+                  <span className="font-semibold text-focus text-right text-xs sm:text-sm leading-relaxed max-w-[240px]">
+                    {company.address || '—'}
                   </span>
                 </div>
 
@@ -462,37 +388,10 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
                   <span className="font-medium text-muted-fg text-sm shrink-0">
-                    Company Email:
-                  </span>
-                  <span className="font-semibold text-focus text-sm text-right break-all">
-                    {company.email || '—'}
-                  </span>
-                </div>
-
-                <div className="flex items-start justify-between gap-4 py-0.5">
-                  <span className="font-medium text-muted-fg text-sm shrink-0 mt-0.5">
-                    Address:
-                  </span>
-                  <span className="font-semibold text-focus text-right text-xs sm:text-sm leading-relaxed max-w-[240px]">
-                    {company.address || '—'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="font-medium text-muted-fg text-sm shrink-0">
                     Starting Balance:
                   </span>
                   <span className="font-semibold text-focus text-sm text-right tabular-nums">
                     {company.startingBalance ? formatPHP(company.startingBalance) : '—'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="font-medium text-muted-fg text-sm shrink-0">
-                    Current Balance:
-                  </span>
-                  <span className="font-semibold text-focus text-sm text-right tabular-nums">
-                    {company.currentBalance ? formatPHP(company.currentBalance) : '—'}
                   </span>
                 </div>
               </div>

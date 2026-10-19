@@ -24,6 +24,8 @@ import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
 
+import { PREDEFINED_PETTY_CASH_CATEGORIES } from '@/pages/AddTransactionSheetPage'
+
 interface AddExpenseModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -31,17 +33,53 @@ interface AddExpenseModalProps {
   assignedCompany: string
 }
 
-const DEFAULT_CATEGORY_OPTIONS = [
-  'None',
+const PAYMENT_METHOD_OPTIONS = [
+  'Cash',
+  'Petty Cash',
   'GCash',
   'Maya',
   'PayMongo',
   'Panda',
-  'In-house',
   'Cheque',
   'Bank Transfer',
-  'Cash',
+  'In-house',
 ]
+
+const DEFAULT_EXPENSE_CATEGORIES = [
+  'Petty Cash',
+  'Rendered Fee',
+  'BBMP Foundation',
+  'HDMF',
+  'Philhealth',
+  'Electricity',
+  'BIR',
+  'Payroll',
+  'SSS',
+  'Hotel Supplies',
+  'Revolving Funds',
+]
+
+const DEPRECATED_OLD_CATEGORIES = new Set([
+  'gcash',
+  'maya',
+  'panda',
+  'package 1',
+  'in-house',
+  'cheque',
+  'cash',
+  'bank transfer',
+  'paymongo',
+  'office supplies',
+  'kitchen & food supplies',
+  'utilities',
+  'salaries & wages',
+  'rent & lease',
+  'maintenance & repairs',
+  'transportation & logistics',
+  'marketing & advertising',
+  'equipment',
+  'petty cash replenishment',
+])
 
 export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   open,
@@ -53,12 +91,17 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
   const [date, setDate] = React.useState(getTodayIso())
   const [chequeNo, setChequeNo] = React.useState('')
+  const [pettyCashCategory, setPettyCashCategory] = React.useState('')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [category, setCategory] = React.useState('None')
-  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_CATEGORY_OPTIONS)
+  const [paymentMethod, setPaymentMethod] = React.useState('Cash')
+  const [category, setCategory] = React.useState(DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
+  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_EXPENSE_CATEGORIES)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
+
+  // Petty cash is strictly determined by payment method being Petty Cash
+  const isPettyCash = paymentMethod.trim().toLowerCase() === 'petty cash'
 
   // Confirmation dialogue state
   const [isConfirmOpen, setIsConfirmOpen] = React.useState(false)
@@ -78,7 +121,15 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       try {
         const cats = await expenseService.getCategories()
         if (isMounted && cats && cats.length > 0) {
-          const names = Array.from(new Set(['None', ...cats.map((c) => c.name)]))
+          const names = Array.from(
+            new Set([
+              ...DEFAULT_EXPENSE_CATEGORIES,
+              ...cats
+                .map((c) => c.name?.trim())
+                .filter(Boolean)
+                .filter((n) => !DEPRECATED_OLD_CATEGORIES.has(n.toLowerCase())),
+            ])
+          )
           setCategoryOptions(names)
         }
       } catch (err) {
@@ -116,9 +167,11 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     if (open) {
       setDate(getTodayIso())
       setChequeNo('')
+      setPettyCashCategory('')
       setParticulars('')
       setAmount('')
-      setCategory('None')
+      setPaymentMethod('Cash')
+      setCategory(DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
       setIsCategoryOpen(false)
       setIsConfirmOpen(false)
       setIsSubmitting(false)
@@ -145,7 +198,11 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       errors.date = 'Expense date cannot be in the future (maximum date is today).'
     }
 
-    if (!particulars.trim()) {
+    if (isPettyCash) {
+      if (!pettyCashCategory.trim() && !particulars.trim()) {
+        errors.particulars = 'Please select a petty cash category or enter particulars.'
+      }
+    } else if (!particulars.trim()) {
       errors.particulars = 'Particulars is required.'
     }
 
@@ -162,8 +219,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       }
     }
 
-    if (category === 'None' || !category.trim()) {
-      errors.category = 'Please choose a category from the database list.'
+    if (!category.trim()) {
+      errors.category = 'Please choose or type a specific category.'
     }
 
     if (Object.keys(errors).length > 0) {
@@ -182,12 +239,27 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
     setError('')
     try {
       const parsedAmount = parseFloat(amount.replace(/,/g, ''))
+      const catTrimmed = isPettyCash
+        ? 'Petty Cash'
+        : (category.trim() || DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
+      if (catTrimmed && !categoryOptions.includes(catTrimmed)) {
+        expenseService.createCategory(catTrimmed).catch((e) => console.warn('Could not persist category:', e))
+      }
+
+      let finalParticulars = particulars.trim()
+      if (isPettyCash && pettyCashCategory.trim()) {
+        finalParticulars = finalParticulars
+          ? `${pettyCashCategory.trim()} - ${finalParticulars}`
+          : pettyCashCategory.trim()
+      }
+
       const payload: NewExpenseInput = {
         date: date.trim() || getTodayIso(),
         chequeNo: chequeNo.trim() || undefined,
-        particulars: particulars.trim(),
+        particulars: finalParticulars,
         amount: parsedAmount,
-        category: category.trim(),
+        category: catTrimmed,
+        paymentMethod: paymentMethod,
         company: assignedCompany,
         status: 'Paid',
       }
@@ -279,32 +351,86 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               </div>
             </div>
 
-            {/* 3. Particulars */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus block">
-                Particulars <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                type="text"
-                placeholder="e.g. Commercial Kitchen Gas & Utility Bill"
-                value={particulars}
-                onChange={(e) => {
-                  setParticulars(e.target.value)
-                  if (fieldErrors.particulars) {
-                    setFieldErrors((prev) => ({ ...prev, particulars: undefined }))
-                  }
-                }}
-                className={cn(
-                  'h-10 rounded-xl border-stroke/50 text-xs',
-                  fieldErrors.particulars && 'border-red-500 focus-visible:ring-red-200'
+            {isPettyCash ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* 3. Particulars (Manual text input) */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-focus block">
+                    Particulars <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. Taxi fare to bank, Bond paper A4..."
+                    value={particulars}
+                    onChange={(e) => {
+                      setParticulars(e.target.value)
+                      if (fieldErrors.particulars) {
+                        setFieldErrors((prev) => ({ ...prev, particulars: undefined }))
+                      }
+                    }}
+                    className={cn(
+                      'h-10 rounded-xl border-stroke/50 text-xs',
+                      fieldErrors.particulars && 'border-red-500 focus-visible:ring-red-200'
+                    )}
+                  />
+                  {fieldErrors.particulars && (
+                    <p className="text-[11px] text-red-600 font-medium">
+                      {fieldErrors.particulars}
+                    </p>
+                  )}
+                </div>
+
+                {/* Pre-defined Petty Cash Category dropdown: placed next to particulars, not on top */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-focus block">
+                    Petty Cash Category <span className="text-red-500">*</span>
+                  </Label>
+                  <select
+                    value={pettyCashCategory}
+                    onChange={(e) => {
+                      setPettyCashCategory(e.target.value)
+                      if (fieldErrors.particulars) {
+                        setFieldErrors((prev) => ({ ...prev, particulars: undefined }))
+                      }
+                    }}
+                    className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                  >
+                    <option value="">-- Select Pre-defined Category --</option>
+                    {PREDEFINED_PETTY_CASH_CATEGORIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Particulars <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Commercial Kitchen Gas & Utility Bill"
+                  value={particulars}
+                  onChange={(e) => {
+                    setParticulars(e.target.value)
+                    if (fieldErrors.particulars) {
+                      setFieldErrors((prev) => ({ ...prev, particulars: undefined }))
+                    }
+                  }}
+                  className={cn(
+                    'h-10 rounded-xl border-stroke/50 text-xs',
+                    fieldErrors.particulars && 'border-red-500 focus-visible:ring-red-200'
+                  )}
+                />
+                {fieldErrors.particulars && (
+                  <p className="text-[11px] text-red-600 font-medium">
+                    {fieldErrors.particulars}
+                  </p>
                 )}
-              />
-              {fieldErrors.particulars && (
-                <p className="text-[11px] text-red-600 font-medium">
-                  {fieldErrors.particulars}
-                </p>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {/* 4. Withdrawal Amount */}
@@ -342,7 +468,35 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 )}
               </div>
 
-              {/* 5. Category (Searchable Dropdown) */}
+              {/* 5. Payment Method */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Payment Method <span className="text-red-500">*</span>
+                </Label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => {
+                    const newPm = e.target.value
+                    setPaymentMethod(newPm)
+                    if (newPm.trim().toLowerCase() === 'petty cash') {
+                      setCategory('Petty Cash')
+                    } else if (category.trim().toLowerCase() === 'petty cash') {
+                      setCategory(DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
+                    }
+                  }}
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                >
+                  {PAYMENT_METHOD_OPTIONS.map((pm) => (
+                    <option key={pm} value={pm}>
+                      {pm}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* 6. Category (Searchable Dropdown; hidden when Payment Method is Petty Cash since category is auto-set to Petty Cash and specific categories are selected above) */}
+            {!isPettyCash && (
               <div className="space-y-1.5" ref={categoryContainerRef}>
                 <Label className="text-xs font-semibold text-focus block">
                   Category <span className="text-red-500">*</span>
@@ -353,8 +507,12 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                     placeholder="Search or enter category..."
                     value={category}
                     onChange={(e) => {
-                      setCategory(e.target.value)
+                      const newCat = e.target.value
+                      setCategory(newCat)
                       setIsCategoryOpen(true)
+                      if (newCat.trim().toLowerCase() === 'petty cash') {
+                        setPaymentMethod('Petty Cash')
+                      }
                       if (fieldErrors.category) {
                         setFieldErrors((prev) => ({ ...prev, category: undefined }))
                       }
@@ -368,14 +526,17 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsCategoryOpen((prev) => !prev)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-1"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-1 cursor-pointer"
                     aria-label="Toggle category options"
                   >
-                    <ChevronDown className="w-3.5 h-3.5" />
+                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", isCategoryOpen && "rotate-180")} />
                   </button>
 
                   {isCategoryOpen && (
                     <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-stroke/40 rounded-xl shadow-xl max-h-48 overflow-y-auto p-1.5">
+                      <div className="px-2 py-1 text-[10px] font-bold text-muted-fg uppercase tracking-wider flex items-center justify-between">
+                        <span>Specific Categories</span>
+                      </div>
                       <div className="space-y-0.5">
                         {filteredCategoryOptions.map((opt) => (
                           <button
@@ -384,12 +545,15 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                             onClick={() => {
                               setCategory(opt)
                               setIsCategoryOpen(false)
+                              if (opt.trim().toLowerCase() === 'petty cash') {
+                                setPaymentMethod('Petty Cash')
+                              }
                               if (fieldErrors.category) {
                                 setFieldErrors((prev) => ({ ...prev, category: undefined }))
                               }
                             }}
                             className={cn(
-                              'w-full text-left px-3 py-1.5 text-xs rounded-lg flex items-center justify-between transition-colors',
+                              'w-full text-left px-3 py-1.5 text-xs rounded-lg flex items-center justify-between transition-colors cursor-pointer',
                               category === opt
                                 ? 'bg-primary/10 text-primary font-semibold'
                                 : 'hover:bg-slate-100 text-focus'
@@ -409,7 +573,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                   </p>
                 )}
               </div>
-            </div>
+            )}
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-stroke/15">
@@ -459,6 +623,10 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                 <span className="font-semibold text-focus max-w-[220px] truncate text-right">
                   {particulars}
                 </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-fg font-medium">Payment Method</span>
+                <span className="font-semibold text-focus">{paymentMethod}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-fg font-medium">Category</span>

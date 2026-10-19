@@ -12,9 +12,18 @@ import {
   CheckCircle2,
   Loader2,
   RotateCcw,
+  Tag,
+  CreditCard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import {
   Table,
   TableHeader,
@@ -34,13 +43,13 @@ import { cn } from '@/lib/utils'
 
 interface ParticularsRow {
   id: string
+  pettyCashCategory?: string
   particulars: string
   unitPrice: number | ''
   quantity: number | ''
 }
 
-const CATEGORY_OPTIONS = [
-  'None',
+const SALES_PAYMENT_METHODS = [
   'Cash',
   'GCash',
   'Maya',
@@ -50,6 +59,38 @@ const CATEGORY_OPTIONS = [
   'Bank Transfer',
   'In-house',
 ] as const
+
+const EXPENSE_PAYMENT_METHODS = [
+  'Cash',
+  'Petty Cash',
+  'GCash',
+  'Maya',
+  'PayMongo',
+  'Panda',
+  'Cheque',
+  'Bank Transfer',
+  'In-house',
+] as const
+
+export const PREDEFINED_PETTY_CASH_CATEGORIES = [
+  'Office Supplies & Stationery',
+  'Courier & Delivery Services',
+  'Transportation & Fare (Taxi/Grab/Jeepney)',
+  'Gasoline & Fuel Allowance',
+  'Toll Fees & Parking',
+  'Staff Overtime Meals & Snacks',
+  'Pantry Supplies & Drinking Water',
+  'Cleaning Materials & Janitorial Supplies',
+  'Emergency Kitchen & Store Supplies',
+  'Minor Hardware Tools & Repairs',
+  'Electrical & Light Bulb Replacements',
+  'First Aid & Emergency Medicine',
+  'Notarial & Legal Documentation Fees',
+  'Representation & Client Refreshments',
+  'Emergency Errand & Logistics Expense',
+] as const
+
+export const PREDEFINED_PETTY_CASH_PARTICULARS = PREDEFINED_PETTY_CASH_CATEGORIES
 
 const DEFAULT_COMPANIES = [
   'MCT Kitchen',
@@ -63,6 +104,42 @@ const DEFAULT_COMPANIES = [
   'Golden Sunburst Ventures',
 ]
 
+export const DEFAULT_EXPENSE_CATEGORIES = [
+  'Petty Cash',
+  'Rendered Fee',
+  'BBMP Foundation',
+  'HDMF',
+  'Philhealth',
+  'Electricity',
+  'BIR',
+  'Payroll',
+  'SSS',
+  'Hotel Supplies',
+  'Revolving Funds',
+] as const
+
+const DEPRECATED_OLD_CATEGORIES = new Set([
+  'gcash',
+  'maya',
+  'panda',
+  'package 1',
+  'in-house',
+  'cheque',
+  'cash',
+  'bank transfer',
+  'paymongo',
+  'office supplies',
+  'kitchen & food supplies',
+  'utilities',
+  'salaries & wages',
+  'rent & lease',
+  'maintenance & repairs',
+  'transportation & logistics',
+  'marketing & advertising',
+  'equipment',
+  'petty cash replenishment',
+])
+
 interface AddTransactionSheetPageProps {
   initialType?: 'Sales' | 'Expense'
 }
@@ -74,7 +151,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const location = useLocation()
   const { user } = useSession()
 
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isCompanyUser =
+    user?.role === 'Company' ||
+    user?.role === 'Company Auditor' ||
+    user?.role === 'Supervisor'
   const isAuditor = isCompanyUser
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
@@ -99,9 +179,21 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     }
   }, [isAuditor, user?.assignedCompany])
 
-  const [category, setCategory] = React.useState<string>('Cash')
+  // Payment Method state
+  const [paymentMethod, setPaymentMethod] = React.useState<string>('Cash')
   const [chequeNo, setChequeNo] = React.useState<string>('')
-  const [status, setStatus] = React.useState<'Paid' | 'Pending'>('Paid')
+
+  // Category state (only used in Expense transactions; removed from Sales)
+  const [category, setCategory] = React.useState<string>('Rendered Fee')
+  const [categories, setCategories] = React.useState<string[]>([])
+  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = React.useState(false)
+  const [newCategoryName, setNewCategoryName] = React.useState('')
+  const [isSavingCategory, setIsSavingCategory] = React.useState(false)
+  const [categorySaveError, setCategorySaveError] = React.useState('')
+
+  // Check if current expense transaction is Petty Cash (strictly tied to payment method)
+  const isPettyCash =
+    transactionType === 'Expense' && paymentMethod.trim().toLowerCase() === 'petty cash'
 
   // Dynamic companies list
   const [dbCompanies, setDbCompanies] = React.useState<string[]>(DEFAULT_COMPANIES)
@@ -120,6 +212,67 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     }
   }, [])
 
+  // Category loader: only for Expense transactions
+  React.useEffect(() => {
+    if (transactionType !== 'Expense') return
+
+    let mounted = true
+    expenseService.getCategories().then((cats) => {
+      if (mounted) {
+        const fetchedNames = (cats || [])
+          .map((c) => c.name?.trim())
+          .filter(Boolean)
+          .filter((name) => !DEPRECATED_OLD_CATEGORIES.has(name.toLowerCase()))
+
+        const combined = Array.from(
+          new Set([...DEFAULT_EXPENSE_CATEGORIES, ...fetchedNames])
+        )
+        setCategories(combined)
+        setCategory((prev) => {
+          if (paymentMethod.trim().toLowerCase() === 'petty cash') {
+            return 'Petty Cash'
+          }
+          if (prev && prev.trim().toLowerCase() !== 'petty cash' && combined.includes(prev)) {
+            return prev
+          }
+          return 'Rendered Fee'
+        })
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [transactionType])
+
+  const handleSaveNewCategory = async () => {
+    const trimmed = newCategoryName.trim()
+    if (!trimmed) {
+      setCategorySaveError('Category name cannot be empty')
+      return
+    }
+    setIsSavingCategory(true)
+    setCategorySaveError('')
+    try {
+      const saved = await expenseService.createCategory(trimmed)
+      const savedName = saved.name || trimmed
+      setCategories((prev) => {
+        if (prev.some((c) => c.toLowerCase() === savedName.toLowerCase())) return prev
+        return [...prev, savedName]
+      })
+      setCategory(savedName)
+      if (paymentMethod.trim().toLowerCase() === 'petty cash') {
+        setPaymentMethod('Cash')
+      }
+      setIsAddCategoryModalOpen(false)
+      setNewCategoryName('')
+    } catch (err: any) {
+      console.error('Failed to create category:', err)
+      setCategorySaveError(err?.message || 'Failed to save category')
+    } finally {
+      setIsSavingCategory(false)
+    }
+  }
+
   // Dynamic document title
   React.useEffect(() => {
     document.title = `Add ${transactionType} (Excel Sheet) - MCT Centralized Financial System`
@@ -127,10 +280,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   // Excel-style rows state: initialize with 4 clean rows
   const [rows, setRows] = React.useState<ParticularsRow[]>([
-    { id: 'row-1', particulars: '', unitPrice: '', quantity: 1 },
-    { id: 'row-2', particulars: '', unitPrice: '', quantity: 1 },
-    { id: 'row-3', particulars: '', unitPrice: '', quantity: 1 },
-    { id: 'row-4', particulars: '', unitPrice: '', quantity: 1 },
+    { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+    { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+    { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+    { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
   ])
 
   // Submission state
@@ -148,7 +301,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   // Row operations
   const handleAddRow = () => {
     const newId = `row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
-    setRows((prev) => [...prev, { id: newId, particulars: '', unitPrice: '', quantity: 1 }])
+    setRows((prev) => [
+      ...prev,
+      { id: newId, pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+    ])
     setTimeout(() => {
       particularsInputRefs.current[newId]?.focus()
     }, 50)
@@ -157,7 +313,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const handleRemoveRow = (id: string) => {
     if (rows.length <= 1) {
       // Don't remove last row, just clear it
-      setRows([{ id: 'row-1', particulars: '', unitPrice: '', quantity: 1 }])
+      setRows([{ id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 }])
       return
     }
     setRows((prev) => prev.filter((r) => r.id !== id))
@@ -198,15 +354,18 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       const price = typeof r.unitPrice === 'number' ? r.unitPrice : 0
       const qty = typeof r.quantity === 'number' ? r.quantity : 0
       const total = price * qty
+      const hasDescription = isPettyCash
+        ? r.particulars.trim().length > 0 || (r.pettyCashCategory && r.pettyCashCategory.trim().length > 0)
+        : r.particulars.trim().length > 0
       return {
         ...r,
         numericPrice: price,
         numericQty: qty,
         rowTotal: total,
-        isValid: r.particulars.trim().length > 0 && price > 0 && qty > 0,
+        isValid: Boolean(hasDescription && price > 0 && qty > 0),
       }
     })
-  }, [rows])
+  }, [rows, isPettyCash])
 
   const grandTotal = React.useMemo(() => {
     return calculatedRows.reduce((sum, r) => sum + r.rowTotal, 0)
@@ -251,27 +410,33 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     setIsSubmitting(true)
     try {
       // Map valid sheet rows to structured ParticularItems
-      const itemizedParticulars: ParticularItem[] = validItems.map((item, idx) => ({
-        id: item.id || `item-${idx}`,
-        particulars: item.particulars.trim(),
-        quantity: item.numericQty,
-        unitPrice: item.numericPrice,
-        total: item.rowTotal,
-      }))
+      const itemizedParticulars: ParticularItem[] = validItems.map((item, idx) => {
+        let text = item.particulars.trim()
+        if (isPettyCash && item.pettyCashCategory?.trim()) {
+          text = text ? `${item.pettyCashCategory.trim()} - ${text}` : item.pettyCashCategory.trim()
+        }
+        return {
+          id: item.id || `item-${idx}`,
+          particulars: text,
+          quantity: item.numericQty,
+          unitPrice: item.numericPrice,
+          total: item.rowTotal,
+        }
+      })
 
       // Combine into formatted particulars text
       const formattedParticulars = formatParticularsString(itemizedParticulars)
 
       if (transactionType === 'Sales') {
-        // Record all particulars consolidated as ONE single entry
+        // Record all particulars consolidated as ONE single entry (category is removed in sales)
         await salesService.addSale({
           company: companyToUse,
           date,
           particulars: formattedParticulars,
           amount: grandTotal,
-          category: category === 'None' ? 'None' : category,
+          paymentMethod: paymentMethod,
           chequeNo: chequeNo.trim() || undefined,
-          status,
+          status: 'Paid',
           items: itemizedParticulars,
         })
       } else {
@@ -281,9 +446,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           date,
           particulars: formattedParticulars,
           amount: grandTotal,
-          category: category === 'None' ? 'In-house' : category,
+          category: isPettyCash ? 'Petty Cash' : (category || 'Rendered Fee'),
+          paymentMethod: paymentMethod,
           chequeNo: chequeNo.trim() || undefined,
-          status,
+          status: 'Paid',
           items: itemizedParticulars,
         })
       }
@@ -308,10 +474,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   const handleReset = () => {
     setRows([
-      { id: 'row-1', particulars: '', unitPrice: '', quantity: 1 },
-      { id: 'row-2', particulars: '', unitPrice: '', quantity: 1 },
-      { id: 'row-3', particulars: '', unitPrice: '', quantity: 1 },
-      { id: 'row-4', particulars: '', unitPrice: '', quantity: 1 },
+      { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+      { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+      { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+      { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
     ])
     setErrorMessage(null)
   }
@@ -400,7 +566,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
         </div>
       )}
 
-      {/* 2. Transaction Parameters Card (Date, Company, Payment Method, Cheque/Ref) */}
+      {/* 2. Transaction Parameters Card (Date, Company, Payment Method, Category [Expense only], Cheque/Ref) */}
       <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-6 shadow-xs space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-stroke/20">
           <span className="text-xs font-bold uppercase tracking-wider text-muted-fg">
@@ -411,11 +577,18 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4">
-          {/* Date */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-muted-fg" />
+        <div
+          className={cn(
+            'grid gap-3.5 sm:gap-4 items-start',
+            transactionType === 'Sales' || isPettyCash
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5'
+          )}
+        >
+          {/* 1. Date */}
+          <div className="space-y-1.5 flex flex-col justify-start">
+            <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+              <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
               <span>Date</span>
             </label>
             <input
@@ -427,10 +600,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             />
           </div>
 
-          {/* Company */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-muted-fg" />
+          {/* 2. Company */}
+          <div className="space-y-1.5 flex flex-col justify-start">
+            <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+              <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
               <span>Company</span>
             </label>
             {isAuditor ? (
@@ -452,28 +625,76 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             )}
           </div>
 
-          {/* Payment Method / Category */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-focus">
-              Payment Category
+          {/* 3. Payment Method */}
+          <div className="space-y-1.5 flex flex-col justify-start">
+            <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+              <CreditCard className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+              <span>Payment Method</span>
             </label>
             <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              value={paymentMethod}
+              onChange={(e) => {
+                const newMethod = e.target.value
+                setPaymentMethod(newMethod)
+                if (transactionType === 'Expense') {
+                  if (newMethod.trim().toLowerCase() === 'petty cash') {
+                    setCategory('Petty Cash')
+                  } else if (category.trim().toLowerCase() === 'petty cash') {
+                    setCategory('Rendered Fee')
+                  }
+                }
+              }}
               className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
             >
-              {CATEGORY_OPTIONS.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
+              {(transactionType === 'Expense' ? EXPENSE_PAYMENT_METHODS : SALES_PAYMENT_METHODS).map((pm) => (
+                <option key={pm} value={pm}>
+                  {pm}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Cheque / Ref No */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-focus">
-              Cheque / Reference No. <span className="text-muted-fg font-normal">(Optional)</span>
+          {/* 4. Category (Expense only; hidden when Payment Method is Petty Cash since category is auto-set to Petty Cash and specific categories are selected in the spreadsheet table column below) */}
+          {transactionType === 'Expense' && !isPettyCash && (
+            <div className="space-y-1.5 flex flex-col justify-start">
+              <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+                <Tag className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                <span>Category</span>
+              </label>
+              <select
+                id="transaction-category-select"
+                value={category}
+                onChange={(e) => {
+                  if (e.target.value === '__ADD_NEW__') {
+                    setIsAddCategoryModalOpen(true)
+                  } else {
+                    const newCat = e.target.value
+                    setCategory(newCat)
+                    if (newCat.trim().toLowerCase() === 'petty cash') {
+                      setPaymentMethod('Petty Cash')
+                    }
+                  }
+                }}
+                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+              >
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+                <option value="__ADD_NEW__" className="font-semibold text-primary">
+                  + Add Category...
+                </option>
+              </select>
+            </div>
+          )}
+
+          {/* 5. Cheque / Reference No */}
+          <div className="space-y-1.5 flex flex-col justify-start">
+            <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+              <FileSpreadsheet className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+              <span className="truncate">Cheque / Ref No.</span>
+              <span className="text-[11px] font-normal text-muted-fg shrink-0">(Optional)</span>
             </label>
             <input
               type="text"
@@ -482,21 +703,6 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
               onChange={(e) => setChequeNo(e.target.value)}
               className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/60 shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus"
             />
-          </div>
-
-          {/* Status */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-focus">
-              Status
-            </label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as 'Paid' | 'Pending')}
-              className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-            >
-              <option value="Paid">Received / Paid</option>
-              <option value="Pending">Pending</option>
-            </select>
           </div>
         </div>
       </Card>
@@ -545,7 +751,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
         {/* Excel Grid Table */}
         <div className="overflow-x-auto">
-          <Table className="w-full min-w-[760px] border-collapse">
+          <Table className={cn('w-full border-collapse', isPettyCash ? 'min-w-[920px]' : 'min-w-[760px]')}>
             <TableHeader className="bg-slate-50/90 border-b border-slate-200/80">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-12 text-center text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3">
@@ -554,9 +760,15 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                 <TableHead className="text-left text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
                   PARTICULARS <span className="text-red-500">*</span>
                   <span className="font-normal text-muted-fg/70 ml-1.5 lowercase">
-                    (specific thing bought/sold)
+                    {isPettyCash ? '(specific description)' : '(specific thing bought/sold)'}
                   </span>
                 </TableHead>
+                {/* Extra column: next to particulars, only visible if category is Petty Cash */}
+                {isPettyCash && (
+                  <TableHead className="w-56 sm:w-64 text-left text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
+                    PETTY CASH CATEGORY <span className="text-red-500">*</span>
+                  </TableHead>
+                )}
                 <TableHead className="w-44 text-right text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
                   PRICE EACH (₱) <span className="text-red-500">*</span>
                 </TableHead>
@@ -577,7 +789,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                 const price = typeof row.unitPrice === 'number' ? row.unitPrice : 0
                 const qty = typeof row.quantity === 'number' ? row.quantity : 0
                 const rowTotal = price * qty
-                const isRowActive = row.particulars.trim().length > 0 || price > 0
+                const isRowActive =
+                  row.particulars.trim().length > 0 ||
+                  (row.pettyCashCategory && row.pettyCashCategory.trim().length > 0) ||
+                  price > 0
 
                 return (
                   <TableRow
@@ -592,14 +807,18 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                       {index + 1}
                     </TableCell>
 
-                    {/* Particulars Cell */}
+                    {/* Particulars Cell: Reverted back to manual input */}
                     <TableCell className="border-r border-slate-200/60 p-1.5 px-3">
                       <input
                         ref={(el) => {
                           particularsInputRefs.current[row.id] = el
                         }}
                         type="text"
-                        placeholder="e.g. A4 Copy Paper Ream, Commercial Kitchen Gas, Espresso Beans..."
+                        placeholder={
+                          isPettyCash
+                            ? 'e.g. Taxi fare to supplier, Bond paper A4, Emergency snacks...'
+                            : 'e.g. A4 Copy Paper Ream, Commercial Kitchen Gas, Espresso Beans...'
+                        }
                         value={row.particulars}
                         onChange={(e) =>
                           handleRowChange(row.id, 'particulars', e.target.value)
@@ -608,6 +827,26 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                         className="w-full h-9 px-3 text-xs sm:text-sm text-focus rounded-lg border border-transparent hover:border-slate-300 focus:border-focus focus:bg-white focus:outline-none focus:ring-1 focus:ring-focus transition-all"
                       />
                     </TableCell>
+
+                    {/* Pre-defined Petty Cash Category Column: placed NEXT TO particulars */}
+                    {isPettyCash && (
+                      <TableCell className="w-56 sm:w-64 border-r border-slate-200/60 p-1.5 px-3 align-middle">
+                        <select
+                          value={row.pettyCashCategory || ''}
+                          onChange={(e) =>
+                            handleRowChange(row.id, 'pettyCashCategory', e.target.value)
+                          }
+                          className="w-full h-9 px-2.5 text-xs sm:text-sm text-focus rounded-lg border border-stroke/60 bg-white hover:border-slate-300 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus transition-all cursor-pointer truncate align-middle"
+                        >
+                          <option value="">-- Select Category --</option>
+                          {PREDEFINED_PETTY_CASH_CATEGORIES.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                      </TableCell>
+                    )}
 
                     {/* Price Each Cell */}
                     <TableCell className="w-44 border-r border-slate-200/60 p-1.5 px-3">
@@ -780,6 +1019,103 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           </Button>
         </div>
       </Card>
+
+      {/* Add Expense Category Modal Dialog */}
+      <Dialog
+        open={isAddCategoryModalOpen}
+        onOpenChange={(open) => {
+          setIsAddCategoryModalOpen(open)
+          if (!open) {
+            setNewCategoryName('')
+            setCategorySaveError('')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4 [&>button]:w-6 [&>button]:h-6 [&>button]:p-0.5 [&>button]:rounded-md [&>button>svg]:w-3.5 [&>button>svg]:h-3.5">
+          <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#960C01] text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Tag className="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-bold text-focus leading-tight">
+                  Add Expense Category
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-fg mt-0.5">
+                  Type a new category name. It will be automatically saved and selected.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-3">
+            {categorySaveError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{categorySaveError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-focus block">
+                Category Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Special Logistics, Staff Welfare, Licenses..."
+                value={newCategoryName}
+                onChange={(e) => {
+                  setNewCategoryName(e.target.value)
+                  if (categorySaveError) setCategorySaveError('')
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleSaveNewCategory()
+                  }
+                }}
+                autoFocus
+                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stroke/20">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsAddCategoryModalOpen(false)
+                  setNewCategoryName('')
+                  setCategorySaveError('')
+                }}
+                className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isSavingCategory || !newCategoryName.trim()}
+                onClick={handleSaveNewCategory}
+                className="h-9 px-4 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+              >
+                {isSavingCategory ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Category</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
