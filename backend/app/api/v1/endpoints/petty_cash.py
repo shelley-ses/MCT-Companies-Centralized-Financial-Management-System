@@ -54,7 +54,9 @@ def get_ledger(
     db: Session = Depends(get_db),
 ):
     service = PettyCashService(db)
-    company = service.resolve_company(company_id, company_name)
+    company = None
+    if company_id or (company_name and company_name.strip().lower() != "all companies"):
+        company = service.resolve_company(company_id, company_name)
     return service.list_ledger(company, start_date, end_date)
 
 

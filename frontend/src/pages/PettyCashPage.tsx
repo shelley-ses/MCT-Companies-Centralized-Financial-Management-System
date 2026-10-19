@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Wallet,
   Plus,
+  PlusCircle,
   ArrowDownLeft,
   ArrowUpRight,
   AlertTriangle,
@@ -18,9 +19,11 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
 import { TopUpPettyCashModal } from '@/components/dashboard/TopUpPettyCashModal'
+import { AddExpenseModal } from '@/components/dashboard/AddExpenseModal'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { formatToYYYYMMDD } from '@/utils/dateUtils'
 import { loanService } from '@/services/loanService'
 import {
   pettyCashService,
@@ -43,15 +46,18 @@ const COMPANY_LIST = [
 
 const ITEMS_PER_PAGE = 10
 
-const todayIso = () => new Date().toISOString().slice(0, 10)
+const todayIso = () => formatToYYYYMMDD(new Date())
 const monthStartIso = () => `${todayIso().slice(0, 8)}01`
 
 export const PettyCashPage: React.FC = () => {
   const { user } = useSession()
   const userRole = (user?.role || '').toLowerCase()
-  // Admin, Finance and Audit see every company's wallet. Finance and company users (Company,
-  // Supervisor) can top up and change settings; Admin and auditors are view-only.
-  const canManage = userRole === 'finance' || userRole === 'company' || userRole === 'supervisor'
+  // Admin, Finance, Company and Supervisor can top up, record expenses, and change settings.
+  const canManage =
+    userRole === 'admin' ||
+    userRole === 'finance' ||
+    userRole === 'company' ||
+    userRole === 'supervisor'
   const isCompanyScoped =
     userRole === 'supervisor' || userRole === 'company' || userRole === 'company auditor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
@@ -72,6 +78,7 @@ export const PettyCashPage: React.FC = () => {
   const [currentPage, setCurrentPage] = React.useState(1)
 
   const [isTopUpOpen, setIsTopUpOpen] = React.useState(false)
+  const [isExpenseOpen, setIsExpenseOpen] = React.useState(false)
   const [deletingId, setDeletingId] = React.useState<number | null>(null)
   const [actionError, setActionError] = React.useState<string | null>(null)
   const [thresholdInput, setThresholdInput] = React.useState('')
@@ -112,11 +119,14 @@ export const PettyCashPage: React.FC = () => {
       setLoadError(null)
       try {
         if (isAllCompanies) {
-          const summaries = await pettyCashService.getAllSummaries(period)
+          const [summaries, entries] = await Promise.all([
+            pettyCashService.getAllSummaries(period),
+            pettyCashService.getLedger(undefined, period),
+          ])
           if (!mounted) return
           setAllSummaries(summaries)
           setSummary(null)
-          setLedger([])
+          setLedger(entries)
         } else {
           const [walletSummary, entries] = await Promise.all([
             pettyCashService.getSummary(selectedCompany, period),
@@ -237,6 +247,16 @@ export const PettyCashPage: React.FC = () => {
               aria-label="End date"
             />
           </div>
+          {canManage && (
+            <Button
+              type="button"
+              onClick={() => setIsExpenseOpen(true)}
+              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl border border-stroke/40 bg-white hover:bg-slate-50 text-focus font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer whitespace-nowrap"
+            >
+              <PlusCircle className="h-4 w-4 shrink-0 text-[#960C01]" />
+              <span>Record Expense</span>
+            </Button>
+          )}
           {canManage && !isAllCompanies && (
             <Button
               type="button"
@@ -269,129 +289,146 @@ export const PettyCashPage: React.FC = () => {
         <div className="h-48 flex items-center justify-center text-muted-fg">
           <Loader2 className="w-5 h-5 animate-spin" />
         </div>
-      ) : isAllCompanies ? (
-        /* 2a. All companies: one row per wallet */
+      ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <DashboardKpiCard label="Total Petty Cash" value={formatPHP(allTotals.balance)} icon={Wallet} subtext="Across all company wallets" />
-            <DashboardKpiCard label="Topped Up" value={formatPHP(allTotals.topUps)} icon={ArrowDownLeft} subtext="Moved from sales this period" />
-            <DashboardKpiCard label="Spent" value={formatPHP(allTotals.spent)} icon={ArrowUpRight} subtext="Petty cash expenses this period" />
-            <DashboardKpiCard
-              label="Low Wallets"
-              value={String(allTotals.lowCount)}
-              icon={AlertTriangle}
-              subtext="Below their low-balance alert"
-              className={allTotals.lowCount > 0 ? 'border-amber-300 bg-amber-50/60' : undefined}
-            />
-          </div>
-
-          <Card className="bg-white rounded-[20px] border border-slate-200/80 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs sm:text-sm">
-                <thead className="bg-slate-50 text-muted-fg text-left">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Company</th>
-                    <th className="px-4 py-3 font-semibold text-right">Balance</th>
-                    <th className="px-4 py-3 font-semibold text-right">Topped Up</th>
-                    <th className="px-4 py-3 font-semibold text-right">Spent</th>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allSummaries.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-muted-fg">
-                        No petty cash activity yet. Pick a company to top up its wallet.
-                      </td>
-                    </tr>
-                  ) : (
-                    allSummaries.map((s) => (
-                      <tr
-                        key={s.companyId}
-                        onClick={() => setSelectedCompany(s.companyName)}
-                        className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
-                      >
-                        <td className="px-4 py-3 font-semibold text-focus">{s.companyName}</td>
-                        <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatPHP(s.balance)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatPHP(s.periodTopUps)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatPHP(s.periodSpent)}</td>
-                        <td className="px-4 py-3">
-                          <LowBalanceBadge isLow={s.isLow} />
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </>
-      ) : summary ? (
-        /* 2b. Single company wallet */
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <DashboardKpiCard
-              label="Current Balance"
-              value={formatPHP(summary.balance)}
-              icon={Wallet}
-              subtext={summary.isLow ? `Low — below ${formatPHP(summary.lowBalanceThreshold)}` : 'Available petty cash'}
-              className={summary.isLow ? 'border-amber-300 bg-amber-50/60' : undefined}
-            />
-            <DashboardKpiCard label="Topped Up" value={formatPHP(summary.periodTopUps)} icon={ArrowDownLeft} subtext="Moved from sales this period" />
-            <DashboardKpiCard label="Spent" value={formatPHP(summary.periodSpent)} icon={ArrowUpRight} subtext="Petty cash expenses this period" />
-          </div>
-
-          {canManage && (
-            <form onSubmit={handleSaveThreshold} className="flex items-center gap-2 flex-wrap text-xs text-muted-fg">
-              <span className="font-medium">Warn me when petty cash falls below</span>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold">₱</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={thresholdInput}
-                  onChange={(e) => setThresholdInput(e.target.value)}
-                  className="pl-7 h-9 w-32 rounded-xl text-xs border-stroke/60 bg-white"
-                  aria-label="Low-balance alert amount"
+          {isAllCompanies ? (
+            /* 2a. All companies overview */
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <DashboardKpiCard label="Total Petty Cash" value={formatPHP(allTotals.balance)} icon={Wallet} subtext="Across all company wallets" />
+                <DashboardKpiCard label="Topped Up" value={formatPHP(allTotals.topUps)} icon={ArrowDownLeft} subtext="Moved from sales this period" />
+                <DashboardKpiCard label="Spent" value={formatPHP(allTotals.spent)} icon={ArrowUpRight} subtext="Petty cash expenses this period" />
+                <DashboardKpiCard
+                  label="Low Wallets"
+                  value={String(allTotals.lowCount)}
+                  icon={AlertTriangle}
+                  subtext="Below their low-balance alert"
+                  className={allTotals.lowCount > 0 ? 'border-amber-300 bg-amber-50/60' : undefined}
                 />
               </div>
-              <Button
-                type="submit"
-                variant="outline"
-                disabled={isSavingThreshold || Number(thresholdInput) === summary.lowBalanceThreshold}
-                className="h-9 px-3 rounded-xl text-xs font-semibold border-stroke/50 bg-white text-focus hover:bg-surface cursor-pointer"
-              >
-                {isSavingThreshold ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
-              </Button>
-            </form>
-          )}
 
+              <Card className="bg-white rounded-[20px] border border-slate-200/80 shadow-xs overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100">
+                  <h2 className="text-sm sm:text-base font-semibold text-focus">Company Wallets</h2>
+                  <p className="text-xs text-muted-fg mt-0.5">Click any company to manage threshold or view company-specific wallet</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs sm:text-sm">
+                    <thead className="bg-slate-50 text-muted-fg text-left">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Company</th>
+                        <th className="px-4 py-3 font-semibold text-right">Balance</th>
+                        <th className="px-4 py-3 font-semibold text-right">Topped Up</th>
+                        <th className="px-4 py-3 font-semibold text-right">Spent</th>
+                        <th className="px-4 py-3 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allSummaries.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-10 text-center text-muted-fg">
+                            No petty cash activity yet. Pick a company to top up its wallet.
+                          </td>
+                        </tr>
+                      ) : (
+                        allSummaries.map((s) => (
+                          <tr
+                            key={s.companyId}
+                            onClick={() => setSelectedCompany(s.companyName)}
+                            className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+                          >
+                            <td className="px-4 py-3 font-semibold text-focus">{s.companyName}</td>
+                            <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatPHP(s.balance)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{formatPHP(s.periodTopUps)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{formatPHP(s.periodSpent)}</td>
+                            <td className="px-4 py-3">
+                              <LowBalanceBadge isLow={s.isLow} />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </>
+          ) : summary ? (
+            /* 2b. Single company wallet */
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <DashboardKpiCard
+                  label="Current Balance"
+                  value={formatPHP(summary.balance)}
+                  icon={Wallet}
+                  subtext={summary.isLow ? `Low — below ${formatPHP(summary.lowBalanceThreshold)}` : 'Available petty cash'}
+                  className={summary.isLow ? 'border-amber-300 bg-amber-50/60' : undefined}
+                />
+                <DashboardKpiCard label="Topped Up" value={formatPHP(summary.periodTopUps)} icon={ArrowDownLeft} subtext="Moved from sales this period" />
+                <DashboardKpiCard label="Spent" value={formatPHP(summary.periodSpent)} icon={ArrowUpRight} subtext="Petty cash expenses this period" />
+              </div>
+
+              {canManage && (
+                <form onSubmit={handleSaveThreshold} className="flex items-center gap-2 flex-wrap text-xs text-muted-fg">
+                  <span className="font-medium">Warn me when petty cash falls below</span>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold">₱</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={thresholdInput}
+                      onChange={(e) => setThresholdInput(e.target.value)}
+                      className="pl-7 h-9 w-32 rounded-xl text-xs border-stroke/60 bg-white"
+                      aria-label="Low-balance alert amount"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={isSavingThreshold || Number(thresholdInput) === summary.lowBalanceThreshold}
+                    className="h-9 px-3 rounded-xl text-xs font-semibold border-stroke/50 bg-white text-focus hover:bg-surface cursor-pointer"
+                  >
+                    {isSavingThreshold ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                  </Button>
+                </form>
+              )}
+            </>
+          ) : null}
+
+          {/* 3. Petty Cash Ledger (Visible for both All Companies & Single Company) */}
           <Card className="bg-white rounded-[20px] border border-slate-200/80 shadow-xs overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="text-sm sm:text-base font-semibold text-focus">Petty Cash Ledger</h2>
-              <p className="text-xs text-muted-fg mt-0.5">
-                Top-ups and expenses paid with Petty Cash for {selectedCompany}
-              </p>
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <h2 className="text-sm sm:text-base font-semibold text-focus">Petty Cash Ledger</h2>
+                <p className="text-xs text-muted-fg mt-0.5">
+                  {isAllCompanies
+                    ? 'Recent top-ups and expenses paid with Petty Cash across all subsidiaries'
+                    : `Top-ups and expenses paid with Petty Cash for ${selectedCompany}`}
+                </p>
+              </div>
+              <div className="text-xs font-medium text-muted-fg">
+                {ledger.length} total {ledger.length === 1 ? 'record' : 'records'}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs sm:text-sm">
                 <thead className="bg-slate-50 text-muted-fg text-left">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Date</th>
+                    {isAllCompanies && <th className="px-4 py-3 font-semibold">Company</th>}
                     <th className="px-4 py-3 font-semibold">Type</th>
                     <th className="px-4 py-3 font-semibold">Description</th>
                     <th className="px-4 py-3 font-semibold">Reference</th>
                     <th className="px-4 py-3 font-semibold text-right">In</th>
                     <th className="px-4 py-3 font-semibold text-right">Out</th>
                     <th className="px-4 py-3 font-semibold text-right">Balance</th>
-                    {canManage && <th className="px-4 py-3" />}
+                    {canManage && !isAllCompanies && <th className="px-4 py-3" />}
                   </tr>
                 </thead>
                 <tbody>
                   {pagedLedger.length === 0 ? (
                     <tr>
-                      <td colSpan={canManage ? 8 : 7} className="px-4 py-10 text-center text-muted-fg">
+                      <td colSpan={isAllCompanies ? 8 : (canManage ? 8 : 7)} className="px-4 py-10 text-center text-muted-fg">
                         No petty cash activity in this period.
                       </td>
                     </tr>
@@ -399,6 +436,11 @@ export const PettyCashPage: React.FC = () => {
                     pagedLedger.map((entry) => (
                       <tr key={entry.id} className="border-t border-slate-100">
                         <td className="px-4 py-3 whitespace-nowrap tabular-nums">{entry.date}</td>
+                        {isAllCompanies && (
+                          <td className="px-4 py-3 whitespace-nowrap font-medium text-focus">
+                            {entry.companyName || '—'}
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <span
                             className={cn(
@@ -430,7 +472,7 @@ export const PettyCashPage: React.FC = () => {
                         <td className="px-4 py-3 text-right tabular-nums font-semibold">
                           {formatPHP(entry.runningBalance)}
                         </td>
-                        {canManage && (
+                        {canManage && !isAllCompanies && (
                           <td className="px-4 py-3 text-right">
                             {entry.type === 'topup' && (
                               <button
@@ -485,14 +527,22 @@ export const PettyCashPage: React.FC = () => {
           </Card>
 
           <p className="text-xs text-muted-fg">
-            To spend petty cash, add an expense on the{' '}
-            <Link to="/expense" className="text-primary font-semibold hover:underline">
-              Expense
+            To spend petty cash, use the{' '}
+            <button
+              type="button"
+              onClick={() => setIsExpenseOpen(true)}
+              className="text-[#960C01] font-semibold hover:underline cursor-pointer"
+            >
+              Record Expense
+            </button>{' '}
+            button above, or record on the{' '}
+            <Link to="/expenses" className="text-primary font-semibold hover:underline">
+              Expenses
             </Link>{' '}
             page with payment method &ldquo;Petty Cash&rdquo;.
           </p>
         </>
-      ) : null}
+      )}
 
       {!isAllCompanies && (
         <TopUpPettyCashModal
@@ -503,6 +553,20 @@ export const PettyCashPage: React.FC = () => {
           onSuccess={reload}
         />
       )}
+
+      <AddExpenseModal
+        open={isExpenseOpen}
+        onOpenChange={setIsExpenseOpen}
+        assignedCompany={
+          selectedCompany === 'All Companies'
+            ? (allSummaries[0]?.companyName || 'MCT Kitchen')
+            : selectedCompany
+        }
+        initialPaymentMethod="Petty Cash"
+        onSuccess={() => {
+          reload()
+        }}
+      />
     </div>
   )
 }

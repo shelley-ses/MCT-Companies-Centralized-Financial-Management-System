@@ -15,7 +15,6 @@ from app.services.petty_cash_service import PettyCashService
 router = APIRouter()
 
 CANONICAL_COMPANY_MAP = {
-    1: "MCT Kitchen",
     2: "MCT Kitchen",
     3: "MCT Hotel",
     4: "JK Cafe",
@@ -23,7 +22,7 @@ CANONICAL_COMPANY_MAP = {
     6: "Annex Nine",
     7: "Merillon",
     8: "JK Printing",
-    9: "Speedbox",
+    9: "Speedfire",
     10: "JK Property and Ventures",
     11: "Golden Sunburst Ventures",
     12: "Southern Brew",
@@ -79,12 +78,15 @@ def get_expenses(
         # Company filter
         resolved_company_id = company_id
         if not resolved_company_id and company_name and company_name.lower() != "all companies":
-            for cid, cname in company_map.items():
-                if cname.strip().lower() == company_name.strip().lower():
-                    resolved_company_id = cid
-                    break
-
-        if resolved_company_id:
+            target_norm = company_name.strip().lower()
+            matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() == target_norm]
+            if not matching_cids and target_norm in ("speedbox", "speedfire"):
+                matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() in ("speedbox", "speedfire")]
+            if len(matching_cids) == 1:
+                sb_query = sb_query.eq("company_id", matching_cids[0])
+            elif len(matching_cids) > 1:
+                sb_query = sb_query.in_("company_id", matching_cids)
+        elif resolved_company_id:
             sb_query = sb_query.eq("company_id", resolved_company_id)
         if category_id:
             sb_query = sb_query.eq("category_id", category_id)
