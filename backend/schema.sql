@@ -205,3 +205,24 @@ CREATE TABLE IF NOT EXISTS bill_payments (
     CONSTRAINT bill_payments_amount_positive CHECK (amount > 0),
     CONSTRAINT bill_payments_period_unique UNIQUE (bill_id, period_key)
 );
+
+-- 16. Petty Cash Top-ups (sales cash moved into a company's petty cash wallet)
+CREATE TABLE IF NOT EXISTS petty_cash_topups (
+    topup_id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
+    amount NUMERIC(15, 2) NOT NULL,
+    topup_date DATE NOT NULL,
+    reference_no VARCHAR(100),
+    description TEXT,
+    created_by BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT petty_cash_topups_amount_positive CHECK (amount > 0)
+);
+
+-- 17. Petty Cash Wallets (per-company settings; balance is computed from top-ups and petty cash expenses)
+CREATE TABLE IF NOT EXISTS petty_cash_wallets (
+    wallet_id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT NOT NULL UNIQUE REFERENCES company(company_id) ON DELETE CASCADE,
+    low_balance_threshold NUMERIC(15, 2) NOT NULL DEFAULT 1000,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

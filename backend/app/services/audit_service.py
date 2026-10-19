@@ -112,6 +112,11 @@ class AuditAction(str, Enum):
     STAFF_CREDIT_DELETED = "STAFF_CREDIT_DELETED"
     STAFF_CREDIT_VIEWED  = "STAFF_CREDIT_VIEWED"
 
+    # ── Petty Cash ───────────────────────────────────────────────────────────
+    PETTY_CASH_TOPUP_CREATED = "PETTY_CASH_TOPUP_CREATED"
+    PETTY_CASH_TOPUP_DELETED = "PETTY_CASH_TOPUP_DELETED"
+    PETTY_CASH_WALLET_UPDATED = "PETTY_CASH_WALLET_UPDATED"
+
     # ── Categories ───────────────────────────────────────────────────────────
     CATEGORY_CREATED    = "CATEGORY_CREATED"
     CATEGORY_UPDATED    = "CATEGORY_UPDATED"
@@ -182,6 +187,9 @@ _ACTION_CATEGORY_MAP: dict[str, str] = {
     "STAFF_CREDIT_UPDATED": "STAFF_CREDIT",
     "STAFF_CREDIT_DELETED": "STAFF_CREDIT",
     "STAFF_CREDIT_VIEWED": "STAFF_CREDIT",
+    "PETTY_CASH_TOPUP_CREATED": "PETTY_CASH",
+    "PETTY_CASH_TOPUP_DELETED": "PETTY_CASH",
+    "PETTY_CASH_WALLET_UPDATED": "PETTY_CASH",
     "CATEGORY_CREATED": "CATEGORY",
     "CATEGORY_UPDATED": "CATEGORY",
     "CATEGORY_DELETED": "CATEGORY",
@@ -248,6 +256,9 @@ _ACTION_DESCRIPTION_MAP: dict[str, str] = {
     "STAFF_CREDIT_UPDATED":    "Staff credit updated",
     "STAFF_CREDIT_DELETED":    "Staff credit deleted",
     "STAFF_CREDIT_VIEWED":     "Staff credit(s) viewed",
+    "PETTY_CASH_TOPUP_CREATED": "Petty cash topped up from sales",
+    "PETTY_CASH_TOPUP_DELETED": "Petty cash top-up removed",
+    "PETTY_CASH_WALLET_UPDATED": "Petty cash wallet settings updated",
     "CATEGORY_CREATED":        "New category created",
     "CATEGORY_UPDATED":        "Category updated",
     "CATEGORY_DELETED":        "Category deleted",
