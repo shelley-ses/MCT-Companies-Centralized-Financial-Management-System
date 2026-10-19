@@ -10,6 +10,7 @@ import {
   ChevronDown,
   FileSpreadsheet,
   FileText,
+  CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,7 +36,7 @@ import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 export const TransactionPage: React.FC = () => {
   const { user } = useSession()
   const isFinance = user?.role === 'Finance'
-  const isAdmin = user?.role === 'Admin'
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
   const isCompanyScoped = !isAdmin && !isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
@@ -254,6 +255,46 @@ export const TransactionPage: React.FC = () => {
     setIsModalOpen(true)
   }
 
+  const handleMarkTxAudited = (tx: DashboardTransactionItem, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const today = new Date().toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+    })
+    const auditorName = user?.fullName || 'Admin'
+
+    const updatedTx: DashboardTransactionItem = {
+      ...tx,
+      auditStatus: 'Verified',
+      auditedBy: auditorName,
+      auditDate: today,
+    }
+
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === tx.id ? updatedTx : t))
+    )
+
+    if (tx.type === 'Sales') {
+      salesService.updateSaleAuditStatus(tx.id, 'Verified', auditorName)
+    } else if (tx.type === 'Expense') {
+      expenseService.updateExpenseAuditStatus(tx.id, 'Verified', auditorName)
+    } else if (tx.type === 'Loan') {
+      loanService.updateLoan(tx.id, {
+        auditStatus: 'Verified',
+        auditedBy: auditorName,
+        auditDate: today,
+      })
+    }
+  }
+
+  const handleTransactionUpdated = (updatedItem: DashboardTransactionItem) => {
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === updatedItem.id ? updatedItem : t))
+    )
+    setSelectedTx(updatedItem)
+  }
+
   // Export CSV handler
   const handleExportCsv = () => {
     const headers = [
@@ -377,8 +418,6 @@ export const TransactionPage: React.FC = () => {
     printWindow.document.close()
     setIsExportDropdownOpen(false)
   }
-
-  const displayedTitle = isCompanyScoped ? assignedCompany : 'MCT Group of Companies'
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
@@ -510,16 +549,6 @@ export const TransactionPage: React.FC = () => {
 
       {/* 3. Main Transactions Card & Table matching Recent Transactions in Dashboard */}
       <div className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
-        {/* Grey Header Banner matching Recent Transactions */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5">
-          <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
-            All Transactions
-          </h2>
-          <p className="text-xs text-muted-fg font-normal mt-0.5">
-            Here's the summary of all transactions in {displayedTitle}.
-          </p>
-        </div>
-
         {/* Table containing strictly:
             DATE | CHEQUE NO. | PARTICULARS | WITHDRAWAL | DEPOSIT | CATEGORY | NET AMOUNT
         */}
@@ -551,6 +580,11 @@ export const TransactionPage: React.FC = () => {
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
                   NET AMOUNT
                 </TableHead>
+                {isAdmin && (
+                  <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                    ACTION
+                  </TableHead>
+                )}
               </TableRow>
             </TableHeader>
 
@@ -566,12 +600,17 @@ export const TransactionPage: React.FC = () => {
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-24 rounded-md ml-auto" /></TableCell>
+                    {isAdmin && (
+                      <TableCell className="px-4 py-3.5 text-center">
+                        <Skeleton className="h-6 w-16 rounded-md mx-auto" />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               ) : displayedTransactions.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={isAdmin ? 9 : 8}
                     className="py-12 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     No transactions found for the selected filter criteria.
@@ -629,6 +668,42 @@ export const TransactionPage: React.FC = () => {
                       <TableCell className="px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap text-focus">
                         {formatPHP(netAmount)}
                       </TableCell>
+
+                      {/* 8. Action (Audit Button) for Admin */}
+                      {isAdmin && (
+                        <TableCell
+                          className="px-4 py-3.5 text-center whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-center">
+                            {tx.auditStatus === 'Verified' ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRowClick(tx)}
+                                className="h-7 px-2.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 flex items-center gap-1.5 cursor-pointer border border-emerald-300/80 shadow-2xs transition-all"
+                                title="Audited (Click to view details or unmark)"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Audited</span>
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => handleMarkTxAudited(tx, e)}
+                                className="h-7 px-2.5 rounded-lg text-xs font-semibold text-focus/80 hover:text-primary hover:bg-red-50/50 flex items-center gap-1.5 cursor-pointer border border-slate-200/80 hover:border-primary/30 shadow-2xs transition-all"
+                                title="Click to automatically mark as audited"
+                              >
+                                <FileText className="w-3.5 h-3.5 text-primary" />
+                                <span>Audit</span>
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   )
                 })
@@ -687,6 +762,7 @@ export const TransactionPage: React.FC = () => {
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         transaction={selectedTx}
+        onTransactionUpdated={handleTransactionUpdated}
       />
     </div>
   )

@@ -87,6 +87,7 @@ def get_sales(
                 company_name=company_map.get(row.get("company_id")) or "Unknown Company",
                 category_id=row.get("category_id"),
                 category_name=cat_map.get(row.get("category_id")) or "None",
+                payment_method=row.get("payment_method"),
                 transaction_date=row.get("transaction_date"),
                 cheque_no=row.get("cheque_number") or row.get("cheque_no") or row.get("reference_no"),
                 amount=row.get("amount") or 0.0,
@@ -206,9 +207,11 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
             category_name = "None"
 
         # 3. Insert into Supabase
+        payment_method_str = (sale_in.payment_method or "").strip() or None
         sb_insert = client.table("sales").insert({
             "company_id": target_company_id,
             "category_id": resolved_category_id,
+            "payment_method": payment_method_str,
             "transaction_date": sale_in.transaction_date.isoformat(),
             "cheque_number": cheque,
             "amount": float(sale_in.amount),
@@ -238,6 +241,7 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
                 sales_id=sb_sales_id,
                 company_id=target_company_id,
                 category_id=resolved_category_id,
+                payment_method=payment_method_str,
                 transaction_date=sale_in.transaction_date,
                 cheque_no=cheque,
                 amount=sale_in.amount,
@@ -262,6 +266,7 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
             company_name=target_company_name,
             category_id=created_row.get("category_id"),
             category_name=category_name,
+            payment_method=payment_method_str,
             transaction_date=created_row.get("transaction_date"),
             cheque_no=created_row.get("cheque_number"),
             amount=created_row.get("amount"),
@@ -298,6 +303,7 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
         sale = Sale(
             company_id=target_company.company_id,
             category_id=sale_in.category_id,
+            payment_method=(sale_in.payment_method or "").strip() or None,
             transaction_date=sale_in.transaction_date,
             cheque_no=cheque,
             amount=sale_in.amount,
@@ -544,6 +550,7 @@ def get_sale(sales_id: int, db: Session = Depends(get_db)):
         company_name=c_name,
         category_id=sale.category_id,
         category_name=cat_name or "None",
+        payment_method=sale.payment_method,
         transaction_date=sale.transaction_date,
         cheque_no=sale.cheque_no,
         amount=sale.amount,
@@ -597,6 +604,9 @@ def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Sessio
         elif sale_in.category_id is not None:
             update_payload["category_id"] = sale_in.category_id
 
+        if sale_in.payment_method is not None:
+            update_payload["payment_method"] = (sale_in.payment_method or "").strip() or None
+
         if update_payload:
             sb_res = client.table("sales").update(update_payload).eq("sales_id", sales_id).execute()
             if sb_res.data:
@@ -617,6 +627,8 @@ def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Sessio
             sale.cheque_no = update_payload["cheque_number"]
         if "category_id" in update_payload:
             sale.category_id = update_payload["category_id"]
+        if "payment_method" in update_payload:
+            sale.payment_method = update_payload["payment_method"]
         db.commit()
         db.refresh(sale)
 
@@ -635,6 +647,7 @@ def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Sessio
             company_name=company_map.get(updated_row.get("company_id")) or "Unknown",
             category_id=updated_row.get("category_id"),
             category_name=cat_map.get(updated_row.get("category_id")) or "None",
+            payment_method=updated_row.get("payment_method"),
             transaction_date=updated_row.get("transaction_date"),
             cheque_no=updated_row.get("cheque_number") or updated_row.get("cheque_no"),
             amount=updated_row.get("amount"),

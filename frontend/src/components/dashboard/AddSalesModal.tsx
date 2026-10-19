@@ -20,6 +20,7 @@ import {
   type NewSalesInput,
   type SalesItem,
 } from '@/services/salesService'
+import { expenseService } from '@/services/expenseService'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
@@ -31,16 +32,24 @@ interface AddSalesModalProps {
   assignedCompany: string
 }
 
-const CATEGORY_OPTIONS = [
-  'None',
+const PAYMENT_METHOD_OPTIONS = [
+  'Cash',
   'GCash',
   'Maya',
   'PayMongo',
   'Panda',
-  'In-house',
   'Cheque',
   'Bank Transfer',
-  'Cash',
+  'In-house',
+]
+
+const DEFAULT_SALES_CATEGORIES = [
+  'Sales Revenue',
+  'Service Income',
+  'Product Sales',
+  'Catering',
+  'Event Booking',
+  'Other Income',
 ]
 
 export const AddSalesModal: React.FC<AddSalesModalProps> = ({
@@ -56,7 +65,9 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   const [chequeNo, setChequeNo] = React.useState('')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [category, setCategory] = React.useState('None')
+  const [paymentMethod, setPaymentMethod] = React.useState('Cash')
+  const [category, setCategory] = React.useState(DEFAULT_SALES_CATEGORIES[0])
+  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_SALES_CATEGORIES)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
 
@@ -71,12 +82,26 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
     category?: string
   }>({})
 
+  // Load categories from database
+  React.useEffect(() => {
+    let mounted = true
+    expenseService.getCategories().then((cats) => {
+      if (mounted && cats && cats.length > 0) {
+        const names = Array.from(new Set([...cats.map((c) => c.name), ...DEFAULT_SALES_CATEGORIES]))
+        setCategoryOptions(names)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [open])
+
   // Dynamic filter for category suggestions
   const filteredCategoryOptions = React.useMemo(() => {
     const q = category.trim().toLowerCase()
-    if (!q) return CATEGORY_OPTIONS
-    return CATEGORY_OPTIONS.filter((opt) => opt.toLowerCase().includes(q))
-  }, [category])
+    if (!q) return categoryOptions
+    return categoryOptions.filter((opt) => opt.toLowerCase().includes(q))
+  }, [category, categoryOptions])
 
   // Close category dropdown on click outside
   React.useEffect(() => {
@@ -99,7 +124,8 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
       setChequeNo('')
       setParticulars('')
       setAmount('')
-      setCategory('None')
+      setPaymentMethod('Cash')
+      setCategory(DEFAULT_SALES_CATEGORIES[0])
       setError('')
       setFieldErrors({})
       setIsConfirmOpen(false)
@@ -145,13 +171,18 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
     setIsSubmitting(true)
     setError('')
     try {
-      const parsedAmount = parseFloat(amount)
+      const catTrimmed = category.trim() || DEFAULT_SALES_CATEGORIES[0]
+      if (catTrimmed && !categoryOptions.includes(catTrimmed)) {
+        expenseService.createCategory(catTrimmed).catch((e) => console.warn('Could not persist category:', e))
+      }
+
       const payload: NewSalesInput = {
         date: date.trim() || getTodayIso(),
         chequeNo: chequeNo.trim(),
         particulars: particulars.trim(),
         amount: parsedAmount,
-        category: category.trim() || 'None',
+        category: catTrimmed,
+        paymentMethod: paymentMethod,
         company: assignedCompany,
         status: 'Paid',
       }
@@ -303,101 +334,119 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
                 )}
               </div>
 
-              {/* 5. Category (no 'payment method', no icon in label, required asterisk, dynamic search/custom input) */}
-              <div className="space-y-1.5" ref={categoryContainerRef}>
+              {/* 5. Payment Method */}
+              <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-focus block">
-                  Category <span className="text-red-500">*</span>
+                  Payment Method <span className="text-red-500">*</span>
                 </Label>
-                <div className="relative">
-                  <Input
-                    type="text"
-                    value={category}
-                    onChange={(e) => {
-                      setCategory(e.target.value)
-                      setIsCategoryOpen(true)
-                      if (fieldErrors.category) {
-                        setFieldErrors((prev) => ({ ...prev, category: undefined }))
-                      }
-                    }}
-                    onFocus={() => setIsCategoryOpen(true)}
-                    placeholder="Select or type category…"
-                    className={cn(
-                      'h-10 rounded-xl border-stroke/50 text-xs pr-8 font-medium bg-white',
-                      fieldErrors.category && 'border-red-500 focus-visible:ring-red-200'
-                    )}
-                  />
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={() => setIsCategoryOpen((prev) => !prev)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded cursor-pointer transition-colors"
-                    aria-label="Toggle category list"
-                  >
-                    <ChevronDown className={cn('w-4 h-4 transition-transform duration-200', isCategoryOpen && 'rotate-180')} />
-                  </button>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                >
+                  {PAYMENT_METHOD_OPTIONS.map((pm) => (
+                    <option key={pm} value={pm}>
+                      {pm}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-                  {/* Suggestions dropdown with dynamic matching or custom input indication */}
-                  {isCategoryOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 max-h-52 overflow-y-auto animate-in fade-in-50 zoom-in-95 duration-100">
-                      <div className="px-2 py-1 text-[10px] font-bold text-muted-fg uppercase tracking-wider flex items-center justify-between">
-                        <span>Categories</span>
-                        {category.trim() && (
-                          <span className="text-[10px] text-slate-400 font-normal">
-                            {filteredCategoryOptions.length} match{filteredCategoryOptions.length === 1 ? '' : 'es'}
-                          </span>
-                        )}
-                      </div>
-                      <div className="space-y-0.5">
-                        {filteredCategoryOptions.length > 0 ? (
-                          filteredCategoryOptions.map((opt) => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => {
-                                setCategory(opt)
-                                setIsCategoryOpen(false)
-                                if (fieldErrors.category) {
-                                  setFieldErrors((prev) => ({ ...prev, category: undefined }))
-                                }
-                              }}
-                              className={cn(
-                                'w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium text-left transition-colors cursor-pointer',
-                                category.toLowerCase() === opt.toLowerCase()
-                                  ? 'bg-primary/10 text-primary font-semibold'
-                                  : 'text-focus/80 hover:bg-slate-50'
-                              )}
-                            >
-                              <span>{opt}</span>
-                              {category.toLowerCase() === opt.toLowerCase() && (
-                                <Check className="w-3.5 h-3.5 text-primary" />
-                              )}
-                            </button>
-                          ))
-                        ) : (
-                          <div className="p-2">
-                            <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-left">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="font-semibold text-focus break-all">"{category.trim()}"</span>
-                                <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-200/80 px-1.5 py-0.5 rounded">
-                                  User Input
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-muted-fg mt-1">
-                                No predefined match found. Will be recorded as custom user category.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+            {/* 6. Category (Searchable / Configurable) */}
+            <div className="space-y-1.5" ref={categoryContainerRef}>
+              <Label className="text-xs font-semibold text-focus block">
+                Category <span className="text-red-500">*</span>
+              </Label>
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={category}
+                  onChange={(e) => {
+                    setCategory(e.target.value)
+                    setIsCategoryOpen(true)
+                    if (fieldErrors.category) {
+                      setFieldErrors((prev) => ({ ...prev, category: undefined }))
+                    }
+                  }}
+                  onFocus={() => setIsCategoryOpen(true)}
+                  placeholder="Select or type category…"
+                  className={cn(
+                    'h-10 rounded-xl border-stroke/50 text-xs pr-8 font-medium bg-white',
+                    fieldErrors.category && 'border-red-500 focus-visible:ring-red-200'
                   )}
-                </div>
-                {fieldErrors.category && (
-                  <p className="text-[11px] text-red-600 font-medium">
-                    {fieldErrors.category}
-                  </p>
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setIsCategoryOpen((prev) => !prev)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded cursor-pointer transition-colors"
+                  aria-label="Toggle category list"
+                >
+                  <ChevronDown className={cn('w-4 h-4 transition-transform duration-200', isCategoryOpen && 'rotate-180')} />
+                </button>
+
+                {/* Suggestions dropdown with dynamic matching or custom input indication */}
+                {isCategoryOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 max-h-52 overflow-y-auto animate-in fade-in-50 zoom-in-95 duration-100">
+                    <div className="px-2 py-1 text-[10px] font-bold text-muted-fg uppercase tracking-wider flex items-center justify-between">
+                      <span>Specific Categories</span>
+                      {category.trim() && (
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          {filteredCategoryOptions.length} match{filteredCategoryOptions.length === 1 ? '' : 'es'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-0.5">
+                      {filteredCategoryOptions.length > 0 ? (
+                        filteredCategoryOptions.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => {
+                              setCategory(opt)
+                              setIsCategoryOpen(false)
+                              if (fieldErrors.category) {
+                                setFieldErrors((prev) => ({ ...prev, category: undefined }))
+                              }
+                            }}
+                            className={cn(
+                              'w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium text-left transition-colors cursor-pointer',
+                              category.toLowerCase() === opt.toLowerCase()
+                                ? 'bg-primary/10 text-primary font-semibold'
+                                : 'text-focus/80 hover:bg-slate-50'
+                            )}
+                          >
+                            <span>{opt}</span>
+                            {category.toLowerCase() === opt.toLowerCase() && (
+                              <Check className="w-3.5 h-3.5 text-primary" />
+                            )}
+                          </button>
+                        ))
+                      ) : (
+                        <div className="p-2">
+                          <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-left">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-focus break-all">"{category.trim()}"</span>
+                              <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-200/80 px-1.5 py-0.5 rounded">
+                                User Input
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-fg mt-1">
+                              Will be saved as specific category in dropdown.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
+              {fieldErrors.category && (
+                <p className="text-[11px] text-red-600 font-medium">
+                  {fieldErrors.category}
+                </p>
+              )}
             </div>
 
             {/* Actions */}
@@ -448,6 +497,10 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
                 <span className="font-semibold text-focus max-w-[220px] truncate text-right">
                   {particulars}
                 </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-fg font-medium">Payment Method</span>
+                <span className="font-semibold text-focus">{paymentMethod}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-fg font-medium">Category</span>

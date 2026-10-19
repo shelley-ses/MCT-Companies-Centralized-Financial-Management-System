@@ -37,6 +37,7 @@ class Sale(Base):
     sales_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     company_id = Column(Integer, nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("category.category_id", ondelete="SET NULL"), nullable=True)
+    payment_method = Column(String(100), nullable=True)  # e.g. GCash, Cash, Cheque, Bank Transfer, etc.
     transaction_date = Column(Date, nullable=False)
     cheque_no = Column("cheque_number", String(100), nullable=True)
     cheque_number = synonym("cheque_no")
@@ -55,6 +56,7 @@ class Expense(Base):
     expense_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     company_id = Column(Integer, nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("category.category_id", ondelete="SET NULL"), nullable=True)
+    payment_method = Column(String(100), nullable=True)  # e.g. GCash, Cash, Petty Cash, Cheque, etc.
     created_by = Column(Integer, nullable=True)
     expense_date = Column(Date, nullable=False)
     reference_no = Column(String(100), nullable=True)

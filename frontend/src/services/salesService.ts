@@ -12,7 +12,8 @@ export interface SalesItem {
   withdrawal: number
   deposit: number
   netAmount: number
-  category: string
+  category: string       // user-configurable category (from DB Category table)
+  paymentMethod?: string // payment method: GCash, Cash, Cheque, Bank Transfer, etc.
   company: string
   items?: ParticularItem[]
   status: 'Paid' | 'Pending' | 'Overdue'
@@ -31,7 +32,8 @@ export interface NewSalesInput {
   chequeNo?: string
   particulars: string
   amount: number
-  category: string
+  category?: string        // optional (category is only used in expense)
+  paymentMethod?: string  // payment method (GCash, Cash, etc.)
   company: string
   status: 'Paid' | 'Pending'
   items?: ParticularItem[]
@@ -713,6 +715,7 @@ function mapBackendSaleToItem(b: any): SalesItem {
     deposit: amt,
     netAmount: amt,
     category: b.category_name || 'None',
+    paymentMethod: b.payment_method || undefined,
     company: b.company_name || 'MCT Kitchen',
     items: parsedItems,
     status: 'Paid',
@@ -782,7 +785,8 @@ export const salesService = {
       amount: input.amount,
       particulars: input.particulars,
       description: input.particulars,
-      category: input.category === 'None' ? null : input.category,
+      category: input.category && input.category !== 'None' ? input.category : null,
+      payment_method: input.paymentMethod || null,
       chequeNo: input.chequeNo || undefined,
     }
 
@@ -835,6 +839,7 @@ export const salesService = {
         deposit: input.amount,
         netAmount: input.amount,
         category: input.category || 'None',
+        paymentMethod: input.paymentMethod,
         company: input.company,
         items: input.items || parseParticulars(input.particulars, null, input.amount),
         status: input.status,
@@ -861,6 +866,7 @@ export const salesService = {
     if (input.category !== undefined) {
       payload.category = input.category === 'None' ? null : input.category
     }
+    if (input.paymentMethod !== undefined) payload.payment_method = input.paymentMethod || null
     if (input.chequeNo !== undefined) payload.chequeNo = input.chequeNo
 
     try {
@@ -935,6 +941,29 @@ export const salesService = {
     return true
   },
 
+  async updateSaleAuditStatus(
+    id: string,
+    auditStatus: 'Verified' | 'Pending Audit' | 'Flagged',
+    auditedBy?: string
+  ): Promise<SalesItem | null> {
+    const today = new Date().toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+    })
+    inMemorySales = inMemorySales.map((s) => {
+      if (s.id !== id) return s
+      return {
+        ...s,
+        auditStatus,
+        auditedBy: auditStatus === 'Verified' ? (auditedBy || 'Admin') : undefined,
+        auditDate: auditStatus === 'Verified' ? today : undefined,
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    return inMemorySales.find((s) => s.id === id) || null
+  },
+
   exportCsv(items: SalesItem[], filename = 'sales_report.csv') {
     const headers = [
       'Date',
@@ -944,7 +973,7 @@ export const salesService = {
       'Withdrawal',
       'Deposit',
       'Net Amount',
-      'Category',
+      'Payment Method',
       'Company',
     ]
 
@@ -956,7 +985,7 @@ export const salesService = {
       s.withdrawal,
       s.deposit,
       s.netAmount,
-      s.category,
+      s.paymentMethod || 'Cash',
       s.company,
     ])
 
@@ -995,7 +1024,7 @@ export const salesService = {
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${s.particulars}</td>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #dc2626;">${s.withdrawal > 0 ? `₱${s.withdrawal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}</td>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #16a34a; font-weight: 600;">${s.deposit > 0 ? `₱${s.deposit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}</td>
-        <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${s.category}</td>
+        <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${s.paymentMethod || 'Cash'}</td>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">₱${s.netAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${s.status}</td>
       </tr>
@@ -1032,7 +1061,7 @@ export const salesService = {
                 <th>Particulars</th>
                 <th style="text-align: right;">Withdrawal</th>
                 <th style="text-align: right;">Deposit</th>
-                <th>Category</th>
+                <th>Payment Method</th>
                 <th style="text-align: right;">Net Amount</th>
                 <th>Status</th>
               </tr>
@@ -1071,9 +1100,8 @@ export const salesService = {
       amount: sale.deposit,
       withdrawal: sale.withdrawal,
       deposit: sale.deposit,
-      category: (['GCash', 'Maya', 'PayMongo', 'Panda', 'In-house'].includes(sale.category)
-        ? sale.category
-        : 'In-house') as any,
+      category: (sale.category || 'General') as any,
+      paymentMethod: sale.paymentMethod,
       status: sale.status,
       auditStatus: sale.auditStatus,
       auditedBy: sale.auditedBy,

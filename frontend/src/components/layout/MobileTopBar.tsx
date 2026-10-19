@@ -28,7 +28,7 @@ export const MobileTopBar: React.FC = () => {
           </SheetTrigger>
 
           <SheetContent side="left" className="p-0 w-72 sm:w-80">
-            <AppSidebar onItemClick={() => setOpen(false)} className="w-full h-full border-r-0" />
+            <AppSidebar forceExpanded onItemClick={() => setOpen(false)} className="w-full h-full border-r-0 relative" />
           </SheetContent>
         </Sheet>
 

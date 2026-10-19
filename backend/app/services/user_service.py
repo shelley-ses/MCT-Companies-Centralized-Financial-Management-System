@@ -50,7 +50,7 @@ class UserService:
 
     #create a new user and return a UserResponse
     def create_user(self, user_in: UserCreate) -> UserResponse:
-        user_role = str(user_in.role or ("audit" if user_in.is_admin else "company")).lower()
+        user_role = str(user_in.role or ("admin" if user_in.is_admin else "company")).lower()
         self._validate_user_assignment(user_in.company_id, user_in.is_admin, user_role)
         self._ensure_company_exists(user_in.company_id)
         self._ensure_email_available(user_in.email)
@@ -60,7 +60,7 @@ class UserService:
             name=user_in.name.strip(),
             email=user_in.email,
             company_id=user_in.company_id,
-            is_admin=user_in.is_admin or (user_role in ["audit", "admin"]),
+            is_admin=user_in.is_admin or (user_role == "admin"),
             role=user_role,
         )
         try:
@@ -140,7 +140,7 @@ class UserService:
                     Company.company_id == user.company_id
                 ).first()
                 company_name = company.company_name if company else None
-            user_role = str(getattr(user, "role", "audit" if user.is_admin else "company") or ("audit" if user.is_admin else "company")).lower()
+            user_role = str(getattr(user, "role", "admin" if user.is_admin else "company") or ("admin" if user.is_admin else "company")).lower()
             return UserResponse(
                 user_id=user.user_id,
                 name=user.name,

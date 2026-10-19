@@ -6,7 +6,6 @@ import {
   User,
   MapPin,
   Lock,
-  ShieldCheck,
   Bell,
   Camera,
   Trash2,
@@ -15,9 +14,6 @@ import {
   RotateCcw,
   Save,
   Check,
-  KeyRound,
-  ShieldAlert,
-  Smartphone,
   Wallet,
   Coins,
 } from 'lucide-react'
@@ -31,12 +27,6 @@ import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import logo2Url from '@/assets/LOGO2.png'
 
-interface SecuritySettings {
-  mfaOtp: boolean
-  smsBackup: boolean
-  sessionLock: boolean
-}
-
 interface NotificationSettings {
   transactionAlerts: boolean
   loanReminders: boolean
@@ -48,6 +38,7 @@ export const SettingsPage: React.FC = () => {
   const { user } = useSession()
   const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
   const isAuditor = isCompanyUser
+  const isRestrictedRole = user?.role === 'Admin' || user?.role === 'Finance' || user?.role === 'Audit'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Company data states
@@ -69,13 +60,6 @@ export const SettingsPage: React.FC = () => {
   const [startingBalance, setStartingBalance] = React.useState<number>(0)
   const [currentBalance, setCurrentBalance] = React.useState<number>(0)
   const [logoUrl, setLogoUrl] = React.useState<string>(logo2Url)
-
-  // Toggle Switches: MFA & Security
-  const [securitySettings, setSecuritySettings] = React.useState<SecuritySettings>({
-    mfaOtp: true,
-    smsBackup: false,
-    sessionLock: true,
-  })
 
   // Toggle Switches: Notifications
   const [notificationSettings, setNotificationSettings] =
@@ -247,7 +231,7 @@ export const SettingsPage: React.FC = () => {
             Settings
           </h1>
           <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-            Manage company profile, balance records, multi-factor authentication, and notification preferences.
+            Manage company profile and notification preferences.
           </p>
         </div>
 
@@ -537,171 +521,73 @@ export const SettingsPage: React.FC = () => {
             </form>
           </Card>
 
-          {/* Card 2: Balances (View-Only per User Request) */}
-          <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
-            <div className="flex items-center justify-between pb-4 border-b border-stroke/20 mb-5">
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-focus flex items-center gap-2">
-                  <Wallet className="h-5 w-5 text-primary" />
-                  <span>Financial Balances</span>
-                </h2>
-                <p className="text-xs sm:text-sm text-muted-fg mt-0.5">
-                  Audited capital baseline and live working balances. These fields are strictly view-only.
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                <Lock className="h-3 w-3 text-amber-600" />
-                <span>View-Only</span>
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-              {/* Starting Balance (view-only) */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-muted-fg uppercase tracking-wider flex items-center gap-1.5">
-                    <Coins className="h-3.5 w-3.5 text-muted-fg" />
-                    <span>Starting Balance</span>
-                  </span>
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-200 text-slate-700">
-                    Baseline
-                  </span>
+          {/* Card 2: Balances (Hidden for Admin, Finance, Audit; View-Only for Company users) */}
+          {!isRestrictedRole && (
+            <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
+              <div className="flex items-center justify-between pb-4 border-b border-stroke/20 mb-5">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-focus flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-primary" />
+                    <span>Financial Balances</span>
+                  </h2>
+                  <p className="text-xs sm:text-sm text-muted-fg mt-0.5">
+                    Audited capital baseline and live working balances. These fields are strictly view-only.
+                  </p>
                 </div>
-                <div className="text-xl sm:text-2xl font-bold text-focus tabular-nums tracking-tight">
-                  {formatPHP(startingBalance)}
-                </div>
-                <p className="text-2xs sm:text-xs text-muted-fg flex items-center gap-1 pt-1">
-                  <Lock className="h-3 w-3 shrink-0 text-slate-400" />
-                  <span>Initial enrolled capital established during company setup.</span>
-                </p>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                  <Lock className="h-3 w-3 text-amber-600" />
+                  <span>View-Only</span>
+                </span>
               </div>
 
-              {/* Current Balance (view-only) */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/60 border border-emerald-200/70 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <Wallet className="h-3.5 w-3.5 text-emerald-600" />
-                    <span>Current Balance</span>
-                  </span>
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 text-emerald-800">
-                    Live Balance
-                  </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+                {/* Starting Balance (view-only) */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-muted-fg uppercase tracking-wider flex items-center gap-1.5">
+                      <Coins className="h-3.5 w-3.5 text-muted-fg" />
+                      <span>Starting Balance</span>
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-200 text-slate-700">
+                      Baseline
+                    </span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-bold text-focus tabular-nums tracking-tight">
+                    {formatPHP(startingBalance)}
+                  </div>
+                  <p className="text-2xs sm:text-xs text-muted-fg flex items-center gap-1 pt-1">
+                    <Lock className="h-3 w-3 shrink-0 text-slate-400" />
+                    <span>Initial enrolled capital established during company setup.</span>
+                  </p>
                 </div>
-                <div className="text-xl sm:text-2xl font-bold text-emerald-700 tabular-nums tracking-tight">
-                  {formatPHP(currentBalance)}
+
+                {/* Current Balance (view-only) */}
+                <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/60 border border-emerald-200/70 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Wallet className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>Current Balance</span>
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 text-emerald-800">
+                      Live Balance
+                    </span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-bold text-emerald-700 tabular-nums tracking-tight">
+                    {formatPHP(currentBalance)}
+                  </div>
+                  <p className="text-2xs sm:text-xs text-emerald-700/80 flex items-center gap-1 pt-1">
+                    <Lock className="h-3 w-3 shrink-0 text-emerald-600" />
+                    <span>Calculated dynamically from real-time deposits, sales, and withdrawals.</span>
+                  </p>
                 </div>
-                <p className="text-2xs sm:text-xs text-emerald-700/80 flex items-center gap-1 pt-1">
-                  <Lock className="h-3 w-3 shrink-0 text-emerald-600" />
-                  <span>Calculated dynamically from real-time deposits, sales, and withdrawals.</span>
-                </p>
               </div>
-            </div>
-          </Card>
+            </Card>
+          )}
         </div>
 
-        {/* Right Column (1 Col): Security (MFA / OTP) & Notifications */}
+        {/* Right Column (1 Col): Notifications */}
         <div className="space-y-6 sm:space-y-8">
-          {/* Card 3: Multi-Factor Authentication (MFA / OTP) */}
-          <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs space-y-5">
-            <div className="flex items-center gap-3 pb-4 border-b border-stroke/20">
-              <div className="h-10 w-10 rounded-xl bg-red-50 border border-red-200/60 flex items-center justify-center text-red-600 shrink-0">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-focus leading-tight">
-                  Multi-Factor Authentication
-                </h2>
-                <p className="text-xs text-muted-fg mt-0.5">
-                  Protect financial data with second-step verification.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* MFA / OTP Main Toggle */}
-              <div className="flex items-start justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-stroke/20 hover:border-stroke/40 transition-colors">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <KeyRound className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-xs sm:text-sm font-bold text-focus">
-                      Two-Factor Authentication (OTP)
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-fg leading-relaxed">
-                    Require a 6-digit one-time passcode sent via email when signing into this account.
-                  </p>
-                  <div className="pt-1">
-                    <span
-                      className={cn(
-                        'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider',
-                        securitySettings.mfaOtp
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-slate-200 text-slate-600'
-                      )}
-                    >
-                      {securitySettings.mfaOtp ? 'OTP Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                </div>
-                <Switch
-                  id="mfa-otp-toggle"
-                  checked={securitySettings.mfaOtp}
-                  onCheckedChange={(val) =>
-                    setSecuritySettings((prev) => ({ ...prev, mfaOtp: val }))
-                  }
-                  aria-label="Toggle Two-Factor Authentication OTP"
-                />
-              </div>
-
-              {/* SMS Backup OTP Toggle */}
-              <div className="flex items-start justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-stroke/20 hover:border-stroke/40 transition-colors">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="h-4 w-4 text-muted-fg shrink-0" />
-                    <span className="text-xs sm:text-sm font-semibold text-focus">
-                      SMS Backup OTP
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-fg leading-relaxed">
-                    Deliver backup verification codes to verified mobile numbers when email is unreachable.
-                  </p>
-                </div>
-                <Switch
-                  id="sms-backup-toggle"
-                  checked={securitySettings.smsBackup}
-                  onCheckedChange={(val) =>
-                    setSecuritySettings((prev) => ({ ...prev, smsBackup: val }))
-                  }
-                  aria-label="Toggle SMS Backup OTP"
-                />
-              </div>
-
-              {/* Session Auto-Lock Toggle */}
-              <div className="flex items-start justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 border border-stroke/20 hover:border-stroke/40 transition-colors">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="h-4 w-4 text-muted-fg shrink-0" />
-                    <span className="text-xs sm:text-sm font-semibold text-focus">
-                      Idle Session Lockout (15m)
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-fg leading-relaxed">
-                    Automatically sign out inactive browser sessions to safeguard audit workstations.
-                  </p>
-                </div>
-                <Switch
-                  id="session-lock-toggle"
-                  checked={securitySettings.sessionLock}
-                  onCheckedChange={(val) =>
-                    setSecuritySettings((prev) => ({ ...prev, sessionLock: val }))
-                  }
-                  aria-label="Toggle Idle Session Lockout"
-                />
-              </div>
-            </div>
-          </Card>
-
-          {/* Card 4: Notification Preferences */}
+          {/* Card: Notification Preferences */}
           <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs space-y-5">
             <div className="flex items-center gap-3 pb-4 border-b border-stroke/20">
               <div className="h-10 w-10 rounded-xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600 shrink-0">

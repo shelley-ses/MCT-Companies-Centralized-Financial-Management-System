@@ -88,6 +88,7 @@ def get_expenses(
                 company_name=company_map.get(row.get("company_id")) or "Unknown Company",
                 category_id=row.get("category_id"),
                 category_name=cat_map.get(row.get("category_id")) or "None",
+                payment_method=row.get("payment_method"),
                 created_by=row.get("created_by"),
                 expense_date=row.get("expense_date"),
                 reference_no=row.get("reference_no"),
@@ -221,9 +222,11 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
             category_name = "None"
 
         # 3. Insert into Supabase
+        payment_method_str = (expense_in.payment_method or "").strip() or None
         sb_insert = client.table("expenses").insert({
             "company_id": target_company_id,
             "category_id": resolved_category_id,
+            "payment_method": payment_method_str,
             "created_by": expense_in.created_by,
             "expense_date": expense_in.expense_date.isoformat(),
             "reference_no": ref,
@@ -256,6 +259,7 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
                 expense_id=sb_expense_id,
                 company_id=target_company_id,
                 category_id=resolved_category_id,
+                payment_method=payment_method_str,
                 created_by=expense_in.created_by,
                 expense_date=expense_in.expense_date,
                 reference_no=ref,
@@ -284,6 +288,7 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
             company_name=target_company_name,
             category_id=created_row.get("category_id"),
             category_name=category_name,
+            payment_method=payment_method_str,
             created_by=created_row.get("created_by"),
             expense_date=created_row.get("expense_date"),
             reference_no=created_row.get("reference_no"),
@@ -482,6 +487,9 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
         elif expense_in.category_id is not None:
             update_payload["category_id"] = expense_in.category_id
 
+        if expense_in.payment_method is not None:
+            update_payload["payment_method"] = (expense_in.payment_method or "").strip() or None
+
         if update_payload:
             sb_res = client.table("expenses").update(update_payload).eq("expense_id", expense_id).execute()
             if sb_res.data:
@@ -507,6 +515,8 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
             expense.cheque_no = update_payload["cheque_number"]
         if "category_id" in update_payload:
             expense.category_id = update_payload["category_id"]
+        if "payment_method" in update_payload:
+            expense.payment_method = update_payload["payment_method"]
         db.commit()
         db.refresh(expense)
 
@@ -525,6 +535,7 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
             company_name=company_map.get(updated_row.get("company_id")) or "Unknown",
             category_id=updated_row.get("category_id"),
             category_name=cat_map.get(updated_row.get("category_id")) or "None",
+            payment_method=updated_row.get("payment_method"),
             created_by=updated_row.get("created_by"),
             expense_date=updated_row.get("expense_date"),
             reference_no=updated_row.get("reference_no"),

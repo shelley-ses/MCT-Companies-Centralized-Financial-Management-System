@@ -18,6 +18,7 @@ import {
   X,
   CheckCircle2,
   HandCoins,
+  Clock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -84,7 +85,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const { user } = useSession()
   const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
   const isFinance = user?.role === 'Finance'
-  const isAdmin = user?.role === 'Admin'
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
   const canApprove = isFinance || isAdmin
   const isAuditor = isCompanyUser
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
@@ -470,6 +471,10 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         setEditLoan(loan)
       }
     } else {
+      if (loanType === 'Lender') {
+        // In the Lender tab, loans are extended to partner companies, so lenders don't pay loans
+        return
+      }
       setPaymentLoan(loan)
       setIsPaymentModalOpen(true)
     }
@@ -870,43 +875,27 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Grey Header Banner with Extended Search Input */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h2 className="text-sm sm:text-base font-bold text-focus leading-tight flex items-center gap-2">
-              <span>{loanType === 'Borrower' ? 'Borrower Loans' : 'Lender Loans'}</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-white border border-slate-200 font-semibold text-muted-fg">
-                {filteredLoans.length} record(s)
-              </span>
-            </h2>
-            <p className="text-xs text-muted-fg font-normal mt-0.5">
-              {loanType === 'Borrower'
-                ? `Loans requested by ${displayedCompanyTitle}`
-                : `Loans extended by ${displayedCompanyTitle}`}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            {/* Extended Search bar for Borrower & Lender */}
-            <div className="relative w-full sm:w-80 md:w-96 lg:w-[480px]">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
-              <Input
-                type="text"
-                placeholder="Search ref no, company, purpose…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+        {/* Table Search Bar Toolbar */}
+        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
+          <div className="relative w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+            <Input
+              type="text"
+              placeholder="Search ref no, company, purpose…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -1024,6 +1013,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               ) : (
                 paginatedLoans.map((loan) => {
                   const isPending = loan.status === 'Pending Approval'
+                  const isClickable = isPending || loanType === 'Borrower'
 
                   return (
                     <TableRow
@@ -1031,14 +1021,21 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       id={`loan-row-${loan.id}`}
                       onClick={() => handleRowClick(loan)}
                       className={cn(
-                        'border-b transition-colors cursor-pointer',
+                        'border-b transition-colors',
+                        isClickable ? 'cursor-pointer' : 'cursor-default',
                         isPending
                           ? 'bg-amber-50/70 hover:bg-amber-100/60 border-amber-200/50'
                           : 'border-slate-100 hover:bg-slate-50/80',
                         highlightedLoanId === loan.id &&
                           'bg-amber-100/90 ring-2 ring-amber-400 font-semibold'
                       )}
-                      title="Click row to update payment or view details"
+                      title={
+                        isPending
+                          ? 'Click to review or edit pending loan'
+                          : loanType === 'Borrower'
+                          ? 'Click row to record payment or update'
+                          : 'Lender financing record'
+                      }
                     >
                       {/* 1. Date */}
                       <TableCell className="px-2 py-3 text-xs font-medium text-focus whitespace-nowrap">
@@ -1170,10 +1167,27 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                             </>
                           )}
 
-                          {/* Approved / Active / Partially Paid / Paid: allow recording payment */}
+                          {/* Approved / Active / Partially Paid / Paid: allow recording payment only for Borrower */}
                           {!isPending && (
                             <div className="flex items-center gap-1.5">
-                              {loan.status === 'Paid' ? (
+                              {loanType === 'Lender' ? (
+                                loan.status === 'Paid' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Paid</span>
+                                  </span>
+                                ) : loan.status === 'Partially Paid' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-xs font-semibold shadow-2xs">
+                                    <Clock className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>Partially Paid</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 text-xs font-semibold shadow-2xs">
+                                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>Active</span>
+                                  </span>
+                                )
+                              ) : loan.status === 'Paid' ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
                                   <Check className="w-3.5 h-3.5 text-emerald-600" />
                                   <span>Paid</span>
@@ -1182,7 +1196,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                                 <Button
                                   type="button"
                                   size="sm"
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation()
                                     setPaymentLoan(loan)
                                     setIsPaymentModalOpen(true)
                                   }}
@@ -1196,7 +1211,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                                 <Button
                                   type="button"
                                   size="sm"
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation()
                                     setPaymentLoan(loan)
                                     setIsPaymentModalOpen(true)
                                   }}

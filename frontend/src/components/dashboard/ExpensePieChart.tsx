@@ -17,15 +17,10 @@ interface ExpensePieChartProps {
   className?: string
 }
 
+import { CATEGORY_COLORS } from '@/utils/categoryConstants'
+
 const CATEGORY_PALETTE: Record<string, string> = {
-  'In-house': '#4338CA',
-  'Maya': '#0D9488',
-  'GCash': '#0284C7',
-  'PayMongo': '#9333EA',
-  'Panda': '#D97706',
-  'Cheque': '#960C01',
-  'Bank Transfer': '#2563EB',
-  'Cash': '#059669',
+  ...CATEGORY_COLORS,
   'Other': '#767B89',
 }
 

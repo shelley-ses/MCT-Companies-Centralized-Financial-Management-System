@@ -32,11 +32,18 @@ export interface CompanyIncomePoint {
 export type AuditStatus = 'Verified' | 'Pending Audit' | 'Flagged'
 
 export type TransactionCategory =
-  | 'GCash'
-  | 'Maya'
-  | 'PayMongo'
-  | 'Panda'
-  | 'In-house'
+  | 'Petty Cash'
+  | 'Rendered Fee'
+  | 'BBMP Foundation'
+  | 'HDMF'
+  | 'Philhealth'
+  | 'Electricity'
+  | 'BIR'
+  | 'Payroll'
+  | 'SSS'
+  | 'Hotel Supplies'
+  | 'Revolving Funds'
+  | string
 
 export interface DashboardTransactionItem {
   id: string
@@ -51,6 +58,7 @@ export interface DashboardTransactionItem {
   withdrawal: number
   deposit: number
   category: TransactionCategory
+  paymentMethod?: string
   status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid'
   auditStatus: AuditStatus
   auditedBy?: string

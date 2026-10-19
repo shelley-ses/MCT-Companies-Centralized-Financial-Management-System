@@ -8,6 +8,8 @@ interface DashboardKpiCardProps {
   icon: React.ElementType
   className?: string
   subtext?: string
+  valueClassName?: string
+  iconContainerClassName?: string
 }
 
 export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
@@ -16,6 +18,8 @@ export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
   icon: Icon,
   className,
   subtext,
+  valueClassName,
+  iconContainerClassName,
 }) => {
   return (
     <Card
@@ -28,7 +32,12 @@ export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
         <span className="text-xs font-medium text-muted-fg block">
           {label}
         </span>
-        <h3 className="text-lg sm:text-xl lg:text-2xl font-semibold text-focus mt-1 tabular-nums tracking-tight">
+        <h3
+          className={cn(
+            'text-lg sm:text-xl lg:text-2xl font-semibold text-focus mt-1 tabular-nums tracking-tight',
+            valueClassName
+          )}
+        >
           {value}
         </h3>
         {subtext && (
@@ -38,7 +47,12 @@ export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
         )}
       </div>
 
-      <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-[#E5E5E5] flex items-center justify-center text-focus/70 shrink-0 shadow-2xs">
+      <div
+        className={cn(
+          'h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-[#E5E5E5] flex items-center justify-center text-focus/70 shrink-0 shadow-2xs',
+          iconContainerClassName
+        )}
+      >
         <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
     </Card>

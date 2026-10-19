@@ -15,6 +15,7 @@ import {
   ChevronRight,
   AlertCircle,
   X,
+  CheckCircle2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,9 +76,12 @@ const ITEMS_PER_PAGE = 10
 export const ExpensePage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isCompanyUser =
+    user?.role === 'Company' ||
+    user?.role === 'Company Auditor' ||
+    user?.role === 'Supervisor'
   const isFinance = user?.role === 'Finance'
-  const isAdmin = user?.role === 'Admin'
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
   const isCompanyScoped = !isAdmin && !isFinance
   const isAuditor = isCompanyUser
   const canAdd = isCompanyUser || isFinance
@@ -398,7 +402,7 @@ export const ExpensePage: React.FC = () => {
   }
 
   const handleConfirmDelete = async () => {
-    if (!deleteConfirmExpense) return
+    if (!deleteConfirmExpense || isAdmin) return
     try {
       setIsDeleting(true)
       await expenseService.deleteExpense(deleteConfirmExpense.id)
@@ -409,6 +413,24 @@ export const ExpensePage: React.FC = () => {
     } finally {
       setIsDeleting(false)
     }
+  }
+
+  const handleMarkExpenseAudited = (expense: ExpenseItem, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const today = new Date().toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+    })
+    const auditorName = user?.fullName || 'Admin'
+    const updated: ExpenseItem = {
+      ...expense,
+      auditStatus: 'Verified',
+      auditedBy: auditorName,
+      auditDate: today,
+    }
+    setExpenses((prev) => prev.map((item) => (item.id === expense.id ? updated : item)))
+    expenseService.updateExpenseAuditStatus(expense.id, 'Verified', auditorName)
   }
 
   const filteredCompanyList = React.useMemo(() => {
@@ -777,26 +799,16 @@ export const ExpensePage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Grey Header Banner with Search Input for Expense Table */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
-              {selectedPeriod === 'Annually' ? 'Annual Expenses' : `${selectedPeriod} Expenses`}
-            </h2>
-            <p className="text-xs text-muted-fg font-normal mt-0.5">
-              Here's the summary of expenses in {displayedCompanyTitle}.
-            </p>
-          </div>
-
-          {/* Extended Width Search bar */}
-          <div className="relative w-full md:w-96 lg:w-[560px] xl:w-[680px]">
+        {/* Table Search Bar Toolbar */}
+        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
+          <div className="relative w-full">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
             <Input
               type="text"
               placeholder="Search by ref no, cheque, particulars, category…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-9 h-10 text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
+              className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
             />
             {searchQuery && (
               <button
@@ -963,9 +975,16 @@ export const ExpensePage: React.FC = () => {
                       {expense.withdrawal > 0 ? formatPHP(expense.withdrawal) : ''}
                     </TableCell>
 
-                    {/* 6. Category */}
+                    {/* 6. Category & Payment Method */}
                     <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
-                      {expense.category}
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="truncate font-semibold text-focus" title={expense.category || 'General'}>
+                          {expense.category || 'General'}
+                        </span>
+                        <span className="text-[10px] text-muted-fg truncate" title={expense.paymentMethod || 'Cash'}>
+                          {expense.paymentMethod || 'Cash'}
+                        </span>
+                      </div>
                     </TableCell>
 
                     {/* 7. Net Amount */}
@@ -979,16 +998,44 @@ export const ExpensePage: React.FC = () => {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-center">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteConfirmExpense(expense)}
-                          className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                          title="Delete Expense"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        {isAdmin ? (
+                          expense.auditStatus === 'Verified' ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenRow(expense)}
+                              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 flex items-center gap-1.5 cursor-pointer border border-emerald-300/80 shadow-2xs transition-all"
+                              title="Audited (Click to view details or unmark)"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Audited</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleMarkExpenseAudited(expense, e)}
+                              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-focus/80 hover:text-primary hover:bg-red-50/50 flex items-center gap-1.5 cursor-pointer border border-slate-200/80 hover:border-primary/30 shadow-2xs transition-all"
+                              title="Click to automatically mark as audited"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-primary" />
+                              <span>Audit</span>
+                            </Button>
+                          )
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteConfirmExpense(expense)}
+                            className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                            title="Delete Expense"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1046,66 +1093,68 @@ export const ExpensePage: React.FC = () => {
         assignedCompany={isAuditor ? assignedCompany : selectedCompany}
       />
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={!!deleteConfirmExpense}
-        onOpenChange={(open) => !open && setDeleteConfirmExpense(null)}
-      >
-        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-focus flex items-center gap-2 text-red-600">
-              <Trash2 className="w-5 h-5 text-red-600" />
-              <span>Confirm Deletion</span>
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-fg mt-1 leading-relaxed">
-              Are you sure you want to delete this expense record? This action will remove the record from the company ledger.
-            </DialogDescription>
-          </DialogHeader>
+      {/* Delete Confirmation Dialog (Hidden for Admin who has no delete ability) */}
+      {!isAdmin && (
+        <Dialog
+          open={Boolean(deleteConfirmExpense)}
+          onOpenChange={(open) => !open && setDeleteConfirmExpense(null)}
+        >
+          <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-focus flex items-center gap-2 text-red-600">
+                <Trash2 className="w-5 h-5 text-red-600" />
+                <span>Confirm Deletion</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-fg mt-1 leading-relaxed">
+                Are you sure you want to delete this expense record? This action will remove the record from the company ledger.
+              </DialogDescription>
+            </DialogHeader>
 
-          {deleteConfirmExpense && (
-            <div className="my-4 p-4 rounded-2xl bg-red-50/60 border border-red-200/60 space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-muted-fg">Particulars:</span>
-                <span className="font-semibold text-focus truncate max-w-[200px]">
-                  {deleteConfirmExpense.particulars}
-                </span>
+            {deleteConfirmExpense && (
+              <div className="my-4 p-4 rounded-2xl bg-red-50/60 border border-red-200/60 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-fg">Particulars:</span>
+                  <span className="font-semibold text-focus truncate max-w-[200px]">
+                    {deleteConfirmExpense.particulars}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-fg">Withdrawal:</span>
+                  <span className="font-bold text-red-600">
+                    {formatPHP(deleteConfirmExpense.withdrawal)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-fg">Ref No:</span>
+                  <span className="font-mono text-focus">{deleteConfirmExpense.refNo}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-fg">Withdrawal:</span>
-                <span className="font-bold text-red-600">
-                  {formatPHP(deleteConfirmExpense.withdrawal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-fg">Ref No:</span>
-                <span className="font-mono text-focus">{deleteConfirmExpense.refNo}</span>
-              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeleteConfirmExpense(null)}
+                disabled={isDeleting}
+                className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+              >
+                {isDeleting ? 'Deleting…' : 'Delete Record'}
+              </Button>
             </div>
-          )}
+          </DialogContent>
+        </Dialog>
+      )}
 
-          <div className="flex items-center justify-end gap-2.5">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDeleteConfirmExpense(null)}
-              disabled={isDeleting}
-              className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 cursor-pointer"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={handleConfirmDelete}
-              disabled={isDeleting}
-              className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white cursor-pointer"
-            >
-              {isDeleting ? 'Deleting…' : 'Delete Record'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Transaction Details & Audit Modal (with direct editing, Cancel & Save Changes) */}
+      {/* Transaction Details & Audit Modal (View only for Admin just like in loan, editable for operational users) */}
       <AuditTransactionModal
         open={isAuditModalOpen}
         onOpenChange={(open) => {
@@ -1118,7 +1167,7 @@ export const ExpensePage: React.FC = () => {
         transaction={selectedTx}
         expense={selectedExpense}
         onExpenseUpdated={handleExpenseUpdated}
-        editable={true}
+        editable={!isAdmin}
       />
     </div>
   )

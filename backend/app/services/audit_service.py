@@ -307,23 +307,43 @@ def log_action(
         ip_address = ip_address[:45]
 
     # ── 1. Persist to local SQLAlchemy DB ────────────────────────────────────
-    try:
-        entry = AuditLog(
-            user_id=user_id,
-            company_id=company_id,
-            action=action_str,
-            action_category=action_category,
-            ip_address=ip_address,
-            details=details_str,
-        )
-        db.add(entry)
-        db.commit()
-        db.refresh(entry)
-        local_id = entry.audit_log_id
-    except Exception as exc:
-        logger.warning("Failed to write audit log to local DB: %s", exc)
-        db.rollback()
-        local_id = None
+    session = db
+    should_close_session = False
+    if session is None:
+        try:
+            from app.db.session import SessionLocal
+            session = SessionLocal()
+            should_close_session = True
+        except Exception:
+            session = None
+
+    local_id = None
+    if session is not None:
+        try:
+            entry = AuditLog(
+                user_id=user_id,
+                company_id=company_id,
+                action=action_str,
+                action_category=action_category,
+                ip_address=ip_address,
+                details=details_str,
+            )
+            session.add(entry)
+            session.commit()
+            session.refresh(entry)
+            local_id = entry.audit_log_id
+        except Exception as exc:
+            logger.warning("Failed to write audit log to local DB: %s", exc)
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            if should_close_session:
+                try:
+                    session.close()
+                except Exception:
+                    pass
 
     # ── 2. Mirror to Supabase ────────────────────────────────────────────────
     try:

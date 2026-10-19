@@ -2,7 +2,7 @@ import type { SignInFormValues } from '@/lib/validation/auth'
 import logo2Url from '@/assets/LOGO2.png'
 import { encryptPayload } from '@/services/payloadEncryption'
 
-export type UserRole = 'Admin' | 'Finance' | 'Company' | 'Company Auditor'
+export type UserRole = 'Admin' | 'Finance' | 'Company' | 'Company Auditor' | 'Audit'
 
 /**
  * User session model
@@ -41,7 +41,7 @@ export interface SeededAccount {
 }
 
 export const SEEDED_ACCOUNTS: SeededAccount[] = [
-  // 1. Audit / Admin accounts (Head of Audit and company owner)
+  // 1. Central Admin accounts (Full access including Company & User Management)
   {
     id: 'usr_admin_01',
     fullName: 'Remi Lee',
@@ -58,7 +58,24 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     assignedCompany: 'All Companies',
     avatarUrl: logo2Url,
   },
-  // 2. Finance accounts (New role: approves loans and selects lending company)
+  // 2. Audit accounts (Same frontend as Admin: multi-company audit view; no company/user management)
+  {
+    id: 'usr_audit_01',
+    fullName: 'Financial Auditor',
+    email: 'audit@mct.com',
+    role: 'Audit',
+    assignedCompany: 'All Companies',
+    avatarUrl: logo2Url,
+  },
+  {
+    id: 'usr_audit_02',
+    fullName: 'Audit Officer',
+    email: 'auditor@mct.com',
+    role: 'Audit',
+    assignedCompany: 'All Companies',
+    avatarUrl: logo2Url,
+  },
+  // 3. Finance accounts (Approves loans and selects lending company)
   {
     id: 'usr_finance_01',
     fullName: 'Finance Officer',
@@ -75,7 +92,7 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     assignedCompany: 'All Companies',
     avatarUrl: logo2Url,
   },
-  // 3. Company accounts (like temporaryemployee@gmail.com: requests loans only)
+  // 4. Company accounts (Operational branch employees)
   {
     id: 'usr_kitchen_00',
     fullName: 'Temporary Employee',
@@ -103,9 +120,10 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
 ]
 
 export const ADMIN_USER: User = SEEDED_ACCOUNTS[0]
-export const FINANCE_USER: User = SEEDED_ACCOUNTS[2]
-export const COMPANY_USER: User = SEEDED_ACCOUNTS[4]
-export const AUDITOR_USER: User = SEEDED_ACCOUNTS[4]
+export const AUDIT_USER: User = SEEDED_ACCOUNTS[2]
+export const FINANCE_USER: User = SEEDED_ACCOUNTS[4]
+export const COMPANY_USER: User = SEEDED_ACCOUNTS[6]
+export const AUDITOR_USER: User = SEEDED_ACCOUNTS[2]
 const SESSION_STORAGE_KEY = 'mct_session_user'
 const ACCESS_TOKEN_KEY = 'mct_access_token'
 const LAST_ACTIVITY_KEY = 'mct_last_activity'
@@ -143,7 +161,7 @@ function getInitialUser(): User | null {
 }
 
 /**
- * Automatically detects whether an authenticated user is Admin or Company Auditor
+ * Automatically detects whether an authenticated user is Admin, Audit, Finance, or Company
  * based on their seeded account and email credentials.
  */
 export function detectUserByEmail(email: string): User {
@@ -163,14 +181,50 @@ export function detectUserByEmail(email: string): User {
     }
   }
 
-  // Detection by role keyword
-  if (normalized.includes('auditor') || normalized.includes('audit')) {
+  // 1. Detection for Central Admin
+  if (normalized === 'admin@mct.com' || normalized === 'remi.lee@mct.com' || normalized.startsWith('admin')) {
+    return {
+      id: `usr_admin_${Date.now()}`,
+      fullName: 'Remi Lee',
+      email: email.trim(),
+      role: 'Admin',
+      assignedCompany: 'All Companies',
+      avatarUrl: logo2Url,
+    }
+  }
+
+  // 2. Detection for Audit role
+  if (normalized === 'audit@mct.com' || normalized === 'auditor@mct.com' || normalized.startsWith('audit')) {
+    return {
+      id: `usr_audit_${Date.now()}`,
+      fullName: 'Audit Officer',
+      email: email.trim(),
+      role: 'Audit',
+      assignedCompany: 'All Companies',
+      avatarUrl: logo2Url,
+    }
+  }
+
+  // Detection by company auditor
+  if (normalized.includes('company_auditor') || normalized.includes('company-auditor')) {
     return {
       id: `usr_auditor_${Date.now()}`,
       fullName: 'Alex Cruz',
       email: email.trim(),
       role: 'Company Auditor',
       assignedCompany: 'MCT Kitchen',
+      avatarUrl: logo2Url,
+    }
+  }
+
+  // Detection by finance keyword
+  if (normalized.includes('finance')) {
+    return {
+      id: `usr_finance_${Date.now()}`,
+      fullName: 'Finance Officer',
+      email: email.trim(),
+      role: 'Finance',
+      assignedCompany: 'All Companies',
       avatarUrl: logo2Url,
     }
   }
@@ -227,23 +281,40 @@ function mapUser(user: {
 }): User {
   let role: UserRole = 'Company'
   const rawRole = (user.role || '').toLowerCase()
-  if (user.is_admin || rawRole === 'admin' || rawRole === 'audit') {
+  const rawEmail = (user.email || '').toLowerCase()
+
+  // 1. Central Admin takes absolute precedence
+  if (rawEmail === 'admin@mct.com' || rawEmail === 'remi.lee@mct.com' || rawRole === 'admin' || (user.is_admin && rawEmail !== 'audit@mct.com')) {
     role = 'Admin'
-  } else if (rawRole === 'finance') {
+  }
+  // 2. Audit account (Audit view only, no company/user management)
+  else if (rawEmail === 'audit@mct.com' || rawEmail === 'auditor@mct.com' || rawRole === 'audit') {
+    role = 'Audit'
+  }
+  // 3. Finance account
+  else if (rawRole === 'finance' || rawEmail.includes('finance')) {
     role = 'Finance'
-  } else {
+  }
+  // 4. Operational Company user
+  else {
     role = 'Company'
   }
 
-  const assignedCompany = role === 'Admin'
+  const assignedCompany = (role === 'Admin' || role === 'Audit')
     ? 'All Companies'
     : role === 'Finance'
     ? (user.company_name || 'All Companies')
     : (user.company_name || 'MCT Kitchen')
 
+  const displayName = rawEmail === 'admin@mct.com' || rawEmail === 'remi.lee@mct.com'
+    ? 'Remi Lee'
+    : rawEmail === 'audit@mct.com'
+    ? 'Audit Officer'
+    : user.name
+
   return {
     id: String(user.user_id),
-    fullName: user.name,
+    fullName: displayName,
     email: user.email,
     role: role,
     assignedCompany: assignedCompany,

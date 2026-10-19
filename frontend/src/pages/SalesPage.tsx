@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Trash2,
   Loader2,
+  CheckCircle2,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -75,9 +76,12 @@ const ITEMS_PER_PAGE = 10
 export const SalesPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isCompanyUser =
+    user?.role === 'Company' ||
+    user?.role === 'Company Auditor' ||
+    user?.role === 'Supervisor'
   const isFinance = user?.role === 'Finance'
-  const isAdmin = user?.role === 'Admin'
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
   const isCompanyScoped = !isAdmin && !isFinance
   const isAuditor = isCompanyUser
   const canAdd = isCompanyUser || isFinance
@@ -197,7 +201,7 @@ export const SalesPage: React.FC = () => {
   }
 
   const handleConfirmDelete = async () => {
-    if (!deleteConfirmSale) return
+    if (!deleteConfirmSale || isAdmin) return
     setIsDeleting(true)
     try {
       await salesService.deleteSale(deleteConfirmSale.id)
@@ -208,6 +212,24 @@ export const SalesPage: React.FC = () => {
     } finally {
       setIsDeleting(false)
     }
+  }
+
+  const handleMarkSaleAudited = (sale: SalesItem, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const today = new Date().toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+    })
+    const auditorName = user?.fullName || 'Admin'
+    const updated: SalesItem = {
+      ...sale,
+      auditStatus: 'Verified',
+      auditedBy: auditorName,
+      auditDate: today,
+    }
+    setSales((prev) => prev.map((s) => (s.id === sale.id ? updated : s)))
+    salesService.updateSaleAuditStatus(sale.id, 'Verified', auditorName)
   }
 
   // Pagination state
@@ -288,13 +310,13 @@ export const SalesPage: React.FC = () => {
           return false
         }
 
-        // 4. Search query (by refNo, chequeNo, particulars, category, company, status, amount)
+        // 4. Search query (by refNo, chequeNo, particulars, payment method, company, status, amount)
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim()
           const matchRef = (item.refNo || '').toLowerCase().includes(q)
           const matchCheque = (item.chequeNo || '').toLowerCase().includes(q)
           const matchParticulars = (item.particulars || '').toLowerCase().includes(q)
-          const matchCategory = (item.category || '').toLowerCase().includes(q)
+          const matchPaymentMethod = (item.paymentMethod || '').toLowerCase().includes(q)
           const matchCompany = (item.company || '').toLowerCase().includes(q)
           const matchStatus = (item.status || '').toLowerCase().includes(q)
           const matchAmount = String(item.netAmount || item.deposit || '').includes(q)
@@ -303,7 +325,7 @@ export const SalesPage: React.FC = () => {
             !matchRef &&
             !matchCheque &&
             !matchParticulars &&
-            !matchCategory &&
+            !matchPaymentMethod &&
             !matchCompany &&
             !matchStatus &&
             !matchAmount
@@ -778,19 +800,9 @@ export const SalesPage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Grey Header Banner with Search Input for the table */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
-              {selectedPeriod === 'Annually' ? 'Annual Sales' : `${selectedPeriod} Sales`}
-            </h2>
-            <p className="text-xs text-muted-fg font-normal mt-0.5">
-              Here's the summary of sales in {displayedCompanyTitle}.
-            </p>
-          </div>
-
-          {/* Search bar moved to table */}
-          <div className="relative w-full md:w-80 lg:w-[420px]">
+        {/* Table Search Bar Toolbar */}
+        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
+          <div className="relative w-full">
             <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -843,7 +855,7 @@ export const SalesPage: React.FC = () => {
                   DEPOSIT
                 </TableHead>
                 <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                  CATEGORY
+                  PAYMENT METHOD
                 </TableHead>
                 <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   NET AMOUNT
@@ -964,9 +976,11 @@ export const SalesPage: React.FC = () => {
                       {sale.deposit > 0 ? formatPHP(sale.deposit) : ''}
                     </TableCell>
 
-                    {/* 6. Category */}
-                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus/90 font-medium truncate text-left">
-                      {sale.category}
+                    {/* 6. Payment Method */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus font-medium truncate text-left">
+                      <span className="truncate font-semibold text-focus" title={sale.paymentMethod || 'Cash'}>
+                        {sale.paymentMethod || 'Cash'}
+                      </span>
                     </TableCell>
 
                     {/* 7. Net Amount */}
@@ -980,16 +994,44 @@ export const SalesPage: React.FC = () => {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-center">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteConfirmSale(sale)}
-                          className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                          title="Delete Sale"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        {isAdmin ? (
+                          sale.auditStatus === 'Verified' ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenRow(sale)}
+                              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 flex items-center gap-1.5 cursor-pointer border border-emerald-300/80 shadow-2xs transition-all"
+                              title="Audited (Click to view details or unmark)"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Audited</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleMarkSaleAudited(sale, e)}
+                              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-focus/80 hover:text-primary hover:bg-red-50/50 flex items-center gap-1.5 cursor-pointer border border-slate-200/80 hover:border-primary/30 shadow-2xs transition-all"
+                              title="Click to automatically mark as audited"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-primary" />
+                              <span>Audit</span>
+                            </Button>
+                          )
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteConfirmSale(sale)}
+                            className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                            title="Delete Sale"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1049,54 +1091,56 @@ export const SalesPage: React.FC = () => {
         assignedCompany={isAuditor ? assignedCompany : selectedCompany}
       />
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteConfirmSale} onOpenChange={(open) => !open && setDeleteConfirmSale(null)}>
-        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader>
-            <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center mb-2">
-              <Trash2 className="w-5 h-5" />
+      {/* Delete Confirmation Dialog (Hidden for Admin who has no delete ability) */}
+      {!isAdmin && (
+        <Dialog open={!!deleteConfirmSale} onOpenChange={(open) => !open && setDeleteConfirmSale(null)}>
+          <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+            <DialogHeader>
+              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center mb-2">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <DialogTitle className="text-lg font-bold text-focus">
+                Delete Sale Record
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-fg mt-1">
+                Are you sure you want to delete this sale entry{' '}
+                <strong className="text-focus">{deleteConfirmSale?.particulars}</strong> ({deleteConfirmSale?.refNo}) for{' '}
+                <strong className="text-focus">{deleteConfirmSale?.deposit ? formatPHP(deleteConfirmSale.deposit) : ''}</strong>?
+                This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex items-center justify-end gap-2.5 pt-4 mt-2 border-t border-stroke/20">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeleteConfirmSale(null)}
+                disabled={isDeleting}
+                className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Deleting…
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </Button>
             </div>
-            <DialogTitle className="text-lg font-bold text-focus">
-              Delete Sale Record
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-fg mt-1">
-              Are you sure you want to delete this sale entry{' '}
-              <strong className="text-focus">{deleteConfirmSale?.particulars}</strong> ({deleteConfirmSale?.refNo}) for{' '}
-              <strong className="text-focus">{deleteConfirmSale?.deposit ? formatPHP(deleteConfirmSale.deposit) : ''}</strong>?
-              This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
+          </DialogContent>
+        </Dialog>
+      )}
 
-          <div className="flex items-center justify-end gap-2.5 pt-4 mt-2 border-t border-stroke/20">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDeleteConfirmSale(null)}
-              disabled={isDeleting}
-              className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 cursor-pointer"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={handleConfirmDelete}
-              disabled={isDeleting}
-              className="h-9 px-5 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white cursor-pointer"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                  Deleting…
-                </>
-              ) : (
-                'Delete'
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Transaction Details & Audit Modal (with direct editing, Cancel & Save Changes) */}
+      {/* Transaction Details & Audit Modal (View only for Admin just like in loan, editable for operational users) */}
       <AuditTransactionModal
         open={isAuditModalOpen}
         onOpenChange={(open) => {
@@ -1109,7 +1153,7 @@ export const SalesPage: React.FC = () => {
         transaction={selectedTx}
         sale={selectedSale}
         onSaleUpdated={handleSaleUpdated}
-        editable={true}
+        editable={!isAdmin}
       />
     </div>
   )

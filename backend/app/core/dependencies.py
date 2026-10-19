@@ -22,7 +22,7 @@ def get_current_user(claims: VerifiedToken) -> AuthenticatedUser:
 
     company_id = _optional_positive_int(metadata.get("company_id"))
     is_admin = metadata.get("is_admin") is True
-    role = str(metadata.get("role") or ("audit" if is_admin else "company")).lower()
+    role = str(metadata.get("role") or ("admin" if is_admin else "company")).lower()
 
     return {
         "auth_user_id": claims["sub"],
@@ -37,7 +37,7 @@ CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
 # require the current authenticated user to be a central administrator account.
 def require_admin_user(user: CurrentUser) -> AuthenticatedUser:
-    if not user["is_admin"] and user.get("role") not in ["audit", "admin"]:
+    if not user["is_admin"] and user.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Central administrator access is required.",
