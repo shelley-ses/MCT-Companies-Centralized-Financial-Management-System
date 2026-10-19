@@ -1220,6 +1220,40 @@ export const BillsPage: React.FC = () => {
                     setOpenMenuBillId(null)
                     setMenuPosition(null)
                     setActiveMenuBill(null)
+                    if (b) setPaymentBill(b)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
+                >
+                  <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>
+                    {activeMenuBill?.status === 'Paid' ? 'Pay in Advance' : 'Record Payment'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const b = activeMenuBill || bills.find((item) => item.id === openMenuBillId)
+                    setOpenMenuBillId(null)
+                    setMenuPosition(null)
+                    setActiveMenuBill(null)
+                    if (b) setViewHistoryBill(b)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-muted-fg" />
+                  <span>Payment History</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const b = activeMenuBill || bills.find((item) => item.id === openMenuBillId)
+                    setOpenMenuBillId(null)
+                    setMenuPosition(null)
+                    setActiveMenuBill(null)
                     if (b) setEditingBill(b)
                   }}
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer"
@@ -1568,20 +1602,46 @@ export const BillsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Payment Settlement Fields if Unpaid (Hidden for Audit) */}
-              {!isAudit && selectedDetailBill.status !== 'Paid' && (
+              {/* Payment Settlement Fields (Available for both outstanding and advance payments, hidden for Audit) */}
+              {!isAudit && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 mt-2">
-                  <span className="text-[11px] font-bold text-focus uppercase tracking-wider block">
-                    Payment Settlement Details
-                  </span>
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-                    <span className="text-[10px] font-bold uppercase tracking-wider block">
-                      This payment will settle
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-focus uppercase tracking-wider block">
+                      {selectedDetailBill.status === 'Paid'
+                        ? 'Advance Payment Settlement'
+                        : 'Payment Settlement Details'}
+                    </span>
+                    {selectedDetailBill.status === 'Paid' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        Up to date • Advance payment enabled
+                      </span>
+                    )}
+                  </div>
+
+                  <div
+                    className={cn(
+                      'p-2.5 rounded-xl border',
+                      selectedDetailBill.status === 'Paid'
+                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                        : 'bg-amber-50 border-amber-200 text-amber-900'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'text-[10px] font-bold uppercase tracking-wider block',
+                        selectedDetailBill.status === 'Paid' ? 'text-emerald-700' : 'text-amber-800'
+                      )}
+                    >
+                      {selectedDetailBill.status === 'Paid'
+                        ? 'This advance payment will settle'
+                        : 'This payment will settle'}
                     </span>
                     <span className="text-sm font-bold block mt-0.5">
                       {selectedDetailNextPeriod?.label || selectedDetailBill.dueDate}
                     </span>
                   </div>
+
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
                       <label className="text-[11px] font-semibold text-muted-fg block mb-1">
@@ -1614,8 +1674,8 @@ export const BillsPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Action Buttons: Cancel and Pay (Audit only sees Close) */}
-              <div className="pt-4 border-t border-stroke/20 flex items-center justify-end gap-2.5 mt-3">
+              {/* Action Buttons: Cancel, Pay/Advance, and Revert */}
+              <div className="pt-4 border-t border-stroke/20 flex items-center justify-end gap-2.5 mt-3 flex-wrap">
                 {isAudit ? (
                   <Button
                     type="button"
@@ -1637,30 +1697,35 @@ export const BillsPage: React.FC = () => {
                       Cancel
                     </Button>
 
-                    {selectedDetailBill.status !== 'Paid' ? (
-                      <Button
-                        type="button"
-                        onClick={handlePayFromDetailsModal}
-                        disabled={isDetailPaying}
-                        className="rounded-xl h-10 sm:h-11 px-6 text-xs sm:text-sm font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs flex items-center gap-2 cursor-pointer"
-                      >
-                        <CreditCard className="w-4 h-4" />
-                        <span>
-                          {isDetailPaying
-                            ? 'Processing...'
-                            : `Pay ${selectedDetailNextPeriod?.label || 'Next Period'} (${formatPHP(selectedDetailBill.amount)})`}
-                        </span>
-                      </Button>
-                    ) : (
+                    {/* Pay Button: Supports both standard backlog payment and advance payment */}
+                    <Button
+                      type="button"
+                      onClick={handlePayFromDetailsModal}
+                      disabled={isDetailPaying}
+                      className="rounded-xl h-10 sm:h-11 px-6 text-xs sm:text-sm font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs flex items-center gap-2 cursor-pointer"
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span>
+                        {isDetailPaying
+                          ? 'Processing...'
+                          : selectedDetailBill.status === 'Paid'
+                          ? `Pay in Advance (${selectedDetailNextPeriod?.label || 'Next Period'}) • ${formatPHP(selectedDetailBill.amount)}`
+                          : `Pay ${selectedDetailNextPeriod?.label || 'Next Period'} (${formatPHP(selectedDetailBill.amount)})`}
+                      </span>
+                    </Button>
+
+                    {/* Secondary Revert action if bill already has payments recorded */}
+                    {selectedDetailBill.status === 'Paid' && (
                       <Button
                         type="button"
                         variant="outline"
                         onClick={handleUndoFromDetailsModal}
                         disabled={isDetailPaying}
-                        className="rounded-xl h-10 sm:h-11 px-5 text-xs sm:text-sm font-semibold border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer"
+                        className="rounded-xl h-10 sm:h-11 px-4 text-xs sm:text-sm font-semibold border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer"
+                        title="Revert the most recent payment"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Mark as Unpaid</span>
+                        <span>Revert Recent</span>
                       </Button>
                     )}
                   </>
