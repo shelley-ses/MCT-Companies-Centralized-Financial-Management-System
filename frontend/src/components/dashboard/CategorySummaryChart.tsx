@@ -38,6 +38,10 @@ interface CategorySummaryChartProps {
   defaultChartType?: 'bar' | 'pie'
 }
 
+// Number of categories shown before collapsing the rest into "Others"
+const COLLAPSED_CATEGORY_COUNT = 5
+const OTHERS_COLOR = '#94A3B8'
+
 export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
   type,
   transactions = [],
@@ -49,6 +53,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
     defaultChartType || (type === 'expense' ? 'pie' : 'bar')
   )
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false)
+  const [showAll, setShowAll] = React.useState(false)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
@@ -84,19 +89,36 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
       Other: '#767B89',
     }
 
-    const allCategories = Array.from(
-      new Set([...CATEGORY_LIST, ...Object.keys(sums).filter((k) => sums[k] > 0)])
-    )
-
-    const data = allCategories.map((cat) => ({
-      category: cat,
-      amount: sums[cat] || 0,
-      color: (CATEGORY_COLORS as Record<string, string>)[cat] || extraColors[cat] || '#6366F1',
-      percentage: total > 0 ? ((sums[cat] || 0) / total) * 100 : 0,
-    }))
+    // Only categories with a value, largest first
+    const data = Object.keys(sums)
+      .filter((cat) => sums[cat] > 0)
+      .sort((a, b) => sums[b] - sums[a])
+      .map((cat) => ({
+        category: cat,
+        amount: sums[cat],
+        color: (CATEGORY_COLORS as Record<string, string>)[cat] || extraColors[cat] || '#6366F1',
+        percentage: total > 0 ? (sums[cat] / total) * 100 : 0,
+      }))
 
     return { categoryData: data, totalAmount: total }
   }, [transactions, type])
+
+  // Collapsed view: top N categories plus a single "Others" bucket for the rest
+  const hiddenCount = Math.max(categoryData.length - COLLAPSED_CATEGORY_COUNT, 0)
+  const displayData = React.useMemo(() => {
+    if (showAll || hiddenCount === 0) return categoryData
+    const rest = categoryData.slice(COLLAPSED_CATEGORY_COUNT)
+    const restAmount = rest.reduce((sum, c) => sum + c.amount, 0)
+    return [
+      ...categoryData.slice(0, COLLAPSED_CATEGORY_COUNT),
+      {
+        category: 'Others',
+        amount: restAmount,
+        color: OTHERS_COLOR,
+        percentage: totalAmount > 0 ? (restAmount / totalAmount) * 100 : 0,
+      },
+    ]
+  }, [categoryData, showAll, hiddenCount, totalAmount])
 
   const title = type === 'income' ? 'Income Summary' : 'Expense Summary'
   const subtitle =
@@ -224,7 +246,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
         <div className="h-48 sm:h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={categoryData}
+              data={displayData}
               margin={{ top: 12, right: 12, left: -16, bottom: 0 }}
             >
               <CartesianGrid
@@ -270,7 +292,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
                 }}
               />
               <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={48}>
-                {categoryData.map((entry) => (
+                {displayData.map((entry) => (
                   <Cell key={entry.category} fill={entry.color} />
                 ))}
               </Bar>
@@ -283,7 +305,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={categoryData.filter((d) => d.amount > 0)}
+                data={displayData}
                 dataKey="amount"
                 nameKey="category"
                 cx="50%"
@@ -298,9 +320,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
                   return `${cat} (${pct}%)`
                 }}
               >
-                {categoryData
-                  .filter((d) => d.amount > 0)
-                  .map((entry) => (
+                {displayData.map((entry) => (
                     <Cell
                       key={entry.category}
                       fill={entry.color}
@@ -341,7 +361,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
       <div className="pt-3 mt-2 border-t border-slate-100">
         <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 text-2xs sm:text-xs">
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            {categoryData.map((cat) => (
+            {displayData.map((cat) => (
               <div key={cat.category} className="flex items-center gap-1.5">
                 <span
                   className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -353,6 +373,16 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
                 </span>
               </div>
             ))}
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAll((prev) => !prev)}
+                className="font-semibold text-primary hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary rounded"
+                aria-expanded={showAll}
+              >
+                {showAll ? 'See less' : `See more (+${hiddenCount})`}
+              </button>
+            )}
           </div>
 
           <div className="font-bold text-focus text-xs sm:text-sm tabular-nums ml-auto">

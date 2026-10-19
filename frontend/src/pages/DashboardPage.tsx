@@ -15,6 +15,7 @@ import {
   IncomeSummaryChart,
   ExpenseSummaryChart,
 } from '@/components/dashboard/CategorySummaryChart'
+import { ProfitLossMonthlyChart } from '@/components/dashboard/ProfitLossMonthlyChart'
 import { RecentTransactionsCard } from '@/components/dashboard/RecentTransactionsCard'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import {
@@ -197,6 +198,9 @@ export const DashboardPage: React.FC = () => {
           subtext="Requires prompt review"
         />
       </div>
+
+      {/* Monthly profit / loss (income - expenses), above the category summaries */}
+      <ProfitLossMonthlyChart transactions={filteredTransactions} />
 
       {/* 4. Income and Expense Summary Charts:
           Two separate charts side by side (stacked on mobile):
