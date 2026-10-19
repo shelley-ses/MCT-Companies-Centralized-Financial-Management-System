@@ -10,11 +10,11 @@ from app.models.finance import Expense, Category
 from app.models.company import Company
 from app.schemas.expense import ExpenseCreate, ExpenseOut, ExpenseUpdate
 from app.services.audit_service import AuditAction, log_transaction
+from app.services.petty_cash_service import PettyCashService
 
 router = APIRouter()
 
 CANONICAL_COMPANY_MAP = {
-    1: "MCT Kitchen",
     2: "MCT Kitchen",
     3: "MCT Hotel",
     4: "JK Cafe",
@@ -22,7 +22,7 @@ CANONICAL_COMPANY_MAP = {
     6: "Annex Nine",
     7: "Merillon",
     8: "JK Printing",
-    9: "Speedbox",
+    9: "Speedfire",
     10: "JK Property and Ventures",
     11: "Golden Sunburst Ventures",
     12: "Southern Brew",
@@ -46,6 +46,20 @@ def get_supabase_mappings(client):
 
     return company_map, cat_map
 
+def _current_expense_row(db: Session, expense_id: int) -> Optional[dict]:
+    """Company, payment method and amount of an existing expense (Supabase first, then local)."""
+    try:
+        client = get_supabase_admin_client()
+        res = client.table("expenses").select("company_id, payment_method, amount").eq("expense_id", expense_id).execute()
+        if res.data:
+            return res.data[0]
+    except Exception:
+        pass
+    exp = db.query(Expense).filter(Expense.expense_id == expense_id).first()
+    if exp:
+        return {"company_id": exp.company_id, "payment_method": exp.payment_method, "amount": exp.amount}
+    return None
+
 @router.get("", response_model=List[ExpenseOut], summary="List expense records")
 def get_expenses(
     company_id: Optional[int] = Query(None, description="Filter by Company ID"),
@@ -64,12 +78,15 @@ def get_expenses(
         # Company filter
         resolved_company_id = company_id
         if not resolved_company_id and company_name and company_name.lower() != "all companies":
-            for cid, cname in company_map.items():
-                if cname.strip().lower() == company_name.strip().lower():
-                    resolved_company_id = cid
-                    break
-
-        if resolved_company_id:
+            target_norm = company_name.strip().lower()
+            matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() == target_norm]
+            if not matching_cids and target_norm in ("speedbox", "speedfire"):
+                matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() in ("speedbox", "speedfire")]
+            if len(matching_cids) == 1:
+                sb_query = sb_query.eq("company_id", matching_cids[0])
+            elif len(matching_cids) > 1:
+                sb_query = sb_query.in_("company_id", matching_cids)
+        elif resolved_company_id:
             sb_query = sb_query.eq("company_id", resolved_company_id)
         if category_id:
             sb_query = sb_query.eq("category_id", category_id)
@@ -136,6 +153,7 @@ def get_expenses(
                 company_name=c_name,
                 category_id=exp.category_id,
                 category_name=cat_name or "None",
+                payment_method=exp.payment_method,
                 created_by=exp.created_by,
                 expense_date=exp.expense_date,
                 reference_no=exp.reference_no,
@@ -198,6 +216,9 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
                     target_company_id = ins_comp.data[0]["company_id"]
             else:
                 raise HTTPException(status_code=400, detail="Invalid company specified.")
+
+        # Petty cash expenses are paid from the company's petty cash wallet, not sales
+        PettyCashService(db).ensure_sufficient_balance(target_company_id, expense_in.payment_method, expense_in.amount)
 
         # 2. Resolve Category in Supabase
         resolved_category_id = expense_in.category_id
@@ -327,9 +348,12 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
             else:
                 raise HTTPException(status_code=400, detail="Invalid company specified.")
 
+        PettyCashService(db).ensure_sufficient_balance(target_company.company_id, expense_in.payment_method, expense_in.amount)
+
         expense = Expense(
             company_id=target_company.company_id,
             category_id=expense_in.category_id,
+            payment_method=(expense_in.payment_method or "").strip() or None,
             created_by=expense_in.created_by,
             expense_date=expense_in.expense_date,
             reference_no=ref,
@@ -441,6 +465,16 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
 
     if expense_in.expense_date is not None and expense_in.expense_date > date.today():
         raise HTTPException(status_code=400, detail="Expense date cannot be in the future (maximum date is today).")
+
+    # Re-check the petty cash wallet with this expense's old amount added back
+    current = _current_expense_row(db, expense_id)
+    if current:
+        PettyCashService(db).ensure_sufficient_balance(
+            current.get("company_id"),
+            expense_in.payment_method if expense_in.payment_method is not None else current.get("payment_method"),
+            target_amt if target_amt is not None else current.get("amount"),
+            exclude_expense_id=expense_id,
+        )
 
     update_payload = {}
     if expense_in.expense_date:

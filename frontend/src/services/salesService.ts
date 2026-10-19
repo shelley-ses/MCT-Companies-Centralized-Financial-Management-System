@@ -32,14 +32,16 @@ export interface NewSalesInput {
   chequeNo?: string
   particulars: string
   amount: number
-  category?: string        // optional (category is only used in expense)
+  category?: string        // optional sales category (e.g. Sales Revenue, Catering)
   paymentMethod?: string  // payment method (GCash, Cash, etc.)
   company: string
   status: 'Paid' | 'Pending'
   items?: ParticularItem[]
 }
 
-const INITIAL_SALES: SalesItem[] = [
+const INITIAL_SALES: SalesItem[] = []
+
+const _UNUSED_INITIAL_SALES: SalesItem[] = [
   {
     id: 'sale_1',
     refNo: 'REF-202610-8892',
@@ -686,7 +688,7 @@ const INITIAL_SALES: SalesItem[] = [
   },
 ]
 
-let inMemorySales: SalesItem[] = [...INITIAL_SALES]
+let inMemorySales: SalesItem[] = []
 
 function mapBackendSaleToItem(b: any): SalesItem {
   const rawDate = b.transaction_date || (b.created_at ? b.created_at.split('T')[0] : '2026-10-01')

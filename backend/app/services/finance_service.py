@@ -9,6 +9,7 @@ from app.models.loan import Loan, LoanRepayment
 from app.schemas.financial_calc import CompanyFinancialSummary, GroupFinancialSummary
 from app.schemas.budget import BudgetVarianceOut
 from app.schemas.loan import LoanStatementOut, LoanRepaymentOut
+from app.services.petty_cash_service import PETTY_CASH_METHOD, PettyCashService
 
 def quantize_currency(value: Decimal | float | int) -> Decimal:
     """Helper to consistently round financial values to 2 decimal places."""
@@ -144,7 +145,21 @@ class FinanceService:
             exp_q = exp_q.filter(Expense.expense_date <= end_date)
         exp_row = exp_q.first()
         total_expenses = quantize_currency(exp_row[0] if exp_row else 0)
-        expenses_paid = quantize_currency(exp_row[1] if exp_row else 0)
+
+        # Petty cash expenses still count in P&L, but their cash comes out of the
+        # petty cash wallet. Sales cash only drops when the wallet is topped up.
+        paid_q = self.db.query(func.coalesce(func.sum(Expense.amount_paid), 0)).filter(
+            Expense.company_id == company_id,
+            func.lower(func.coalesce(Expense.payment_method, "")) != PETTY_CASH_METHOD,
+        )
+        if start_date:
+            paid_q = paid_q.filter(Expense.expense_date >= start_date)
+        if end_date:
+            paid_q = paid_q.filter(Expense.expense_date <= end_date)
+        expenses_paid = quantize_currency(paid_q.scalar())
+        transfers_to_petty_cash = quantize_currency(
+            PettyCashService(self.db).topups_total_in_period(company_id, start_date, end_date)
+        )
 
         # 4. Income Statement: Net Profit & Profit Margin
         net_profit = FinanceCalculator.calculate_net_profit(total_revenue, total_expenses)
@@ -169,7 +184,7 @@ class FinanceService:
             loans_received=total_loans_borrowed,
             expenses_paid=expenses_paid,
             loan_repayments=total_loans_repaid,
-            other_cash_outflows=Decimal("0.00")
+            other_cash_outflows=transfers_to_petty_cash
         )
 
         return CompanyFinancialSummary(
@@ -187,7 +202,8 @@ class FinanceService:
             total_cash_inflow=cash_flow["total_cash_inflow"],
             expenses_paid=expenses_paid,
             loan_repayments_made=total_loans_repaid,
-            other_cash_outflows=Decimal("0.00"),
+            other_cash_outflows=transfers_to_petty_cash,
+            transfers_to_petty_cash=transfers_to_petty_cash,
             total_cash_outflow=cash_flow["total_cash_outflow"],
             net_cash_flow=cash_flow["net_cash_flow"],
             total_loans_borrowed=total_loans_borrowed,

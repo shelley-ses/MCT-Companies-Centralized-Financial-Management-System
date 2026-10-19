@@ -23,6 +23,7 @@ import {
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
+import { pettyCashService } from '@/services/pettyCashService'
 
 import { PREDEFINED_PETTY_CASH_CATEGORIES } from '@/pages/AddTransactionSheetPage'
 
@@ -31,6 +32,7 @@ interface AddExpenseModalProps {
   onOpenChange: (open: boolean) => void
   onSuccess: (newItem: ExpenseItem) => void
   assignedCompany: string
+  initialPaymentMethod?: string
 }
 
 const PAYMENT_METHOD_OPTIONS = [
@@ -86,6 +88,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   onOpenChange,
   onSuccess,
   assignedCompany,
+  initialPaymentMethod,
 }) => {
   const getTodayIso = () => formatToYYYYMMDD(new Date())
 
@@ -94,14 +97,34 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const [pettyCashCategory, setPettyCashCategory] = React.useState('')
   const [particulars, setParticulars] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [paymentMethod, setPaymentMethod] = React.useState('Cash')
-  const [category, setCategory] = React.useState(DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
+  const [paymentMethod, setPaymentMethod] = React.useState(initialPaymentMethod || 'Cash')
+  const [category, setCategory] = React.useState(
+    (initialPaymentMethod || '').trim().toLowerCase() === 'petty cash'
+      ? 'Petty Cash'
+      : (DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
+  )
   const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_EXPENSE_CATEGORIES)
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
 
   // Petty cash is strictly determined by payment method being Petty Cash
   const isPettyCash = paymentMethod.trim().toLowerCase() === 'petty cash'
+
+  // Petty cash wallet balance for this company (null = unknown / backend unavailable)
+  const [pettyBalance, setPettyBalance] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    if (!open || !isPettyCash) return
+    let isMounted = true
+    pettyCashService
+      .getSummary(assignedCompany)
+      .then((s) => isMounted && setPettyBalance(s.balance))
+      .catch(() => isMounted && setPettyBalance(null))
+    return () => {
+      isMounted = false
+    }
+  }, [open, isPettyCash, assignedCompany])
+  const parsedAmountValue = parseFloat(amount.replace(/,/g, '')) || 0
+  const exceedsPettyCash = isPettyCash && pettyBalance !== null && parsedAmountValue > pettyBalance
 
   // Confirmation dialogue state
   const [isConfirmOpen, setIsConfirmOpen] = React.useState(false)
@@ -170,15 +193,20 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       setPettyCashCategory('')
       setParticulars('')
       setAmount('')
-      setPaymentMethod('Cash')
-      setCategory(DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
+      const pm = initialPaymentMethod || 'Cash'
+      setPaymentMethod(pm)
+      if (pm.trim().toLowerCase() === 'petty cash') {
+        setCategory('Petty Cash')
+      } else {
+        setCategory(DEFAULT_EXPENSE_CATEGORIES[1] || 'Rendered Fee')
+      }
       setIsCategoryOpen(false)
       setIsConfirmOpen(false)
       setIsSubmitting(false)
       setError('')
       setFieldErrors({})
     }
-  }, [open])
+  }, [open, initialPaymentMethod])
 
   // Pre-validate and show confirmation dialogue
   const handlePreSubmit = (e: React.FormEvent) => {
@@ -492,6 +520,17 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                     </option>
                   ))}
                 </select>
+                {isPettyCash && pettyBalance !== null && (
+                  <p
+                    className={cn(
+                      'text-[11px] font-medium',
+                      exceedsPettyCash ? 'text-amber-600' : 'text-muted-fg'
+                    )}
+                  >
+                    Petty cash available: <span className="font-semibold">{formatPHP(pettyBalance)}</span>
+                    {exceedsPettyCash && ' (Wallet will show deficit until topped up)'}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -587,6 +626,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               </Button>
               <Button
                 type="submit"
+                disabled={exceedsPettyCash}
                 className="h-10 px-6 rounded-xl bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold shadow-xs cursor-pointer"
               >
                 Add Expense

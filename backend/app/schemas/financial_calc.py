@@ -23,7 +23,8 @@ class CompanyFinancialSummary(BaseModel):
     
     expenses_paid: Decimal
     loan_repayments_made: Decimal
-    other_cash_outflows: Decimal
+    other_cash_outflows: Decimal  # includes transfers_to_petty_cash
+    transfers_to_petty_cash: Decimal = Decimal("0.00")  # sales cash moved into the petty cash wallet
     total_cash_outflow: Decimal  # expenses_paid + loan_repayments_made + other_cash_outflows
     
     net_cash_flow: Decimal  # total_cash_inflow - total_cash_outflow

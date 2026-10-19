@@ -6,6 +6,7 @@ import { SalesPage } from '@/pages/SalesPage'
 import { ExpensePage } from '@/pages/ExpensePage'
 import { LoanPage } from '@/pages/LoanPage'
 import { BillsPage } from '@/pages/BillsPage'
+import { PettyCashPage } from '@/pages/PettyCashPage'
 import { TransactionPage } from '@/pages/TransactionPage'
 import { EmployeePage } from '@/pages/EmployeePage'
 import { UserManagementPage } from '@/pages/UserManagementPage'
@@ -148,6 +149,16 @@ export const router = createBrowserRouter([
       <ProtectedRoute>
         <AppShell>
           <LoanPage initialType="Lender" />
+        </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/petty-cash',
+    element: (
+      <ProtectedRoute>
+        <AppShell>
+          <PettyCashPage />
         </AppShell>
       </ProtectedRoute>
     ),

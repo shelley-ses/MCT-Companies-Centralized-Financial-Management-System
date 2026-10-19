@@ -1,9 +1,11 @@
 import * as React from 'react'
+import { Link } from 'react-router-dom'
 import {
   TrendingDown,
   TrendingUp,
   Landmark,
   AlertCircle,
+  Wallet,
 } from 'lucide-react'
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner'
 import {
@@ -15,13 +17,16 @@ import {
   IncomeSummaryChart,
   ExpenseSummaryChart,
 } from '@/components/dashboard/CategorySummaryChart'
+import { ProfitLossMonthlyChart } from '@/components/dashboard/ProfitLossMonthlyChart'
 import { RecentTransactionsCard } from '@/components/dashboard/RecentTransactionsCard'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import {
   dashboardService,
   type DashboardData,
 } from '@/services/dashboardService'
+import { pettyCashService } from '@/services/pettyCashService'
 import { formatPHP } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { useSession } from '@/hooks/useSession'
 
@@ -83,6 +88,43 @@ export const DashboardPage: React.FC = () => {
       isMounted = false
     }
   }, [filters.company])
+
+  // Petty cash wallet(s) for the selected company; null when the backend is unavailable
+  const [pettyCash, setPettyCash] = React.useState<{
+    balance: number
+    lowCount: number
+    walletCount: number
+  } | null>(null)
+
+  React.useEffect(() => {
+    let isMounted = true
+    const company = isCompanyScoped ? assignedCompany : filters.company
+    const request =
+      company === 'All Companies'
+        ? pettyCashService.getAllSummaries()
+        : pettyCashService.getSummary(company).then((s) => [s])
+    request
+      .then((summaries) => {
+        if (!isMounted) return
+        setPettyCash({
+          balance: summaries.reduce((sum, s) => sum + s.balance, 0),
+          lowCount: summaries.filter((s) => s.isLow).length,
+          walletCount: summaries.length,
+        })
+      })
+      .catch(() => isMounted && setPettyCash(null))
+    return () => {
+      isMounted = false
+    }
+  }, [filters.company, isCompanyScoped, assignedCompany])
+
+  const pettyCashSubtext = !pettyCash
+    ? 'Unavailable right now'
+    : pettyCash.lowCount === 0
+    ? 'Available for small expenses'
+    : pettyCash.walletCount > 1
+    ? `${pettyCash.lowCount} of ${pettyCash.walletCount} wallets low — top up`
+    : 'Low balance — top up'
 
   // Filter transactions strictly on client side by company and date range, sorted latest first
   const filteredTransactions = React.useMemo(() => {
@@ -169,20 +211,21 @@ export const DashboardPage: React.FC = () => {
           2. Total Income
           3. Net Income (Income - Expenses)
           4. Overdue / Due Soon
-          All values respond dynamically to the selected date range.
+          5. Petty Cash Balance (current wallet balance, not date-filtered)
+          All other values respond dynamically to the selected date range.
       */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <DashboardKpiCard
-          label="Total Expenses"
-          value={formatPHP(totalExpenses)}
-          icon={TrendingDown}
-          subtext="Total withdrawals for period"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <DashboardKpiCard
           label="Total Income"
           value={formatPHP(totalIncome)}
           icon={TrendingUp}
           subtext="Total deposits for period"
+        />
+        <DashboardKpiCard
+          label="Total Expenses"
+          value={formatPHP(totalExpenses)}
+          icon={TrendingDown}
+          subtext="Total withdrawals for period"
         />
         <DashboardKpiCard
           label="Net Income (Income - Expenses)"
@@ -196,7 +239,29 @@ export const DashboardPage: React.FC = () => {
           icon={AlertCircle}
           subtext="Requires prompt review"
         />
+        <Link
+          to="/petty-cash"
+          className="block rounded-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label="Open petty cash"
+        >
+          <DashboardKpiCard
+            label="Petty Cash Balance"
+            value={pettyCash ? formatPHP(pettyCash.balance) : '—'}
+            icon={Wallet}
+            subtext={pettyCashSubtext}
+            className={cn(
+              'h-full',
+              pettyCash && pettyCash.lowCount > 0 && 'border-amber-300 bg-amber-50/60'
+            )}
+            iconContainerClassName={
+              pettyCash && pettyCash.lowCount > 0 ? 'bg-amber-100 text-amber-700' : undefined
+            }
+          />
+        </Link>
       </div>
+
+      {/* Monthly profit / loss (income - expenses), above the category summaries */}
+      <ProfitLossMonthlyChart transactions={filteredTransactions} />
 
       {/* 4. Income and Expense Summary Charts:
           Two separate charts side by side (stacked on mobile):
