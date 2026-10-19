@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Wallet, CheckCircle2, AlertCircle, Loader2, Building2 } from 'lucide-react'
 import { formatPHP } from '@/lib/format'
 import { pettyCashService } from '@/services/pettyCashService'
+import { formatToYYYYMMDD } from '@/utils/dateUtils'
 
 export interface TopUpPettyCashModalProps {
   open: boolean
@@ -21,7 +22,7 @@ export interface TopUpPettyCashModalProps {
   onSuccess?: () => void
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10)
+const todayIso = () => formatToYYYYMMDD(new Date())
 
 export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
   open,

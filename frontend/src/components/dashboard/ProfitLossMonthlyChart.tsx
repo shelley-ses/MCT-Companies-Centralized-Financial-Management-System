@@ -29,6 +29,7 @@ interface ProfitLossMonthlyChartProps {
 interface MonthPoint {
   key: string // YYYY-MM
   label: string // e.g. "Oct 2026"
+  shortLabel: string // e.g. "Oct '26"
   income: number
   expenses: number
   profit: number
@@ -84,6 +85,7 @@ export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
       return {
         key,
         label: `${MONTH_LABELS[Number(m) - 1]} ${y}`,
+        shortLabel: `${MONTH_LABELS[Number(m) - 1]} '${y.slice(2)}`,
         income,
         expenses,
         profit: income - expenses,
@@ -116,7 +118,7 @@ export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
               Monthly Profit / Loss
             </h3>
             <p className="text-xs text-muted-fg font-normal mt-0.5 line-clamp-1">
-              Income minus expenses per month
+              Income minus expenses per month {hasData && `(${monthData.length} months)`}
             </p>
           </div>
         </div>
@@ -149,17 +151,19 @@ export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
           </p>
         </div>
       ) : (
-        <div className="h-56 sm:h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthData} margin={{ top: 12, right: 12, left: -8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-              <XAxis
-                dataKey="label"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                tick={{ fill: '#767B89', fontSize: 11, fontWeight: 500 }}
-              />
+        <div className="h-56 sm:h-64 w-full overflow-x-auto">
+          <div className={cn("h-full", monthData.length > 8 ? "min-w-[680px] xl:min-w-0" : "w-full")}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthData} margin={{ top: 12, right: 12, left: -8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                <XAxis
+                  dataKey="shortLabel"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  interval={0}
+                  tick={{ fill: '#767B89', fontSize: 11, fontWeight: 500 }}
+                />
               <YAxis
                 tickLine={false}
                 axisLine={false}
@@ -210,7 +214,8 @@ export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
             </BarChart>
           </ResponsiveContainer>
         </div>
-      )}
+      </div>
+    )}
 
       {/* Legend */}
       {hasData && (

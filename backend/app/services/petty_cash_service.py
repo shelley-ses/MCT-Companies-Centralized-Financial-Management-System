@@ -24,8 +24,10 @@ DEFAULT_LOW_BALANCE_THRESHOLD = Decimal("1000.00")
 ZERO = Decimal("0.00")
 
 
-def is_petty_cash(payment_method: Optional[str]) -> bool:
-    return (payment_method or "").strip().lower() == PETTY_CASH_METHOD
+def is_petty_cash(payment_method: Optional[str] = None, category_name: Optional[str] = None) -> bool:
+    pm = (payment_method or "").strip().lower()
+    cat = (category_name or "").strip().lower()
+    return "petty cash" in pm or "petty cash" in cat
 
 
 def _to_decimal(value) -> Decimal:
@@ -64,24 +66,34 @@ class PettyCashService:
     # ── Data sources ─────────────────────────────────────────────────────────
 
     def _petty_cash_expenses(self, company_id: Optional[int] = None) -> List[dict]:
-        """Expenses paid from petty cash. Supabase first, local DB as fallback (same as expenses endpoint)."""
+        """Expenses paid from petty cash or categorized as Petty Cash. Supabase first, local DB as fallback."""
         try:
             client = get_supabase_admin_client()
+            cat_map: Dict[int, str] = {}
+            petty_cat_ids = []
+            try:
+                categories = client.table("category").select("category_id, name").execute().data or []
+                for c in categories:
+                    cat_map[c["category_id"]] = c["name"]
+                    if "petty cash" in (c.get("name") or "").strip().lower():
+                        petty_cat_ids.append(c["category_id"])
+            except Exception:
+                pass
+
             query = (
                 client.table("expenses")
-                .select("expense_id, company_id, category_id, expense_date, amount, description, reference_no")
-                .ilike("payment_method", PETTY_CASH_METHOD)
+                .select("expense_id, company_id, category_id, expense_date, amount, description, reference_no, payment_method")
             )
             if company_id:
                 query = query.eq("company_id", company_id)
-            rows = query.execute().data or []
 
-            cat_map: Dict[int, str] = {}
-            try:
-                categories = client.table("category").select("category_id, name").execute().data or []
-                cat_map = {c["category_id"]: c["name"] for c in categories}
-            except Exception:
-                pass
+            if petty_cat_ids:
+                cat_filter = f"category_id.in.({','.join(str(x) for x in petty_cat_ids)})"
+                query = query.or_(f"payment_method.ilike.%petty cash%,{cat_filter}")
+            else:
+                query = query.ilike("payment_method", "%petty cash%")
+
+            rows = query.execute().data or []
 
             return [
                 {
@@ -90,16 +102,22 @@ class PettyCashService:
                     "expense_date": _to_date(row.get("expense_date")),
                     "amount": _to_decimal(row.get("amount")),
                     "description": row.get("description") or "",
-                    "category": cat_map.get(row.get("category_id")),
+                    "category": cat_map.get(row.get("category_id")) or "Petty Cash",
                     "reference_no": row.get("reference_no"),
                 }
                 for row in rows
             ]
         except Exception:
+            from sqlalchemy import or_
             query = (
                 self.db.query(Expense, Category.name)
                 .outerjoin(Category, Expense.category_id == Category.category_id)
-                .filter(func.lower(func.trim(Expense.payment_method)) == PETTY_CASH_METHOD)
+                .filter(
+                    or_(
+                        func.lower(func.trim(func.coalesce(Expense.payment_method, ""))).like("%petty cash%"),
+                        func.lower(func.trim(func.coalesce(Category.name, ""))) == "petty cash",
+                    )
+                )
             )
             if company_id:
                 query = query.filter(Expense.company_id == company_id)
@@ -110,7 +128,7 @@ class PettyCashService:
                     "expense_date": exp.expense_date,
                     "amount": _to_decimal(exp.amount),
                     "description": exp.description or "",
-                    "category": cat_name,
+                    "category": cat_name or "Petty Cash",
                     "reference_no": exp.reference_no,
                 }
                 for exp, cat_name in query.all()
@@ -145,16 +163,10 @@ class PettyCashService:
         payment_method: Optional[str],
         amount: Optional[Decimal],
         exclude_expense_id: Optional[int] = None,
+        category: Optional[str] = None,
     ) -> None:
-        """Block an expense paid from petty cash when the wallet can't cover it."""
-        if not company_id or not is_petty_cash(payment_method) or amount is None:
-            return
-        available = self.get_balance(company_id, exclude_expense_id=exclude_expense_id)
-        if Decimal(str(amount)) > available:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Insufficient petty cash balance (₱{available:,.2f} available). Top up petty cash first.",
-            )
+        """Allow petty cash expenses to be recorded; wallet displays low-balance alert if balance is in deficit."""
+        return
 
     def _build_summary(
         self,
@@ -207,13 +219,21 @@ class PettyCashService:
             for company in sorted(companies, key=lambda c: c.company_name)
         ]
 
-    def list_ledger(self, company: Company, start: Optional[date] = None, end: Optional[date] = None) -> List[PettyCashLedgerEntry]:
+    def list_ledger(self, company: Optional[Company] = None, start: Optional[date] = None, end: Optional[date] = None) -> List[PettyCashLedgerEntry]:
         """Top-ups and petty cash expenses, newest first, each with the balance after it."""
+        company_id = company.company_id if company else None
+        comp_map = {c.company_id: c.company_name for c in self.db.query(Company).all()}
+
+        topups = self._topups(company_id)
+        expenses = self._petty_cash_expenses(company_id)
+
         entries = [
             {
                 "entry_id": f"topup-{t.topup_id}",
                 "entry_type": "topup",
                 "record_id": t.topup_id,
+                "company_id": t.company_id,
+                "company_name": comp_map.get(t.company_id, t.company.company_name if t.company else "Unknown"),
                 "entry_date": t.topup_date,
                 "description": t.description or "Top-up from sales",
                 "category": None,
@@ -221,12 +241,14 @@ class PettyCashService:
                 "amount_in": _to_decimal(t.amount),
                 "amount_out": ZERO,
             }
-            for t in self._topups(company.company_id)
+            for t in topups
         ] + [
             {
                 "entry_id": f"expense-{e['expense_id']}",
                 "entry_type": "expense",
                 "record_id": e["expense_id"],
+                "company_id": e["company_id"],
+                "company_name": comp_map.get(e["company_id"], "Unknown"),
                 "entry_date": e["expense_date"],
                 "description": e["description"],
                 "category": e["category"],
@@ -234,7 +256,7 @@ class PettyCashService:
                 "amount_in": ZERO,
                 "amount_out": e["amount"],
             }
-            for e in self._petty_cash_expenses(company.company_id)
+            for e in expenses
             if e["expense_date"]
         ]
 

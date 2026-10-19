@@ -216,16 +216,16 @@ export const DashboardPage: React.FC = () => {
       */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <DashboardKpiCard
-          label="Total Expenses"
-          value={formatPHP(totalExpenses)}
-          icon={TrendingDown}
-          subtext="Total withdrawals for period"
-        />
-        <DashboardKpiCard
           label="Total Income"
           value={formatPHP(totalIncome)}
           icon={TrendingUp}
           subtext="Total deposits for period"
+        />
+        <DashboardKpiCard
+          label="Total Expenses"
+          value={formatPHP(totalExpenses)}
+          icon={TrendingDown}
+          subtext="Total withdrawals for period"
         />
         <DashboardKpiCard
           label="Net Income (Income - Expenses)"

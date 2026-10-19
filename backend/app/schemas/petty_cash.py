@@ -57,6 +57,8 @@ class PettyCashLedgerEntry(BaseModel):
     entry_id: str
     entry_type: Literal["topup", "expense"]
     record_id: int
+    company_id: Optional[int] = None
+    company_name: Optional[str] = None
     entry_date: date
     description: str
     category: Optional[str] = None

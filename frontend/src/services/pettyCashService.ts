@@ -24,6 +24,8 @@ export interface PettyCashLedgerEntry {
   id: string
   type: 'topup' | 'expense'
   recordId: number
+  companyId?: number | null
+  companyName?: string | null
   date: string
   description: string
   category?: string | null
@@ -62,6 +64,8 @@ interface BackendLedgerEntry {
   entry_id: string
   entry_type: 'topup' | 'expense'
   record_id: number
+  company_id?: number | null
+  company_name?: string | null
   entry_date: string
   description: string
   category?: string | null
@@ -106,6 +110,8 @@ function mapLedgerEntry(data: BackendLedgerEntry): PettyCashLedgerEntry {
     id: data.entry_id,
     type: data.entry_type,
     recordId: data.record_id,
+    companyId: data.company_id,
+    companyName: data.company_name,
     date: data.entry_date,
     description: data.description,
     category: data.category,
@@ -145,9 +151,9 @@ export const pettyCashService = {
     return ((await response.json()) as BackendSummary[]).map(mapSummary)
   },
 
-  async getLedger(company: string, period: PettyCashPeriod = {}): Promise<PettyCashLedgerEntry[]> {
+  async getLedger(company?: string, period: PettyCashPeriod = {}): Promise<PettyCashLedgerEntry[]> {
     const query = buildQuery({
-      company_name: company,
+      company_name: company && company !== 'All Companies' ? company : undefined,
       start_date: period.startDate,
       end_date: period.endDate,
     })

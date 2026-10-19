@@ -17,7 +17,6 @@ export const CATEGORY_COLORS: Record<string, string> = {
   'Service Income': '#0D9488',
   'Product Sales': '#7C3AED',
   'Catering': '#DB2777',
-  'Event Booking': '#EA580C',
   'Other Income': '#65A30D',
 }
 
@@ -41,6 +40,5 @@ export const SALES_CATEGORY_LIST: string[] = [
   'Service Income',
   'Product Sales',
   'Catering',
-  'Event Booking',
   'Other Income',
 ]

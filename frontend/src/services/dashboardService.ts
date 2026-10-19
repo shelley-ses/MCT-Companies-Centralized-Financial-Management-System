@@ -1,7 +1,16 @@
 import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { salesService } from './salesService'
 import { expenseService } from './expenseService'
+import { generateDashboardDummyTransactions } from './dashboardDummyData'
 import type { ParticularItem } from '@/utils/particularsUtils'
+
+let cachedDummyTransactions: DashboardTransactionItem[] | null = null
+function getDummyTransactions(): DashboardTransactionItem[] {
+  if (!cachedDummyTransactions) {
+    cachedDummyTransactions = generateDashboardDummyTransactions()
+  }
+  return cachedDummyTransactions
+}
 
 export interface DashboardKpis {
   totalSales: number
@@ -716,23 +725,42 @@ export const dashboardService = {
     company?: string
   }): Promise<DashboardData> {
     const isCompanySpecific = filters?.company && filters.company !== 'All Companies'
+    const targetComp = filters?.company?.toLowerCase().trim()
 
-    // Real sales and expenses from the backend (each service falls back to its local cache if offline)
-    const companyFilter = isCompanySpecific ? filters!.company : undefined
-    const [sales, expenses] = await Promise.all([
-      salesService.getSales(companyFilter),
-      expenseService.getExpenses({ company: companyFilter }),
-    ])
-    let transactions: DashboardTransactionItem[] = [
-      ...sales.map((s) => salesService.toDashboardTransaction(s)),
-      ...expenses.map((e) => expenseService.toDashboardTransaction(e)),
-    ]
+    // 1. Real sales and expenses from the database (starts at 0 if no records entered yet)
+    let realTransactions: DashboardTransactionItem[] = []
+    try {
+      const companyFilter = isCompanySpecific ? filters!.company : undefined
+      const [sales, expenses] = await Promise.all([
+        salesService.getSales(companyFilter),
+        expenseService.getExpenses({ company: companyFilter }),
+      ])
+      realTransactions = [
+        ...sales.map((s) => salesService.toDashboardTransaction(s)),
+        ...expenses.map((e) => expenseService.toDashboardTransaction(e)),
+      ]
+      if (isCompanySpecific) {
+        realTransactions = realTransactions.filter(
+          (t) => t.company?.toLowerCase().trim() === targetComp
+        )
+      }
+    } catch {
+      // Backend not available or empty
+    }
 
+    // 2. 18-month rich dummy transactions exclusively for the dashboard
+    let dummyTransactions = getDummyTransactions()
     if (isCompanySpecific) {
-      transactions = transactions.filter(
-        (t) => t.company?.toLowerCase() === filters.company!.toLowerCase()
+      dummyTransactions = dummyTransactions.filter(
+        (t) => t.company?.toLowerCase().trim() === targetComp
       )
     }
+
+    // Combine real and dummy transactions (real user transactions prioritized)
+    let transactions: DashboardTransactionItem[] = [
+      ...realTransactions,
+      ...dummyTransactions,
+    ]
 
     // Consolidated KPI Totals (or filtered by company if chosen)
     const totalSales =

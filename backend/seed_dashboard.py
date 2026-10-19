@@ -1,16 +1,18 @@
 """
-Seeds sample sales and expenses for every company from May 1 up to today, so the
-dashboard (KPIs, Monthly Profit / Loss, Income and Expense summaries) has data.
-July and September are seeded as loss months; the other months are profitable.
+Seeds sample sales and expenses for every company for the past 18 months up to today, so the
+dashboard (KPIs, Monthly Profit / Loss, Income and Expense summaries) has rich historical data.
+July and September (and January) are seeded as loss months; the other months are profitable.
 
 Seeded rows are marked so they can be removed without touching real data:
   - sales:    cheque_number starts with "SEED-DB-"
   - expenses: reference_no  starts with "SEED-DB-"
 
-Usage (from backend/, after migrate_payment_method.py):
-    python seed_dashboard.py           # add sample data (replaces earlier seed rows)
-    python seed_dashboard.py --clear   # remove sample data only
+Usage (from backend/):
+    python seed_dashboard.py               # add sample data for 18 months
+    python seed_dashboard.py --months 24   # custom month count
+    python seed_dashboard.py --clear       # remove sample data only
 """
+import argparse
 import random
 import sys
 from datetime import date, timedelta
@@ -22,10 +24,24 @@ from app.models.finance import Category, Expense, Sale
 
 
 SEED_PREFIX = "SEED-DB-"
-START_MONTH = 5  # May
+DEFAULT_MONTHS_COUNT = 18
 
-# Expenses as a share of that month's sales: > 1 means a loss month
-MONTH_EXPENSE_RATIO = {5: 0.72, 6: 0.81, 7: 1.24, 8: 0.68, 9: 1.15, 10: 0.77}
+# Base expenses as a share of that month's sales: > 1.0 means a loss month
+# Most months are highly profitable (35%-60% profit margins); only July and September have mild dips
+MONTH_EXPENSE_RATIO = {
+    1: 0.62,   # Jan: profit
+    2: 0.58,   # Feb: profit
+    3: 0.56,   # Mar: profit
+    4: 0.52,   # Apr: profit
+    5: 0.54,   # May: profit
+    6: 0.58,   # Jun: profit
+    7: 1.10,   # Jul: mid-year facility overhaul (minor loss dip)
+    8: 0.48,   # Aug: strong profit
+    9: 1.07,   # Sep: pre-holiday restocking (minor loss dip)
+    10: 0.50,  # Oct: strong profit
+    11: 0.52,  # Nov: strong profit
+    12: 0.40,  # Dec: peak holiday sales (large profit)
+}
 
 # Typical monthly sales per company (PHP)
 COMPANY_MONTHLY_SALES = {
@@ -44,7 +60,6 @@ SALES_ITEMS = [
     ("Service Income", "Service package billing"),
     ("Product Sales", "Retail product sales"),
     ("Catering", "Corporate lunch catering"),
-    ("Event Booking", "Function room booking"),
     ("Other Income", "Miscellaneous income"),
 ]
 SALES_METHODS = ["Cash", "GCash", "Maya", "Bank Transfer", "PayMongo", "Cheque"]
@@ -85,6 +100,20 @@ def category_ids(db, names) -> dict:
     return ids
 
 
+def get_month_sequence(today: date, count: int) -> list:
+    """Returns a list of (year, month) from `count` months ago up to today's month."""
+    sequence = []
+    y, m = today.year, today.month
+    for _ in range(count):
+        sequence.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    sequence.reverse()
+    return sequence
+
+
 def month_days(year: int, month: int, today: date) -> list:
     day = date(year, month, 1)
     days = []
@@ -98,21 +127,35 @@ def money(value: float) -> Decimal:
     return Decimal(str(round(value / 5) * 5))
 
 
-def seed_company(db, rng, company: Company, cat_ids: dict, today: date) -> list:
+def seed_company(db, rng, company: Company, cat_ids: dict, today: date, month_seq: list) -> list:
     base = COMPANY_MONTHLY_SALES.get(company.company_name, DEFAULT_MONTHLY_SALES)
     summary = []
     sale_no = expense_no = 0
 
-    for month in range(START_MONTH, today.month + 1):
-        days = month_days(today.year, month, today)
+    for year, month in month_seq:
+        days = month_days(year, month, today)
         if not days:
             continue
-        # Partial current month scales down with the days elapsed
-        month_sales_target = base * rng.uniform(0.9, 1.1) * len(days) / 30
-        month_expense_target = month_sales_target * MONTH_EXPENSE_RATIO.get(month, 0.8)
 
-        # Sales: 8-12 entries per full month
-        entries = max(3, round(rng.randint(8, 12) * len(days) / 30))
+        days_in_month = (date(year, month + 1, 1) - timedelta(days=1)).day if month < 12 else 31
+        scale = len(days) / days_in_month
+
+        # Slight company variance for sales
+        month_sales_target = base * rng.uniform(0.9, 1.1) * scale
+
+        # Base expense ratio with slight company variance
+        base_ratio = MONTH_EXPENSE_RATIO.get(month, 0.55)
+        if base_ratio > 1.0:
+            # Mild loss dips (keep close to 1.05 - 1.10)
+            month_ratio = base_ratio * rng.uniform(0.98, 1.02)
+        else:
+            # High-performing profit months (healthy green bars)
+            month_ratio = base_ratio * rng.uniform(0.92, 1.03)
+
+        month_expense_target = month_sales_target * month_ratio
+
+        # Sales: 8-12 entries per full month (pro-rated if partial month)
+        entries = max(3, round(rng.randint(8, 12) * scale))
         weights = [rng.uniform(0.6, 1.4) for _ in range(entries)]
         month_sales = Decimal("0")
         for weight in weights:
@@ -124,7 +167,7 @@ def seed_company(db, rng, company: Company, cat_ids: dict, today: date) -> list:
                 category_id=cat_ids[category],
                 payment_method=rng.choice(SALES_METHODS),
                 transaction_date=rng.choice(days),
-                cheque_no=f"{SEED_PREFIX}S-{company.company_id}-{sale_no:04d}",
+                cheque_no=f"{SEED_PREFIX}S-{company.company_id}-{sale_no:05d}",
                 amount=amount,
                 particulars=particulars,
             ))
@@ -140,43 +183,54 @@ def seed_company(db, rng, company: Company, cat_ids: dict, today: date) -> list:
                 category_id=cat_ids[category],
                 payment_method=rng.choice(EXPENSE_METHODS),
                 expense_date=rng.choice(days),
-                reference_no=f"{SEED_PREFIX}E-{company.company_id}-{expense_no:04d}",
+                reference_no=f"{SEED_PREFIX}E-{company.company_id}-{expense_no:05d}",
                 amount=amount,
                 amount_paid=amount,
                 description=particulars,
             ))
             month_expenses += amount
 
-        summary.append((month, month_sales, month_expenses))
+        summary.append((year, month, month_sales, month_expenses))
 
     db.commit()
     return summary
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Seed dashboard sales and expenses.")
+    parser.add_argument("--clear", action="store_true", help="Remove seeded dashboard data only")
+    parser.add_argument("--months", type=int, default=DEFAULT_MONTHS_COUNT, help=f"Number of months to seed (default: {DEFAULT_MONTHS_COUNT})")
+    args = parser.parse_args()
+
     init_db()
     db = SessionLocal()
     try:
         clear(db)
-        if "--clear" in sys.argv:
+        if args.clear:
             return
 
         rng = random.Random(20260501)
         today = date.today()
+        month_seq = get_month_sequence(today, args.months)
+
         cat_ids = category_ids(
             db,
             {c for c, _ in SALES_ITEMS} | {c for c, _, _ in EXPENSE_ITEMS},
         )
+        companies = db.query(Company).order_by(Company.company_id).all()
+        print(f"[START] Seeding {len(month_seq)} months ({month_seq[0][0]}-{month_seq[0][1]:02d} to {month_seq[-1][0]}-{month_seq[-1][1]:02d}) for {len(companies)} companies...")
+
         for company in db.query(Company).order_by(Company.company_id).all():
-            summary = seed_company(db, rng, company, cat_ids, today)
+            summary = seed_company(db, rng, company, cat_ids, today, month_seq)
             months = ", ".join(
-                f"{date(today.year, m, 1):%b} {'+' if s >= e else '-'}{abs(s - e):,.0f}"
-                for m, s, e in summary
+                f"{date(y, m, 1):%b '%y} {'+' if s >= e else '-'}{abs(s - e):,.0f}"
+                for y, m, s, e in summary
             )
-            print(f"[SEEDED] {company.company_name}: {months}")
+            print(f"[SEEDED] {company.company_name} ({len(summary)} months): {months}")
     finally:
         db.close()
 
 
 if __name__ == "__main__":
     main()
+
