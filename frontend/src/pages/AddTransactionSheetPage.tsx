@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/table'
 import { salesService } from '@/services/salesService'
 import { expenseService } from '@/services/expenseService'
+import { pettyCashService } from '@/services/pettyCashService'
 import { loanService, type CompanyOption } from '@/services/loanService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
@@ -375,6 +376,22 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     return calculatedRows.filter((r) => r.isValid).length
   }, [calculatedRows])
 
+  // Petty cash wallet balance for the selected company (null = unknown / backend unavailable)
+  const pettyCashCompany = isAuditor ? assignedCompany : selectedCompany
+  const [pettyBalance, setPettyBalance] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    if (!isPettyCash) return
+    let isMounted = true
+    pettyCashService
+      .getSummary(pettyCashCompany)
+      .then((s) => isMounted && setPettyBalance(s.balance))
+      .catch(() => isMounted && setPettyBalance(null))
+    return () => {
+      isMounted = false
+    }
+  }, [isPettyCash, pettyCashCompany])
+  const exceedsPettyCash = isPettyCash && pettyBalance !== null && grandTotal > pettyBalance
+
   const totalQuantity = React.useMemo(() => {
     return calculatedRows
       .filter((r) => r.isValid)
@@ -406,6 +423,13 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     }
 
     const companyToUse = isAuditor ? assignedCompany : selectedCompany
+
+    if (exceedsPettyCash) {
+      setErrorMessage(
+        `Insufficient petty cash (${formatPHP(pettyBalance ?? 0)} available). Top up petty cash first.`
+      )
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -652,6 +676,16 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                 </option>
               ))}
             </select>
+            {isPettyCash && pettyBalance !== null && (
+              <p
+                className={cn(
+                  'text-[11px] font-medium',
+                  exceedsPettyCash ? 'text-red-600' : 'text-muted-fg'
+                )}
+              >
+                Petty cash available: <span className="font-semibold">{formatPHP(pettyBalance)}</span>
+              </p>
+            )}
           </div>
 
           {/* 4. Category (Expense only; hidden when Payment Method is Petty Cash since category is auto-set to Petty Cash and specific categories are selected in the spreadsheet table column below) */}
@@ -996,7 +1030,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           <Button
             type="button"
             onClick={handleSave}
-            disabled={isSubmitting || validRowsCount === 0}
+            disabled={isSubmitting || validRowsCount === 0 || exceedsPettyCash}
             className={cn(
               'h-11 px-6 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all',
               'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white disabled:opacity-40'

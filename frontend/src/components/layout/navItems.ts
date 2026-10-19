@@ -9,6 +9,7 @@ import {
   History,
   Settings,
   ReceiptText,
+  Wallet,
 } from 'lucide-react'
 import type * as React from 'react'
 
@@ -70,6 +71,13 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
         roles: ['Finance', 'Supervisor', 'Company', 'Company Auditor'],
       },
     ],
+  },
+  {
+    id: 'petty-cash',
+    title: 'Petty Cash',
+    href: '/petty-cash',
+    icon: Wallet,
+    roles: ['Admin', 'Finance', 'Supervisor', 'Company', 'Company Auditor', 'Audit'],
   },
   {
     id: 'bills',
