@@ -40,6 +40,7 @@ def init_db():
     import app.models.loan
     import app.models.permission
     import app.models.staff_credit
+    import app.models.bills
     from app.models.company import Company
     Base.metadata.create_all(bind=engine)
 

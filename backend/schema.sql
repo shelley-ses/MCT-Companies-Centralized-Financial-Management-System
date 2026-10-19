@@ -171,3 +171,37 @@ CREATE TABLE IF NOT EXISTS staff_credits_repayment (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- 14. Bills Table
+CREATE TABLE IF NOT EXISTS bills (
+    bill_id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
+    bill_name VARCHAR(255) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    account_no VARCHAR(100),
+    amount NUMERIC(15, 2) NOT NULL,
+    recurring VARCHAR(50) NOT NULL DEFAULT 'monthly',
+    due_date DATE NOT NULL,
+    due_date_reminder INTEGER NOT NULL DEFAULT 3,
+    notes TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'unpaid',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT bills_amount_positive CHECK (amount > 0),
+    CONSTRAINT bills_due_date_reminder_nonnegative CHECK (due_date_reminder >= 0)
+);
+
+-- 15. Bill Payments Table
+CREATE TABLE IF NOT EXISTS bill_payments (
+    bill_payment_id BIGSERIAL PRIMARY KEY,
+    bill_id BIGINT NOT NULL REFERENCES bills(bill_id) ON DELETE CASCADE,
+    period_key VARCHAR(20) NOT NULL,
+    payment_date DATE NOT NULL,
+    amount NUMERIC(15, 2) NOT NULL,
+    payment_method VARCHAR(50) NOT NULL,
+    reference_no VARCHAR(100),
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT bill_payments_amount_positive CHECK (amount > 0),
+    CONSTRAINT bill_payments_period_unique UNIQUE (bill_id, period_key)
+);

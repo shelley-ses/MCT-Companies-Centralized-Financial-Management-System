@@ -20,7 +20,12 @@ import {
   FileText,
 } from 'lucide-react'
 import { formatPHP } from '@/lib/format'
-import { billsService, type BillItem } from '@/services/billsService'
+import {
+  billsService,
+  getBillPaymentOptions,
+  type BillItem,
+  type BillPaymentPeriod,
+} from '@/services/billsService'
 import { cn } from '@/lib/utils'
 
 export interface RecordBillPaymentModalProps {
@@ -50,6 +55,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
   const [paymentDate, setPaymentDate] = React.useState<string>(() =>
     new Date().toISOString().slice(0, 10)
   )
+  const [paymentPeriod, setPaymentPeriod] = React.useState<BillPaymentPeriod | null>(null)
   const [paymentMethod, setPaymentMethod] = React.useState<string>('Bank Transfer')
   const [referenceNo, setReferenceNo] = React.useState<string>('')
   const [notes, setNotes] = React.useState<string>('')
@@ -62,6 +68,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
     if (open && bill) {
       setAmountInput(String(bill.amount))
       setPaymentDate(new Date().toISOString().slice(0, 10))
+      setPaymentPeriod(getBillPaymentOptions(bill).nextPayable)
       setPaymentMethod('Bank Transfer')
       setReferenceNo('')
       setNotes('')
@@ -72,6 +79,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
 
   if (!bill) return null
 
+  const paymentSchedule = getBillPaymentOptions(bill).periods
   const parsedAmount = parseFloat(amountInput) || 0
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -90,7 +98,13 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
 
     try {
       setIsSubmitting(true)
+      if (!paymentPeriod) {
+        setError('No unpaid billing period is available for this bill.')
+        return
+      }
+
       const updated = await billsService.recordPayment(bill.id, {
+        periodKey: paymentPeriod.key,
         paymentDate,
         amount: parsedAmount,
         paymentMethod,
@@ -127,7 +141,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                 Record Bill Payment
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
-                Mark monthly bill as paid and capture settlement details
+                Settle the next bill period and capture settlement details
               </DialogDescription>
             </div>
           </div>
@@ -152,9 +166,11 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
           </div>
           <div className="text-right">
             <div className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider">
-              Scheduled Due
+              Paying For
             </div>
-            <div className="font-bold text-focus text-sm">{bill.dueDate}</div>
+            <div className="font-bold text-focus text-sm">
+              {paymentPeriod?.label || bill.dueDate}
+            </div>
           </div>
         </div>
 
@@ -173,6 +189,90 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
               <span>{successBanner}</span>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="bill-payment-period" className="text-xs font-semibold text-focus block">
+              Month / Billing Period You Are Paying
+            </Label>
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+              <div className="text-[10px] font-bold uppercase tracking-wider">
+                This payment will be recorded for
+              </div>
+              <div className="text-base font-bold mt-0.5">
+                {paymentPeriod?.label || 'No period selected'}
+              </div>
+            </div>
+            <select
+              id="bill-payment-period"
+              value={paymentPeriod?.key || ''}
+              onChange={(event) => {
+                const options = getBillPaymentOptions(bill).periods
+                setPaymentPeriod(options.find((period) => period.key === event.target.value) || null)
+              }}
+              className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs font-medium text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+              disabled={!paymentPeriod}
+            >
+              {paymentPeriod && (
+                <option value={paymentPeriod.key}>
+                  {paymentPeriod.label} — period being paid
+                </option>
+              )}
+            </select>
+            <p className="text-[11px] text-muted-fg">
+              Periods must be settled in order. Once you are up to date, the next future period can be paid in advance.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-semibold text-focus">
+                Payment Schedule
+              </Label>
+              <span className="text-[11px] text-muted-fg">
+                {bill.billingCycle} periods
+              </span>
+            </div>
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-2 space-y-1.5">
+              {paymentSchedule.map((period) => (
+                <div
+                  key={period.key}
+                  className={cn(
+                    'flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs',
+                    period.key === paymentPeriod?.key
+                      ? 'border-amber-300 bg-amber-50 text-amber-900'
+                      : period.paid
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : period.isFuture
+                      ? 'border-slate-200 bg-white text-slate-500'
+                      : 'border-rose-200 bg-rose-50 text-rose-800'
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="font-semibold truncate">{period.label}</div>
+                    {period.paid && period.paymentDate && (
+                      <div className="text-[10px] opacity-75">
+                        Paid on {period.paymentDate}
+                      </div>
+                    )}
+                  </div>
+                  <span className="shrink-0 font-semibold">
+                    {period.key === paymentPeriod?.key
+                      ? 'Next to pay'
+                      : period.paid
+                      ? period.isFuture
+                        ? 'Paid (Advance)'
+                        : 'Paid'
+                      : period.isFuture
+                      ? 'Upcoming'
+                      : 'Overdue'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-fg">
+              Paid months, days, or years remain recorded here, including advance payments.
+            </p>
+          </div>
 
           {/* Payment Amount & Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -297,7 +397,9 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Mark as Paid</span>
+                  <span>
+                    Mark {paymentPeriod?.label || 'Period'} as Paid
+                  </span>
                 </>
               )}
             </Button>

@@ -88,7 +88,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const [amount, setAmount] = React.useState('')
   const [dueDate, setDueDate] = React.useState(getTodayIso())
   const [company, setCompany] = React.useState(assignedCompany || 'MCT Kitchen')
-  const [billingCycle, setBillingCycle] = React.useState<'Monthly' | 'Quarterly' | 'Annually'>('Monthly')
+  const [billingCycle, setBillingCycle] = React.useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly')
   const [reminderDaysBefore, setReminderDaysBefore] = React.useState<number>(5)
   const [notes, setNotes] = React.useState('')
 
@@ -176,10 +176,10 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             </div>
             <div>
               <DialogTitle className="text-xl sm:text-2xl font-bold text-focus leading-tight">
-                Add Monthly Bill
+                Add Recurring Bill
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
-                Set up a recurring monthly bill, payment amount, and due date reminder
+                Set up a recurring bill, payment amount, and due date reminder
               </DialogDescription>
             </div>
           </div>
@@ -267,8 +267,26 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             </div>
           </div>
 
+          {/* 4. Recurring Schedule */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+              <span>Recurring</span>
+              <span className="text-red-500">*</span>
+            </Label>
+            <select
+              value={billingCycle}
+              onChange={(e) => setBillingCycle(e.target.value as 'Daily' | 'Monthly' | 'Yearly')}
+              className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+            >
+              <option value="Daily">Daily</option>
+              <option value="Monthly">Monthly</option>
+              <option value="Yearly">Yearly</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 4. Account / Reference No */}
+            {/* 5. Account / Reference No */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Hash className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -283,7 +301,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
               />
             </div>
 
-            {/* 5. Amount */}
+            {/* 6. Amount */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <span>Amount (₱)</span>
@@ -320,7 +338,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 6. Due Date */}
+            {/* 7. Due Date */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -346,7 +364,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
               )}
             </div>
 
-            {/* 7. Reminder Notification */}
+            {/* 8. Reminder Notification */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -366,7 +384,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             </div>
           </div>
 
-          {/* 8. Notes */}
+          {/* 9. Notes */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-focus block">
               Notes / Particulars (Optional)
