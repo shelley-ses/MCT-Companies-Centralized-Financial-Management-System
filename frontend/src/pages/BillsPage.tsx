@@ -48,6 +48,8 @@ import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import {
   billsService,
+  getBillPaymentOptions,
+  getBillPaymentPeriods,
   type BillItem,
   type BillReminder,
   type BillStatus,
@@ -346,8 +348,7 @@ export const BillsPage: React.FC = () => {
   const handleCheckboxToggle = async (bill: BillItem, checked: boolean) => {
     try {
       if (checked) {
-        const updated = await billsService.markAsPaid(bill.id)
-        handleBillUpdated(updated)
+        setPaymentBill(bill)
       } else {
         const updated = await billsService.markAsUnpaid(bill.id)
         handleBillUpdated(updated)
@@ -366,6 +367,7 @@ export const BillsPage: React.FC = () => {
     try {
       setIsDetailPaying(true)
       const updated = await billsService.recordPayment(selectedDetailBill.id, {
+        periodKey: getBillPaymentOptions(selectedDetailBill).nextPayable.key,
         paymentDate: detailPayDate || new Date().toISOString().slice(0, 10),
         amount: selectedDetailBill.amount,
         paymentMethod: detailPayMethod,
@@ -415,6 +417,9 @@ export const BillsPage: React.FC = () => {
     : selectedCompany === 'All Companies'
     ? 'All Subsidiaries'
     : selectedCompany
+  const selectedDetailNextPeriod = selectedDetailBill
+    ? getBillPaymentOptions(selectedDetailBill).nextPayable
+    : null
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
@@ -478,7 +483,7 @@ export const BillsPage: React.FC = () => {
               </span>
             </div>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Track recurring utility, rental, and monthly bills for {displayedCompanyTitle} with automated due date reminders.
+              Track recurring utility, rental, and scheduled bills for {displayedCompanyTitle} with automated due date reminders and payment history.
             </p>
           </div>
 
@@ -992,7 +997,11 @@ export const BillsPage: React.FC = () => {
                             checked={isPaid}
                             onChange={(e) => handleCheckboxToggle(bill, e.target.checked)}
                             className="w-4 h-4 rounded text-[#960C01] focus:ring-[#960C01] border-slate-300 cursor-pointer accent-[#960C01] mx-auto block"
-                            title={isPaid ? 'Paid (Click to revert to Unpaid)' : 'Click to mark bill as Paid'}
+                            title={
+                              isPaid
+                                ? 'Paid (Click to revert to Unpaid)'
+                                : `Pay ${getBillPaymentOptions(bill).nextPayable.label}`
+                            }
                           />
                         </TableCell>
                       )}
@@ -1292,7 +1301,9 @@ export const BillsPage: React.FC = () => {
                   className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1"
                 >
                   <div className="flex items-center justify-between font-semibold text-neutral-800">
-                    <span>{p.paymentDate}</span>
+                    <span>
+                      {p.periodKey ? `Period ${p.periodKey}` : 'Billing period'} • {p.paymentDate}
+                    </span>
                     <span className="text-emerald-700">{formatPHP(p.amount)}</span>
                   </div>
                   <div className="text-neutral-500 flex items-center justify-between">
@@ -1493,12 +1504,60 @@ export const BillsPage: React.FC = () => {
                 )}
               </div>
 
+              {/* Recurring payment period tracking */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 mt-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-focus uppercase tracking-wider">
+                    Payment Schedule
+                  </span>
+                  <span className="text-[11px] text-muted-fg">
+                    {selectedDetailBill.billingCycle} periods
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {getBillPaymentPeriods(selectedDetailBill).map((period) => (
+                    <div
+                      key={period.key}
+                      className={cn(
+                        'p-2 rounded-lg border text-[11px]',
+                        period.paid
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-white border-slate-200 text-slate-500'
+                      )}
+                    >
+                      <div className="font-semibold truncate">{period.label}</div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {period.paid ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span>Paid</span>
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            <span>Not paid</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Payment Settlement Fields if Unpaid (Hidden for Audit) */}
               {!isAudit && selectedDetailBill.status !== 'Paid' && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 mt-2">
                   <span className="text-[11px] font-bold text-focus uppercase tracking-wider block">
                     Payment Settlement Details
                   </span>
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block">
+                      This payment will settle
+                    </span>
+                    <span className="text-sm font-bold block mt-0.5">
+                      {selectedDetailNextPeriod?.label || selectedDetailBill.dueDate}
+                    </span>
+                  </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
                       <label className="text-[11px] font-semibold text-muted-fg block mb-1">
@@ -1562,7 +1621,11 @@ export const BillsPage: React.FC = () => {
                         className="rounded-xl h-10 sm:h-11 px-6 text-xs sm:text-sm font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs flex items-center gap-2 cursor-pointer"
                       >
                         <CreditCard className="w-4 h-4" />
-                        <span>{isDetailPaying ? 'Processing...' : `Pay ${formatPHP(selectedDetailBill.amount)}`}</span>
+                        <span>
+                          {isDetailPaying
+                            ? 'Processing...'
+                            : `Pay ${selectedDetailNextPeriod?.label || 'Next Period'} (${formatPHP(selectedDetailBill.amount)})`}
+                        </span>
                       </Button>
                     ) : (
                       <Button

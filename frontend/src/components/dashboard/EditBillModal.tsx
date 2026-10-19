@@ -85,6 +85,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   const [amount, setAmount] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
   const [company, setCompany] = React.useState('')
+  const [billingCycle, setBillingCycle] = React.useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly')
   const [reminderDaysBefore, setReminderDaysBefore] = React.useState<number>(5)
   const [status, setStatus] = React.useState<'Unpaid' | 'Paid' | 'Overdue' | 'Due Soon'>('Unpaid')
   const [notes, setNotes] = React.useState('')
@@ -106,6 +107,11 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
       setAmount(bill.amount?.toString() || '')
       setDueDate(bill.dueDate || '')
       setCompany(bill.company || 'MCT Kitchen')
+      setBillingCycle(
+        bill.billingCycle === 'Daily' || bill.billingCycle === 'Yearly'
+          ? bill.billingCycle
+          : 'Monthly'
+      )
       setReminderDaysBefore(bill.reminderDaysBefore ?? 5)
       setStatus(bill.status || 'Unpaid')
       setNotes(bill.notes || '')
@@ -150,6 +156,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
         amount: numAmount,
         dueDate,
         company: canChooseCompany ? company : bill.company,
+        billingCycle,
         reminderDaysBefore,
         status,
         notes: notes.trim(),
@@ -175,7 +182,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
             </div>
             <div>
               <DialogTitle className="text-xl sm:text-2xl font-bold text-focus leading-tight">
-                Update Monthly Bill
+                Update Recurring Bill
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
                 Edit bill details, amount, due date schedule, and status
@@ -265,8 +272,26 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
             </div>
           </div>
 
+          {/* 4. Recurring Schedule */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+              <span>Recurring</span>
+              <span className="text-red-500">*</span>
+            </Label>
+            <select
+              value={billingCycle}
+              onChange={(e) => setBillingCycle(e.target.value as 'Daily' | 'Monthly' | 'Yearly')}
+              className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+            >
+              <option value="Daily">Daily</option>
+              <option value="Monthly">Monthly</option>
+              <option value="Yearly">Yearly</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 4. Account No */}
+            {/* 5. Account No */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Hash className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -281,7 +306,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
               />
             </div>
 
-            {/* 5. Amount */}
+            {/* 6. Amount */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <span>Amount (₱)</span>
@@ -318,7 +343,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 6. Due Date */}
+            {/* 7. Due Date */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -344,7 +369,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
               )}
             </div>
 
-            {/* 7. Reminder Notification */}
+            {/* 8. Reminder Notification */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -365,7 +390,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 8. Status */}
+            {/* 9. Status */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus block">Payment Status</Label>
               <select
@@ -380,7 +405,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
               </select>
             </div>
 
-            {/* 9. Notes */}
+            {/* 10. Notes */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus block">Notes</Label>
               <Input

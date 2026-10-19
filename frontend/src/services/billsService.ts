@@ -1,5 +1,6 @@
 export interface BillPaymentRecord {
   id: string
+  periodKey?: string
   paymentDate: string
   amount: number
   paymentMethod: string
@@ -20,6 +21,7 @@ export type BillCategory =
   | 'Others'
 
 export type BillStatus = 'Unpaid' | 'Paid' | 'Overdue' | 'Due Soon'
+export type BillRecurring = 'Daily' | 'Monthly' | 'Yearly'
 
 export interface BillItem {
   id: string
@@ -30,7 +32,7 @@ export interface BillItem {
   amount: number
   dueDate: string // YYYY-MM-DD
   dueDayOfMonth?: number // e.g. 15 for 15th of the month
-  billingCycle: 'Monthly' | 'Quarterly' | 'Annually'
+  billingCycle: BillRecurring
   reminderDaysBefore: number // e.g. 3 days before
   status: BillStatus
   notes?: string
@@ -49,7 +51,7 @@ export interface NewBillInput {
   amount: number
   dueDate: string
   dueDayOfMonth?: number
-  billingCycle?: 'Monthly' | 'Quarterly' | 'Annually'
+  billingCycle?: BillRecurring
   reminderDaysBefore?: number
   notes?: string
 }
@@ -62,7 +64,7 @@ export interface UpdateBillInput {
   amount?: number
   dueDate?: string
   dueDayOfMonth?: number
-  billingCycle?: 'Monthly' | 'Quarterly' | 'Annually'
+  billingCycle?: BillRecurring
   reminderDaysBefore?: number
   status?: BillStatus
   notes?: string
@@ -86,6 +88,15 @@ export interface BillReminder {
   type: 'overdue' | 'due_today' | 'due_soon'
   daysDiff: number
   message: string
+}
+
+export interface BillPaymentPeriod {
+  key: string
+  label: string
+  paid: boolean
+  paymentDate?: string
+  periodDate?: string
+  isFuture?: boolean
 }
 
 export const BILL_CATEGORIES: readonly BillCategory[] = [
@@ -284,10 +295,156 @@ function saveBills(bills: BillItem[]): void {
   }
 }
 
-function calculateBillStatus(bill: BillItem, todayStr: string = '2026-10-19'): BillStatus {
-  if (bill.status === 'Paid') return 'Paid'
+function normalizeRecurring(value: string | undefined): BillRecurring {
+  if (value === 'Daily' || value === 'Yearly') return value
+  return 'Monthly'
+}
 
-  const due = bill.dueDate
+function getPeriodKey(dateStr: string, recurring: BillRecurring): string {
+  if (recurring === 'Daily') return dateStr
+  if (recurring === 'Yearly') return dateStr.slice(0, 4)
+  return dateStr.slice(0, 7)
+}
+
+function getPaymentPeriodKey(payment: BillPaymentRecord, recurring: BillRecurring): string {
+  return payment.periodKey || getPeriodKey(payment.paymentDate, recurring)
+}
+
+function getCurrentDueDate(
+  bill: BillItem,
+  todayStr: string
+): string {
+  const recurring = normalizeRecurring(bill.billingCycle)
+  if (recurring === 'Daily') return todayStr
+
+  const baseDate = new Date(`${bill.dueDate}T00:00:00`)
+  const today = new Date(`${todayStr}T00:00:00`)
+  const year = today.getFullYear()
+  const month = recurring === 'Yearly' ? baseDate.getMonth() : today.getMonth()
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  const day = Math.min(baseDate.getDate(), lastDay)
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+export function getBillPaymentPeriods(
+  bill: BillItem,
+  referenceDate = new Date()
+): BillPaymentPeriod[] {
+  const recurring = normalizeRecurring(bill.billingCycle)
+  const periods: BillPaymentPeriod[] = []
+  const count = recurring === 'Daily' ? 7 : recurring === 'Yearly' ? 5 : 12
+  const referenceDateStr = referenceDate.toISOString().slice(0, 10)
+
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const periodDate = new Date(referenceDate)
+    if (recurring === 'Daily') periodDate.setDate(periodDate.getDate() - offset)
+    else if (recurring === 'Yearly') periodDate.setFullYear(periodDate.getFullYear() - offset)
+    else periodDate.setMonth(periodDate.getMonth() - offset)
+
+    const periodDateStr = periodDate.toISOString().slice(0, 10)
+    const key = getPeriodKey(periodDateStr, recurring)
+    const payment = (bill.payments || []).find(
+      (item) => getPaymentPeriodKey(item, recurring) === key
+    )
+
+    periods.push({
+      key,
+      label:
+        recurring === 'Daily'
+          ? periodDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+          : recurring === 'Yearly'
+          ? periodDate.toLocaleDateString(undefined, { year: 'numeric' })
+          : periodDate.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
+      paid: Boolean(payment),
+      paymentDate: payment?.paymentDate,
+      periodDate: periodDateStr,
+      isFuture: periodDateStr > referenceDateStr,
+    })
+  }
+
+  return periods
+}
+
+function getInitialPeriodDate(bill: BillItem, recurring: BillRecurring): Date {
+  const dates = [
+    bill.dueDate,
+    bill.createdAt?.slice(0, 10),
+    ...(bill.payments || []).map((payment) => payment.paymentDate),
+  ].filter(Boolean) as string[]
+  const earliest = dates.sort()[0] || bill.dueDate
+  const date = new Date(`${earliest}T00:00:00`)
+  const base = new Date(`${bill.dueDate}T00:00:00`)
+
+  if (recurring === 'Daily') return date
+  if (recurring === 'Yearly') return new Date(date.getFullYear(), base.getMonth(), base.getDate())
+  return new Date(date.getFullYear(), date.getMonth(), base.getDate())
+}
+
+export function getBillPaymentOptions(
+  bill: BillItem,
+  referenceDate = new Date()
+): { periods: BillPaymentPeriod[]; nextPayable: BillPaymentPeriod } {
+  const recurring = normalizeRecurring(bill.billingCycle)
+  const todayStr = referenceDate.toISOString().slice(0, 10)
+  const startDate = getInitialPeriodDate(bill, recurring)
+  const periods: BillPaymentPeriod[] = []
+  const totalPeriods = recurring === 'Daily' ? 61 : recurring === 'Yearly' ? 11 : 37
+
+  for (let index = 0; index < totalPeriods; index += 1) {
+    let periodDate: Date
+    if (recurring === 'Daily') {
+      periodDate = new Date(startDate)
+      periodDate.setDate(startDate.getDate() + index)
+    } else if (recurring === 'Yearly') {
+      periodDate = new Date(startDate)
+      periodDate.setFullYear(startDate.getFullYear() + index)
+    } else {
+      const targetMonth = startDate.getMonth() + index
+      const lastDay = new Date(startDate.getFullYear(), targetMonth + 1, 0).getDate()
+      periodDate = new Date(
+        startDate.getFullYear(),
+        targetMonth,
+        Math.min(startDate.getDate(), lastDay)
+      )
+    }
+
+    const periodDateStr = periodDate.toISOString().slice(0, 10)
+    const key = getPeriodKey(periodDateStr, recurring)
+    const payment = (bill.payments || []).find(
+      (item) => getPaymentPeriodKey(item, recurring) === key
+    )
+    periods.push({
+      key,
+      label:
+        recurring === 'Daily'
+          ? periodDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+          : recurring === 'Yearly'
+          ? periodDate.toLocaleDateString(undefined, { year: 'numeric' })
+          : periodDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+      paid: Boolean(payment),
+      paymentDate: payment?.paymentDate,
+      periodDate: periodDateStr,
+      isFuture: periodDateStr > todayStr,
+    })
+  }
+
+  const nextPayable =
+    periods.find((period) => !period.paid && !period.isFuture) ||
+    periods.find((period) => !period.paid)
+
+  if (!nextPayable) {
+    throw new Error('No unpaid billing period is available for this bill.')
+  }
+
+  return {
+    periods,
+    nextPayable,
+  }
+}
+
+function calculateBillStatus(bill: BillItem, todayStr: string): BillStatus {
+  const nextPayable = getBillPaymentOptions(bill, new Date(`${todayStr}T00:00:00`)).nextPayable
+  const due = nextPayable.periodDate || getCurrentDueDate(bill, todayStr)
   if (!due) return 'Unpaid'
 
   if (due < todayStr) {
@@ -309,13 +466,20 @@ function calculateBillStatus(bill: BillItem, todayStr: string = '2026-10-19'): B
 
 export const billsService = {
   async getBills(companyFilter?: string): Promise<BillItem[]> {
-    const allBills = getStoredBills()
+    const allBills = getStoredBills().map((bill) => ({
+      ...bill,
+      billingCycle: normalizeRecurring(bill.billingCycle),
+    }))
     const today = new Date().toISOString().split('T')[0] || '2026-10-19'
 
     // Dynamically evaluate statuses based on current date
     const updated = allBills.map((bill) => {
       const currentStatus = calculateBillStatus(bill, today)
-      return { ...bill, status: currentStatus }
+      return {
+        ...bill,
+        dueDate: getCurrentDueDate(bill, today),
+        status: currentStatus,
+      }
     })
 
     if (!companyFilter || companyFilter === 'All Companies') {
@@ -350,7 +514,7 @@ export const billsService = {
       amount: Number(input.amount) || 0,
       dueDate: input.dueDate,
       dueDayOfMonth: dueDay,
-      billingCycle: input.billingCycle || 'Monthly',
+      billingCycle: normalizeRecurring(input.billingCycle),
       reminderDaysBefore: input.reminderDaysBefore ?? 5,
       status: 'Unpaid',
       notes: (input.notes || '').trim(),
@@ -420,6 +584,7 @@ export const billsService = {
     payment: {
       amount: number
       paymentDate: string
+      periodKey?: string
       paymentMethod: string
       refNo?: string
       notes?: string
@@ -433,9 +598,16 @@ export const billsService = {
 
     const bill = bills[index]
     const nowIso = new Date().toISOString()
+    const paymentPeriod = getBillPaymentOptions(bill).nextPayable
+    if (payment.periodKey && payment.periodKey !== paymentPeriod.key) {
+      throw new Error(
+        `Please settle ${paymentPeriod.label} before recording payment for another billing period.`
+      )
+    }
 
     const newPaymentRecord: BillPaymentRecord = {
       id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      periodKey: payment.periodKey || paymentPeriod.key,
       paymentDate: payment.paymentDate,
       amount: payment.amount,
       paymentMethod: payment.paymentMethod,
@@ -445,14 +617,20 @@ export const billsService = {
     }
 
     const existingPayments = bill.payments || []
+    const today = nowIso.split('T')[0] || '2026-10-19'
+    const updatedPayments = [newPaymentRecord, ...existingPayments]
+    const latestPayment = [...updatedPayments].sort((a, b) =>
+      b.paymentDate.localeCompare(a.paymentDate)
+    )[0]
     const updatedBill: BillItem = {
       ...bill,
-      status: 'Paid',
-      lastPaidDate: payment.paymentDate,
-      lastPaymentMethod: payment.paymentMethod,
-      payments: [newPaymentRecord, ...existingPayments],
+      status: 'Unpaid',
+      lastPaidDate: latestPayment?.paymentDate,
+      lastPaymentMethod: latestPayment?.paymentMethod,
+      payments: updatedPayments,
       updatedAt: nowIso,
     }
+    updatedBill.status = calculateBillStatus(updatedBill, today)
 
     bills[index] = updatedBill
     saveBills(bills)
@@ -468,9 +646,20 @@ export const billsService = {
 
     const bill = bills[index]
     const today = new Date().toISOString().split('T')[0] || '2026-10-19'
+    const recurring = normalizeRecurring(bill.billingCycle)
+    const currentPeriod = getPeriodKey(today, recurring)
+    const updatedPayments = (bill.payments || []).filter(
+      (payment) => getPaymentPeriodKey(payment, recurring) !== currentPeriod
+    )
+    const latestPayment = [...updatedPayments].sort((a, b) =>
+      b.paymentDate.localeCompare(a.paymentDate)
+    )[0]
     const updatedBill: BillItem = {
       ...bill,
+      payments: updatedPayments,
       status: 'Unpaid',
+      lastPaidDate: latestPayment?.paymentDate,
+      lastPaymentMethod: latestPayment?.paymentMethod,
       updatedAt: new Date().toISOString(),
     }
     updatedBill.status = calculateBillStatus(updatedBill, today)
@@ -491,6 +680,7 @@ export const billsService = {
     return this.recordPayment(id, {
       paymentDate: today,
       amount: bill.amount,
+      periodKey: getBillPaymentOptions(bill).nextPayable.key,
       paymentMethod,
       notes: 'Marked as paid',
     })
@@ -540,14 +730,16 @@ export const billsService = {
     }
   },
 
-  getReminders(bills: BillItem[], todayStr: string = '2026-10-19'): BillReminder[] {
+  getReminders(bills: BillItem[], todayStr: string = new Date().toISOString().split('T')[0] || '2026-10-19'): BillReminder[] {
     const reminders: BillReminder[] = []
     const todayObj = new Date(todayStr + 'T00:00:00')
 
     bills.forEach((b) => {
-      if (b.status === 'Paid') return
+      const dueDate = getBillPaymentOptions(b, new Date(`${todayStr}T00:00:00`)).nextPayable
+      if (!dueDate) return
 
-      const dueDateObj = new Date(b.dueDate + 'T00:00:00')
+      const dueDateValue = dueDate.periodDate || getCurrentDueDate(b, todayStr)
+      const dueDateObj = new Date(dueDateValue + 'T00:00:00')
       const diffTime = dueDateObj.getTime() - todayObj.getTime()
       const daysDiff = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
@@ -556,7 +748,7 @@ export const billsService = {
           bill: b,
           type: 'overdue',
           daysDiff: Math.abs(daysDiff),
-          message: `${b.billerName} (${b.company}) was due on ${b.dueDate} (${Math.abs(daysDiff)} day${
+          message: `${b.billerName} (${b.company}) was due on ${dueDateValue} (${Math.abs(daysDiff)} day${
             Math.abs(daysDiff) > 1 ? 's' : ''
           } overdue)`,
         })
@@ -574,7 +766,7 @@ export const billsService = {
           daysDiff,
           message: `${b.billerName} (${b.company}) is due in ${daysDiff} day${
             daysDiff > 1 ? 's' : ''
-          } (${b.dueDate})`,
+          } (${dueDateValue})`,
         })
       }
     })

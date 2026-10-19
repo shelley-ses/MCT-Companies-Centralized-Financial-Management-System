@@ -171,3 +171,22 @@ CREATE TABLE IF NOT EXISTS staff_credits_repayment (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- 14. Bills Table
+CREATE TABLE IF NOT EXISTS bills (
+    bill_id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
+    bill_name VARCHAR(255) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    account_no VARCHAR(100),
+    amount NUMERIC(15, 2) NOT NULL,
+    recurring VARCHAR(50) NOT NULL DEFAULT 'monthly',
+    due_date DATE NOT NULL,
+    due_date_reminder INTEGER NOT NULL DEFAULT 3,
+    notes TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'unpaid',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT bills_amount_positive CHECK (amount > 0),
+    CONSTRAINT bills_due_date_reminder_nonnegative CHECK (due_date_reminder >= 0)
+);
