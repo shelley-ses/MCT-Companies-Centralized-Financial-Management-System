@@ -259,10 +259,12 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                     {period.key === paymentPeriod?.key
                       ? 'Next to pay'
                       : period.paid
-                      ? 'Paid'
+                      ? period.isFuture
+                        ? 'Paid (Advance)'
+                        : 'Paid'
                       : period.isFuture
-                      ? 'Available next'
-                      : 'Outstanding'}
+                      ? 'Upcoming'
+                      : 'Overdue'}
                   </span>
                 </div>
               ))}

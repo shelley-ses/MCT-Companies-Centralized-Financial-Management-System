@@ -87,7 +87,8 @@ class BillsService:
                 "is_future": is_future,
             })
             if period_date >= as_of and sum(1 for item in periods if item["is_future"]) >= include_future:
-                break
+                if not any(item.period_key > key for item in bill.payments):
+                    break
             period_date = _add_period(period_date, recurring)
         return periods
 
@@ -99,12 +100,16 @@ class BillsService:
         )
 
     def _status(self, bill: Bill, as_of: date = date.today()) -> str:
-        next_period = self._next_period(bill, as_of)
-        if not next_period:
+        periods = self._periods(bill, as_of)
+        unpaid_past_or_current = next(
+            (p for p in periods if not p["paid"] and not p["is_future"]),
+            None,
+        )
+        if not unpaid_past_or_current:
             return "paid"
-        if next_period["period_date"] < as_of:
+        if unpaid_past_or_current["period_date"] < as_of:
             return "overdue"
-        if (next_period["period_date"] - as_of).days <= bill.due_date_reminder:
+        if (unpaid_past_or_current["period_date"] - as_of).days <= bill.due_date_reminder:
             return "due soon"
         return "unpaid"
 

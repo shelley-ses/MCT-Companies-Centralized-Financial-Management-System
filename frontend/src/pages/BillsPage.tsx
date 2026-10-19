@@ -1514,33 +1514,57 @@ export const BillsPage: React.FC = () => {
                     {selectedDetailBill.billingCycle} periods
                   </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {getBillPaymentPeriods(selectedDetailBill).map((period) => (
-                    <div
-                      key={period.key}
-                      className={cn(
-                        'p-2 rounded-lg border text-[11px]',
-                        period.paid
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          : 'bg-white border-slate-200 text-slate-500'
-                      )}
-                    >
-                      <div className="font-semibold truncate">{period.label}</div>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        {period.paid ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-600" />
-                            <span>Paid</span>
-                          </>
-                        ) : (
-                          <>
-                            <Clock className="w-3 h-3 text-slate-400" />
-                            <span>Not paid</span>
-                          </>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
+                  {getBillPaymentPeriods(selectedDetailBill).map((period) => {
+                    const isNext = period.key === selectedDetailNextPeriod?.key
+                    return (
+                      <div
+                        key={period.key}
+                        className={cn(
+                          'p-2.5 rounded-xl border text-[11px] transition-all',
+                          isNext
+                            ? 'bg-amber-50 border-amber-300 text-amber-900 ring-2 ring-amber-300/60 shadow-xs'
+                            : period.paid
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            : period.isFuture
+                            ? 'bg-white border-slate-200 text-slate-500'
+                            : 'bg-rose-50 border-rose-200 text-rose-800'
+                        )}
+                      >
+                        <div className="font-semibold truncate text-xs">{period.label}</div>
+                        <div className="flex items-center gap-1 mt-1">
+                          {period.paid ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="font-medium">
+                                {period.isFuture ? 'Paid (Advance)' : 'Paid'}
+                              </span>
+                            </>
+                          ) : isNext ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span className="font-bold">Next to pay</span>
+                            </>
+                          ) : period.isFuture ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>Upcoming</span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                              <span className="font-medium">Overdue</span>
+                            </>
+                          )}
+                        </div>
+                        {period.paid && period.paymentDate && (
+                          <div className="text-[10px] opacity-75 mt-0.5 truncate">
+                            Paid {period.paymentDate}
+                          </div>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 
