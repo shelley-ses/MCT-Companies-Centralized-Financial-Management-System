@@ -5,7 +5,7 @@ from app.models.audit_log import AuditLog
 from app.models.finance import Category, CashInflow, Sale, Expense, Budget
 from app.models.loan import Loan, LoanRepayment
 from app.models.staff_credit import StaffCredit, StaffCreditRepayment
-from app.models.bills import Bill
+from app.models.bills import Bill, BillPayment
 
 __all__ = [
     "Company",
@@ -22,4 +22,5 @@ __all__ = [
     "StaffCredit",
     "StaffCreditRepayment",
     "Bill",
+    "BillPayment",
 ]

@@ -9,6 +9,34 @@ export interface BillPaymentRecord {
   createdAt: string
 }
 
+type BackendBill = {
+  bill_id: number
+  company_id?: number
+  company?: string
+  bill_name: string
+  category: string
+  account_no?: string
+  amount: number | string
+  recurring: 'daily' | 'monthly' | 'yearly'
+  due_date: string
+  next_period_date?: string
+  due_date_reminder: number
+  notes?: string
+  status: 'unpaid' | 'paid' | 'overdue' | 'due soon'
+  payments?: Array<{
+    bill_payment_id: number
+    period_key: string
+    payment_date: string
+    amount: number | string
+    payment_method: string
+    reference_no?: string
+    notes?: string
+    created_at?: string
+  }>
+  created_at?: string
+  updated_at?: string
+}
+
 export type BillCategory =
   | 'Electricity'
   | 'Water'
@@ -293,6 +321,64 @@ function saveBills(bills: BillItem[]): void {
   } catch (err) {
     console.error('Failed to save bills to localStorage:', err)
   }
+
+  function backendHeaders(): HeadersInit {
+    const token =
+      typeof window !== 'undefined' ? sessionStorage.getItem('mct_access_token') : null
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    }
+  }
+
+  function mapBackendBill(data: BackendBill): BillItem {
+    const recurring =
+      data.recurring === 'daily' ? 'Daily' : data.recurring === 'yearly' ? 'Yearly' : 'Monthly'
+    const payments = (data.payments || []).map((payment) => ({
+      id: String(payment.bill_payment_id),
+      periodKey: payment.period_key,
+      paymentDate: payment.payment_date,
+      amount: Number(payment.amount),
+      paymentMethod: payment.payment_method,
+      refNo: payment.reference_no,
+      notes: payment.notes,
+      createdAt: payment.created_at || payment.payment_date,
+    }))
+    const latestPayment = payments[0]
+    return {
+      id: String(data.bill_id),
+      billerName: data.bill_name,
+      company: data.company || '',
+      category: data.category,
+      accountNo: data.account_no || '',
+      amount: Number(data.amount),
+      dueDate: data.next_period_date || data.due_date,
+      dueDayOfMonth: Number((data.next_period_date || data.due_date).slice(8, 10)),
+      billingCycle: recurring,
+      reminderDaysBefore: data.due_date_reminder,
+      status:
+        data.status === 'paid'
+          ? 'Paid'
+          : data.status === 'overdue'
+          ? 'Overdue'
+          : data.status === 'due soon'
+          ? 'Due Soon'
+          : 'Unpaid',
+      notes: data.notes || '',
+      lastPaidDate: latestPayment?.paymentDate,
+      lastPaymentMethod: latestPayment?.paymentMethod,
+      payments,
+      createdAt: data.created_at || new Date().toISOString(),
+      updatedAt: data.updated_at || new Date().toISOString(),
+    }
+  }
+
+  async function getBackendError(response: Response): Promise<Error> {
+    const body = await response.json().catch(() => ({}))
+    return new Error(
+      typeof body.detail === 'string' ? body.detail : `Bills request failed (${response.status}).`
+    )
+  }
 }
 
 function normalizeRecurring(value: string | undefined): BillRecurring {
@@ -466,6 +552,20 @@ function calculateBillStatus(bill: BillItem, todayStr: string): BillStatus {
 
 export const billsService = {
   async getBills(companyFilter?: string): Promise<BillItem[]> {
+    try {
+      const query = companyFilter && companyFilter !== 'All Companies'
+        ? `?company_name=${encodeURIComponent(companyFilter)}`
+        : ''
+      const response = await fetch(`/api/v1/bills${query}`, { headers: backendHeaders() })
+      if (response.ok) {
+        const mapped = (await response.json()).map(mapBackendBill)
+        saveBills(mapped)
+        return mapped
+      }
+    } catch (error) {
+      console.warn('Backend GET /bills failed; using local bill storage.', error)
+    }
+
     const allBills = getStoredBills().map((bill) => ({
       ...bill,
       billingCycle: normalizeRecurring(bill.billingCycle),
@@ -496,6 +596,29 @@ export const billsService = {
   },
 
   async createBill(input: NewBillInput): Promise<BillItem> {
+    try {
+      const response = await fetch('/api/v1/bills', {
+        method: 'POST',
+        headers: backendHeaders(),
+        body: JSON.stringify({
+          company: input.company,
+          bill_name: input.billerName,
+          category: input.category,
+          account_no: input.accountNo || null,
+          amount: input.amount,
+          recurring: (input.billingCycle || 'Monthly').toLowerCase(),
+          due_date: input.dueDate,
+          due_date_reminder: input.reminderDaysBefore ?? 5,
+          notes: input.notes || null,
+        }),
+      })
+      if (response.ok) return mapBackendBill(await response.json())
+      throw await getBackendError(response)
+    } catch (error: any) {
+      if (error?.message && !error.message.includes('fetch')) throw error
+      console.warn('Backend POST /bills failed; creating local bill.', error)
+    }
+
     const bills = getStoredBills()
     const nowIso = new Date().toISOString()
     const today = nowIso.split('T')[0]
@@ -530,6 +653,30 @@ export const billsService = {
   },
 
   async updateBill(id: string, input: UpdateBillInput): Promise<BillItem> {
+    try {
+      const payload: Record<string, unknown> = {}
+      if (input.billerName !== undefined) payload.bill_name = input.billerName
+      if (input.company !== undefined) payload.company = input.company
+      if (input.category !== undefined) payload.category = input.category
+      if (input.accountNo !== undefined) payload.account_no = input.accountNo
+      if (input.amount !== undefined) payload.amount = input.amount
+      if (input.billingCycle !== undefined) payload.recurring = input.billingCycle.toLowerCase()
+      if (input.dueDate !== undefined) payload.due_date = input.dueDate
+      if (input.reminderDaysBefore !== undefined) payload.due_date_reminder = input.reminderDaysBefore
+      if (input.notes !== undefined) payload.notes = input.notes
+
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: backendHeaders(),
+        body: JSON.stringify(payload),
+      })
+      if (response.ok) return mapBackendBill(await response.json())
+      throw await getBackendError(response)
+    } catch (error: any) {
+      if (error?.message && !error.message.includes('fetch')) throw error
+      console.warn('Backend PATCH /bills failed; updating local bill.', error)
+    }
+
     const bills = getStoredBills()
     const index = bills.findIndex((b) => b.id === id)
     if (index === -1) {
@@ -573,6 +720,18 @@ export const billsService = {
   },
 
   async deleteBill(id: string): Promise<boolean> {
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: backendHeaders(),
+      })
+      if (response.ok) return true
+      throw await getBackendError(response)
+    } catch (error: any) {
+      if (error?.message && !error.message.includes('fetch')) throw error
+      console.warn('Backend DELETE /bills failed; deleting local bill.', error)
+    }
+
     const bills = getStoredBills()
     const filtered = bills.filter((b) => b.id !== id)
     saveBills(filtered)
@@ -590,6 +749,26 @@ export const billsService = {
       notes?: string
     }
   ): Promise<BillItem> {
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/payments`, {
+        method: 'POST',
+        headers: backendHeaders(),
+        body: JSON.stringify({
+          period_key: payment.periodKey,
+          payment_date: payment.paymentDate,
+          amount: payment.amount,
+          payment_method: payment.paymentMethod,
+          reference_no: payment.refNo || null,
+          notes: payment.notes || null,
+        }),
+      })
+      if (response.ok) return mapBackendBill(await response.json())
+      throw await getBackendError(response)
+    } catch (error: any) {
+      if (error?.message && !error.message.includes('fetch')) throw error
+      console.warn('Backend POST /bills/payment failed; recording local payment.', error)
+    }
+
     const bills = getStoredBills()
     const index = bills.findIndex((b) => b.id === id)
     if (index === -1) {
@@ -638,6 +817,18 @@ export const billsService = {
   },
 
   async markAsUnpaid(id: string): Promise<BillItem> {
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/latest-payment`, {
+        method: 'DELETE',
+        headers: backendHeaders(),
+      })
+      if (response.ok) return mapBackendBill(await response.json())
+      throw await getBackendError(response)
+    } catch (error: any) {
+      if (error?.message && !error.message.includes('fetch')) throw error
+      console.warn('Backend DELETE /bills/latest-payment failed; updating local bill.', error)
+    }
+
     const bills = getStoredBills()
     const index = bills.findIndex((b) => b.id === id)
     if (index === -1) {
