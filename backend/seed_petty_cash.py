@@ -26,20 +26,21 @@ START_DATE = date(date.today().year, 8, 1)
 
 # Petty cash sub-categories, same list as the expense form
 PETTY_CASH_ITEMS = [
-    ("Office Supplies & Stationery", "Bond paper and ballpens", (120, 650)),
-    ("Courier & Delivery Services", "LBC documents to supplier", (180, 450)),
-    ("Transportation & Fare (Taxi/Grab/Jeepney)", "Grab to bank deposit", (150, 520)),
-    ("Gasoline & Fuel Allowance", "Motorcycle fuel for errands", (300, 900)),
-    ("Toll Fees & Parking", "Parking at city hall", (60, 250)),
-    ("Staff Overtime Meals & Snacks", "Overtime merienda", (250, 1200)),
-    ("Pantry Supplies & Drinking Water", "Water refill and coffee", (180, 700)),
-    ("Cleaning Materials & Janitorial Supplies", "Detergent and mops", (200, 850)),
-    ("Emergency Kitchen & Store Supplies", "Gas tank refill", (450, 1500)),
-    ("Minor Hardware Tools & Repairs", "Faucet repair parts", (150, 980)),
-    ("Electrical & Light Bulb Replacements", "LED bulbs", (180, 600)),
-    ("First Aid & Emergency Medicine", "First aid kit restock", (150, 500)),
-    ("Notarial & Legal Documentation Fees", "Notarized affidavit", (200, 600)),
-    ("Representation & Client Refreshments", "Client meeting snacks", (350, 1400)),
+    ("Office Supplies", "Bond paper and ballpens", (120, 650)),
+    ("Courier", "LBC documents to supplier", (180, 450)),
+    ("Transportation", "Grab to bank deposit", (150, 520)),
+    ("Fuel", "Motorcycle fuel for errands", (300, 900)),
+    ("Toll & Parking", "Parking at city hall", (60, 250)),
+    ("Meals & Snacks", "Overtime merienda", (250, 1200)),
+    ("Pantry", "Water refill and coffee", (180, 700)),
+    ("Cleaning", "Detergent and mops", (200, 850)),
+    ("Kitchen Supplies", "Gas tank refill", (450, 1500)),
+    ("Repairs", "Faucet repair parts", (150, 980)),
+    ("Electrical", "LED bulbs", (180, 600)),
+    ("First Aid", "First aid kit restock", (150, 500)),
+    ("Notarial Fees", "Notarized affidavit", (200, 600)),
+    ("Representation", "Client meeting snacks", (350, 1400)),
+    ("Rent", "Stall space rental", (800, 1500)),
 ]
 
 # Per-company top-up size (PHP), low-balance alert, and whether to leave the wallet low

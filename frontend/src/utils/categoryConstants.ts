@@ -12,6 +12,13 @@ export const CATEGORY_COLORS: Record<string, string> = {
   'SSS': '#14B8A6',             // Teal
   'Hotel Supplies': '#EC4899',  // Pink
   'Revolving Funds': '#84CC16', // Lime
+  // Sales categories
+  'Sales Revenue': '#2563EB',
+  'Service Income': '#0D9488',
+  'Product Sales': '#7C3AED',
+  'Catering': '#DB2777',
+  'Event Booking': '#EA580C',
+  'Other Income': '#65A30D',
 }
 
 export const CATEGORY_LIST: TransactionCategory[] = [
@@ -26,4 +33,14 @@ export const CATEGORY_LIST: TransactionCategory[] = [
   'SSS',
   'Hotel Supplies',
   'Revolving Funds',
+]
+
+// Categories offered on the Add Sales forms
+export const SALES_CATEGORY_LIST: string[] = [
+  'Sales Revenue',
+  'Service Income',
+  'Product Sales',
+  'Catering',
+  'Event Booking',
+  'Other Income',
 ]

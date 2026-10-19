@@ -27,6 +27,7 @@ import type { DashboardTransactionItem } from '@/services/dashboardService'
 import {
   CATEGORY_COLORS,
   CATEGORY_LIST,
+  SALES_CATEGORY_LIST,
 } from '@/utils/categoryConstants'
 
 export { CATEGORY_COLORS, CATEGORY_LIST }
@@ -38,7 +39,7 @@ interface CategorySummaryChartProps {
   defaultChartType?: 'bar' | 'pie'
 }
 
-// Number of categories shown before collapsing the rest into "Others"
+// Number of categories always shown; the rest go into "Others" and the See more dropdown
 const COLLAPSED_CATEGORY_COUNT = 5
 const OTHERS_COLOR = '#94A3B8'
 
@@ -53,7 +54,19 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
     defaultChartType || (type === 'expense' ? 'pie' : 'bar')
   )
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false)
-  const [showAll, setShowAll] = React.useState(false)
+  const [isMoreOpen, setIsMoreOpen] = React.useState(false)
+  const moreRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    if (!isMoreOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setIsMoreOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isMoreOpen])
   const dropdownRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
@@ -72,12 +85,9 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
   // Income uses Deposit amounts; Expense uses Withdrawal amounts
   const { categoryData, totalAmount } = React.useMemo(() => {
     const sums: Record<string, number> = {}
-    CATEGORY_LIST.forEach((cat) => {
-      sums[cat] = 0
-    })
 
     transactions.forEach((tx) => {
-      const cat = tx.category || 'Petty Cash'
+      const cat = !tx.category || tx.category === 'None' ? 'Uncategorized' : tx.category
       const val = type === 'income' ? (tx.deposit || tx.amount || 0) : (tx.withdrawal || tx.amount || 0)
       sums[cat] = (sums[cat] || 0) + val
     })
@@ -87,26 +97,33 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
     const extraColors: Record<string, string> = {
       General: '#64748B',
       Other: '#767B89',
+      Uncategorized: '#64748B',
     }
 
-    // Only categories with a value, largest first
-    const data = Object.keys(sums)
+    // Categories with a value, largest first, padded with the standard list so at least 5 always show
+    const withValue = Object.keys(sums)
       .filter((cat) => sums[cat] > 0)
       .sort((a, b) => sums[b] - sums[a])
+    const padding = (type === 'income' ? SALES_CATEGORY_LIST : CATEGORY_LIST)
+      .filter((cat) => !withValue.includes(cat))
+      .slice(0, Math.max(COLLAPSED_CATEGORY_COUNT - withValue.length, 0))
+
+    const data = [...withValue, ...padding]
       .map((cat) => ({
         category: cat,
-        amount: sums[cat],
+        amount: sums[cat] || 0,
         color: (CATEGORY_COLORS as Record<string, string>)[cat] || extraColors[cat] || '#6366F1',
-        percentage: total > 0 ? (sums[cat] / total) * 100 : 0,
+        percentage: total > 0 ? ((sums[cat] || 0) / total) * 100 : 0,
       }))
 
     return { categoryData: data, totalAmount: total }
   }, [transactions, type])
 
-  // Collapsed view: top N categories plus a single "Others" bucket for the rest
-  const hiddenCount = Math.max(categoryData.length - COLLAPSED_CATEGORY_COUNT, 0)
+  // Top N categories plus a single "Others" bucket; the hidden ones are listed in the See more dropdown
+  const hiddenData = categoryData.slice(COLLAPSED_CATEGORY_COUNT)
+  const hiddenCount = hiddenData.length
   const displayData = React.useMemo(() => {
-    if (showAll || hiddenCount === 0) return categoryData
+    if (hiddenCount === 0) return categoryData
     const rest = categoryData.slice(COLLAPSED_CATEGORY_COUNT)
     const restAmount = rest.reduce((sum, c) => sum + c.amount, 0)
     return [
@@ -118,7 +135,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
         percentage: totalAmount > 0 ? (restAmount / totalAmount) * 100 : 0,
       },
     ]
-  }, [categoryData, showAll, hiddenCount, totalAmount])
+  }, [categoryData, hiddenCount, totalAmount])
 
   const title = type === 'income' ? 'Income Summary' : 'Expense Summary'
   const subtitle =
@@ -305,7 +322,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={displayData}
+                data={displayData.filter((d) => d.amount > 0)}
                 dataKey="amount"
                 nameKey="category"
                 cx="50%"
@@ -320,7 +337,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
                   return `${cat} (${pct}%)`
                 }}
               >
-                {displayData.map((entry) => (
+                {displayData.filter((d) => d.amount > 0).map((entry) => (
                     <Cell
                       key={entry.category}
                       fill={entry.color}
@@ -361,7 +378,7 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
       <div className="pt-3 mt-2 border-t border-slate-100">
         <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 text-2xs sm:text-xs">
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            {displayData.map((cat) => (
+            {displayData.filter((cat) => cat.category !== 'Others').map((cat) => (
               <div key={cat.category} className="flex items-center gap-1.5">
                 <span
                   className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -374,14 +391,42 @@ export const CategorySummaryChart: React.FC<CategorySummaryChartProps> = ({
               </div>
             ))}
             {hiddenCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowAll((prev) => !prev)}
-                className="font-semibold text-primary hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary rounded"
-                aria-expanded={showAll}
-              >
-                {showAll ? 'See less' : `See more (+${hiddenCount})`}
-              </button>
+              <div ref={moreRef} className="relative inline-block">
+                <button
+                  type="button"
+                  onClick={() => setIsMoreOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-1 font-semibold text-primary hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary rounded"
+                  aria-expanded={isMoreOpen}
+                  aria-haspopup="true"
+                >
+                  See more (+{hiddenCount})
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+                {isMoreOpen && (
+                  <div className="absolute left-0 bottom-full mb-1.5 w-60 max-h-64 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-xl p-1.5 z-40 animate-in fade-in-50 zoom-in-95 duration-150">
+                    <p className="px-2.5 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-fg">
+                      Others ({formatPHP(displayData[displayData.length - 1]?.amount || 0)})
+                    </p>
+                    {hiddenData.map((cat) => (
+                      <div
+                        key={cat.category}
+                        className="flex items-center justify-between gap-3 px-2.5 py-1.5 rounded-lg text-xs hover:bg-slate-50"
+                      >
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: cat.color }}
+                          />
+                          <span className="truncate text-focus font-medium">{cat.category}</span>
+                        </span>
+                        <span className="shrink-0 font-semibold text-focus tabular-nums">
+                          {formatPHP(cat.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

@@ -655,7 +655,7 @@ export const expenseService = {
       amount: expense.withdrawal,
       withdrawal: expense.withdrawal,
       deposit: 0,
-      category: (expense.category || 'Petty Cash') as any,
+      category: (expense.category || 'Uncategorized') as any,
       paymentMethod: expense.paymentMethod,
       status: expense.status,
       auditStatus: expense.auditStatus,

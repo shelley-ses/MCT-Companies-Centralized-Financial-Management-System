@@ -49,8 +49,9 @@ const monthStartIso = () => `${todayIso().slice(0, 8)}01`
 export const PettyCashPage: React.FC = () => {
   const { user } = useSession()
   const userRole = (user?.role || '').toLowerCase()
-  // Admin, Finance and Audit see every company's wallet; only Finance can move money or change settings
-  const canManage = userRole === 'finance'
+  // Admin, Finance and Audit see every company's wallet. Finance and company users (Company,
+  // Supervisor) can top up and change settings; Admin and auditors are view-only.
+  const canManage = userRole === 'finance' || userRole === 'company' || userRole === 'supervisor'
   const isCompanyScoped =
     userRole === 'supervisor' || userRole === 'company' || userRole === 'company auditor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
