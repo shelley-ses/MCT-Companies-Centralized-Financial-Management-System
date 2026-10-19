@@ -151,6 +151,7 @@ def get_expenses(
                 company_name=c_name,
                 category_id=exp.category_id,
                 category_name=cat_name or "None",
+                payment_method=exp.payment_method,
                 created_by=exp.created_by,
                 expense_date=exp.expense_date,
                 reference_no=exp.reference_no,

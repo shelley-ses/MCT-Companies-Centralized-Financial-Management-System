@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { SALES_CATEGORY_LIST } from '@/utils/categoryConstants'
 import {
   Dialog,
   DialogContent,
@@ -43,14 +44,7 @@ const PAYMENT_METHOD_OPTIONS = [
   'In-house',
 ]
 
-const DEFAULT_SALES_CATEGORIES = [
-  'Sales Revenue',
-  'Service Income',
-  'Product Sales',
-  'Catering',
-  'Event Booking',
-  'Other Income',
-]
+const DEFAULT_SALES_CATEGORIES = SALES_CATEGORY_LIST
 
 export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   open,
@@ -171,6 +165,7 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
     setIsSubmitting(true)
     setError('')
     try {
+      const parsedAmount = parseFloat(amount.replace(/,/g, ''))
       const catTrimmed = category.trim() || DEFAULT_SALES_CATEGORIES[0]
       if (catTrimmed && !categoryOptions.includes(catTrimmed)) {
         expenseService.createCategory(catTrimmed).catch((e) => console.warn('Could not persist category:', e))

@@ -32,7 +32,7 @@ export interface NewSalesInput {
   chequeNo?: string
   particulars: string
   amount: number
-  category?: string        // optional (category is only used in expense)
+  category?: string        // optional sales category (e.g. Sales Revenue, Catering)
   paymentMethod?: string  // payment method (GCash, Cash, etc.)
   company: string
   status: 'Paid' | 'Pending'

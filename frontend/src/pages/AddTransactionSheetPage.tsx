@@ -41,6 +41,7 @@ import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
 import { formatParticularsString, type ParticularItem } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
+import { SALES_CATEGORY_LIST } from '@/utils/categoryConstants'
 
 interface ParticularsRow {
   id: string
@@ -74,21 +75,22 @@ const EXPENSE_PAYMENT_METHODS = [
 ] as const
 
 export const PREDEFINED_PETTY_CASH_CATEGORIES = [
-  'Office Supplies & Stationery',
-  'Courier & Delivery Services',
-  'Transportation & Fare (Taxi/Grab/Jeepney)',
-  'Gasoline & Fuel Allowance',
-  'Toll Fees & Parking',
-  'Staff Overtime Meals & Snacks',
-  'Pantry Supplies & Drinking Water',
-  'Cleaning Materials & Janitorial Supplies',
-  'Emergency Kitchen & Store Supplies',
-  'Minor Hardware Tools & Repairs',
-  'Electrical & Light Bulb Replacements',
-  'First Aid & Emergency Medicine',
-  'Notarial & Legal Documentation Fees',
-  'Representation & Client Refreshments',
-  'Emergency Errand & Logistics Expense',
+  'Office Supplies',
+  'Courier',
+  'Transportation',
+  'Fuel',
+  'Toll & Parking',
+  'Meals & Snacks',
+  'Pantry',
+  'Cleaning',
+  'Kitchen Supplies',
+  'Repairs',
+  'Electrical',
+  'First Aid',
+  'Notarial Fees',
+  'Representation',
+  'Errands',
+  'Rent',
 ] as const
 
 export const PREDEFINED_PETTY_CASH_PARTICULARS = PREDEFINED_PETTY_CASH_CATEGORIES
@@ -213,8 +215,13 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     }
   }, [])
 
-  // Category loader: only for Expense transactions
+  // Category loader: Sales use the fixed sales list; Expenses merge defaults with DB categories
   React.useEffect(() => {
+    if (transactionType === 'Sales') {
+      setCategories(SALES_CATEGORY_LIST)
+      setCategory((prev) => (SALES_CATEGORY_LIST.includes(prev) ? prev : SALES_CATEGORY_LIST[0]))
+      return
+    }
     if (transactionType !== 'Expense') return
 
     let mounted = true
@@ -460,6 +467,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           amount: grandTotal,
           paymentMethod: paymentMethod,
           chequeNo: chequeNo.trim() || undefined,
+          category: category || SALES_CATEGORY_LIST[0],
           status: 'Paid',
           items: itemizedParticulars,
         })
@@ -604,7 +612,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
         <div
           className={cn(
             'grid gap-3.5 sm:gap-4 items-start',
-            transactionType === 'Sales' || isPettyCash
+            isPettyCash
               ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
               : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5'
           )}
@@ -689,7 +697,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           </div>
 
           {/* 4. Category (Expense only; hidden when Payment Method is Petty Cash since category is auto-set to Petty Cash and specific categories are selected in the spreadsheet table column below) */}
-          {transactionType === 'Expense' && !isPettyCash && (
+          {!isPettyCash && (
             <div className="space-y-1.5 flex flex-col justify-start">
               <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
                 <Tag className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -704,7 +712,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   } else {
                     const newCat = e.target.value
                     setCategory(newCat)
-                    if (newCat.trim().toLowerCase() === 'petty cash') {
+                    if (transactionType === 'Expense' && newCat.trim().toLowerCase() === 'petty cash') {
                       setPaymentMethod('Petty Cash')
                     }
                   }

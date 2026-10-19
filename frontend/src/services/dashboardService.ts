@@ -1,4 +1,6 @@
 import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { salesService } from './salesService'
+import { expenseService } from './expenseService'
 import type { ParticularItem } from '@/utils/particularsUtils'
 
 export interface DashboardKpis {
@@ -713,11 +715,18 @@ export const dashboardService = {
   async getDashboardData(filters?: {
     company?: string
   }): Promise<DashboardData> {
-    // Artificial slight latency for smooth realistic feel
-    await new Promise((resolve) => setTimeout(resolve, 150))
-
-    let transactions = [...inMemoryTransactions]
     const isCompanySpecific = filters?.company && filters.company !== 'All Companies'
+
+    // Real sales and expenses from the backend (each service falls back to its local cache if offline)
+    const companyFilter = isCompanySpecific ? filters!.company : undefined
+    const [sales, expenses] = await Promise.all([
+      salesService.getSales(companyFilter),
+      expenseService.getExpenses({ company: companyFilter }),
+    ])
+    let transactions: DashboardTransactionItem[] = [
+      ...sales.map((s) => salesService.toDashboardTransaction(s)),
+      ...expenses.map((e) => expenseService.toDashboardTransaction(e)),
+    ]
 
     if (isCompanySpecific) {
       transactions = transactions.filter(

@@ -855,7 +855,7 @@ export const SalesPage: React.FC = () => {
                   DEPOSIT
                 </TableHead>
                 <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                  PAYMENT METHOD
+                  CATEGORY
                 </TableHead>
                 <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   NET AMOUNT
@@ -976,9 +976,15 @@ export const SalesPage: React.FC = () => {
                       {sale.deposit > 0 ? formatPHP(sale.deposit) : ''}
                     </TableCell>
 
-                    {/* 6. Payment Method */}
-                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus font-medium truncate text-left">
-                      <span className="truncate font-semibold text-focus" title={sale.paymentMethod || 'Cash'}>
+                    {/* 6. Category + Payment Method */}
+                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus font-medium text-left">
+                      <span
+                        className="truncate block font-semibold text-focus"
+                        title={sale.category && sale.category !== 'None' ? sale.category : 'Uncategorized'}
+                      >
+                        {sale.category && sale.category !== 'None' ? sale.category : 'Uncategorized'}
+                      </span>
+                      <span className="truncate block text-[11px] text-muted-fg" title={sale.paymentMethod || 'Cash'}>
                         {sale.paymentMethod || 'Cash'}
                       </span>
                     </TableCell>
