@@ -23,6 +23,7 @@ import {
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
+import { pettyCashService } from '@/services/pettyCashService'
 
 import { PREDEFINED_PETTY_CASH_CATEGORIES } from '@/pages/AddTransactionSheetPage'
 
@@ -102,6 +103,22 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
   // Petty cash is strictly determined by payment method being Petty Cash
   const isPettyCash = paymentMethod.trim().toLowerCase() === 'petty cash'
+
+  // Petty cash wallet balance for this company (null = unknown / backend unavailable)
+  const [pettyBalance, setPettyBalance] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    if (!open || !isPettyCash) return
+    let isMounted = true
+    pettyCashService
+      .getSummary(assignedCompany)
+      .then((s) => isMounted && setPettyBalance(s.balance))
+      .catch(() => isMounted && setPettyBalance(null))
+    return () => {
+      isMounted = false
+    }
+  }, [open, isPettyCash, assignedCompany])
+  const parsedAmountValue = parseFloat(amount.replace(/,/g, '')) || 0
+  const exceedsPettyCash = isPettyCash && pettyBalance !== null && parsedAmountValue > pettyBalance
 
   // Confirmation dialogue state
   const [isConfirmOpen, setIsConfirmOpen] = React.useState(false)
@@ -216,6 +233,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
       const numAmount = parseFloat(cleanAmount)
       if (isNaN(numAmount) || numAmount < 1.0) {
         errors.amount = 'Withdrawal amount must be at least ₱1.00 (cannot be zero or negative).'
+      } else if (exceedsPettyCash) {
+        errors.amount = `Insufficient petty cash (${formatPHP(pettyBalance ?? 0)} available). Top up petty cash first.`
       }
     }
 
@@ -492,6 +511,16 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                     </option>
                   ))}
                 </select>
+                {isPettyCash && pettyBalance !== null && (
+                  <p
+                    className={cn(
+                      'text-[11px] font-medium',
+                      exceedsPettyCash ? 'text-red-600' : 'text-muted-fg'
+                    )}
+                  >
+                    Petty cash available: <span className="font-semibold">{formatPHP(pettyBalance)}</span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -587,6 +616,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               </Button>
               <Button
                 type="submit"
+                disabled={exceedsPettyCash}
                 className="h-10 px-6 rounded-xl bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold shadow-xs cursor-pointer"
               >
                 Add Expense

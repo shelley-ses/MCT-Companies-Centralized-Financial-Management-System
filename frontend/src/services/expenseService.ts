@@ -118,6 +118,8 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
   }
 }
 
+class ExpenseValidationError extends Error {}
+
 export const expenseService = {
   async getCategories(): Promise<{ category_id: number; name: string }[]> {
     try {
@@ -382,8 +384,15 @@ export const expenseService = {
         inMemoryExpenses = inMemoryExpenses.map((e) => (e.id === id || e.id === `exp_${numericId}` ? mapped : e))
         saveStoredExpenses(inMemoryExpenses)
         return mapped
+      } else if (res.status === 400) {
+        // Validation errors (e.g. insufficient petty cash) must not be applied locally
+        const errData = await res.json().catch(() => ({}))
+        throw new ExpenseValidationError(
+          typeof errData.detail === 'string' ? errData.detail : 'Failed to update expense entry.'
+        )
       }
     } catch (err) {
+      if (err instanceof ExpenseValidationError) throw err
       console.warn('Backend PUT /expenses failed, updating locally:', err)
     }
 
