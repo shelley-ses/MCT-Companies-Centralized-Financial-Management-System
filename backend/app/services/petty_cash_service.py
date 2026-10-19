@@ -192,13 +192,10 @@ class PettyCashService:
         )
 
     def list_summaries(self, start: Optional[date] = None, end: Optional[date] = None) -> List[PettyCashSummaryOut]:
-        """One summary per company that has any petty cash activity."""
+        """One summary per company (wallets with no activity yet show a zero balance)."""
         topups = self._topups()
         expenses = self._petty_cash_expenses()
-        company_ids = {t.company_id for t in topups} | {e["company_id"] for e in expenses if e["company_id"]}
-        if not company_ids:
-            return []
-        companies = self.db.query(Company).filter(Company.company_id.in_(company_ids)).all()
+        companies = self.db.query(Company).all()
         return [
             self._build_summary(
                 company,
