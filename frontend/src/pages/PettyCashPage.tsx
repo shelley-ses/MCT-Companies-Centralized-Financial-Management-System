@@ -49,7 +49,8 @@ const monthStartIso = () => `${todayIso().slice(0, 8)}01`
 export const PettyCashPage: React.FC = () => {
   const { user } = useSession()
   const userRole = (user?.role || '').toLowerCase()
-  const isAudit = userRole === 'audit' || userRole === 'company auditor'
+  // Admin, Finance and Audit see every company's wallet; only Finance can move money or change settings
+  const canManage = userRole === 'finance'
   const isCompanyScoped =
     userRole === 'supervisor' || userRole === 'company' || userRole === 'company auditor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
@@ -91,7 +92,8 @@ export const PettyCashPage: React.FC = () => {
     loanService.getCompanies().then((companies) => {
       if (mounted && companies.length > 0) {
         const names = companies.map((c) => c.company_name).filter(Boolean)
-        setCompanyList(Array.from(new Set(['All Companies', ...names, ...COMPANY_LIST])))
+        // Wallets only exist for companies in the database, so don't mix in the static fallback list
+        setCompanyList(Array.from(new Set(['All Companies', ...names])))
       }
     })
     return () => {
@@ -191,15 +193,14 @@ export const PettyCashPage: React.FC = () => {
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
       {/* 1. Header & Controls */}
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">Petty Cash</h1>
           <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-            Top up each company's petty cash wallet from sales. Expenses paid with
-            &ldquo;Petty Cash&rdquo; are deducted here, not from sales.
+            Top up company&rsquo;s petty cash wallet from sales
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap shrink-0">
           <label className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-stroke/60 bg-white text-xs font-medium shadow-xs">
             <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
             <select
@@ -235,12 +236,12 @@ export const PettyCashPage: React.FC = () => {
               aria-label="End date"
             />
           </div>
-          {!isAudit && !isAllCompanies && (
+          {canManage && !isAllCompanies && (
             <Button
               type="button"
               onClick={() => setIsTopUpOpen(true)}
               disabled={!summary}
-              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer"
+              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer whitespace-nowrap"
             >
               <Plus className="h-4 w-4 shrink-0" />
               <span>Top Up from Sales</span>
@@ -339,7 +340,7 @@ export const PettyCashPage: React.FC = () => {
             <DashboardKpiCard label="Spent" value={formatPHP(summary.periodSpent)} icon={ArrowUpRight} subtext="Petty cash expenses this period" />
           </div>
 
-          {!isAudit && (
+          {canManage && (
             <form onSubmit={handleSaveThreshold} className="flex items-center gap-2 flex-wrap text-xs text-muted-fg">
               <span className="font-medium">Warn me when petty cash falls below</span>
               <div className="relative">
@@ -383,13 +384,13 @@ export const PettyCashPage: React.FC = () => {
                     <th className="px-4 py-3 font-semibold text-right">In</th>
                     <th className="px-4 py-3 font-semibold text-right">Out</th>
                     <th className="px-4 py-3 font-semibold text-right">Balance</th>
-                    {!isAudit && <th className="px-4 py-3" />}
+                    {canManage && <th className="px-4 py-3" />}
                   </tr>
                 </thead>
                 <tbody>
                   {pagedLedger.length === 0 ? (
                     <tr>
-                      <td colSpan={isAudit ? 7 : 8} className="px-4 py-10 text-center text-muted-fg">
+                      <td colSpan={canManage ? 8 : 7} className="px-4 py-10 text-center text-muted-fg">
                         No petty cash activity in this period.
                       </td>
                     </tr>
@@ -428,7 +429,7 @@ export const PettyCashPage: React.FC = () => {
                         <td className="px-4 py-3 text-right tabular-nums font-semibold">
                           {formatPHP(entry.runningBalance)}
                         </td>
-                        {!isAudit && (
+                        {canManage && (
                           <td className="px-4 py-3 text-right">
                             {entry.type === 'topup' && (
                               <button
