@@ -398,7 +398,6 @@ export const authService = {
    * Retrieves the current user session from memory or storage.
    */
   async getSession(): Promise<User | null> {
-    await new Promise((resolve) => setTimeout(resolve, 50))
     if (!inMemorySessionUser && typeof window !== 'undefined') {
       try {
         const stored = sessionStorage.getItem(SESSION_STORAGE_KEY)

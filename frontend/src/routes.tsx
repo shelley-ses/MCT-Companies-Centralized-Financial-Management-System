@@ -1,19 +1,5 @@
+import * as React from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
-import { LandingPage } from '@/pages/LandingPage'
-import { LoginPage } from '@/pages/LoginPage'
-import { DashboardPage } from '@/pages/DashboardPage'
-import { SalesPage } from '@/pages/SalesPage'
-import { ExpensePage } from '@/pages/ExpensePage'
-import { LoanPage } from '@/pages/LoanPage'
-import { LendingPage } from '@/pages/LendingPage'
-import { BillsPage } from '@/pages/BillsPage'
-import { PettyCashPage } from '@/pages/PettyCashPage'
-import { TransactionPage } from '@/pages/TransactionPage'
-import { EmployeePage } from '@/pages/EmployeePage'
-import { UserManagementPage } from '@/pages/UserManagementPage'
-import { ActivityLogPage } from '@/pages/ActivityLogPage'
-import { SettingsPage } from '@/pages/SettingsPage'
-import { AddTransactionSheetPage } from '@/pages/AddTransactionSheetPage'
 import { AppShell } from '@/components/layout/AppShell'
 import {
   ProtectedRoute,
@@ -21,6 +7,53 @@ import {
   AdminOnlyRoute,
   LendingRouteGuard,
 } from '@/components/layout/RouteGuards'
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[60vh] w-full items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <span className="text-xs font-medium text-muted-fg animate-pulse">Loading...</span>
+      </div>
+    </div>
+  )
+}
+
+function lazyPage<P extends object>(
+  importer: () => Promise<{ [key: string]: any }>,
+  name: string
+) {
+  const LazyComponent = React.lazy(() =>
+    importer().then((m) => ({ default: m[name] }))
+  )
+  return function Wrapped(props: P) {
+    return (
+      <React.Suspense fallback={<PageFallback />}>
+        <LazyComponent {...props} />
+      </React.Suspense>
+    )
+  }
+}
+
+// Lazy-loaded routes for code-splitting
+const LandingPage = lazyPage(() => import('@/pages/LandingPage'), 'LandingPage')
+const LoginPage = lazyPage(() => import('@/pages/LoginPage'), 'LoginPage')
+const DashboardPage = lazyPage(() => import('@/pages/DashboardPage'), 'DashboardPage')
+const SalesPage = lazyPage(() => import('@/pages/SalesPage'), 'SalesPage')
+const ExpensePage = lazyPage(() => import('@/pages/ExpensePage'), 'ExpensePage')
+const LoanPage = lazyPage(() => import('@/pages/LoanPage'), 'LoanPage')
+const LendingPage = lazyPage(() => import('@/pages/LendingPage'), 'LendingPage')
+const BillsPage = lazyPage(() => import('@/pages/BillsPage'), 'BillsPage')
+const PettyCashPage = lazyPage(() => import('@/pages/PettyCashPage'), 'PettyCashPage')
+const TransactionPage = lazyPage(() => import('@/pages/TransactionPage'), 'TransactionPage')
+const EmployeePage = lazyPage(() => import('@/pages/EmployeePage'), 'EmployeePage')
+const UserManagementPage = lazyPage(() => import('@/pages/UserManagementPage'), 'UserManagementPage')
+const ActivityLogPage = lazyPage(() => import('@/pages/ActivityLogPage'), 'ActivityLogPage')
+const SettingsPage = lazyPage(() => import('@/pages/SettingsPage'), 'SettingsPage')
+const AddTransactionSheetPage = lazyPage(
+  () => import('@/pages/AddTransactionSheetPage'),
+  'AddTransactionSheetPage'
+)
 
 export const router = createBrowserRouter([
   {

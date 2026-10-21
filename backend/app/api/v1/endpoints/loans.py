@@ -42,7 +42,13 @@ CANONICAL_COMPANY_MAP = {
     14: "FILCAP Prime Holdings Corp.",
 }
 
+from app.core.cache import get_cached, set_cached
+
 def get_supabase_company_mapping(client, db: Optional[Session] = None):
+    cached = get_cached("supabase_loan_company_mapping")
+    if cached:
+        return cached[0], cached[1]
+
     id_to_name = dict(CANONICAL_COMPANY_MAP)
     name_to_id = {v.strip().lower(): k for k, v in CANONICAL_COMPANY_MAP.items()}
 
@@ -64,6 +70,7 @@ def get_supabase_company_mapping(client, db: Optional[Session] = None):
         except Exception:
             pass
 
+    set_cached("supabase_loan_company_mapping", (id_to_name, name_to_id), ttl_seconds=600)
     return id_to_name, name_to_id
 
 

@@ -4,6 +4,7 @@ import logging
 import secrets
 import json
 import hashlib
+import threading
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import jwt
@@ -174,59 +175,56 @@ def _get_application_user(*, email: str | None = None, user_id: int | None = Non
     return None
 
 
+AUTH_CANONICAL_COMPANIES = {
+    1: "MCT Kitchen",
+    2: "MCT Kitchen",
+    3: "MCT Hotel",
+    4: "JK Cafe",
+    5: "JK Cafe",
+    6: "Annex Nine",
+    7: "Merillon",
+    8: "JK Printing",
+    9: "Speedfire",
+    10: "JK Property and Ventures",
+    11: "Golden Sunburst Ventures",
+    12: "Southern Brew",
+    14: "FILCAP Prime Holdings Corp.",
+}
+
+
 def _update_application_user_login(user_id: int) -> None:
-    try:
-        get_supabase_admin_client().table("users").update(
-            {"last_login_at": datetime.now(timezone.utc).isoformat()}
-        ).eq("user_id", user_id).execute()
-    except Exception:
-        pass
-    try:
-        from app.db.session import SessionLocal
-        from app.models.user import User as UserModel
-        db = SessionLocal()
-        u = db.query(UserModel).filter(UserModel.user_id == user_id).first()
-        if u:
-            u.last_login_at = datetime.now(timezone.utc)
-            db.commit()
-        db.close()
-    except Exception:
-        pass
+    def _do_update():
+        try:
+            get_supabase_admin_client().table("users").update(
+                {"last_login_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            from app.db.session import SessionLocal
+            from app.models.user import User as UserModel
+            db = SessionLocal()
+            u = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+            if u:
+                u.last_login_at = datetime.now(timezone.utc)
+                db.commit()
+            db.close()
+        except Exception:
+            pass
+
+    threading.Thread(target=_do_update, daemon=True).start()
 
 
 def _application_user_response(user: dict[str, object]) -> UserResponse:
     company_name = None
     company_id = user.get("company_id")
     if company_id is not None:
-        try:
-            company = (
-                get_supabase_admin_client()
-                .table("company")
-                .select("company_name")
-                .eq("company_id", company_id)
-                .limit(1)
-                .execute()
-                .data
-            )
-            company_name = company[0]["company_name"] if company else None
-        except Exception:
-            company_name = None
-
-        if not company_name:
-            try:
-                from app.db.session import SessionLocal
-                from app.models.company import Company
-                db = SessionLocal()
-                c = db.query(Company).filter(Company.company_id == company_id).first()
-                if c:
-                    company_name = c.company_name
-                db.close()
-            except Exception:
-                pass
+        cid = int(company_id)
+        company_name = AUTH_CANONICAL_COMPANIES.get(cid)
 
     if not company_name:
         clean_email = str(user.get("email") or "").strip().lower()
-        if "filcap" in clean_email or "filcam" in clean_email or company_id == 99 or company_id == 13:
+        if "filcap" in clean_email or "filcam" in clean_email or company_id == 99 or company_id == 13 or company_id == 14:
             company_name = "FilCap Prime Holdings Corp."
         elif "jkproperty" in clean_email or company_id == 10:
             company_name = "JK Property and Ventures"
@@ -269,40 +267,42 @@ def _send_login_otp(email: str, otp: str) -> None:
         )
         return
 
-    payload = json.dumps(
-        {
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [email],
-            "subject": "Your MCT login verification code",
-            "text": (
-                f"Your MCT Financial Management System verification code is {otp}. "
-                f"It expires in {settings.OTP_EXPIRES_SECONDS // 60} minutes."
-            ),
-        }
-    ).encode("utf-8")
-    request = Request(
-        "https://api.resend.com/emails",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
-            "Content-Type": "application/json",
-            "User-Agent": "MCT-Financial-Management-System",
-        },
-        method="POST",
-    )
-
-    try:
-        with urlopen(request, timeout=10) as response:
-            if response.status < 200 or response.status >= 300:
-                logger.warning("Unexpected response from Resend for %s: %s", email, response.status)
-    except Exception as exc:
-        logger.warning(
-            "Resend email delivery failed for %s (fallback to seeded code '%s' or '%s'): %s",
-            email,
-            SEEDED_OTP_CODE,
-            otp,
-            exc,
+    def _dispatch_email():
+        payload = json.dumps(
+            {
+                "from": settings.RESEND_FROM_EMAIL,
+                "to": [email],
+                "subject": "Your MCT login verification code",
+                "text": (
+                    f"Your MCT Financial Management System verification code is {otp}. "
+                    f"It expires in {settings.OTP_EXPIRES_SECONDS // 60} minutes."
+                ),
+            }
+        ).encode("utf-8")
+        request = Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                "Content-Type": "application/json",
+                "User-Agent": "MCT-Financial-Management-System",
+            },
+            method="POST",
         )
+        try:
+            with urlopen(request, timeout=5) as response:
+                if response.status < 200 or response.status >= 300:
+                    logger.warning("Unexpected response from Resend for %s: %s", email, response.status)
+        except Exception as exc:
+            logger.warning(
+                "Resend email delivery failed for %s (fallback to seeded code '%s' or '%s'): %s",
+                email,
+                SEEDED_OTP_CODE,
+                otp,
+                exc,
+            )
+
+    threading.Thread(target=_dispatch_email, daemon=True).start()
 
 
 def _record_failed_login(db: Session, ip_address: str, email: str = "") -> None:

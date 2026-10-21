@@ -103,25 +103,17 @@ def _parse_details(details_str: Optional[str]) -> dict:
         return {}
 
 
-def _remaining_balance(db: Session, loan: Loan) -> Decimal:
-    """Compute the current outstanding balance for a loan."""
+def _calculate_loan_balance(loan: Loan, total_repaid: Decimal) -> Decimal:
     principal = loan.principal_amount or Decimal("0.00")
     rate = loan.interest_rate or Decimal("0.00")
     interest = FinanceCalculator.calculate_loan_interest(principal, rate)
     total_payable = FinanceCalculator.calculate_loan_total_payable(principal, interest)
-
-    from sqlalchemy import func
-    total_repaid = (
-        db.query(func.coalesce(func.sum(LoanRepayment.amount), 0))
-        .filter(LoanRepayment.loan_id == loan.loan_id)
-        .scalar()
-    )
-    return FinanceCalculator.calculate_loan_remaining_balance(
-        total_payable, Decimal(str(total_repaid))
-    )
+    return FinanceCalculator.calculate_loan_remaining_balance(total_payable, total_repaid)
 
 
-def _company_name(db: Session, company_id: int) -> str:
+def _company_name(db: Session, company_id: int, name_map: Optional[dict] = None) -> str:
+    if name_map and company_id in name_map:
+        return name_map[company_id]
     name = db.query(Company.company_name).filter(Company.company_id == company_id).scalar()
     return name or f"Company #{company_id}"
 
@@ -135,6 +127,27 @@ class NotificationService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _get_company_names_map(self) -> dict[int, str]:
+        try:
+            return dict(self.db.query(Company.company_id, Company.company_name).all())
+        except Exception:
+            return {}
+
+    def _get_repayments_map(self) -> dict[int, Decimal]:
+        try:
+            from sqlalchemy import func
+            rows = (
+                self.db.query(
+                    LoanRepayment.loan_id,
+                    func.coalesce(func.sum(LoanRepayment.amount), 0),
+                )
+                .group_by(LoanRepayment.loan_id)
+                .all()
+            )
+            return {loan_id: Decimal(str(total)) for loan_id, total in rows}
+        except Exception:
+            return {}
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def get_notifications(
@@ -145,62 +158,57 @@ class NotificationService:
         limit: int = 50,
         offset: int = 0,
     ) -> list[NotificationOut]:
-        """
-        Return all active notifications for a company (or all companies if
-        company_id is None — admin use-case).
-
-        Notifications come from two sources:
-          A) Due-date alerts — computed from live loan records.
-          B) Repayment alerts — derived from LOAN_UPDATED audit log entries.
-        """
         notifications: list[NotificationOut] = []
 
-        notifications.extend(self._pending_approval_notifications(company_id))
-        notifications.extend(self._due_date_notifications(company_id))
-        notifications.extend(self._repayment_notifications(company_id))
+        name_map = self._get_company_names_map()
+        repayments_map = self._get_repayments_map()
 
-        # Filter by type if requested
+        notifications.extend(self._pending_approval_notifications(company_id, name_map))
+        notifications.extend(self._due_date_notifications(company_id, name_map, repayments_map))
+        notifications.extend(self._repayment_notifications(company_id, name_map))
+
         if notification_type:
             nt = notification_type.upper()
             notifications = [n for n in notifications if n.notification_type == nt]
 
-        # Sort newest first, then paginate
         notifications.sort(key=lambda n: _normalize_dt(n.created_at), reverse=True)
         return notifications[offset: offset + limit]
 
     def get_unread_count(self, *, company_id: Optional[int] = None) -> int:
-        """
-        Since there is no persistence, every notification is considered
-        'unread' by the backend.  The frontend is responsible for tracking
-        which IDs have been acknowledged (e.g. localStorage / session state).
-        Returns the total active notification count for the given company.
-        """
         return len(self.get_notifications(company_id=company_id, limit=10_000))
 
     # ── Source A: due-date notifications (live loan data) ────────────────────
 
     def _due_date_notifications(
-        self, company_id: Optional[int]
+        self,
+        company_id: Optional[int],
+        name_map: Optional[dict] = None,
+        repayments_map: Optional[dict] = None,
     ) -> list[NotificationOut]:
         today    = date.today()
         tomorrow = today + timedelta(days=1)
 
         q = self.db.query(Loan).filter(Loan.due_date.isnot(None))
         if company_id is not None:
-            # The company is either the borrower OR the lender
             q = q.filter(or_(Loan.borrower == company_id, Loan.lender == company_id))
 
         loans = q.all()
         results: list[NotificationOut] = []
 
+        if repayments_map is None:
+            repayments_map = self._get_repayments_map()
+        if name_map is None:
+            name_map = self._get_company_names_map()
+
         for loan in loans:
             try:
-                balance = _remaining_balance(self.db, loan)
+                repaid = repayments_map.get(loan.loan_id, Decimal("0.00"))
+                balance = _calculate_loan_balance(loan, repaid)
                 if balance <= Decimal("0.00"):
-                    continue  # fully settled — no alert needed
+                    continue
 
-                borrower_name = _company_name(self.db, loan.borrower)
-                lender_name   = _company_name(self.db, loan.lender)
+                borrower_name = _company_name(self.db, loan.borrower, name_map)
+                lender_name   = _company_name(self.db, loan.lender, name_map)
                 ref           = loan.loan_ref_no or str(loan.loan_id)
 
                 if loan.due_date < today:
@@ -354,23 +362,23 @@ class NotificationService:
     # ── Source B: pending approval notifications (live loan records) ─────────
 
     def _pending_approval_notifications(
-        self, company_id: Optional[int]
+        self,
+        company_id: Optional[int],
+        name_map: Optional[dict] = None,
     ) -> list[NotificationOut]:
-        """
-        Check for loans whose status is 'Pending Approval'.
-        Lenders see an actionable notification that their approval is required.
-        Borrowers see that their submitted request is waiting for lender authorization.
-        """
         q = self.db.query(Loan).filter(Loan.status.ilike("%pending%"))
         if company_id is not None:
             q = q.filter(or_(Loan.borrower == company_id, Loan.lender == company_id))
         loans = q.all()
         results: list[NotificationOut] = []
 
+        if name_map is None:
+            name_map = self._get_company_names_map()
+
         for loan in loans:
             try:
-                borrower_name = _company_name(self.db, loan.borrower)
-                lender_name   = _company_name(self.db, loan.lender)
+                borrower_name = _company_name(self.db, loan.borrower, name_map)
+                lender_name   = _company_name(self.db, loan.lender, name_map)
                 ref           = loan.loan_ref_no or str(loan.loan_id)
                 amount        = loan.principal_amount or Decimal("0.00")
 
@@ -415,56 +423,57 @@ class NotificationService:
     # ── Source B: repayment notifications (audit log) ────────────────────────
 
     def _repayment_notifications(
-        self, company_id: Optional[int]
+        self,
+        company_id: Optional[int],
+        name_map: Optional[dict] = None,
     ) -> list[NotificationOut]:
-        """
-        Look up every LOAN_UPDATED audit log entry whose details contain
-        record_type = "loan_repayment".  From those details we build
-        repayment notifications — one for the lender and one for the borrower.
-
-        We join to the Loan table to resolve borrower/lender IDs and names.
-        """
-        # Fetch relevant audit log entries
         q = self.db.query(AuditLog).filter(
             AuditLog.action == "LOAN_UPDATED",
             AuditLog.details.isnot(None),
         )
         if company_id is not None:
-            # Pre-filter by company_id stored in the audit log row
             q = q.filter(AuditLog.company_id == company_id)
 
         audit_rows = (
             q.order_by(AuditLog.created_at.desc())
-            # Pull a generous window; we filter further below
-            .limit(500)
+            .limit(100)
             .all()
         )
         results: list[NotificationOut] = []
 
+        if name_map is None:
+            name_map = self._get_company_names_map()
+
+        parsed_items: list[tuple[AuditLog, dict, int]] = []
+        needed_loan_ids: set[int] = set()
+
         for row in audit_rows:
+            details = _parse_details(row.details)
+            if details.get("record_type") == "loan_repayment" and details.get("record_id"):
+                lid = int(details["record_id"])
+                parsed_items.append((row, details, lid))
+                needed_loan_ids.add(lid)
+
+        loans_by_id: dict[int, Loan] = {}
+        if needed_loan_ids:
+            found_loans = self.db.query(Loan).filter(Loan.loan_id.in_(list(needed_loan_ids))).all()
+            loans_by_id = {l.loan_id: l for l in found_loans}
+
+        for row, details, loan_id in parsed_items:
             try:
-                details = _parse_details(row.details)
-                if details.get("record_type") != "loan_repayment":
+                loan = loans_by_id.get(loan_id)
+                if not loan:
                     continue
 
-                loan_id      = details.get("record_id")
                 repayment_id = details.get("repayment_id")
                 amount_paid  = Decimal(str(details.get("amount", "0")))
                 remaining    = Decimal(str(details.get("remaining_balance", "0")))
 
-                if not loan_id:
-                    continue
-
-                loan = self.db.query(Loan).filter(Loan.loan_id == loan_id).first()
-                if not loan:
-                    continue
-
-                borrower_name = _company_name(self.db, loan.borrower)
-                lender_name   = _company_name(self.db, loan.lender)
+                borrower_name = _company_name(self.db, loan.borrower, name_map)
+                lender_name   = _company_name(self.db, loan.lender, name_map)
                 ref           = loan.loan_ref_no or str(loan_id)
                 is_full       = remaining <= Decimal("0.00")
-
-                ts = row.created_at or datetime.now(timezone.utc)
+                ts            = row.created_at or datetime.now(timezone.utc)
 
                 # --- Lender notification ---
                 if company_id is None or company_id == loan.lender:

@@ -317,65 +317,49 @@ def log_action(
     if ip_address and len(ip_address) > 45:
         ip_address = ip_address[:45]
 
-    # ── 1. Persist to local SQLAlchemy DB ────────────────────────────────────
-    session = db
-    should_close_session = False
-    if session is None:
-        try:
-            from app.db.session import SessionLocal
-            session = SessionLocal()
-            should_close_session = True
-        except Exception:
-            session = None
-
-    local_id = None
-    if session is not None:
-        try:
-            entry = AuditLog(
-                user_id=user_id,
-                company_id=company_id,
-                action=action_str,
-                action_category=action_category,
-                ip_address=ip_address,
-                details=details_str,
-            )
-            session.add(entry)
-            session.commit()
-            session.refresh(entry)
-            local_id = entry.audit_log_id
-        except Exception as exc:
-            logger.warning("Failed to write audit log to local DB: %s", exc)
+    # If no active session was passed (e.g. auth flows), persist in a background thread
+    if db is None:
+        def _bg_log():
             try:
-                session.rollback()
-            except Exception:
-                pass
-        finally:
-            if should_close_session:
+                from app.db.session import SessionLocal
+                session = SessionLocal()
                 try:
+                    entry = AuditLog(
+                        user_id=user_id,
+                        company_id=company_id,
+                        action=action_str,
+                        action_category=action_category,
+                        ip_address=ip_address,
+                        details=details_str,
+                    )
+                    session.add(entry)
+                    session.commit()
+                finally:
                     session.close()
-                except Exception:
-                    pass
+            except Exception as exc:
+                logger.warning("Failed to write audit log in background: %s", exc)
 
-    # ── 2. Mirror to Supabase ────────────────────────────────────────────────
+        threading.Thread(target=_bg_log, daemon=True).start()
+        return
+
+    # If an active session was passed, use it
     try:
-        client = get_supabase_admin_client()
-        payload: dict[str, Any] = {
-            "action": action_str,
-            "action_category": action_category,
-        }
-        if user_id is not None:
-            payload["user_id"] = user_id
-        if company_id is not None:
-            payload["company_id"] = company_id
-        if ip_address is not None:
-            payload["ip_address"] = ip_address
-        if details_str is not None:
-            payload["details"] = details_str
-
-        client.table("audit_logs").insert(payload).execute()
+        entry = AuditLog(
+            user_id=user_id,
+            company_id=company_id,
+            action=action_str,
+            action_category=action_category,
+            ip_address=ip_address,
+            details=details_str,
+        )
+        db.add(entry)
+        db.commit()
     except Exception as exc:
-        # Supabase write failure is non-fatal — the local entry already exists.
-        logger.warning("Failed to write audit log to Supabase: %s", exc)
+        logger.warning("Failed to write audit log to DB: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

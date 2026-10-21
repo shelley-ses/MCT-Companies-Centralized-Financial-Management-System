@@ -131,8 +131,21 @@ function buildQuery(params: Record<string, string | null | undefined>): string {
   return str ? `?${str}` : ''
 }
 
+const pcCache = new Map<string, { data: any; timestamp: number }>()
+const PC_CACHE_TTL = 30000
+
 export const pettyCashService = {
+  invalidateCache(): void {
+    pcCache.clear()
+  },
+
   async getSummary(company: string, period: PettyCashPeriod = {}): Promise<PettyCashSummary> {
+    const cacheKey = `summary:${company}:${period.startDate || ''}:${period.endDate || ''}`
+    const cached = pcCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < PC_CACHE_TTL) {
+      return cached.data
+    }
+
     const query = buildQuery({
       company_name: company,
       start_date: period.startDate,
@@ -140,15 +153,25 @@ export const pettyCashService = {
     })
     const response = await fetch(`/api/v1/petty-cash/summary${query}`, { headers: backendHeaders() })
     if (!response.ok) throw await getBackendError(response)
-    return mapSummary(await response.json())
+    const result = mapSummary(await response.json())
+    pcCache.set(cacheKey, { data: result, timestamp: Date.now() })
+    return result
   },
 
   /** One summary per company with petty cash activity (used for "All Companies"). */
   async getAllSummaries(period: PettyCashPeriod = {}): Promise<PettyCashSummary[]> {
+    const cacheKey = `all_summaries:${period.startDate || ''}:${period.endDate || ''}`
+    const cached = pcCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < PC_CACHE_TTL) {
+      return cached.data
+    }
+
     const query = buildQuery({ start_date: period.startDate, end_date: period.endDate })
     const response = await fetch(`/api/v1/petty-cash/summaries${query}`, { headers: backendHeaders() })
     if (!response.ok) throw await getBackendError(response)
-    return ((await response.json()) as BackendSummary[]).map(mapSummary)
+    const result = ((await response.json()) as BackendSummary[]).map(mapSummary)
+    pcCache.set(cacheKey, { data: result, timestamp: Date.now() })
+    return result
   },
 
   async getLedger(company?: string, period: PettyCashPeriod = {}): Promise<PettyCashLedgerEntry[]> {

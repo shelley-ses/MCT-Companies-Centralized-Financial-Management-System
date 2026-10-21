@@ -206,7 +206,14 @@ function mapBackendLoanToItem(l: any): LoanItem {
   }
 }
 
+const loanCache = new Map<string, { data: any; timestamp: number }>()
+const LOAN_CACHE_TTL = 30000
+
 export const loanService = {
+  invalidateCache(): void {
+    loanCache.clear()
+  },
+
   async getCompanyLoans(params: {
     companyId?: number
     borrowerId?: number
@@ -220,6 +227,12 @@ export const loanService = {
     offset?: number
     limit?: number
   } = {}): Promise<CompanyLoanResult> {
+    const cacheKey = JSON.stringify(params)
+    const cached = loanCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < LOAN_CACHE_TTL) {
+      return cached.data
+    }
+
     const token = typeof window !== 'undefined'
       ? sessionStorage.getItem('mct_access_token')
       : null
@@ -248,7 +261,7 @@ export const loanService = {
       throw new Error(body.detail || 'Unable to load company loans.')
     }
     const result = await response.json()
-    return {
+    const mappedResult = {
       ...result,
       items: result.items.map((group: any) => ({
         key: `${group.borrower}-${group.lender || 'external'}-${group.category}`,
@@ -270,6 +283,8 @@ export const loanService = {
         })),
       })),
     }
+    loanCache.set(cacheKey, { data: mappedResult, timestamp: Date.now() })
+    return mappedResult
   },
 
   async getCompanyLoanStatement(loanId: number) {

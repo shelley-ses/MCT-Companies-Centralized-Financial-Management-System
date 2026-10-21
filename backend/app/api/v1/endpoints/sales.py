@@ -27,7 +27,13 @@ CANONICAL_COMPANY_MAP = {
     14: "FILCAP Prime Holdings Corp.",
 }
 
+from app.core.cache import get_cached, set_cached
+
 def get_supabase_mappings(client):
+    cached = get_cached("supabase_mappings")
+    if cached:
+        return cached[0], cached[1]
+
     company_map = dict(CANONICAL_COMPANY_MAP)
     try:
         companies = client.table("company").select("company_id, company_name").execute().data or []
@@ -43,6 +49,7 @@ def get_supabase_mappings(client):
     except Exception:
         cat_map = {}
 
+    set_cached("supabase_mappings", (company_map, cat_map), ttl_seconds=600)
     return company_map, cat_map
 
 @router.get("", response_model=List[SaleOut], summary="List sales transactions")

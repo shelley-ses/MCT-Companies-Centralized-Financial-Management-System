@@ -118,9 +118,14 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
   }
 }
 
-class ExpenseValidationError extends Error {}
+const expenseCache = new Map<string, { data: ExpenseItem[]; timestamp: number }>()
+const EXPENSE_CACHE_TTL = 30000
 
 export const expenseService = {
+  invalidateCache(): void {
+    expenseCache.clear()
+  },
+
   async getCategories(): Promise<{ category_id: number; name: string }[]> {
     try {
       const token =
@@ -190,6 +195,12 @@ export const expenseService = {
     end_date?: string
     category_id?: number
   }): Promise<ExpenseItem[]> {
+    const cacheKey = JSON.stringify(params || {})
+    const cached = expenseCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < EXPENSE_CACHE_TTL) {
+      return cached.data
+    }
+
     try {
       const token =
         typeof window !== 'undefined'
@@ -215,6 +226,7 @@ export const expenseService = {
         const data = await res.json()
         if (Array.isArray(data)) {
           const mapped = data.map(mapBackendExpenseToItem)
+          expenseCache.set(cacheKey, { data: mapped, timestamp: Date.now() })
           if (!params?.company || params.company === 'All Companies') {
             inMemoryExpenses = mapped
             saveStoredExpenses(mapped)

@@ -720,10 +720,23 @@ const inMemoryTransactions: DashboardTransactionItem[] = [
   },
 ]
 
+const dashboardCache = new Map<string, { data: DashboardData; timestamp: number }>()
+const DASHBOARD_CACHE_TTL = 20000
+
 export const dashboardService = {
+  invalidateCache(): void {
+    dashboardCache.clear()
+  },
+
   async getDashboardData(filters?: {
     company?: string
   }): Promise<DashboardData> {
+    const cacheKey = filters?.company || 'All Companies'
+    const cached = dashboardCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < DASHBOARD_CACHE_TTL) {
+      return cached.data
+    }
+
     const isCompanySpecific = filters?.company && filters.company !== 'All Companies'
     const targetComp = filters?.company?.toLowerCase().trim()
 
@@ -800,7 +813,7 @@ export const dashboardService = {
       return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
     })
 
-    return {
+    const result: DashboardData = {
       kpis: {
         totalSales,
         totalExpense,
@@ -813,6 +826,8 @@ export const dashboardService = {
       companyIncome: INITIAL_COMPANY_INCOME,
       recentTransactions: transactions,
     }
+    dashboardCache.set(cacheKey, { data: result, timestamp: Date.now() })
+    return result
   },
 
   async updateTransactionCategory(

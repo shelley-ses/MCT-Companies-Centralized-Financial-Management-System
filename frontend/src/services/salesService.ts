@@ -724,13 +724,25 @@ function mapBackendSaleToItem(b: any): SalesItem {
     auditStatus: 'Verified',
     createdBy: 'Company Auditor',
     createdAt: b.created_at || new Date().toISOString(),
-    updatedAt: b.updated_at || new Date().toISOString(),
     type: 'Sales',
   }
 }
 
+const salesCache = new Map<string, { data: SalesItem[]; timestamp: number }>()
+const SALES_CACHE_TTL = 30000
+
 export const salesService = {
+  invalidateCache(): void {
+    salesCache.clear()
+  },
+
   async getSales(company?: string): Promise<SalesItem[]> {
+    const cacheKey = company || 'All Companies'
+    const cached = salesCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < SALES_CACHE_TTL) {
+      return cached.data
+    }
+
     try {
       const url =
         company && company !== 'All Companies'
@@ -753,13 +765,15 @@ export const salesService = {
         const data = await res.json()
         if (Array.isArray(data)) {
           const apiSales = data.map(mapBackendSaleToItem)
-          return apiSales.sort((a, b) => {
+          const sorted = apiSales.sort((a, b) => {
             const dateA = a.rawDate || normalizeDateToYYYYMMDD(a.date)
             const dateB = b.rawDate || normalizeDateToYYYYMMDD(b.date)
             const cmp = dateB.localeCompare(dateA)
             if (cmp !== 0) return cmp
             return Number(b.id) - Number(a.id)
           })
+          salesCache.set(cacheKey, { data: sorted, timestamp: Date.now() })
+          return sorted
         }
       }
     } catch (err) {
