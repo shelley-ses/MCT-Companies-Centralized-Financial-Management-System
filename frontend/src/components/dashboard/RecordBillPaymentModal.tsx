@@ -11,13 +11,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   CreditCard,
-  Calendar,
   CheckCircle2,
   AlertCircle,
   Loader2,
   Building2,
   Hash,
-  FileText,
 } from 'lucide-react'
 import { formatPHP } from '@/lib/format'
 import {

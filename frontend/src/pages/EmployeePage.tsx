@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { CreateCompanyModal } from '@/components/employee/CreateCompanyModal'
 import { ViewCompanyModal } from '@/components/employee/ViewCompanyModal'
 import { Skeleton } from '@/components/ui/skeleton'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import {
   employeeService,
   type Company,
@@ -114,8 +115,9 @@ export const EmployeePage: React.FC = () => {
           </p>
         </div>
 
-        {/* Top Right Action Button: Create Company */}
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        {/* Top Right Action Button: Live Date & Create Company */}
+        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          <LiveDateTimeBadge />
           <Button
             type="button"
             onClick={() => setIsCreateCompanyOpen(true)}

@@ -48,7 +48,14 @@ const monthRange = (first: string, last: string): string[] => {
   const keys: string[] = []
   let [y, m] = first.split('-').map(Number)
   const [ly, lm] = last.split('-').map(Number)
-  while (y < ly || (y === ly && m <= lm)) {
+
+  if (isNaN(y) || isNaN(m) || isNaN(ly) || isNaN(lm) || m < 1 || m > 12 || lm < 1 || lm > 12) {
+    return [first]
+  }
+
+  let iterations = 0
+  while ((y < ly || (y === ly && m <= lm)) && iterations < 120) {
+    iterations++
     keys.push(`${y}-${String(m).padStart(2, '0')}`)
     m += 1
     if (m > 12) {
@@ -56,7 +63,31 @@ const monthRange = (first: string, last: string): string[] => {
       y += 1
     }
   }
-  return keys
+  return keys.length > 0 ? keys : [first]
+}
+
+// Custom bar shape to prevent SVG path NaN errors on negative loss values and avoid Recharts animation jitter
+const CustomBar = (props: any) => {
+  const { fill, x, y, width, height, payload } = props
+  if (width <= 0 || isNaN(x) || isNaN(y) || isNaN(height)) return null
+
+  const isLoss = (payload?.profit ?? 0) < 0
+  const barH = Math.max(2, Math.abs(height))
+  const r = Math.min(4, barH / 2, width / 2)
+  const barY = height < 0 ? y + height : y
+
+  return (
+    <rect
+      x={x}
+      y={barY}
+      width={width}
+      height={barH}
+      fill={isLoss ? LOSS_COLOR : fill || PROFIT_COLOR}
+      rx={r}
+      ry={r}
+      className="transition-opacity hover:opacity-85 cursor-pointer"
+    />
+  )
 }
 
 export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
@@ -67,12 +98,27 @@ export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
     const sums: Record<string, { income: number; expenses: number }> = {}
 
     transactions.forEach((tx) => {
+      if (!tx || !tx.date) return
+      // Loans are financing transactions and excluded from operational P&L
+      if (tx.type === 'Loan') return
+
       const iso = normalizeDateToYYYYMMDD(tx.date)
       if (!/^\d{4}-\d{2}/.test(iso)) return
       const key = iso.slice(0, 7)
       if (!sums[key]) sums[key] = { income: 0, expenses: 0 }
-      sums[key].income += tx.deposit || 0
-      sums[key].expenses += tx.withdrawal || 0
+
+      const isIncome = tx.type === 'Sales' || tx.type === 'Income'
+      const isExpense = tx.type === 'Expense'
+
+      if (isIncome) {
+        sums[key].income += tx.deposit || tx.amount || 0
+      } else if (isExpense) {
+        sums[key].expenses += tx.withdrawal || tx.amount || 0
+      } else {
+        // Fallback for untyped transactions
+        if (tx.deposit && tx.deposit > 0) sums[key].income += tx.deposit
+        if (tx.withdrawal && tx.withdrawal > 0) sums[key].expenses += tx.withdrawal
+      }
     })
 
     const keys = Object.keys(sums).sort()
@@ -82,10 +128,11 @@ export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
       const [y, m] = key.split('-')
       const income = sums[key]?.income || 0
       const expenses = sums[key]?.expenses || 0
+      const mIdx = Math.max(0, Math.min(11, (Number(m) || 1) - 1))
       return {
         key,
-        label: `${MONTH_LABELS[Number(m) - 1]} ${y}`,
-        shortLabel: `${MONTH_LABELS[Number(m) - 1]} '${y.slice(2)}`,
+        label: `${MONTH_LABELS[mIdx]} ${y}`,
+        shortLabel: `${MONTH_LABELS[mIdx]} '${y?.slice(2) || ''}`,
         income,
         expenses,
         profit: income - expenses,
@@ -151,71 +198,85 @@ export const ProfitLossMonthlyChart: React.FC<ProfitLossMonthlyChartProps> = ({
           </p>
         </div>
       ) : (
-        <div className="h-56 sm:h-64 w-full overflow-x-auto">
-          <div className={cn("h-full", monthData.length > 8 ? "min-w-[680px] xl:min-w-0" : "w-full")}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthData} margin={{ top: 12, right: 12, left: -8, bottom: 0 }}>
+        <div className="h-56 sm:h-64 w-full overflow-x-auto no-scrollbar">
+          <div
+            className="h-full"
+            style={{
+              minWidth: monthData.length > 6 ? `${Math.max(620, monthData.length * 52)}px` : '100%',
+              minHeight: '220px',
+            }}
+          >
+            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+              <BarChart data={monthData} margin={{ top: 12, right: 16, left: 4, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                 <XAxis
                   dataKey="shortLabel"
                   tickLine={false}
-                  axisLine={false}
+                  axisLine={{ stroke: '#E2E8F0' }}
                   tickMargin={8}
                   interval={0}
                   tick={{ fill: '#767B89', fontSize: 11, fontWeight: 500 }}
                 />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                tickMargin={6}
-                tickFormatter={formatAxis}
-                tick={{ fill: '#767B89', fontSize: 10 }}
-              />
-              <ReferenceLine y={0} stroke="#CBD5E1" />
-              <Tooltip
-                cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }}
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null
-                  const item = payload[0].payload as MonthPoint
-                  const isProfit = item.profit >= 0
-                  return (
-                    <div className="bg-focus text-white px-3 py-2 rounded-xl shadow-lg border border-white/10 text-xs min-w-[160px]">
-                      <p className="font-semibold text-white/90 mb-1">{item.label}</p>
-                      <div className="flex justify-between gap-4 text-white/70">
-                        <span>Income</span>
-                        <span className="tabular-nums">{formatPHP(item.income)}</span>
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={6}
+                  tickFormatter={formatAxis}
+                  width={50}
+                  tick={{ fill: '#767B89', fontSize: 10 }}
+                />
+                <ReferenceLine y={0} stroke="#94A3B8" strokeWidth={1} />
+                <Tooltip
+                  cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }}
+                  isAnimationActive={false}
+                  content={({ active, payload }) => {
+                    if (!active || !payload || !payload.length || !payload[0]?.payload) return null
+                    const item = payload[0].payload as MonthPoint
+                    if (!item || typeof item.profit !== 'number') return null
+                    const isProfit = item.profit >= 0
+                    return (
+                      <div className="bg-focus text-white px-3 py-2 rounded-xl shadow-lg border border-white/10 text-xs min-w-[160px] pointer-events-none select-none">
+                        <p className="font-semibold text-white/90 mb-1">{item.label}</p>
+                        <div className="flex justify-between gap-4 text-white/70">
+                          <span>Income</span>
+                          <span className="tabular-nums">{formatPHP(item.income)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4 text-white/70">
+                          <span>Expenses</span>
+                          <span className="tabular-nums">{formatPHP(item.expenses)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4 mt-1 pt-1 border-t border-white/15 font-bold">
+                          <span className="flex items-center gap-1.5">
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: isProfit ? PROFIT_COLOR : LOSS_COLOR }}
+                            />
+                            {isProfit ? 'Profit' : 'Loss'}
+                          </span>
+                          <span className="tabular-nums">{formatPHP(item.profit)}</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between gap-4 text-white/70">
-                        <span>Expenses</span>
-                        <span className="tabular-nums">{formatPHP(item.expenses)}</span>
-                      </div>
-                      <div className="flex justify-between gap-4 mt-1 pt-1 border-t border-white/15 font-bold">
-                        <span className="flex items-center gap-1.5">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: isProfit ? PROFIT_COLOR : LOSS_COLOR }}
-                          />
-                          {isProfit ? 'Profit' : 'Loss'}
-                        </span>
-                        <span className="tabular-nums">{formatPHP(item.profit)}</span>
-                      </div>
-                    </div>
-                  )
-                }}
-              />
-              <Bar dataKey="profit" maxBarSize={48} radius={[4, 4, 4, 4]}>
-                {monthData.map((entry) => (
-                  <Cell
-                    key={entry.key}
-                    fill={entry.profit >= 0 ? PROFIT_COLOR : LOSS_COLOR}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                    )
+                  }}
+                />
+                <Bar
+                  dataKey="profit"
+                  maxBarSize={44}
+                  shape={<CustomBar />}
+                  isAnimationActive={false}
+                >
+                  {monthData.map((entry) => (
+                    <Cell
+                      key={entry.key}
+                      fill={entry.profit >= 0 ? PROFIT_COLOR : LOSS_COLOR}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-      </div>
-    )}
+      )}
 
       {/* Legend */}
       {hasData && (

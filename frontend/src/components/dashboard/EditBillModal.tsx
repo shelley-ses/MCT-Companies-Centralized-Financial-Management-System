@@ -34,6 +34,7 @@ interface EditBillModalProps {
   onOpenChange: (open: boolean) => void
   onSuccess: (updated: BillItem) => void
   bill: BillItem | null
+  isCompanyScoped?: boolean
   companies?: string[]
 }
 

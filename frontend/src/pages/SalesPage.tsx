@@ -53,6 +53,8 @@ import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/util
 import { getParticularsSummary } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
+import { useCompany } from '@/context/CompanyContext'
 
 const DEFAULT_COMPANIES = [
   'All Companies',
@@ -76,20 +78,20 @@ const ITEMS_PER_PAGE = 10
 export const SalesPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const isCompanyUser =
-    user?.role === 'Company' ||
-    user?.role === 'Company Auditor' ||
-    user?.role === 'Supervisor'
-  const isFinance = user?.role === 'Finance'
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
+  const { activeCompany, setActiveCompany } = useCompany()
+  const userRole = (user?.role || '').toLowerCase()
+  const isAudit = userRole === 'audit' || userRole.includes('auditor')
+  const isCompanyUser = (userRole === 'company' || userRole === 'supervisor') && !isAudit
+  const isFinance = userRole === 'finance'
+  const isAdmin = userRole === 'admin' || isAudit
   const isCompanyScoped = !isAdmin && !isFinance
-  const isAuditor = isCompanyUser
-  const canAdd = isCompanyUser || isFinance
+  const isAuditor = isAudit
+  const canAdd = !isAudit && (isCompanyUser || isFinance)
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Filter state
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isCompanyScoped ? assignedCompany : 'All Companies'
+    isCompanyScoped ? assignedCompany : (activeCompany || 'All Companies')
   )
 
   // Keep selectedCompany in sync if user profile loads after initial render
@@ -98,6 +100,13 @@ export const SalesPage: React.FC = () => {
       setSelectedCompany(user.assignedCompany)
     }
   }, [isCompanyScoped, user?.assignedCompany])
+
+  // Keep selectedCompany in sync with global activeCompany from context
+  React.useEffect(() => {
+    if (!isCompanyScoped && activeCompany) {
+      setSelectedCompany(activeCompany)
+    }
+  }, [activeCompany, isCompanyScoped])
   const [dateRange, setDateRange] = React.useState<DateRange>({
     startDate: '2026-10-01',
     endDate: '2026-10-31',
@@ -436,12 +445,13 @@ export const SalesPage: React.FC = () => {
     : selectedCompany
 
   return (
-    <div className="space-y-6 pb-10 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 pb-10 max-w-[1600px] mx-auto animate-in fade-in duration-300">
       {/* 1. Header & Controls */}
       <div className="space-y-3">
-        {/* Top Row: Action Buttons (Export & Add Sales) sitting on top of the filters */}
-        <div className="flex items-center justify-end">
-          <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Top Row: Action Buttons (Date/Time, Export & Add Sales) sitting on the right */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
+            <LiveDateTimeBadge />
             {/* Export Dropdown Button (Red in Admin sales page per user request; Outline for Auditor where Add Sales is red) */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
@@ -653,6 +663,7 @@ export const SalesPage: React.FC = () => {
                       onClick={(e) => {
                         e.stopPropagation()
                         setSelectedCompany('All Companies')
+                        setActiveCompany('All Companies')
                       }}
                       className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
                       title="Reset to All Companies"
@@ -674,6 +685,7 @@ export const SalesPage: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setSelectedCompany('All Companies')
+                            setActiveCompany('All Companies')
                             setIsCompanyDropdownOpen(false)
                           }}
                           className="text-xs text-primary hover:underline font-semibold cursor-pointer"
@@ -717,6 +729,7 @@ export const SalesPage: React.FC = () => {
                             type="button"
                             onClick={() => {
                               setSelectedCompany(c)
+                              setActiveCompany(c)
                               setIsCompanyDropdownOpen(false)
                               setCompanySearch('')
                             }}

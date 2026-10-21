@@ -26,21 +26,20 @@ from app.models.finance import Category, Expense, Sale
 SEED_PREFIX = "SEED-DB-"
 DEFAULT_MONTHS_COUNT = 18
 
-# Base expenses as a share of that month's sales: > 1.0 means a loss month
-# Most months are highly profitable (35%-60% profit margins); only July and September have mild dips
+# Base expenses as a share of that month's sales: all <= 0.65 to ensure consistent profits
 MONTH_EXPENSE_RATIO = {
-    1: 0.62,   # Jan: profit
+    1: 0.60,   # Jan: profit
     2: 0.58,   # Feb: profit
-    3: 0.56,   # Mar: profit
+    3: 0.55,   # Mar: profit
     4: 0.52,   # Apr: profit
     5: 0.54,   # May: profit
-    6: 0.58,   # Jun: profit
-    7: 1.10,   # Jul: mid-year facility overhaul (minor loss dip)
+    6: 0.56,   # Jun: profit
+    7: 0.64,   # Jul: solid profit (~36% margin)
     8: 0.48,   # Aug: strong profit
-    9: 1.07,   # Sep: pre-holiday restocking (minor loss dip)
+    9: 0.62,   # Sep: solid profit (~38% margin)
     10: 0.50,  # Oct: strong profit
     11: 0.52,  # Nov: strong profit
-    12: 0.40,  # Dec: peak holiday sales (large profit)
+    12: 0.40,  # Dec: peak holiday sales (large profit ~60% margin)
 }
 
 # Typical monthly sales per company (PHP)
@@ -143,14 +142,9 @@ def seed_company(db, rng, company: Company, cat_ids: dict, today: date, month_se
         # Slight company variance for sales
         month_sales_target = base * rng.uniform(0.9, 1.1) * scale
 
-        # Base expense ratio with slight company variance
+        # Base expense ratio capped at 0.70 to ensure every month is profitable
         base_ratio = MONTH_EXPENSE_RATIO.get(month, 0.55)
-        if base_ratio > 1.0:
-            # Mild loss dips (keep close to 1.05 - 1.10)
-            month_ratio = base_ratio * rng.uniform(0.98, 1.02)
-        else:
-            # High-performing profit months (healthy green bars)
-            month_ratio = base_ratio * rng.uniform(0.92, 1.03)
+        month_ratio = min(0.70, base_ratio * rng.uniform(0.94, 1.02))
 
         month_expense_target = month_sales_target * month_ratio
 

@@ -1,4 +1,6 @@
 import logging
+from datetime import date
+from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import List, Optional
 from uuid import uuid4
@@ -8,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.supabase import get_supabase_admin_client
 from app.models.company import Company
+from app.models.petty_cash import PettyCashTopUp
 from app.schemas.company import CompanyCreate, CompanyOut, CompanyUpdate
 from app.services.finance_service import FinanceService
 
@@ -77,12 +80,28 @@ class CompanyService:
             email=company_in.email,
             starting_balance=company_in.starting_balance,
             current_balance=company_in.current_balance,
+            petty_cash=company_in.petty_cash or Decimal("0.00"),
             logo_url=company_in.logo_url,
         )
         try:
             self.db.add(company)
             self.db.commit()
             self.db.refresh(company)
+
+            if company_in.petty_cash and company_in.petty_cash > 0:
+                try:
+                    topup = PettyCashTopUp(
+                        company_id=company.company_id,
+                        amount=company_in.petty_cash,
+                        topup_date=date.today(),
+                        reference_no="INITIAL-PC",
+                        description="Initial Petty Cash Deposit",
+                    )
+                    self.db.add(topup)
+                    self.db.commit()
+                except Exception as exc:
+                    logger.warning(f"Could not create initial petty cash topup: {exc}")
+
             return self.to_response(company)
         except SQLAlchemyError as error:
             raise self._database_error("create company", error)
@@ -103,6 +122,7 @@ class CompanyService:
             email=company_in.email,
             starting_balance=company_in.starting_balance,
             current_balance=company_in.current_balance,
+            petty_cash=company_in.petty_cash or Decimal("0.00"),
         )
         storage_path = ""
         company_created = False
@@ -111,6 +131,20 @@ class CompanyService:
             self.db.commit()
             self.db.refresh(company)
             company_created = True
+
+            if company_in.petty_cash and company_in.petty_cash > 0:
+                try:
+                    topup = PettyCashTopUp(
+                        company_id=company.company_id,
+                        amount=company_in.petty_cash,
+                        topup_date=date.today(),
+                        reference_no="INITIAL-PC",
+                        description="Initial Petty Cash Deposit",
+                    )
+                    self.db.add(topup)
+                    self.db.commit()
+                except Exception as exc:
+                    logger.warning(f"Could not create initial petty cash topup: {exc}")
 
             extension = PurePosixPath(filename).suffix.lower()
             storage_path = f"company/{company.company_id}/{uuid4().hex}{extension}"
@@ -222,6 +256,7 @@ class CompanyService:
                 email=company.email,
                 starting_balance=float(company.starting_balance),
                 current_balance=float(company.current_balance),
+                petty_cash=float(getattr(company, "petty_cash", 0.0) or 0.0),
                 logo_url=company.logo_url,
                 total_revenue=float(summary.total_revenue),
                 total_expenses=float(summary.total_expenses),

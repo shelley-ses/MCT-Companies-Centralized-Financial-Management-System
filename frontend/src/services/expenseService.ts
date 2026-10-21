@@ -1,6 +1,13 @@
 import type { DashboardTransactionItem } from './dashboardService'
 import { type ParticularItem, parseParticulars } from '@/utils/particularsUtils'
 
+export class ExpenseValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ExpenseValidationError'
+  }
+}
+
 export interface ExpenseRepaymentRecord {
   id: string
   paymentDate: string

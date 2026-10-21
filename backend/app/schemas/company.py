@@ -13,6 +13,7 @@ class CompanyBase(BaseModel):
     email: Optional[str] = None
     starting_balance: Decimal = Field(decimal_places=2)
     current_balance: Decimal = Field(decimal_places=2)
+    petty_cash: Optional[Decimal] = Field(default=Decimal("0.00"), decimal_places=2)
     logo_url: Optional[str] = None
 
 class CompanyCreate(CompanyBase):
@@ -27,6 +28,7 @@ class CompanyUpdate(BaseModel):
     email: Optional[str] = None
     starting_balance: Optional[Decimal] = Field(default=None, decimal_places=2)
     current_balance: Optional[Decimal] = Field(default=None, decimal_places=2)
+    petty_cash: Optional[Decimal] = Field(default=None, decimal_places=2)
     logo_url: Optional[str] = None
 
 class CompanyOut(BaseModel):
@@ -39,6 +41,7 @@ class CompanyOut(BaseModel):
     email: Optional[str] = None
     starting_balance: float
     current_balance: float
+    petty_cash: float = 0.0
     logo_url: Optional[str] = None
     total_revenue: float = 0.0
     total_expenses: float = 0.0

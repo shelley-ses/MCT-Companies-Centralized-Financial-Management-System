@@ -29,9 +29,11 @@ import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { useSession } from '@/hooks/useSession'
+import { useCompany } from '@/context/CompanyContext'
 
 export const DashboardPage: React.FC = () => {
   const { user } = useSession()
+  const { activeCompany, setActiveCompany } = useCompany()
   const isCompanyScoped =
     user?.role === 'Company' ||
     user?.role === 'Company Auditor' ||
@@ -44,7 +46,7 @@ export const DashboardPage: React.FC = () => {
       endDate: null,
       label: 'All Dates',
     },
-    company: isCompanyScoped ? assignedCompany : 'All Companies',
+    company: isCompanyScoped ? assignedCompany : (activeCompany || 'All Companies'),
   }))
 
   // Keep filters.company in sync if user profile loads after initial render
@@ -56,6 +58,15 @@ export const DashboardPage: React.FC = () => {
       }))
     }
   }, [isCompanyScoped, user?.assignedCompany])
+
+  // Keep filters.company in sync with global activeCompany from context
+  React.useEffect(() => {
+    if (!isCompanyScoped && activeCompany) {
+      setFilters((prev) =>
+        prev.company !== activeCompany ? { ...prev, company: activeCompany } : prev
+      )
+    }
+  }, [activeCompany, isCompanyScoped])
 
   const [loading, setLoading] = React.useState<boolean>(true)
   const [data, setData] = React.useState<DashboardData | null>(null)
@@ -202,7 +213,12 @@ export const DashboardPage: React.FC = () => {
       {/* 2. Financial Overview Header & Global Custom Date Picker */}
       <DashboardHeader
         filters={filters}
-        onFiltersChange={(newFilters) => setFilters(newFilters)}
+        onFiltersChange={(newFilters) => {
+          setFilters(newFilters)
+          if (!isCompanyScoped && newFilters.company !== filters.company) {
+            setActiveCompany(newFilters.company)
+          }
+        }}
         isCompanyScoped={isCompanyScoped}
       />
 
@@ -220,24 +236,36 @@ export const DashboardPage: React.FC = () => {
           value={formatPHP(totalIncome)}
           icon={TrendingUp}
           subtext="Total deposits for period"
+          valueClassName="text-emerald-600"
+          iconContainerClassName="bg-emerald-50 text-emerald-600 border border-emerald-200/60"
         />
         <DashboardKpiCard
           label="Total Expenses"
           value={formatPHP(totalExpenses)}
           icon={TrendingDown}
           subtext="Total withdrawals for period"
+          valueClassName="text-rose-600"
+          iconContainerClassName="bg-rose-50 text-rose-600 border border-rose-200/60"
         />
         <DashboardKpiCard
           label="Net Income (Income - Expenses)"
           value={formatPHP(netIncome)}
           icon={Landmark}
           subtext={netIncome >= 0 ? 'Positive net cashflow' : 'Negative net cashflow'}
+          valueClassName={netIncome >= 0 ? 'text-emerald-600' : 'text-rose-600'}
+          iconContainerClassName={
+            netIncome >= 0
+              ? 'bg-emerald-50 text-emerald-600 border border-emerald-200/60'
+              : 'bg-rose-50 text-rose-600 border border-rose-200/60'
+          }
         />
         <DashboardKpiCard
           label="Overdue / Due Soon"
           value={`${overdueCount} / ${dueSoonCount}`}
           icon={AlertCircle}
           subtext="Requires prompt review"
+          valueClassName="text-amber-600"
+          iconContainerClassName="bg-amber-50 text-amber-600 border border-amber-200/60"
         />
         <Link
           to="/petty-cash"
@@ -253,8 +281,13 @@ export const DashboardPage: React.FC = () => {
               'h-full',
               pettyCash && pettyCash.lowCount > 0 && 'border-amber-300 bg-amber-50/60'
             )}
+            valueClassName={
+              pettyCash && pettyCash.lowCount > 0 ? 'text-amber-600' : 'text-blue-600'
+            }
             iconContainerClassName={
-              pettyCash && pettyCash.lowCount > 0 ? 'bg-amber-100 text-amber-700' : undefined
+              pettyCash && pettyCash.lowCount > 0
+                ? 'bg-amber-100 text-amber-700 border border-amber-300/60'
+                : 'bg-blue-50 text-blue-600 border border-blue-200/60'
             }
           />
         </Link>
