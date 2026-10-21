@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS company (
     email VARCHAR(100) NOT NULL,
     starting_balance NUMERIC(15, 2) NOT NULL,
     current_balance NUMERIC(15, 2) NOT NULL,
+    logo_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

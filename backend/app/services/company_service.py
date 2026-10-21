@@ -72,6 +72,7 @@ class CompanyService:
             email=company_in.email,
             starting_balance=company_in.starting_balance,
             current_balance=company_in.current_balance,
+            logo_url=company_in.logo_url,
         )
         try:
             self.db.add(company)
@@ -143,6 +144,7 @@ class CompanyService:
                 email=company.email,
                 starting_balance=float(company.starting_balance),
                 current_balance=float(company.current_balance),
+                logo_url=company.logo_url,
                 total_revenue=float(summary.total_revenue),
                 total_expenses=float(summary.total_expenses),
                 net_profit=float(summary.net_profit),

@@ -13,6 +13,7 @@ class CompanyBase(BaseModel):
     email: Optional[str] = None
     starting_balance: Decimal = Field(decimal_places=2)
     current_balance: Decimal = Field(decimal_places=2)
+    logo_url: Optional[str] = None
 
 class CompanyCreate(CompanyBase):
     pass
@@ -26,6 +27,7 @@ class CompanyUpdate(BaseModel):
     email: Optional[str] = None
     starting_balance: Optional[Decimal] = Field(default=None, decimal_places=2)
     current_balance: Optional[Decimal] = Field(default=None, decimal_places=2)
+    logo_url: Optional[str] = None
 
 class CompanyOut(BaseModel):
     id: int
@@ -37,6 +39,7 @@ class CompanyOut(BaseModel):
     email: Optional[str] = None
     starting_balance: float
     current_balance: float
+    logo_url: Optional[str] = None
     total_revenue: float = 0.0
     total_expenses: float = 0.0
     net_profit: float = 0.0

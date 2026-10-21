@@ -64,6 +64,7 @@ def init_db():
                         email=sc.get("email"),
                         starting_balance=sc.get("starting_balance", 0.0),
                         current_balance=sc.get("current_balance", 0.0),
+                        logo_url=sc.get("logo_url"),
                     ))
                 db.commit()
         db.close()
