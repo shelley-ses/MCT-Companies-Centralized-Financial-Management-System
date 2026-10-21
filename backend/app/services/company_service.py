@@ -1,9 +1,12 @@
 import logging
+from pathlib import PurePosixPath
 from typing import List, Optional
+from uuid import uuid4
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.db.supabase import get_supabase_admin_client
 from app.models.company import Company
 from app.schemas.company import CompanyCreate, CompanyOut, CompanyUpdate
 from app.services.finance_service import FinanceService
@@ -16,6 +19,8 @@ class CompanyServiceError(Exception):
 
 
 class CompanyService:
+    _company_picture_bucket = "Company Profiles Pictures"
+
     _required_update_fields = {
         "name",
         "location",
@@ -81,6 +86,79 @@ class CompanyService:
             return self.to_response(company)
         except SQLAlchemyError as error:
             raise self._database_error("create company", error)
+
+    def create_company_with_picture(
+        self,
+        company_in: CompanyCreate,
+        picture: bytes,
+        content_type: str,
+        filename: str,
+    ) -> CompanyOut:
+        company = Company(
+            company_name=company_in.name,
+            location=company_in.location,
+            contact_person=company_in.contact_person,
+            contact_number=company_in.contact_number,
+            phone=company_in.phone,
+            email=company_in.email,
+            starting_balance=company_in.starting_balance,
+            current_balance=company_in.current_balance,
+        )
+        storage_path = ""
+        company_created = False
+        try:
+            self.db.add(company)
+            self.db.commit()
+            self.db.refresh(company)
+            company_created = True
+
+            extension = PurePosixPath(filename).suffix.lower()
+            storage_path = f"company/{company.company_id}/{uuid4().hex}{extension}"
+            storage = get_supabase_admin_client().storage.from_(
+                self._company_picture_bucket
+            )
+            storage.upload(
+                storage_path,
+                picture,
+                {"content-type": content_type, "upsert": "false"},
+            )
+            company.logo_url = storage.get_public_url(storage_path)
+            self.db.commit()
+            self.db.refresh(company)
+            return self.to_response(company)
+        except SQLAlchemyError as error:
+            self.db.rollback()
+            if storage_path:
+                self._remove_picture(storage_path)
+            if company_created:
+                self._remove_company(company)
+            raise self._database_error("create company with picture", error)
+        except Exception as error:
+            self.db.rollback()
+            if storage_path:
+                self._remove_picture(storage_path)
+            if company_created:
+                self._remove_company(company)
+            logger.exception("Company picture upload failed (%s)", type(error).__name__)
+            raise CompanyServiceError(
+                "The company picture could not be uploaded."
+            ) from error
+
+    def _remove_company(self, company: Company) -> None:
+        try:
+            self.db.delete(company)
+            self.db.commit()
+        except SQLAlchemyError:
+            self.db.rollback()
+            logger.exception("Could not clean up company: %s", company.company_id)
+
+    def _remove_picture(self, storage_path: str) -> None:
+        try:
+            get_supabase_admin_client().storage.from_(
+                self._company_picture_bucket
+            ).remove([storage_path])
+        except Exception:
+            logger.exception("Could not clean up company picture: %s", storage_path)
 
     #updates an existing company in the database. It first retrieves the company using the get_company method. If the company is found, it updates its attributes based on the provided CompanyUpdate object, ensuring that required fields are not set to None. After updating, it commits the changes to the database and returns a CompanyOut object representing the updated company. If the company is not found, it returns None.
     def update_company(

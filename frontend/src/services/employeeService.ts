@@ -61,6 +61,7 @@ export interface CreateCompanyPayload {
   startingBalance: number
   currentBalance?: number
   logoUrl?: string
+  logoFile?: File
 }
 
 export interface CreateUserPayload {
@@ -560,6 +561,7 @@ function mapCompany(value: unknown): Company {
     starting_balance: number
     current_balance: number
     created_at: string | null
+    logo_url?: string | null
   }
   return {
     id: String(company.id),
@@ -573,6 +575,7 @@ function mapCompany(value: unknown): Company {
     currentBalance: Number(company.current_balance),
     status: 'Active',
     createdAt: company.created_at || '',
+    logoUrl: company.logo_url || undefined,
   }
 }
 
@@ -738,24 +741,53 @@ export const employeeService = {
   async createCompany(payload: CreateCompanyPayload): Promise<Company> {
     let comp: Company | null = null
     try {
-      const response = await fetch('/api/v1/companies', {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: payload.name,
-          location: payload.address,
-          contact_person: payload.contactPerson || payload.name,
-          contact_number: payload.contactNumber || null,
-          phone: payload.telephoneNumber || null,
-          email: payload.email || '',
-          starting_balance: payload.startingBalance,
-          current_balance: payload.currentBalance ?? payload.startingBalance,
-        }),
+      let endpoint = '/api/v1/companies'
+      let headers: HeadersInit = {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
+      }
+      let body: BodyInit = JSON.stringify({
+        name: payload.name,
+        location: payload.address,
+        contact_person: payload.contactPerson || payload.name,
+        contact_number: payload.contactNumber || null,
+        phone: payload.telephoneNumber || null,
+        email: payload.email || '',
+        starting_balance: payload.startingBalance,
+        current_balance: payload.currentBalance ?? payload.startingBalance,
       })
-      if (response.ok) {
+
+      if (payload.logoFile) {
+        const formData = new FormData()
+        formData.append('name', payload.name)
+        formData.append('location', payload.address)
+        formData.append('contact_person', payload.contactPerson || payload.name)
+        formData.append('contact_number', payload.contactNumber || '')
+        formData.append('phone', payload.telephoneNumber || '')
+        formData.append('email', payload.email || '')
+        formData.append('starting_balance', String(payload.startingBalance))
+        formData.append(
+          'current_balance',
+          String(payload.currentBalance ?? payload.startingBalance)
+        )
+        formData.append('picture', payload.logoFile)
+        endpoint = '/api/v1/companies/with-picture'
+        headers = getAuthHeaders()
+        body = formData
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body,
+      })
+      if (payload.logoFile) {
+        comp = await mapApiResponse(response, mapCompany)
+      } else if (response.ok) {
         comp = await mapApiResponse(response, mapCompany)
       }
-    } catch {
+    } catch (error) {
+      if (payload.logoFile) throw error
       // Handled below
     }
 

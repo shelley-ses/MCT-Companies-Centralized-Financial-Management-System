@@ -41,6 +41,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [profilePreview, setProfilePreview] = React.useState<string | null>(null)
+  const [profileFile, setProfileFile] = React.useState<File | null>(null)
 
   const form = useForm<CreateCompanyFormValues>({
     resolver: zodResolver(createCompanySchema),
@@ -60,6 +61,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      setProfileFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         const result = reader.result as string
@@ -74,6 +76,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
     if (!nextOpen) {
       form.reset()
       setProfilePreview(null)
+      setProfileFile(null)
       setPendingValues(null)
       setIsConfirmOpen(false)
     }
@@ -98,7 +101,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
         telephoneNumber: pendingValues.telephoneNumber || '',
         startingBalance: pendingValues.startingBalance,
         currentBalance: pendingValues.startingBalance,
-        logoUrl: pendingValues.logoUrl,
+        logoFile: profileFile || undefined,
       })
       onSuccess?.(created)
       setIsConfirmOpen(false)
@@ -169,6 +172,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                       size="sm"
                       onClick={() => {
                         setProfilePreview(null)
+                        setProfileFile(null)
                         form.setValue('logoUrl', undefined)
                       }}
                       className="h-7 px-2 text-xs text-muted-fg hover:text-focus cursor-pointer"
