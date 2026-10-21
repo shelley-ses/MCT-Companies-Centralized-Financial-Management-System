@@ -73,6 +73,7 @@ async def create_company_with_picture(
     email: str = Form(""),
     starting_balance: Decimal = Form(...),
     current_balance: Decimal = Form(...),
+    petty_cash: Decimal = Form(Decimal("0.00")),
     picture: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
@@ -98,6 +99,7 @@ async def create_company_with_picture(
         email=email,
         starting_balance=starting_balance,
         current_balance=current_balance,
+        petty_cash=petty_cash,
     )
     try:
         result = CompanyService(db).create_company_with_picture(

@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import {
   Table,
   TableHeader,
@@ -30,11 +31,13 @@ import { expenseService } from '@/services/expenseService'
 import { loanService } from '@/services/loanService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { useSession } from '@/hooks/useSession'
+import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 
 export const TransactionPage: React.FC = () => {
   const { user } = useSession()
+  const { activeCompany } = useCompany()
   const isFinance = user?.role === 'Finance'
   const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
   const isCompanyScoped = !isAdmin && !isFinance
@@ -82,7 +85,11 @@ export const TransactionPage: React.FC = () => {
   // Fetch all transactions across Sales, Expenses, and Loans
   const fetchAllTransactions = React.useCallback(async () => {
     try {
-      const targetCompany = isCompanyScoped ? assignedCompany : undefined
+      const targetCompany = isCompanyScoped
+        ? assignedCompany
+        : activeCompany !== 'All Companies'
+        ? activeCompany
+        : undefined
       const [salesData, expenseData, loanData] = await Promise.all([
         salesService.getSales(targetCompany),
         expenseService.getExpenses({ company: targetCompany }),
@@ -167,7 +174,7 @@ export const TransactionPage: React.FC = () => {
       setLoading(false)
       setIsRefreshing(false)
     }
-  }, [])
+  }, [isCompanyScoped, assignedCompany, activeCompany])
 
   React.useEffect(() => {
     setLoading(true)
@@ -187,6 +194,10 @@ export const TransactionPage: React.FC = () => {
     if (isCompanyScoped) {
       result = result.filter(
         (t) => (t.company || '').toLowerCase().trim() === assignedCompany.toLowerCase().trim()
+      )
+    } else if (activeCompany && activeCompany !== 'All Companies') {
+      result = result.filter(
+        (t) => (t.company || '').toLowerCase().trim() === activeCompany.toLowerCase().trim()
       )
     }
 
@@ -228,6 +239,7 @@ export const TransactionPage: React.FC = () => {
     transactions,
     isCompanyScoped,
     assignedCompany,
+    activeCompany,
     searchQuery,
     dateRange,
     sortOrder,
@@ -364,7 +376,11 @@ export const TransactionPage: React.FC = () => {
             })
             .join('')
 
-    const displayedTitle = 'MCT Group of Companies'
+    const displayedTitle = isCompanyScoped
+      ? assignedCompany
+      : activeCompany !== 'All Companies'
+      ? activeCompany
+      : 'All Subsidiaries'
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -422,7 +438,7 @@ export const TransactionPage: React.FC = () => {
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
       {/* 1. Header & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
             Transactions
@@ -430,12 +446,14 @@ export const TransactionPage: React.FC = () => {
           <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
             {isCompanyScoped
               ? `Financial transactions record for ${assignedCompany}`
+              : activeCompany !== 'All Companies'
+              ? `Financial transactions record for ${activeCompany}`
               : 'Consolidated record of all transactions in chronological order'}
           </p>
         </div>
 
-        {/* Top Right Action Buttons: Refresh, Sort & Red Export Dropdown */}
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        {/* Top Right Action Buttons: Sort, Refresh, Live Date & Red Export Dropdown */}
+        <div className="flex flex-wrap items-center gap-3 self-start lg:self-auto">
           <Button
             type="button"
             variant="outline"
@@ -462,6 +480,8 @@ export const TransactionPage: React.FC = () => {
             />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
+
+          <LiveDateTimeBadge />
 
           {/* Red Export Button with CSV & PDF options */}
           <div ref={exportDropdownRef} className="relative inline-block">

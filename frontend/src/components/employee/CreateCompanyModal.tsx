@@ -1,7 +1,13 @@
 import * as React from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Building2, Loader2, Camera, Upload } from 'lucide-react'
+import {
+  Building2,
+  Loader2,
+  Camera,
+  Upload,
+  Crop,
+} from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -24,6 +30,7 @@ import {
   type CreateCompanyFormValues,
 } from '@/lib/validation/employee'
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog'
+import { ImageCropperModal } from '@/components/common/ImageCropperModal'
 import { employeeService, type Company } from '@/services/employeeService'
 import logo2Url from '@/assets/LOGO2.png'
 
@@ -42,6 +49,8 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [profilePreview, setProfilePreview] = React.useState<string | null>(null)
   const [profileFile, setProfileFile] = React.useState<File | null>(null)
+  const [rawImageForCrop, setRawImageForCrop] = React.useState<string | null>(null)
+  const [isCropperOpen, setIsCropperOpen] = React.useState(false)
 
   const form = useForm<CreateCompanyFormValues>({
     resolver: zodResolver(createCompanySchema),
@@ -50,7 +59,8 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
       address: '',
       contactNumber: '',
       telephoneNumber: '',
-      startingBalance: 0,
+      startingBalance: '' as unknown as number,
+      pettyCash: '' as unknown as number,
       logoUrl: '',
     },
   })
@@ -61,22 +71,44 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      setProfileFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         const result = reader.result as string
-        setProfilePreview(result)
-        form.setValue('logoUrl', result)
+        setRawImageForCrop(result)
+        setIsCropperOpen(true)
       }
       reader.readAsDataURL(file)
+    }
+    e.target.value = ''
+  }
+
+  const handleCropComplete = (croppedDataUrl: string, croppedFile: File) => {
+    setProfilePreview(croppedDataUrl)
+    setProfileFile(croppedFile)
+    form.setValue('logoUrl', croppedDataUrl)
+  }
+
+  const handleOpenCropper = () => {
+    if (rawImageForCrop || profilePreview) {
+      setIsCropperOpen(true)
     }
   }
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
-      form.reset()
+      form.reset({
+        name: '',
+        address: '',
+        contactNumber: '',
+        telephoneNumber: '',
+        startingBalance: '' as unknown as number,
+        pettyCash: '' as unknown as number,
+        logoUrl: '',
+      })
       setProfilePreview(null)
       setProfileFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
       setPendingValues(null)
       setIsConfirmOpen(false)
     }
@@ -99,8 +131,10 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
         email: '',
         contactNumber: pendingValues.contactNumber,
         telephoneNumber: pendingValues.telephoneNumber || '',
-        startingBalance: pendingValues.startingBalance,
-        currentBalance: pendingValues.startingBalance,
+        startingBalance: Number(pendingValues.startingBalance) || 0,
+        currentBalance: Number(pendingValues.startingBalance) || 0,
+        pettyCash: Number(pendingValues.pettyCash) || 0,
+        logoUrl: pendingValues.logoUrl,
         logoFile: profileFile || undefined,
       })
       onSuccess?.(created)
@@ -116,33 +150,48 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-[720px] md:max-w-[760px] max-h-[90vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader className="text-left sm:text-left space-y-1">
+        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl sm:max-w-[700px] w-full">
+          <DialogHeader className="text-left sm:text-left space-y-1 pb-3 border-b border-stroke/15">
             <DialogTitle className="text-xl sm:text-2xl font-bold text-focus">
               Create Company
             </DialogTitle>
-            <DialogDescription className="text-sm text-muted-fg font-normal">
+            <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
               Add company to the group
             </DialogDescription>
           </DialogHeader>
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-2">
-              {/* Company Profile Picture / Logo Upload */}
+              {/* Company Profile Picture / Logo Upload & Cropping */}
               <div className="flex flex-col items-center justify-center py-2">
                 <div
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    if (profilePreview) {
+                      handleOpenCropper()
+                    } else {
+                      fileInputRef.current?.click()
+                    }
+                  }}
                   className="relative group h-24 w-24 sm:h-28 sm:w-28 rounded-full border-2 border-dashed border-primary/50 hover:border-primary flex items-center justify-center p-3 bg-white shadow-xs cursor-pointer transition-all overflow-hidden"
-                  title="Click to upload company logo"
+                  title={profilePreview ? 'Click to crop / adjust logo' : 'Click to upload company logo'}
                 >
                   <img
                     src={profilePreview || logo2Url}
                     alt="Company Logo Preview"
-                    className="h-14 w-14 sm:h-16 sm:w-16 object-contain"
+                    className="h-16 w-16 sm:h-20 sm:w-20 object-contain rounded-full"
                   />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white rounded-full">
-                    <Camera className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold mt-1">Upload</span>
+                    {profilePreview ? (
+                      <>
+                        <Crop className="h-5 w-5" />
+                        <span className="text-[10px] font-semibold mt-1">Crop</span>
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="h-5 w-5" />
+                        <span className="text-[10px] font-semibold mt-1">Upload</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -154,31 +203,57 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                   className="hidden"
                 />
 
-                <div className="flex items-center gap-2 mt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="h-7 px-2.5 text-xs text-primary hover:text-primary hover:bg-primary/10 font-semibold cursor-pointer"
-                  >
-                    <Upload className="h-3 w-3 mr-1" />
-                    Upload Logo
-                  </Button>
-                  {profilePreview && (
+                <div className="flex flex-wrap items-center justify-center gap-2 mt-2.5">
+                  {!profilePreview ? (
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        setProfilePreview(null)
-                        setProfileFile(null)
-                        form.setValue('logoUrl', undefined)
-                      }}
-                      className="h-7 px-2 text-xs text-muted-fg hover:text-focus cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-8 px-3 text-xs text-primary hover:text-primary hover:bg-primary/10 font-semibold cursor-pointer rounded-lg border border-primary/20"
                     >
-                      Reset
+                      <Upload className="h-3.5 w-3.5 mr-1.5" />
+                      Upload Logo
                     </Button>
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleOpenCropper}
+                        className="h-8 px-3 text-xs text-focus font-semibold cursor-pointer rounded-lg border-stroke/40 hover:bg-surface flex items-center gap-1.5"
+                      >
+                        <Crop className="h-3.5 w-3.5 text-primary" />
+                        Crop / Adjust
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="h-8 px-2.5 text-xs text-primary hover:bg-primary/10 font-semibold cursor-pointer rounded-lg"
+                      >
+                        <Upload className="h-3.5 w-3.5 mr-1" />
+                        Change
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setProfilePreview(null)
+                          setProfileFile(null)
+                          setRawImageForCrop(null)
+                          form.setValue('logoUrl', undefined)
+                        }}
+                        className="h-8 px-2.5 text-xs text-muted-fg hover:text-red-600 hover:bg-red-50 cursor-pointer rounded-lg"
+                      >
+                        Remove
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
@@ -290,32 +365,70 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
                 />
               </div>
 
-              {/* Starting Balance */}
-              <FormField
-                control={form.control}
-                name="startingBalance"
-                render={({ field, fieldState }) => (
-                  <FormItem className="space-y-1.5">
-                    <Label htmlFor="starting-balance" className="text-xs sm:text-sm font-medium text-focus/90">
-                      Starting Balance (₱) <span className="text-red-500">*</span>
-                    </Label>
-                    <FormControl>
-                      <Input
-                        id="starting-balance"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
-                        aria-invalid={!!fieldState.error}
-                        {...field}
-                        onChange={(event) => field.onChange(event.target.valueAsNumber || 0)}
-                      />
-                    </FormControl>
-                    <FormMessage className="text-xs text-error" />
-                  </FormItem>
-                )}
-              />
+              {/* Balances Row: Starting Balance and Petty Cash side-by-side */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Starting Balance */}
+                <FormField
+                  control={form.control}
+                  name="startingBalance"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-1.5">
+                      <Label htmlFor="starting-balance" className="text-xs sm:text-sm font-medium text-focus/90">
+                        Starting Balance (₱) <span className="text-red-500">*</span>
+                      </Label>
+                      <FormControl>
+                        <Input
+                          id="starting-balance"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                          className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
+                          aria-invalid={!!fieldState.error}
+                          value={field.value ?? ''}
+                          onChange={(event) => {
+                            const val = event.target.value
+                            field.onChange(val === '' ? '' : Number(val))
+                          }}
+                          onBlur={field.onBlur}
+                        />
+                      </FormControl>
+                      <FormMessage className="text-xs text-error" />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Petty Cash */}
+                <FormField
+                  control={form.control}
+                  name="pettyCash"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-1.5">
+                      <Label htmlFor="petty-cash" className="text-xs sm:text-sm font-medium text-focus/90">
+                        Petty Cash (₱) <span className="text-red-500">*</span>
+                      </Label>
+                      <FormControl>
+                        <Input
+                          id="petty-cash"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                          className="h-11 rounded-xl border-[0.5px] border-stroke/60 text-sm focus-visible:ring-1 focus-visible:ring-focus"
+                          aria-invalid={!!fieldState.error}
+                          value={field.value ?? ''}
+                          onChange={(event) => {
+                            const val = event.target.value
+                            field.onChange(val === '' ? '' : Number(val))
+                          }}
+                          onBlur={field.onBlur}
+                        />
+                      </FormControl>
+                      <FormMessage className="text-xs text-error" />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               {/* Modal Actions */}
               <div className="flex items-center justify-end gap-3 pt-4">
@@ -350,6 +463,14 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Image Cropper Modal */}
+      <ImageCropperModal
+        open={isCropperOpen}
+        onOpenChange={setIsCropperOpen}
+        imageSrc={rawImageForCrop || profilePreview}
+        onCropComplete={handleCropComplete}
+      />
 
       {/* Confirmation Modal */}
       <ConfirmationDialog

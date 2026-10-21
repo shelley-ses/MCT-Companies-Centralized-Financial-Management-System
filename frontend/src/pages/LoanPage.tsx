@@ -58,6 +58,8 @@ import {
 import { useLocation } from 'react-router-dom'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
+import { useCompany } from '@/context/CompanyContext'
 
 const COMPANY_LIST = [
   'All Companies',
@@ -83,11 +85,12 @@ interface LoanPageProps {
 
 export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) => {
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
-  const isFinance = user?.role === 'Finance'
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
-  const canApprove = isFinance || isAdmin
-  const isAuditor = isCompanyUser
+  const userRole = (user?.role || '').toLowerCase()
+  const isAudit = userRole === 'audit' || userRole.includes('auditor')
+  const isFinance = userRole === 'finance'
+  const isAdmin = userRole === 'admin'
+  const canApprove = (isFinance || isAdmin) && !isAudit
+  const isAuditor = isAudit
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const location = useLocation()
@@ -122,9 +125,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [loans, setLoans] = React.useState<LoanItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
+  const { activeCompany, setActiveCompany } = useCompany()
+
   // Filter state
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isAuditor ? assignedCompany : 'All Companies'
+    isAuditor ? assignedCompany : (activeCompany || 'All Companies')
   )
 
   // Keep selectedCompany in sync if user profile loads after initial render
@@ -133,6 +138,13 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
       setSelectedCompany(user.assignedCompany)
     }
   }, [isAuditor, user?.assignedCompany])
+
+  // Keep selectedCompany in sync with global activeCompany from context
+  React.useEffect(() => {
+    if (!isAuditor && activeCompany) {
+      setSelectedCompany(activeCompany)
+    }
+  }, [activeCompany, isAuditor])
   const [statusFilter, setStatusFilter] = React.useState<
     'All' | 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue'
   >('All')
@@ -530,12 +542,13 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   }
 
   return (
-    <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 sm:space-y-8 max-w-[1600px] mx-auto pb-12">
       {/* 1. Header & Controls */}
       <div className="space-y-3">
-        {/* Top Row: Action Buttons (Export & Add Loan) */}
-        <div className="flex items-center justify-end gap-3 flex-wrap">
-          <div className="flex items-center gap-2.5 sm:gap-3 ml-auto">
+        {/* Top Row: Action Buttons (Date/Time, Export & Add Loan) */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
+            <LiveDateTimeBadge />
             {/* Export Dropdown Button (White style) */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
@@ -573,15 +586,17 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               )}
             </div>
 
-            {/* Add Loan Button (Available for Borrower requests) */}
-            <Button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
-            >
-              <Plus className="h-4 w-4 shrink-0" />
-              <span>Request Loan</span>
-            </Button>
+            {/* Add Loan Button (Available for Borrower requests - hidden for Audit) */}
+            {!isAudit && (
+              <Button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>Request Loan</span>
+              </Button>
+            )}
           </div>
         </div>
 
@@ -740,6 +755,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       onClick={(e) => {
                         e.stopPropagation()
                         setSelectedCompany('All Companies')
+                        setActiveCompany('All Companies')
                       }}
                       className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
                       title="Reset to All Companies"
@@ -760,6 +776,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                           type="button"
                           onClick={() => {
                             setSelectedCompany('All Companies')
+                            setActiveCompany('All Companies')
                             setIsCompanyDropdownOpen(false)
                           }}
                           className="text-xs text-primary hover:underline font-semibold cursor-pointer"
@@ -769,7 +786,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       )}
                     </div>
 
-                    <div className="px-1 pb-2">
+                    <div className="px-1 mb-2">
                       <Input
                         type="text"
                         placeholder="Search company…"
@@ -792,6 +809,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                             type="button"
                             onClick={() => {
                               setSelectedCompany(c)
+                              setActiveCompany(c)
                               setIsCompanyDropdownOpen(false)
                               setCompanySearch('')
                             }}

@@ -1264,4 +1264,45 @@ export const billsService = {
       return a.daysDiff - b.daysDiff
     })
   },
+
+  exportCsv(bills: BillItem[], filename = 'monthly_bills_report.csv') {
+    const headers = [
+      'Biller Name',
+      'Company',
+      'Category',
+      'Account No',
+      'Amount',
+      'Due Date',
+      'Billing Cycle',
+      'Status',
+      'Notes',
+    ]
+
+    const rows = bills.map((b) => [
+      `"${(b.billerName || '').replace(/"/g, '""')}"`,
+      `"${(b.company || '').replace(/"/g, '""')}"`,
+      `"${(b.category || '').replace(/"/g, '""')}"`,
+      `"${(b.accountNo || '').replace(/"/g, '""')}"`,
+      b.amount,
+      b.dueDate,
+      b.billingCycle,
+      b.status,
+      `"${(b.notes || '').replace(/"/g, '""')}"`,
+    ])
+
+    const csvContent =
+      '\uFEFF' +
+      [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', filename)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  },
 }

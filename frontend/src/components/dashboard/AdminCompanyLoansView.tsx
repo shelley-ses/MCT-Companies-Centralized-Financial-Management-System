@@ -38,6 +38,7 @@ import {
 } from '@/services/loanService'
 import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD, isDateInRange } from '@/utils/dateUtils'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { cn } from '@/lib/utils'
 
 const LOAN_CATEGORIES = [
@@ -784,7 +785,7 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
   }
 
   return (
-    <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 sm:space-y-8 max-w-[1600px] mx-auto pb-12">
       {/* 1. Header & Controls */}
       <div className="space-y-3">
         {/* Top Row: Action Buttons (Preview Dummy, Export & Add Loan) */}
@@ -806,7 +807,8 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
             </Button>
           </div>
 
-          <div className="flex items-center gap-2.5 sm:gap-3 ml-auto">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
+            <LiveDateTimeBadge />
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button

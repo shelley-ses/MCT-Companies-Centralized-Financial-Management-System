@@ -16,6 +16,7 @@ class Company(Base):
     email = Column(String(100), nullable=False)
     starting_balance = Column(Numeric(15, 2), nullable=False)
     current_balance = Column(Numeric(15, 2), nullable=False)
+    petty_cash = Column(Numeric(15, 2), nullable=True, default=0.0)
     logo_url = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

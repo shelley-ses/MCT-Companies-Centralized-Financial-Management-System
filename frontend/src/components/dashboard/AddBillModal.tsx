@@ -35,6 +35,7 @@ interface AddBillModalProps {
   onOpenChange: (open: boolean) => void
   onSuccess: (newBill: BillItem) => void
   assignedCompany: string
+  isCompanyScoped?: boolean
   companies?: string[]
 }
 

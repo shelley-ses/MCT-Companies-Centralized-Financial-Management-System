@@ -9,6 +9,7 @@ export interface Company {
   telephoneNumber: string
   startingBalance: number
   currentBalance: number
+  pettyCash?: number
   status: 'Active' | 'Inactive'
   createdAt: string
   logoUrl?: string
@@ -60,6 +61,7 @@ export interface CreateCompanyPayload {
   telephoneNumber?: string
   startingBalance: number
   currentBalance?: number
+  pettyCash?: number
   logoUrl?: string
   logoFile?: File
 }
@@ -560,6 +562,7 @@ function mapCompany(value: unknown): Company {
     email: string
     starting_balance: number
     current_balance: number
+    petty_cash?: number
     created_at: string | null
     logo_url?: string | null
   }
@@ -573,6 +576,7 @@ function mapCompany(value: unknown): Company {
     telephoneNumber: company.phone || '',
     startingBalance: Number(company.starting_balance),
     currentBalance: Number(company.current_balance),
+    pettyCash: Number(company.petty_cash || 0),
     status: 'Active',
     createdAt: company.created_at || '',
     logoUrl: company.logo_url || undefined,
@@ -755,6 +759,7 @@ export const employeeService = {
         email: payload.email || '',
         starting_balance: payload.startingBalance,
         current_balance: payload.currentBalance ?? payload.startingBalance,
+        petty_cash: payload.pettyCash || 0,
       })
 
       if (payload.logoFile) {
@@ -770,6 +775,7 @@ export const employeeService = {
           'current_balance',
           String(payload.currentBalance ?? payload.startingBalance)
         )
+        formData.append('petty_cash', String(payload.pettyCash || 0))
         formData.append('picture', payload.logoFile)
         endpoint = '/api/v1/companies/with-picture'
         headers = getAuthHeaders()
@@ -802,6 +808,7 @@ export const employeeService = {
         telephoneNumber: payload.telephoneNumber || '',
         startingBalance: payload.startingBalance,
         currentBalance: payload.currentBalance ?? payload.startingBalance,
+        pettyCash: payload.pettyCash || 0,
         status: 'Active',
         createdAt: new Date().toISOString().slice(0, 10),
         logoUrl: payload.logoUrl,
@@ -840,6 +847,7 @@ export const employeeService = {
       ...(payload.contactNumber ? { contactNumber: payload.contactNumber } : {}),
       ...(payload.telephoneNumber !== undefined ? { telephoneNumber: payload.telephoneNumber } : {}),
       ...(payload.startingBalance !== undefined ? { startingBalance: payload.startingBalance } : {}),
+      ...(payload.pettyCash !== undefined ? { pettyCash: payload.pettyCash } : {}),
       ...(payload.logoUrl !== undefined ? { logoUrl: payload.logoUrl } : {}),
     }
 
@@ -852,6 +860,7 @@ export const employeeService = {
       if (payload.contactNumber !== undefined) body.contact_number = payload.contactNumber || null
       if (payload.telephoneNumber !== undefined) body.phone = payload.telephoneNumber || null
       if (payload.startingBalance !== undefined) body.starting_balance = payload.startingBalance
+      if (payload.pettyCash !== undefined) body.petty_cash = payload.pettyCash
 
       await fetch(`/api/v1/companies/${id}`, {
         method: 'PATCH',

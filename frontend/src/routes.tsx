@@ -6,6 +6,7 @@ import {
   PublicOnlyRoute,
   AdminOnlyRoute,
   LendingRouteGuard,
+  TenantRouteGuard,
 } from '@/components/layout/RouteGuards'
 
 function PageFallback() {
@@ -19,17 +20,17 @@ function PageFallback() {
   )
 }
 
-function lazyPage<P extends object>(
+function lazyPage<P = any>(
   importer: () => Promise<{ [key: string]: any }>,
   name: string
 ) {
   const LazyComponent = React.lazy(() =>
     importer().then((m) => ({ default: m[name] }))
   )
-  return function Wrapped(props: P) {
+  return function Wrapped(props: P & React.JSX.IntrinsicAttributes) {
     return (
       <React.Suspense fallback={<PageFallback />}>
-        <LazyComponent {...props} />
+        <LazyComponent {...(props as any)} />
       </React.Suspense>
     )
   }
@@ -43,6 +44,8 @@ const SalesPage = lazyPage(() => import('@/pages/SalesPage'), 'SalesPage')
 const ExpensePage = lazyPage(() => import('@/pages/ExpensePage'), 'ExpensePage')
 const LoanPage = lazyPage(() => import('@/pages/LoanPage'), 'LoanPage')
 const LendingPage = lazyPage(() => import('@/pages/LendingPage'), 'LendingPage')
+const TenantPage = lazyPage(() => import('@/pages/TenantPage'), 'TenantPage')
+const BankManagementPage = lazyPage(() => import('@/pages/BankManagementPage'), 'BankManagementPage')
 const BillsPage = lazyPage(() => import('@/pages/BillsPage'), 'BillsPage')
 const PettyCashPage = lazyPage(() => import('@/pages/PettyCashPage'), 'PettyCashPage')
 const TransactionPage = lazyPage(() => import('@/pages/TransactionPage'), 'TransactionPage')
@@ -85,212 +88,157 @@ export const router = createBrowserRouter([
       </PublicOnlyRoute>
     ),
   },
-  // Authenticated App Shell routes
+  // Authenticated Persistent App Shell layout route
+  // Using AppShell as a layout route keeps the sidebar and header mounted,
+  // preventing layout destruction and enabling instantaneous page navigation.
   {
-    path: '/dashboard',
     element: (
       <ProtectedRoute>
-        <AppShell>
-          <DashboardPage />
-        </AppShell>
+        <AppShell />
       </ProtectedRoute>
     ),
-  },
-  // Sales routes
-  {
-    path: '/sales',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <SalesPage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/sales/daily',
-    element: <Navigate to="/sales" replace />,
-  },
-  {
-    path: '/sales/quarterly',
-    element: <Navigate to="/sales" replace />,
-  },
-  {
-    path: '/sales/monthly',
-    element: <Navigate to="/sales" replace />,
-  },
-  {
-    path: '/sales/annual',
-    element: <Navigate to="/sales" replace />,
-  },
-  {
-    path: '/sales/add',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <AddTransactionSheetPage initialType="Sales" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  // Expense, Loan, Employee, Activity Log, Settings
-  {
-    path: '/expense',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <ExpensePage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/expense/add',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <AddTransactionSheetPage initialType="Expense" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/loan',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <LoanPage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/loan/company',
-    element: <Navigate to="/loan" replace />,
-  },
-  {
-    path: '/loan/borrower',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <LoanPage initialType="Borrower" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/loan/lender',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <LoanPage initialType="Lender" />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/lending',
-    element: (
-      <ProtectedRoute>
-        <LendingRouteGuard>
-          <AppShell>
+    children: [
+      {
+        path: '/dashboard',
+        element: <DashboardPage />,
+      },
+      // Sales routes
+      {
+        path: '/sales',
+        element: <SalesPage />,
+      },
+      {
+        path: '/sales/daily',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/quarterly',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/monthly',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/annual',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/add',
+        element: <AddTransactionSheetPage initialType="Sales" />,
+      },
+      // Expense routes
+      {
+        path: '/expense',
+        element: <ExpensePage />,
+      },
+      {
+        path: '/expense/add',
+        element: <AddTransactionSheetPage initialType="Expense" />,
+      },
+      // Loan routes
+      {
+        path: '/loan',
+        element: <LoanPage />,
+      },
+      {
+        path: '/loan/company',
+        element: <Navigate to="/loan" replace />,
+      },
+      {
+        path: '/loan/borrower',
+        element: <LoanPage initialType="Borrower" />,
+      },
+      {
+        path: '/loan/lender',
+        element: <LoanPage initialType="Lender" />,
+      },
+      {
+        path: '/lending',
+        element: (
+          <LendingRouteGuard>
             <LendingPage />
-          </AppShell>
-        </LendingRouteGuard>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/petty-cash',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <PettyCashPage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/bills',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <BillsPage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/loan/bills',
-    element: <Navigate to="/bills" replace />,
-  },
-  {
-    path: '/transaction',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <TransactionPage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/transactions',
-    element: <Navigate to="/transaction" replace />,
-  },
-  {
-    path: '/employee',
-    element: (
-      <ProtectedRoute>
-        <AdminOnlyRoute>
-          <AppShell>
+          </LendingRouteGuard>
+        ),
+      },
+      {
+        path: '/tenant',
+        element: (
+          <TenantRouteGuard>
+            <TenantPage />
+          </TenantRouteGuard>
+        ),
+      },
+      {
+        path: '/tenants',
+        element: <Navigate to="/tenant" replace />,
+      },
+      {
+        path: '/bank-management',
+        element: (
+          <AdminOnlyRoute>
+            <BankManagementPage />
+          </AdminOnlyRoute>
+        ),
+      },
+      // Operations & Management
+      {
+        path: '/petty-cash',
+        element: <PettyCashPage />,
+      },
+      {
+        path: '/bills',
+        element: <BillsPage />,
+      },
+      {
+        path: '/loan/bills',
+        element: <Navigate to="/bills" replace />,
+      },
+      {
+        path: '/transaction',
+        element: <TransactionPage />,
+      },
+      {
+        path: '/transactions',
+        element: <Navigate to="/transaction" replace />,
+      },
+      {
+        path: '/employee',
+        element: (
+          <AdminOnlyRoute>
             <EmployeePage />
-          </AppShell>
-        </AdminOnlyRoute>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/users',
-    element: (
-      <ProtectedRoute>
-        <AdminOnlyRoute>
-          <AppShell>
+          </AdminOnlyRoute>
+        ),
+      },
+      {
+        path: '/users',
+        element: (
+          <AdminOnlyRoute>
             <UserManagementPage />
-          </AppShell>
-        </AdminOnlyRoute>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/user-management',
-    element: <Navigate to="/users" replace />,
-  },
-  {
-    path: '/activity-log',
-    element: (
-      <ProtectedRoute>
-        <AdminOnlyRoute>
-          <AppShell>
+          </AdminOnlyRoute>
+        ),
+      },
+      {
+        path: '/user-management',
+        element: <Navigate to="/users" replace />,
+      },
+      {
+        path: '/activity-log',
+        element: (
+          <AdminOnlyRoute>
             <ActivityLogPage />
-          </AppShell>
-        </AdminOnlyRoute>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/activity',
-    element: <Navigate to="/activity-log" replace />,
-  },
-  {
-    path: '/settings',
-    element: (
-      <ProtectedRoute>
-        <AppShell>
-          <SettingsPage />
-        </AppShell>
-      </ProtectedRoute>
-    ),
+          </AdminOnlyRoute>
+        ),
+      },
+      {
+        path: '/activity',
+        element: <Navigate to="/activity-log" replace />,
+      },
+      {
+        path: '/settings',
+        element: <SettingsPage />,
+      },
+    ],
   },
   // Fallback
   {
@@ -298,3 +246,4 @@ export const router = createBrowserRouter([
     element: <Navigate to="/login" replace />,
   },
 ])
+

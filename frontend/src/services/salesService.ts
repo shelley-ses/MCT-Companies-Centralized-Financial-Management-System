@@ -39,9 +39,7 @@ export interface NewSalesInput {
   items?: ParticularItem[]
 }
 
-const INITIAL_SALES: SalesItem[] = []
-
-const _UNUSED_INITIAL_SALES: SalesItem[] = [
+export const INITIAL_SALES: SalesItem[] = [
   {
     id: 'sale_1',
     refNo: 'REF-202610-8892',

@@ -5,7 +5,6 @@ import {
   CreditCard,
   CheckCircle2,
   Clock,
-  AlertTriangle,
   BellRing,
   Plus,
   Download,
@@ -19,7 +18,6 @@ import {
   Check,
   Building2,
   Calendar,
-  Hash,
   X,
   AlertCircle,
   Eye,
@@ -45,6 +43,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { useSession } from '@/hooks/useSession'
+import { useCompany } from '@/context/CompanyContext'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { formatPHP } from '@/lib/format'
 import {
   billsService,
@@ -81,8 +81,6 @@ export const BillsPage: React.FC = () => {
   const { user } = useSession()
   const userRole = user?.role || ''
   const isSupervisor = userRole.toLowerCase() === 'supervisor'
-  const isFinance = userRole.toLowerCase() === 'finance'
-  const isAdmin = userRole.toLowerCase() === 'admin'
   const isAudit =
     userRole.toLowerCase() === 'audit' ||
     userRole.toLowerCase() === 'company auditor'
@@ -97,10 +95,19 @@ export const BillsPage: React.FC = () => {
   const [loading, setLoading] = React.useState(true)
   const [companyList, setCompanyList] = React.useState<string[]>(COMPANY_LIST)
 
+  const { activeCompany, setActiveCompany } = useCompany()
+
   // Filters
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isCompanyScoped ? assignedCompany : 'All Companies'
+    isCompanyScoped ? assignedCompany : (activeCompany || 'All Companies')
   )
+
+  React.useEffect(() => {
+    if (!isCompanyScoped && activeCompany) {
+      setSelectedCompany(activeCompany)
+    }
+  }, [activeCompany, isCompanyScoped])
+
   const [selectedCategory, setSelectedCategory] = React.useState<string>('All')
   const [statusFilter, setStatusFilter] = React.useState<'All' | BillStatus>('All')
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -335,16 +342,6 @@ export const BillsPage: React.FC = () => {
     }
   }
 
-  const handleToggleUnpaid = async (bill: BillItem, e: React.MouseEvent) => {
-    e.stopPropagation()
-    try {
-      const updated = await billsService.markAsUnpaid(bill.id)
-      handleBillUpdated(updated)
-    } catch (err) {
-      console.error('Failed to mark unpaid:', err)
-    }
-  }
-
   const handleCheckboxToggle = async (bill: BillItem, checked: boolean) => {
     try {
       if (checked) {
@@ -425,9 +422,10 @@ export const BillsPage: React.FC = () => {
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
       {/* 1. Header & Controls */}
       <div className="space-y-3">
-        {/* Top Row: Action Buttons */}
-        <div className="flex items-center justify-end gap-3 flex-wrap">
-          <div className="flex items-center gap-2.5 sm:gap-3 ml-auto">
+        {/* Top Row: Action Buttons (Live Date/Time, Export & Add Bill) */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
+            <LiveDateTimeBadge />
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
@@ -628,6 +626,7 @@ export const BillsPage: React.FC = () => {
                       onClick={(e) => {
                         e.stopPropagation()
                         setSelectedCompany('All Companies')
+                        setActiveCompany('All Companies')
                       }}
                       className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
                       title="Reset to All Companies"
@@ -665,6 +664,7 @@ export const BillsPage: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setSelectedCompany(c)
+                            setActiveCompany(c)
                             setIsCompanyDropdownOpen(false)
                             setCompanySearch('')
                           }}

@@ -39,21 +39,20 @@ const COMPANIES: Record<string, number> = {
   'Golden Sunburst Ventures': 60000,
 }
 
-// Expense ratios per month: > 1.0 means a loss month
-// Most months are highly profitable (35%-60% margin); July & Sept are mild dips
+// Expense ratios per month: all <= 0.65 to ensure every month is consistently profitable
 const MONTH_EXPENSE_RATIO: Record<number, number> = {
-  1: 0.62,
+  1: 0.60,
   2: 0.58,
-  3: 0.56,
+  3: 0.55,
   4: 0.52,
   5: 0.54,
-  6: 0.58,
-  7: 1.10, // July mid-year facility overhaul (minor dip)
+  6: 0.56,
+  7: 0.64, // July: solid profit (~36% margin)
   8: 0.48,
-  9: 1.07, // Sept pre-holiday inventory restocking (minor dip)
+  9: 0.62, // Sept: solid profit (~38% margin)
   10: 0.50,
   11: 0.52,
-  12: 0.40, // Dec peak holiday revenue (huge profit)
+  12: 0.40, // Dec peak holiday revenue (huge profit ~60% margin)
 }
 
 const SALES_ITEMS: Array<[string, string]> = [
@@ -110,8 +109,10 @@ export function generateDashboardDummyTransactions(): DashboardTransactionItem[]
       const monthSalesTarget = baseSales * variance * scale
 
       const baseRatio = MONTH_EXPENSE_RATIO[month] || 0.55
-      const ratioVariance = baseRatio > 1.0 ? 0.98 + rng() * 0.04 : 0.92 + rng() * 0.11
-      const monthExpenseTarget = monthSalesTarget * (baseRatio * ratioVariance)
+      const ratioVariance = 0.94 + rng() * 0.08
+      // Cap at 0.70 to ensure every month and company is strictly profitable
+      const effectiveRatio = Math.min(0.70, baseRatio * ratioVariance)
+      const monthExpenseTarget = monthSalesTarget * effectiveRatio
 
       // Sales transactions (6 to 9 entries per month)
       const salesEntriesCount = Math.max(3, Math.round((6 + Math.floor(rng() * 4)) * scale))

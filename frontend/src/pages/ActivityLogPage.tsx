@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DateRangeFilter, type DateRange } from '@/components/employee/DateRangeFilter'
 import { employeeService, type ActivityLogItem } from '@/services/employeeService'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 
 // Helper to parse date string like "Oct 6, 2026 · 9:15 AM" or "2026-10-05 08:14"
 function parseDateForFilter(dateStr: string): Date | null {
@@ -256,8 +257,8 @@ export const ActivityLogPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Top Right Action Buttons: Refresh & Red Export Dropdown */}
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        {/* Top Right Action Buttons: Refresh, Live Date & Red Export Dropdown */}
+        <div className="flex items-center gap-3 self-start sm:self-auto flex-wrap">
           {/* Refresh Button */}
           <Button
             type="button"
@@ -272,6 +273,8 @@ export const ActivityLogPage: React.FC = () => {
             />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
+
+          <LiveDateTimeBadge />
 
           {/* Red Export Button with CSV & PDF options */}
           <div ref={exportDropdownRef} className="relative inline-block">

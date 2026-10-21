@@ -59,6 +59,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
     telephoneNumber: '',
     startingBalance: 0,
     currentBalance: 0,
+    pettyCash: 0,
     logoUrl: undefined,
   })
 
@@ -74,6 +75,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
         telephoneNumber: company.telephoneNumber || '',
         startingBalance: company.startingBalance,
         currentBalance: company.currentBalance,
+        pettyCash: company.pettyCash || 0,
         logoUrl: company.logoUrl,
       })
       setProfilePreview(company.logoUrl || null)
@@ -128,7 +130,11 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
   const handleConfirmSave = async () => {
     try {
       setIsSubmitting(true)
-      const updated = await employeeService.updateCompany(company.id, formData)
+      const updated = await employeeService.updateCompany(company.id, {
+        ...formData,
+        startingBalance: Number(formData.startingBalance) || 0,
+        pettyCash: Number(formData.pettyCash) || 0,
+      })
       onUpdate?.(updated)
       setIsConfirmEditOpen(false)
       setIsEditing(false)
@@ -298,17 +304,45 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="edit-comp-start-bal" className="text-xs font-medium text-focus/80">Starting Balance (₱)</Label>
-                  <Input
-                    id="edit-comp-start-bal"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.startingBalance}
-                    onChange={(e) => setFormData({ ...formData, startingBalance: Number(e.target.value) })}
-                    className="h-10 rounded-xl text-sm"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-comp-start-bal" className="text-xs font-medium text-focus/80">Starting Balance (₱)</Label>
+                    <Input
+                      id="edit-comp-start-bal"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={formData.startingBalance === undefined || formData.startingBalance === null ? '' : formData.startingBalance}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setFormData({
+                          ...formData,
+                          startingBalance: val === '' ? ('' as unknown as number) : Number(val),
+                        })
+                      }}
+                      className="h-10 rounded-xl text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-comp-petty-cash" className="text-xs font-medium text-focus/80">Petty Cash (₱)</Label>
+                    <Input
+                      id="edit-comp-petty-cash"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={formData.pettyCash === undefined || formData.pettyCash === null ? '' : formData.pettyCash}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setFormData({
+                          ...formData,
+                          pettyCash: val === '' ? ('' as unknown as number) : Number(val),
+                        })
+                      }}
+                      className="h-10 rounded-xl text-sm"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -392,6 +426,15 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                   </span>
                   <span className="font-semibold text-focus text-sm text-right tabular-nums">
                     {company.startingBalance ? formatPHP(company.startingBalance) : '—'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 py-0.5">
+                  <span className="font-medium text-muted-fg text-sm shrink-0">
+                    Petty Cash:
+                  </span>
+                  <span className="font-semibold text-focus text-sm text-right tabular-nums">
+                    {company.pettyCash ? formatPHP(company.pettyCash) : '—'}
                   </span>
                 </div>
               </div>
