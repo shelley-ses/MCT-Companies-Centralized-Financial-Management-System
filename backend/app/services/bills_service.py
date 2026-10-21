@@ -55,13 +55,74 @@ def _normalize_recurring(value: Optional[str]) -> str:
     return recurring
 
 
+KNOWN_COMPANY_ALIASES = {
+    "mct kitchen": ["mycity kitchen", "kitchen"],
+    "kitchen": ["mycity kitchen", "kitchen"],
+    "mct hotel": ["mctolentino", "hotel", "hospitality"],
+    "hotel": ["mctolentino", "hotel", "hospitality"],
+    "filcap": ["filcap", "filcam"],
+    "filcap prime holdings corp.": ["filcap", "filcam"],
+    "filcap prime": ["filcap", "filcam"],
+    "jk property": ["jk property and ventures", "property ventures"],
+    "jk property and ventures": ["jk property and ventures", "property ventures"],
+    "speedbox": ["speedfire construction", "speedfire"],
+    "speedfire": ["speedfire construction", "speedfire"],
+    "jk printing": ["jk global headways", "printing"],
+    "golden sunburst": ["golden jupiter property ventures", "golden jupiter"],
+    "golden sunburst ventures": ["golden jupiter property ventures", "golden jupiter"],
+}
+
+
 def _resolve_company(db: Session, company_id: Optional[int], company_name: Optional[str]) -> Company:
-    company = db.query(Company).filter(Company.company_id == company_id).first() if company_id else None
-    if not company and company_name:
-        company = db.query(Company).filter(Company.company_name.ilike(company_name.strip())).first()
-    if not company:
+    # 1. By ID if specified
+    if company_id:
+        company = db.query(Company).filter(Company.company_id == company_id).first()
+        if company:
+            return company
+
+    all_companies = db.query(Company).all()
+
+    # 2. If name is missing or "all companies", fallback to first company gracefully
+    if not company_name or not company_name.strip() or company_name.strip().lower() == "all companies":
+        if all_companies:
+            return all_companies[0]
         raise HTTPException(status_code=400, detail="A valid company_id or company name is required.")
-    return company
+
+    clean_name = company_name.strip()
+    clean_lower = clean_name.lower()
+
+    # 3. Exact case-insensitive match
+    company = db.query(Company).filter(Company.company_name.ilike(clean_name)).first()
+    if company:
+        return company
+
+    # 4. Trimmed space-insensitive match
+    for c in all_companies:
+        if c.company_name.strip().lower() == clean_lower:
+            return c
+
+    # 5. Known aliases / keyword mappings
+    for alias_key, search_terms in KNOWN_COMPANY_ALIASES.items():
+        if alias_key in clean_lower or clean_lower in alias_key:
+            for term in search_terms:
+                for c in all_companies:
+                    if term in c.company_name.strip().lower():
+                        return c
+
+    # 6. Generic substring containment
+    for c in all_companies:
+        c_clean = c.company_name.strip().lower()
+        if clean_lower in c_clean or c_clean in clean_lower:
+            return c
+
+    # 7. Word-level match (words with >= 4 characters)
+    words = [w for w in clean_lower.replace("&", " ").replace(".", " ").split() if len(w) >= 4]
+    for w in words:
+        for c in all_companies:
+            if w in c.company_name.lower():
+                return c
+
+    raise HTTPException(status_code=400, detail="A valid company_id or company name is required.")
 
 
 class BillsService:
