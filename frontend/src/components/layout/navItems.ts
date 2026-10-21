@@ -10,8 +10,10 @@ import {
   Settings,
   ReceiptText,
   Wallet,
+  Landmark,
 } from 'lucide-react'
 import type * as React from 'react'
+import { isLendingEnabledCompany } from '@/config/companyFeatures'
 
 export interface NavSubItem {
   id: string
@@ -27,6 +29,7 @@ export interface NavItem {
   icon: React.ComponentType<{ className?: string }>
   subItems?: NavSubItem[]
   roles?: string[] // reserved for future role filtering per spec
+  companyCheck?: (company: string) => boolean
 }
 
 export const MAIN_NAV_ITEMS: readonly NavItem[] = [
@@ -71,6 +74,14 @@ export const MAIN_NAV_ITEMS: readonly NavItem[] = [
         roles: ['Finance', 'Supervisor', 'Company', 'Company Auditor'],
       },
     ],
+  },
+  {
+    id: 'lending',
+    title: 'Lending',
+    href: '/lending',
+    icon: Landmark,
+    roles: ['Admin', 'Finance', 'Company', 'Company Auditor', 'Audit'],
+    companyCheck: (company: string) => isLendingEnabledCompany(company),
   },
   {
     id: 'petty-cash',

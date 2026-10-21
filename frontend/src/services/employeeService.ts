@@ -631,7 +631,7 @@ export const employeeService = {
         body: JSON.stringify({
           name: payload.fullName,
           email: payload.email,
-          password: payload.password || 'password123',
+          password: payload.password || 'Password123!',
           company_id: company && !isNaN(Number(company.id)) ? Number(company.id) : null,
           is_admin: payload.role === 'Admin',
           role: payload.role.toLowerCase(),

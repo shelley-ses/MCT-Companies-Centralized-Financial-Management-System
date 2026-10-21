@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useSession } from '@/hooks/useSession'
 import { Skeleton } from '@/components/ui/skeleton'
+import { isLendingEnabledCompany } from '@/config/companyFeatures'
 
 export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -77,3 +78,17 @@ export const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
 
   return <>{children}</>
 }
+
+export const LendingRouteGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useSession()
+  const isCompanyUser =
+    user?.role === 'Company' || user?.role === 'Company Auditor' || user?.role === 'Supervisor'
+
+  // Company-scoped users assigned to non-lending companies are blocked immediately
+  if (isCompanyUser && !isLendingEnabledCompany(user?.assignedCompany)) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
+

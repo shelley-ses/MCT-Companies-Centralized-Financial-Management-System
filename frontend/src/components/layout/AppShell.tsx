@@ -25,6 +25,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
       document.title = 'Lender Loans - MCT Centralized Financial System'
     } else if (path.startsWith('/loan')) {
       document.title = 'Loan - MCT Centralized Financial System'
+    } else if (path.startsWith('/lending')) {
+      document.title = 'Lending - MCT Centralized Financial System'
     } else if (path.startsWith('/bills')) {
       document.title = 'Bills - MCT Centralized Financial System'
     } else if (path.startsWith('/transaction')) {

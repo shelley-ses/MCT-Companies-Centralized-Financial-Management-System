@@ -5,6 +5,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { SalesPage } from '@/pages/SalesPage'
 import { ExpensePage } from '@/pages/ExpensePage'
 import { LoanPage } from '@/pages/LoanPage'
+import { LendingPage } from '@/pages/LendingPage'
 import { BillsPage } from '@/pages/BillsPage'
 import { PettyCashPage } from '@/pages/PettyCashPage'
 import { TransactionPage } from '@/pages/TransactionPage'
@@ -18,6 +19,7 @@ import {
   ProtectedRoute,
   PublicOnlyRoute,
   AdminOnlyRoute,
+  LendingRouteGuard,
 } from '@/components/layout/RouteGuards'
 
 export const router = createBrowserRouter([
@@ -150,6 +152,18 @@ export const router = createBrowserRouter([
         <AppShell>
           <LoanPage initialType="Lender" />
         </AppShell>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/lending',
+    element: (
+      <ProtectedRoute>
+        <LendingRouteGuard>
+          <AppShell>
+            <LendingPage />
+          </AppShell>
+        </LendingRouteGuard>
       </ProtectedRoute>
     ),
   },

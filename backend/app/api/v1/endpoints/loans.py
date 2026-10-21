@@ -39,6 +39,7 @@ CANONICAL_COMPANY_MAP = {
     10: "JK Property and Ventures",
     11: "Golden Sunburst Ventures",
     12: "Southern Brew",
+    14: "FILCAP Prime Holdings Corp.",
 }
 
 def get_supabase_company_mapping(client, db: Optional[Session] = None):

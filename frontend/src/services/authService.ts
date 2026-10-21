@@ -117,6 +117,22 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     assignedCompany: 'MCT Hotel',
     avatarUrl: logo2Url,
   },
+  {
+    id: 'usr_jk_property_01',
+    fullName: 'Jessica Kho (JK Property)',
+    email: 'jkproperty@mct.com',
+    role: 'Company',
+    assignedCompany: 'JK Property and Ventures',
+    avatarUrl: logo2Url,
+  },
+  {
+    id: 'usr_filcap_01',
+    fullName: 'Carlos Tan (FilCap)',
+    email: 'filcap@mct.com',
+    role: 'Company',
+    assignedCompany: 'FilCap Prime Holdings Corp.',
+    avatarUrl: logo2Url,
+  },
 ]
 
 export const ADMIN_USER: User = SEEDED_ACCOUNTS[0]
@@ -229,6 +245,30 @@ export function detectUserByEmail(email: string): User {
     }
   }
 
+  // Detection for JK Property employee
+  if (normalized.includes('jkproperty') || normalized.includes('jk_property')) {
+    return {
+      id: `usr_jk_${Date.now()}`,
+      fullName: 'Jessica Kho',
+      email: email.trim(),
+      role: 'Company',
+      assignedCompany: 'JK Property and Ventures',
+      avatarUrl: logo2Url,
+    }
+  }
+
+  // Detection for FilCap employee
+  if (normalized.includes('filcap') || normalized.includes('filcam')) {
+    return {
+      id: `usr_filcap_${Date.now()}`,
+      fullName: 'Carlos Tan',
+      email: email.trim(),
+      role: 'Company',
+      assignedCompany: 'FilCap Prime Holdings Corp.',
+      avatarUrl: logo2Url,
+    }
+  }
+
   // Default to Admin
   return {
     id: `usr_admin_${Date.now()}`,
@@ -300,11 +340,23 @@ function mapUser(user: {
     role = 'Company'
   }
 
+  // Look up seeded account or detect from email
+  const seeded = SEEDED_ACCOUNTS.find((acc) => acc.email.toLowerCase() === rawEmail)
+  let resolvedCompany = user.company_name || seeded?.assignedCompany
+
+  if (!resolvedCompany) {
+    if (rawEmail.includes('filcap') || rawEmail.includes('filcam')) {
+      resolvedCompany = 'FilCap Prime Holdings Corp.'
+    } else if (rawEmail.includes('jkproperty') || rawEmail.includes('jk_property')) {
+      resolvedCompany = 'JK Property and Ventures'
+    }
+  }
+
   const assignedCompany = (role === 'Admin' || role === 'Audit')
     ? 'All Companies'
     : role === 'Finance'
-    ? (user.company_name || 'All Companies')
-    : (user.company_name || 'MCT Kitchen')
+    ? (resolvedCompany || 'All Companies')
+    : (resolvedCompany || 'MCT Kitchen')
 
   const displayName = rawEmail === 'admin@mct.com' || rawEmail === 'remi.lee@mct.com'
     ? 'Remi Lee'

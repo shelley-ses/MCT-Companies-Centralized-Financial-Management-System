@@ -266,7 +266,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
         email: pendingValues.email,
         assignedCompany: pendingValues.assignedCompany,
         role: pendingValues.role,
-        password: 'password123',
+        password: 'Password123!',
         avatarUrl: pendingValues.avatarUrl || profilePreview || undefined,
         permissions: permsMap,
       })

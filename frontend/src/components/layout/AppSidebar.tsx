@@ -16,6 +16,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { useSession } from '@/hooks/useSession'
+import { useCompany } from '@/context/CompanyContext'
 import { cn } from '@/lib/utils'
 
 interface AppSidebarProps {
@@ -30,6 +31,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   forceExpanded = false,
 }) => {
   const { user } = useSession()
+  const { activeCompany } = useCompany()
   const location = useLocation()
   const [isHovered, setIsHovered] = React.useState(false)
   const isExpanded = forceExpanded || isHovered
@@ -63,18 +65,34 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
   const filteredMainItems = React.useMemo(
     () =>
-      MAIN_NAV_ITEMS.filter(
-        (item) => !item.roles || item.roles.includes(userRole) || item.roles.includes(user?.role || '')
-      ),
-    [userRole, user?.role]
+      MAIN_NAV_ITEMS.filter((item) => {
+        const matchesRole =
+          !item.roles || item.roles.includes(userRole) || item.roles.includes(user?.role || '')
+        if (!matchesRole) return false
+
+        if (item.companyCheck && !item.companyCheck(activeCompany)) {
+          return false
+        }
+
+        return true
+      }),
+    [userRole, user?.role, activeCompany]
   )
 
   const filteredSecondaryItems = React.useMemo(
     () =>
-      SECONDARY_NAV_ITEMS.filter(
-        (item) => !item.roles || item.roles.includes(userRole) || item.roles.includes(user?.role || '')
-      ),
-    [userRole, user?.role]
+      SECONDARY_NAV_ITEMS.filter((item) => {
+        const matchesRole =
+          !item.roles || item.roles.includes(userRole) || item.roles.includes(user?.role || '')
+        if (!matchesRole) return false
+
+        if (item.companyCheck && !item.companyCheck(activeCompany)) {
+          return false
+        }
+
+        return true
+      }),
+    [userRole, user?.role, activeCompany]
   )
 
   return (
