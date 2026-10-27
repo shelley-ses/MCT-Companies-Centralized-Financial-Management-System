@@ -50,7 +50,7 @@ export type BillCategory =
   | 'Insurance'
   | 'Others'
 
-export type BillStatus = 'Unpaid' | 'Paid' | 'Overdue' | 'Due Soon'
+export type BillStatus = 'Unpaid' | 'Paid' | 'Overdue' | 'Due Soon' | 'Partially Paid'
 export type BillRecurring = 'Daily' | 'Monthly' | 'Yearly'
 
 export interface BillItem {
@@ -77,7 +77,7 @@ export interface BillItem {
 export interface NewBillInput {
   billerName: string
   company: string
-  category: string
+  category?: string
   accountNo?: string
   amount: number
   dueDate: string
@@ -125,6 +125,9 @@ export interface BillPaymentPeriod {
   key: string
   label: string
   paid: boolean
+  partiallyPaid?: boolean
+  paidAmount?: number
+  remainingAmount?: number
   paymentDate?: string
   periodDate?: string
   isFuture?: boolean
@@ -698,10 +701,15 @@ function getInitialPeriodDate(bill: BillItem, recurring: BillRecurring): Date {
   ].filter(Boolean) as string[]
 
   const earliest = candidateDates.sort()[0] || bill.dueDate
-  const date = new Date(`${earliest}T00:00:00`)
+  let date = new Date(`${earliest}T00:00:00`)
   const baseDateStr = bill.initialDueDate || bill.dueDate
   const base = new Date(`${baseDateStr}T00:00:00`)
   const day = !isNaN(base.getDate()) ? base.getDate() : 1
+
+  // Clamp starting date to 2025 onwards
+  if (date.getFullYear() < 2025) {
+    date = new Date(2025, 0, Math.min(day, 28))
+  }
 
   if (recurring === 'Daily') return date
   if (recurring === 'Yearly') return new Date(date.getFullYear(), base.getMonth() || 0, day)
@@ -749,23 +757,40 @@ export function getBillPaymentOptions(
     const periodDateStr = periodDate.toISOString().slice(0, 10)
     const key = getPeriodKey(periodDateStr, recurring)
     const isFuture = key > currentPeriodKey
-    const payment = (bill.payments || []).find(
-      (item) => getPaymentPeriodKey(item, recurring) === key
-    )
 
-    periods.push({
-      key,
-      label:
-        recurring === 'Daily'
-          ? periodDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-          : recurring === 'Yearly'
-          ? periodDate.toLocaleDateString(undefined, { year: 'numeric' })
-          : periodDate.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
-      paid: Boolean(payment),
-      paymentDate: payment?.paymentDate,
-      periodDate: periodDateStr,
-      isFuture,
-    })
+    // Only include periods from 2025 onwards
+    if (periodDateStr >= '2025-01-01' || key >= '2025-01') {
+      const paymentsForPeriod = (bill.payments || []).filter(
+        (item) => getPaymentPeriodKey(item, recurring) === key
+      )
+      const paidAmount = paymentsForPeriod.reduce(
+        (sum, item) => sum + (Number(item.amount) || 0),
+        0
+      )
+      const isPaid = paidAmount >= (bill.amount - 0.009)
+      const isPartiallyPaid = !isPaid && paidAmount > 0
+      const remainingAmount = isPaid ? 0 : Math.max(0, bill.amount - paidAmount)
+      const latestPayment = paymentsForPeriod.sort((a, b) =>
+        (b.paymentDate || '').localeCompare(a.paymentDate || '')
+      )[0]
+
+      periods.push({
+        key,
+        label:
+          recurring === 'Daily'
+            ? periodDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+            : recurring === 'Yearly'
+            ? periodDate.toLocaleDateString(undefined, { year: 'numeric' })
+            : periodDate.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
+        paid: isPaid,
+        partiallyPaid: isPartiallyPaid,
+        paidAmount,
+        remainingAmount,
+        paymentDate: latestPayment?.paymentDate,
+        periodDate: periodDateStr,
+        isFuture,
+      })
+    }
 
     if (isFuture) {
       futureCount += 1
@@ -779,8 +804,8 @@ export function getBillPaymentOptions(
   }
 
   // Next required period:
-  // 1. The oldest unpaid past or current period (chronological backlog settlement)
-  // 2. If all past & current are paid, the earliest unpaid future period (advance payment)
+  // 1. The oldest unpaid or partially paid past or current period (chronological backlog settlement)
+  // 2. If all past & current are fully paid, the earliest unpaid future period (advance payment)
   const oldestUnpaidPastOrCurrent = periods.find(
     (period) => !period.paid && !period.isFuture
   )
@@ -821,6 +846,10 @@ function calculateBillStatus(bill: BillItem, todayStr: string): BillStatus {
   // If all past and current periods are paid, the bill obligation is fulfilled
   if (!oldestUnpaidPastOrCurrent) {
     return 'Paid'
+  }
+
+  if (oldestUnpaidPastOrCurrent.partiallyPaid) {
+    return 'Partially Paid'
   }
 
   const due = oldestUnpaidPastOrCurrent.periodDate || bill.dueDate
@@ -887,6 +916,7 @@ export const billsService = {
   },
 
   async createBill(input: NewBillInput): Promise<BillItem> {
+    const categoryToUse = (input.category || '').trim() || 'General'
     try {
       const response = await fetch('/api/v1/bills', {
         method: 'POST',
@@ -894,7 +924,7 @@ export const billsService = {
         body: JSON.stringify({
           company: input.company,
           bill_name: input.billerName,
-          category: input.category,
+          category: categoryToUse,
           account_no: input.accountNo || null,
           amount: input.amount,
           recurring: (input.billingCycle || 'Monthly').toLowerCase(),
@@ -911,6 +941,17 @@ export const billsService = {
     }
 
     const bills = getStoredBills()
+    const isDuplicate = bills.some(
+      (b) =>
+        b.company.toLowerCase() === input.company.trim().toLowerCase() &&
+        b.billerName.trim().toLowerCase() === input.billerName.trim().toLowerCase()
+    )
+    if (isDuplicate) {
+      throw new Error(
+        `A bill with provider name "${input.billerName.trim()}" already exists for ${input.company}. Duplicate biller names are not allowed.`
+      )
+    }
+
     const nowIso = new Date().toISOString()
     const today = nowIso.split('T')[0]
 
@@ -923,7 +964,7 @@ export const billsService = {
       id: `bill-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       billerName: input.billerName.trim(),
       company: input.company.trim(),
-      category: input.category.trim() || 'Others',
+      category: categoryToUse,
       accountNo: (input.accountNo || '').trim(),
       amount: Number(input.amount) || 0,
       dueDate: input.dueDate,

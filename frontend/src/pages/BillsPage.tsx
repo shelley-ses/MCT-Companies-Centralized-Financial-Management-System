@@ -21,7 +21,6 @@ import {
   X,
   AlertCircle,
   Eye,
-  RotateCcw,
   MoreVertical,
   FileText,
 } from 'lucide-react'
@@ -55,7 +54,6 @@ import {
   type BillReminder,
   type BillStatus,
   type BillPaymentPeriod,
-  BILL_CATEGORIES,
 } from '@/services/billsService'
 import { loanService } from '@/services/loanService'
 import { AddBillModal } from '@/components/dashboard/AddBillModal'
@@ -107,7 +105,6 @@ export const BillsPage: React.FC = () => {
     }
   }, [activeCompany, isCompanyScoped])
 
-  const [selectedCategory, setSelectedCategory] = React.useState<string>('All')
   const [statusFilter, setStatusFilter] = React.useState<'All' | BillStatus>('All')
   const [searchQuery, setSearchQuery] = React.useState('')
   const [currentPage, setCurrentPage] = React.useState(1)
@@ -115,13 +112,11 @@ export const BillsPage: React.FC = () => {
   // Dropdowns
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
-  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = React.useState(false)
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false)
   const [companySearch, setCompanySearch] = React.useState('')
 
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
   const companyDropdownRef = React.useRef<HTMLDivElement>(null)
-  const categoryDropdownRef = React.useRef<HTMLDivElement>(null)
   const statusDropdownRef = React.useRef<HTMLDivElement>(null)
   const tableCardRef = React.useRef<HTMLDivElement>(null)
 
@@ -172,18 +167,9 @@ export const BillsPage: React.FC = () => {
   // Details pop-up modal state
   const [selectedDetailBill, setSelectedDetailBill] = React.useState<BillItem | null>(null)
   const [selectedDetailPeriod, setSelectedDetailPeriod] = React.useState<BillPaymentPeriod | null>(null)
-  const [detailPayDate, setDetailPayDate] = React.useState<string>(() =>
-    new Date().toISOString().slice(0, 10)
-  )
-  const [detailPayMethod, setDetailPayMethod] = React.useState<string>('Bank Transfer')
-  const [detailRefNo, setDetailRefNo] = React.useState<string>('')
-  const [isDetailPaying, setIsDetailPaying] = React.useState(false)
 
   React.useEffect(() => {
     if (selectedDetailBill) {
-      setDetailPayDate(new Date().toISOString().slice(0, 10))
-      setDetailPayMethod('Bank Transfer')
-      setDetailRefNo('')
       setSelectedDetailPeriod(getBillPaymentOptions(selectedDetailBill).nextPayable)
     } else {
       setSelectedDetailPeriod(null)
@@ -239,9 +225,6 @@ export const BillsPage: React.FC = () => {
       if (companyDropdownRef.current && !companyDropdownRef.current.contains(target)) {
         setIsCompanyDropdownOpen(false)
       }
-      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(target)) {
-        setIsCategoryDropdownOpen(false)
-      }
       if (statusDropdownRef.current && !statusDropdownRef.current.contains(target)) {
         setIsStatusDropdownOpen(false)
       }
@@ -259,11 +242,6 @@ export const BillsPage: React.FC = () => {
         if (!matchesCompany) return false
       }
 
-      // Category filter
-      if (selectedCategory !== 'All') {
-        if (bill.category !== selectedCategory) return false
-      }
-
       // Status filter
       if (statusFilter !== 'All') {
         if (bill.status !== statusFilter) return false
@@ -275,7 +253,7 @@ export const BillsPage: React.FC = () => {
         const matchName = bill.billerName.toLowerCase().includes(q)
         const matchAcc = (bill.accountNo || '').toLowerCase().includes(q)
         const matchComp = bill.company.toLowerCase().includes(q)
-        const matchCat = bill.category.toLowerCase().includes(q)
+        const matchCat = (bill.category || '').toLowerCase().includes(q)
         const matchNotes = (bill.notes || '').toLowerCase().includes(q)
         if (!matchName && !matchAcc && !matchComp && !matchCat && !matchNotes) {
           return false
@@ -284,7 +262,7 @@ export const BillsPage: React.FC = () => {
 
       return true
     })
-  }, [bills, selectedCompany, selectedCategory, statusFilter, searchQuery])
+  }, [bills, selectedCompany, statusFilter, searchQuery])
 
   // KPI stats for current company scope
   const scopedBills = React.useMemo(() => {
@@ -312,7 +290,7 @@ export const BillsPage: React.FC = () => {
   // Reset page when filter changes
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [selectedCompany, selectedCategory, statusFilter, searchQuery])
+  }, [selectedCompany, statusFilter, searchQuery])
 
   // Handlers
   const handleBillCreated = (newBill: BillItem) => {
@@ -329,7 +307,6 @@ export const BillsPage: React.FC = () => {
       setActiveCompany('All Companies')
     }
     // Clear filters that could hide the newly created bill
-    setSelectedCategory('All')
     setStatusFilter('All')
     setSearchQuery('')
     setCurrentPage(1)
@@ -362,42 +339,6 @@ export const BillsPage: React.FC = () => {
 
   const handleRowClick = (bill: BillItem) => {
     setSelectedDetailBill(bill)
-  }
-
-  const handlePayFromDetailsModal = async () => {
-    if (!selectedDetailBill) return
-    try {
-      setIsDetailPaying(true)
-      const targetPeriod = selectedDetailPeriod || getBillPaymentOptions(selectedDetailBill).nextPayable
-      const updated = await billsService.recordPayment(selectedDetailBill.id, {
-        periodKey: targetPeriod.key,
-        paymentDate: detailPayDate || new Date().toISOString().slice(0, 10),
-        amount: selectedDetailBill.amount,
-        paymentMethod: detailPayMethod,
-        refNo: detailRefNo.trim() || undefined,
-        notes: 'Paid via bill details modal',
-      })
-      handleBillUpdated(updated)
-      setSelectedDetailBill(null)
-    } catch (err: any) {
-      alert(err?.message || 'Failed to record payment')
-    } finally {
-      setIsDetailPaying(false)
-    }
-  }
-
-  const handleUndoFromDetailsModal = async () => {
-    if (!selectedDetailBill) return
-    try {
-      setIsDetailPaying(true)
-      const updated = await billsService.markAsUnpaid(selectedDetailBill.id)
-      handleBillUpdated(updated)
-      setSelectedDetailBill(null)
-    } catch (err: any) {
-      alert(err?.message || 'Failed to revert bill')
-    } finally {
-      setIsDetailPaying(false)
-    }
   }
 
   const handleExportCsv = () => {
@@ -595,75 +536,12 @@ export const BillsPage: React.FC = () => {
 
           {/* Filter Toolbar */}
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap shrink-0 self-start lg:self-auto relative z-30">
-            {/* Category Filter */}
-            <div ref={categoryDropdownRef} className="relative inline-block shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCategoryDropdownOpen((prev) => !prev)
-                  setIsStatusDropdownOpen(false)
-                  setIsCompanyDropdownOpen(false)
-                }}
-                className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                  isCategoryDropdownOpen && 'ring-2 ring-focus/20 border-focus'
-                )}
-              >
-                <Receipt className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                <span className="font-medium text-focus/90">
-                  {selectedCategory === 'All' ? 'All Categories' : selectedCategory}
-                </span>
-                <ChevronDown className="h-3 w-3 text-muted-fg shrink-0" />
-              </button>
-
-              {isCategoryDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-52 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-72 overflow-y-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCategory('All')
-                      setIsCategoryDropdownOpen(false)
-                    }}
-                    className={cn(
-                      'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                      selectedCategory === 'All'
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-focus/80 hover:bg-slate-50'
-                    )}
-                  >
-                    <span>All Categories</span>
-                    {selectedCategory === 'All' && <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />}
-                  </button>
-                  {BILL_CATEGORIES.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => {
-                        setSelectedCategory(cat)
-                        setIsCategoryDropdownOpen(false)
-                      }}
-                      className={cn(
-                        'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                        selectedCategory === cat
-                          ? 'bg-primary/10 text-primary font-semibold'
-                          : 'text-focus/80 hover:bg-slate-50'
-                      )}
-                    >
-                      <span className="truncate">{cat}</span>
-                      {selectedCategory === cat && <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Status Filter */}
             <div ref={statusDropdownRef} className="relative inline-block shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   setIsStatusDropdownOpen((prev) => !prev)
-                  setIsCategoryDropdownOpen(false)
                   setIsCompanyDropdownOpen(false)
                 }}
                 className={cn(
@@ -678,8 +556,8 @@ export const BillsPage: React.FC = () => {
               </button>
 
               {isStatusDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {(['All', 'Due Soon', 'Overdue', 'Unpaid', 'Paid'] as const).map((st) => (
+                <div className="absolute left-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  {(['All', 'Due Soon', 'Overdue', 'Unpaid', 'Partially Paid', 'Paid'] as const).map((st) => (
                     <button
                       key={st}
                       type="button"
@@ -716,7 +594,6 @@ export const BillsPage: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setIsCompanyDropdownOpen((prev) => !prev)
-                    setIsCategoryDropdownOpen(false)
                     setIsStatusDropdownOpen(false)
                   }}
                   className={cn(
@@ -1647,131 +1524,30 @@ export const BillsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Payment Settlement Fields (Available for both outstanding and advance payments, hidden for Audit) */}
-              {!isAudit && (
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 mt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-focus uppercase tracking-wider block">
-                      {selectedDetailBill.status === 'Paid'
-                        ? 'Advance Payment Settlement'
-                        : 'Payment Settlement Details'}
-                    </span>
-                    {selectedDetailBill.status === 'Paid' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        <Check className="w-3 h-3 text-emerald-600" />
-                        Up to date • Advance payment enabled
-                      </span>
-                    )}
-                  </div>
-
-                  <div
-                    className={cn(
-                      'p-2.5 rounded-xl border',
-                      selectedDetailBill.status === 'Paid'
-                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-                        : 'bg-amber-50 border-amber-200 text-amber-900'
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'text-[10px] font-bold uppercase tracking-wider block',
-                        selectedDetailBill.status === 'Paid' ? 'text-emerald-700' : 'text-amber-800'
-                      )}
-                    >
-                      {selectedDetailBill.status === 'Paid'
-                        ? 'This advance payment will settle'
-                        : 'This payment will settle'}
-                    </span>
-                    <span className="text-sm font-bold block mt-0.5">
-                      {selectedDetailPeriod?.label || selectedDetailNextPeriod?.label || selectedDetailBill.dueDate}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="text-[11px] font-semibold text-muted-fg block mb-1">
-                        Payment Date
-                      </label>
-                      <Input
-                        type="date"
-                        value={detailPayDate}
-                        onChange={(e) => setDetailPayDate(e.target.value)}
-                        className="h-9 rounded-xl text-xs bg-white border-stroke/60"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-semibold text-muted-fg block mb-1">
-                        Payment Method
-                      </label>
-                      <select
-                        value={detailPayMethod}
-                        onChange={(e) => setDetailPayMethod(e.target.value)}
-                        className="w-full h-9 px-2.5 rounded-xl text-xs bg-white border border-stroke/60 focus:ring-1 focus:ring-[#960C01] outline-none"
-                      >
-                        {['Bank Transfer', 'Cash', 'Cheque', 'GCash', 'Maya', 'In-house', 'Auto-Debit'].map((pm) => (
-                          <option key={pm} value={pm}>
-                            {pm}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons: Cancel, Pay/Advance, and Revert */}
+              {/* Action Buttons: Close and Pay Bill */}
               <div className="pt-4 border-t border-stroke/20 flex items-center justify-end gap-2.5 mt-3 flex-wrap">
-                {isAudit ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSelectedDetailBill(null)}
+                  className="rounded-xl h-10 sm:h-11 px-5 text-xs sm:text-sm font-semibold border-stroke/50 bg-white text-focus hover:bg-surface cursor-pointer"
+                >
+                  Close
+                </Button>
+
+                {!isAudit && (
                   <Button
                     type="button"
-                    variant="outline"
-                    onClick={() => setSelectedDetailBill(null)}
-                    className="rounded-xl h-10 sm:h-11 px-6 text-xs sm:text-sm font-semibold border-stroke/50 bg-white text-focus hover:bg-surface cursor-pointer"
+                    onClick={() => {
+                      const billToPay = selectedDetailBill
+                      setSelectedDetailBill(null)
+                      setPaymentBill(billToPay)
+                    }}
+                    className="rounded-xl h-10 sm:h-11 px-6 text-xs sm:text-sm font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs flex items-center gap-2 cursor-pointer"
                   >
-                    Close
+                    <CreditCard className="w-4 h-4" />
+                    <span>Pay Bill</span>
                   </Button>
-                ) : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setSelectedDetailBill(null)}
-                      disabled={isDetailPaying}
-                      className="rounded-xl h-10 sm:h-11 px-5 text-xs sm:text-sm font-semibold border-stroke/50 bg-white text-focus hover:bg-surface cursor-pointer"
-                    >
-                      Cancel
-                    </Button>
-
-                    {/* Pay Button: Supports both standard backlog payment and advance payment */}
-                    <Button
-                      type="button"
-                      onClick={handlePayFromDetailsModal}
-                      disabled={isDetailPaying}
-                      className="rounded-xl h-10 sm:h-11 px-6 text-xs sm:text-sm font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs flex items-center gap-2 cursor-pointer"
-                    >
-                      <CreditCard className="w-4 h-4" />
-                      <span>
-                        {isDetailPaying
-                          ? 'Processing...'
-                          : `Pay ${selectedDetailPeriod?.label || selectedDetailNextPeriod?.label || 'Period'} (${formatPHP(selectedDetailBill.amount)})`}
-                      </span>
-                    </Button>
-
-                    {/* Secondary Revert action if bill already has payments recorded */}
-                    {selectedDetailBill.status === 'Paid' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleUndoFromDetailsModal}
-                        disabled={isDetailPaying}
-                        className="rounded-xl h-10 sm:h-11 px-4 text-xs sm:text-sm font-semibold border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer"
-                        title="Revert the most recent payment"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Revert Recent</span>
-                      </Button>
-                    )}
-                  </>
                 )}
               </div>
             </>

@@ -45,8 +45,6 @@ const PAYMENT_METHODS = [
   'Cheque',
   'GCash',
   'Maya',
-  'In-house',
-  'Auto-Debit',
 ] as const
 
 const MONTH_NAMES = [
@@ -94,18 +92,25 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
   const [referenceNo, setReferenceNo] = React.useState<string>('')
   const [notes, setNotes] = React.useState<string>('')
   const [selectedYear, setSelectedYear] = React.useState<number>(() =>
-    new Date().getFullYear()
+    Math.max(2025, new Date().getFullYear())
   )
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [error, setError] = React.useState('')
   const [successBanner, setSuccessBanner] = React.useState<string | null>(null)
 
-  // Reset or initialize on open
+  // Reset or initialize on open - automatically locks to oldest unpaid or partially paid month (2025 onwards)
   React.useEffect(() => {
     if (open && bill) {
       const options = getBillPaymentOptions(bill)
       const nextP = options.nextPayable
-      setAmountInput(String(bill.amount))
+      const remaining =
+        nextP.remainingAmount !== undefined && nextP.remainingAmount > 0
+          ? nextP.remainingAmount
+          : nextP.paidAmount && nextP.paidAmount > 0
+          ? Math.max(0, bill.amount - nextP.paidAmount)
+          : bill.amount
+
+      setAmountInput(String(remaining > 0 ? remaining : bill.amount))
       setPaymentDate(new Date().toISOString().slice(0, 10))
       setPaymentPeriod(nextP)
       setPaymentMethod('Bank Transfer')
@@ -116,7 +121,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
 
       const targetDate = nextP?.periodDate || bill.dueDate
       const parsedYear = targetDate ? parseInt(targetDate.slice(0, 4), 10) : new Date().getFullYear()
-      setSelectedYear(!isNaN(parsedYear) ? parsedYear : new Date().getFullYear())
+      setSelectedYear(!isNaN(parsedYear) ? Math.max(2025, parsedYear) : Math.max(2025, new Date().getFullYear()))
     }
   }, [open, bill])
 
@@ -127,7 +132,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
   const todayStr = new Date().toISOString().slice(0, 10)
   const currentPeriodKey = todayStr.slice(0, 7)
 
-  // Find overdue unpaid periods (past due dates)
+  // Find overdue unpaid or partially paid periods (past due dates)
   const overduePeriods = paymentSchedule.filter(
     (p) => !p.paid && !p.isFuture && (p.periodDate || '') < todayStr
   )
@@ -194,7 +199,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                 Record Bill Payment
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
-                Select a billing period from the calendar to settle current or overdue dues
+                Review the payment schedule and record payment for the oldest unpaid period
               </DialogDescription>
             </div>
           </div>
@@ -227,7 +232,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
           </div>
         </div>
 
-        {/* Overdue Alert Banner if multiple dues are pending */}
+        {/* Overdue Alert Banner if dues are pending */}
         {overduePeriods.length > 0 && (
           <div className="p-3 rounded-2xl bg-rose-50/90 border border-rose-200 text-xs text-rose-950 flex items-start justify-between gap-3 animate-in fade-in-50 duration-200">
             <div className="flex items-start gap-2.5 min-w-0">
@@ -237,23 +242,10 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                   {overduePeriods.length} Overdue Due{overduePeriods.length > 1 ? 's' : ''} Pending Payment
                 </span>
                 <span className="text-[11px] text-rose-800/90 leading-relaxed block mt-0.5">
-                  This bill has missed previous due dates. You can select any overdue month directly on the calendar below to pay for that past due first.
+                  This bill has pending past due dates. The oldest unpaid month ({paymentPeriod?.label}) is automatically selected for payment.
                 </span>
               </div>
             </div>
-            {overduePeriods[0] && paymentPeriod?.key !== overduePeriods[0].key && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPaymentPeriod(overduePeriods[0])
-                  const y = parseInt(overduePeriods[0].key.slice(0, 4), 10)
-                  if (!isNaN(y)) setSelectedYear(y)
-                }}
-                className="shrink-0 px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-[11px] shadow-xs cursor-pointer transition-colors"
-              >
-                Pay Oldest ({overduePeriods[0].label})
-              </button>
-            )}
           </div>
         )}
 
@@ -285,13 +277,17 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                 </span>
               </div>
 
-              {/* Year Navigator */}
+              {/* Year Navigator (Minimum 2025) */}
               <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-1.5 py-1 shadow-2xs">
                 <button
                   type="button"
-                  onClick={() => setSelectedYear((y) => y - 1)}
-                  className="w-6 h-6 rounded-lg hover:bg-slate-100 flex items-center justify-center text-focus transition-colors cursor-pointer"
-                  title="Previous Year"
+                  disabled={selectedYear <= 2025}
+                  onClick={() => setSelectedYear((y) => Math.max(2025, y - 1))}
+                  className={cn(
+                    'w-6 h-6 rounded-lg flex items-center justify-center text-focus transition-colors',
+                    selectedYear <= 2025 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-slate-100 cursor-pointer'
+                  )}
+                  title="Previous Year (Minimum 2025)"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
@@ -321,42 +317,33 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
 
                   // Look for matching period in schedule
                   const scheduledPeriod = paymentSchedule.find((p) => p.key === monthKey)
-                  const isPaid = Boolean(scheduledPeriod?.paid)
+                  const isPaid = Boolean(scheduledPeriod?.paid && !scheduledPeriod?.partiallyPaid)
+                  const isPartiallyPaid = Boolean(scheduledPeriod?.partiallyPaid)
                   const isOverdue =
                     !isPaid &&
+                    !isPartiallyPaid &&
                     ((scheduledPeriod && !scheduledPeriod.isFuture && (scheduledPeriod.periodDate || '') < todayStr) ||
                       (!scheduledPeriod && periodDateStr < todayStr))
                   const isDueCurrent =
-                    !isPaid && !isOverdue && monthKey === currentPeriodKey
-                  const isFuture =
-                    !isPaid && !isOverdue && !isDueCurrent && monthKey > currentPeriodKey
+                    !isPaid && !isPartiallyPaid && !isOverdue && monthKey === currentPeriodKey
                   const isSelected = paymentPeriod?.key === monthKey
 
-                  // Fallback period if not in original pre-generated window
-                  const periodObj: BillPaymentPeriod = scheduledPeriod || {
-                    key: monthKey,
-                    label: `${monthAbbr} ${selectedYear}`,
-                    paid: false,
-                    periodDate: periodDateStr,
-                    isFuture,
-                  }
-
                   return (
-                    <button
+                    <div
                       key={monthKey}
-                      type="button"
-                      onClick={() => setPaymentPeriod(periodObj)}
                       className={cn(
-                        'p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between min-h-[72px] cursor-pointer group',
+                        'p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between min-h-[76px] select-none',
                         isSelected
                           ? 'border-[#960C01] bg-[#960C01]/5 ring-2 ring-[#960C01] shadow-xs'
                           : isPaid
-                          ? 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-950'
+                          ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950'
+                          : isPartiallyPaid
+                          ? 'border-amber-300 bg-amber-50/80 text-amber-950'
                           : isOverdue
-                          ? 'border-rose-300 bg-rose-50/80 hover:bg-rose-100/80 text-rose-950'
+                          ? 'border-rose-300 bg-rose-50/80 text-rose-950'
                           : isDueCurrent
-                          ? 'border-amber-300 bg-amber-50/80 hover:bg-amber-100/80 text-amber-950'
-                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                          ? 'border-blue-200 bg-blue-50/70 text-blue-950'
+                          : 'border-slate-200 bg-white text-slate-700'
                       )}
                     >
                       {/* Top Header: Month Name & Selected Indicator */}
@@ -370,7 +357,9 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                           {MONTH_FULL_NAMES[idx]}
                         </span>
                         {isSelected && (
-                          <span className="w-2 h-2 rounded-full bg-[#960C01] shrink-0" />
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-[#960C01] text-white shrink-0">
+                            Paying
+                          </span>
                         )}
                       </div>
 
@@ -386,14 +375,19 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                             <Check className="w-3 h-3 text-emerald-600 shrink-0" />
                             <span>Paid</span>
                           </span>
+                        ) : isPartiallyPaid ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700">
+                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>Partially Paid</span>
+                          </span>
                         ) : isOverdue ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700">
                             <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
                             <span>Overdue</span>
                           </span>
                         ) : isDueCurrent ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700">
-                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700">
+                            <Clock className="w-3 h-3 text-blue-600 shrink-0" />
                             <span>Due Soon</span>
                           </span>
                         ) : (
@@ -408,7 +402,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                           </span>
                         )}
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -419,19 +413,21 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-52 overflow-y-auto pr-1">
                 {paymentSchedule.map((period) => {
                   const isSelected = paymentPeriod?.key === period.key
+                  const isPaid = Boolean(period.paid && !period.partiallyPaid)
+                  const isPartiallyPaid = Boolean(period.partiallyPaid)
                   const isOverdue =
-                    !period.paid && !period.isFuture && (period.periodDate || '') < todayStr
+                    !isPaid && !isPartiallyPaid && !period.isFuture && (period.periodDate || '') < todayStr
                   return (
-                    <button
+                    <div
                       key={period.key}
-                      type="button"
-                      onClick={() => setPaymentPeriod(period)}
                       className={cn(
-                        'p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between',
+                        'p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between select-none',
                         isSelected
                           ? 'border-[#960C01] bg-[#960C01]/5 ring-2 ring-[#960C01]'
-                          : period.paid
+                          : isPaid
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : isPartiallyPaid
+                          ? 'border-amber-200 bg-amber-50 text-amber-800'
                           : isOverdue
                           ? 'border-rose-200 bg-rose-50 text-rose-800'
                           : 'border-slate-200 bg-white text-slate-600'
@@ -439,10 +435,15 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                     >
                       <div className="font-bold text-xs truncate">{period.label}</div>
                       <div className="text-[10px] mt-1 flex items-center gap-1">
-                        {period.paid ? (
+                        {isPaid ? (
                           <>
                             <Check className="w-3 h-3 text-emerald-600" />
                             <span className="font-semibold">Paid</span>
+                          </>
+                        ) : isPartiallyPaid ? (
+                          <>
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            <span className="font-semibold">Partially Paid</span>
                           </>
                         ) : isOverdue ? (
                           <>
@@ -453,38 +454,18 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                           <span>Upcoming</span>
                         )}
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
             )}
-
-            {/* Calendar Legend */}
-            <div className="flex items-center justify-between text-[11px] text-muted-fg pt-1 px-1 border-t border-slate-200/60 flex-wrap gap-2">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                <span>Paid</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
-                <span>Overdue (Missed)</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
-                <span>Current / Due Soon</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" />
-                <span>Upcoming</span>
-              </span>
-            </div>
           </div>
 
           {/* Selected Billing Period Card */}
           <div className="p-3 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-center justify-between text-xs">
             <div>
               <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">
-                Selected Billing Period to Pay
+                Target Billing Period (Oldest Unpaid)
               </span>
               <span className="text-base font-bold text-focus block mt-0.5">
                 {paymentPeriod?.label || 'No period selected'}
@@ -500,19 +481,28 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
               <span
                 className={cn(
                   'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold mt-1',
-                  paymentPeriod?.paid
+                  paymentPeriod?.partiallyPaid
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : paymentPeriod?.paid
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                     : !paymentPeriod?.isFuture && (paymentPeriod?.periodDate || '') < todayStr
                     ? 'bg-rose-100 text-rose-800 border border-rose-200'
                     : 'bg-amber-100 text-amber-900 border border-amber-200'
                 )}
               >
-                {paymentPeriod?.paid
-                  ? 'Already Paid (Advance Re-record)'
+                {paymentPeriod?.partiallyPaid
+                  ? 'Partially Paid'
+                  : paymentPeriod?.paid
+                  ? 'Already Paid (Advance)'
                   : !paymentPeriod?.isFuture && (paymentPeriod?.periodDate || '') < todayStr
                   ? 'Overdue Due'
                   : 'Current Due'}
               </span>
+              {paymentPeriod?.partiallyPaid && paymentPeriod.remainingAmount !== undefined && (
+                <span className="text-[10px] text-amber-800 font-semibold block mt-0.5">
+                  Remaining: {formatPHP(paymentPeriod.remainingAmount)}
+                </span>
+              )}
             </div>
           </div>
 
@@ -538,9 +528,21 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                   required
                 />
               </div>
-              <p className="text-[11px] text-muted-fg">
-                Scheduled Bill Amount: <span className="font-semibold text-focus">{formatPHP(bill.amount)}</span>
-              </p>
+              <div className="flex items-center justify-between text-[11px] text-muted-fg">
+                <span>
+                  Bill Amount: <span className="font-semibold text-focus">{formatPHP(bill.amount)}</span>
+                </span>
+                {paymentPeriod?.partiallyPaid && paymentPeriod.remainingAmount !== undefined && (
+                  <span className="text-amber-800 font-semibold">
+                    Remaining: {formatPHP(paymentPeriod.remainingAmount)}
+                  </span>
+                )}
+              </div>
+              {parsedAmount > 0 && parsedAmount < (paymentPeriod?.remainingAmount ?? bill.amount) && (
+                <p className="text-[11px] text-amber-700 font-medium">
+                  Note: Partial payment of {formatPHP(parsedAmount)}. This month will be tagged as Partially Paid with {formatPHP((paymentPeriod?.remainingAmount ?? bill.amount) - parsedAmount)} remaining balance.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -563,7 +565,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
             <Label className="text-xs font-semibold text-focus block">
               Payment Method <span className="text-red-500">*</span>
             </Label>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {PAYMENT_METHODS.map((pm) => {
                 const isSelected = paymentMethod === pm
                 return (
@@ -638,10 +640,8 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    Mark {paymentPeriod?.label || 'Period'} as Paid
-                  </span>
+                  <CreditCard className="w-4 h-4" />
+                  <span>Pay Bill</span>
                 </>
               )}
             </Button>

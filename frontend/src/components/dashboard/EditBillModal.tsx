@@ -24,6 +24,7 @@ import {
   billsService,
   BILL_CATEGORIES,
   type BillItem,
+  type BillStatus,
   type UpdateBillInput,
 } from '@/services/billsService'
 import { loanService } from '@/services/loanService'
@@ -88,7 +89,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   const [company, setCompany] = React.useState('')
   const [billingCycle, setBillingCycle] = React.useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly')
   const [reminderDaysBefore, setReminderDaysBefore] = React.useState<number>(5)
-  const [status, setStatus] = React.useState<'Unpaid' | 'Paid' | 'Overdue' | 'Due Soon'>('Unpaid')
+  const [status, setStatus] = React.useState<BillStatus>('Unpaid')
   const [notes, setNotes] = React.useState('')
 
   const [isSubmitting, setIsSubmitting] = React.useState(false)
