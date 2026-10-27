@@ -32,7 +32,13 @@ export interface LoanItem {
   lenderId?: number
   lender: string // Lender company name
   company: string // Selected context company
-  status: 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid'
+  status: string
+  endorsedBy?: string
+  endorsedAt?: string
+  financeRemark?: string
+  auditReviewedBy?: string
+  auditReviewedAt?: string
+  auditRemark?: string
   auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
   auditedBy?: string
   auditNotes?: string
@@ -168,8 +174,8 @@ function mapBackendLoanToItem(l: any): LoanItem {
       : Math.max(0, amt - totalPaid)
   )
 
-  let finalStatus = l.status || 'Pending Approval'
-  if (finalStatus !== 'Pending Approval' && finalStatus !== 'Overdue') {
+  let finalStatus = l.status || 'Pending Finance Endorsement'
+  if (!['Pending Finance Endorsement', 'Pending Audit Approval', 'Pending Approval', 'Overdue', 'Rejected by Finance', 'Disapproved by Audit'].includes(finalStatus)) {
     if (outstanding <= 0 && (totalPaid > 0 || finalStatus === 'Paid')) {
       finalStatus = 'Paid'
     } else if (totalPaid > 0 && outstanding > 0) {
@@ -198,8 +204,14 @@ function mapBackendLoanToItem(l: any): LoanItem {
     lenderId: l.lender,
     lender: lName,
     company: bName,
-    status: finalStatus,
-    auditStatus: l.status === 'Approved' || l.status === 'Paid' ? 'Verified' : 'Pending Audit',
+    status: l.status || finalStatus,
+    endorsedBy: l.endorsed_by,
+    endorsedAt: l.endorsed_at,
+    financeRemark: l.finance_remark,
+    auditReviewedBy: l.audit_reviewed_by,
+    auditReviewedAt: l.audit_reviewed_at,
+    auditRemark: l.audit_remark,
+    auditStatus: (l.status === 'Approved' || l.status === 'Paid') ? 'Verified' : 'Pending Audit',
     type: 'Loan',
     createdAt: l.created_at || new Date().toISOString(),
     updatedAt: l.updated_at || new Date().toISOString(),
@@ -383,6 +395,18 @@ export const loanService = {
         typeof window !== 'undefined'
           ? sessionStorage.getItem('mct_access_token')
           : null
+      const userStr = typeof window !== 'undefined' ? sessionStorage.getItem('mct_user') : null
+      let userName = ''
+      let userRole = ''
+      if (userStr) {
+        try {
+          const u = JSON.parse(userStr)
+          userName = u.fullName || u.email || ''
+          userRole = u.role || ''
+        } catch {
+          // ignore
+        }
+      }
 
       const query = new URLSearchParams()
       if (params?.company && params.company !== 'All Companies') {
@@ -398,6 +422,8 @@ export const loanService = {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(userName ? { 'X-User-Name': userName } : {}),
+          ...(userRole ? { 'X-User-Role': userRole } : {}),
         },
       })
 
@@ -434,7 +460,7 @@ export const loanService = {
         due_date: input.dueDate || null,
         description: input.particulars,
         particulars: input.particulars,
-        status: input.status || 'Pending Approval',
+        status: input.status || 'Pending Finance Endorsement',
       }
 
       const res = await fetch('/api/v1/loans', {
@@ -642,6 +668,114 @@ export const loanService = {
     inMemoryLoans[index] = updatedLoan
     saveStoredLoans(inMemoryLoans)
     return updatedLoan
+  },
+
+  async endorseLoan(
+    id: string,
+    payload: {
+      action: 'endorse' | 'reject'
+      lenderCompany?: string
+      interestRate?: number
+      dueDate?: string
+      remark: string
+    }
+  ): Promise<LoanItem> {
+    const numericId = id.replace(/^loan_/, '')
+    const token =
+      typeof window !== 'undefined'
+        ? sessionStorage.getItem('mct_access_token')
+        : null
+    const userStr = typeof window !== 'undefined' ? sessionStorage.getItem('mct_user') : null
+    let userName = ''
+    let userRole = ''
+    if (userStr) {
+      try {
+        const u = JSON.parse(userStr)
+        userName = u.fullName || u.email || ''
+        userRole = u.role || ''
+      } catch {
+        // ignore
+      }
+    }
+
+    const res = await fetch(`/api/v1/loans/${numericId}/endorse`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(userName ? { 'X-User-Name': userName } : {}),
+        ...(userRole ? { 'X-User-Role': userRole } : {}),
+      },
+      body: JSON.stringify({
+        action: payload.action,
+        lender_company: payload.lenderCompany,
+        interest_rate: payload.interestRate,
+        due_date: payload.dueDate || null,
+        remark: payload.remark,
+      }),
+    })
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}))
+      throw new Error(errData.detail || 'Failed to submit loan endorsement.')
+    }
+
+    const data = await res.json()
+    const mapped = mapBackendLoanToItem(data)
+    inMemoryLoans = inMemoryLoans.map((l) => (l.id === id || l.id === `loan_${numericId}` ? mapped : l))
+    saveStoredLoans(inMemoryLoans)
+    return mapped
+  },
+
+  async auditReviewLoan(
+    id: string,
+    payload: {
+      action: 'approve' | 'disapprove'
+      remark: string
+    }
+  ): Promise<LoanItem> {
+    const numericId = id.replace(/^loan_/, '')
+    const token =
+      typeof window !== 'undefined'
+        ? sessionStorage.getItem('mct_access_token')
+        : null
+    const userStr = typeof window !== 'undefined' ? sessionStorage.getItem('mct_user') : null
+    let userName = ''
+    let userRole = ''
+    if (userStr) {
+      try {
+        const u = JSON.parse(userStr)
+        userName = u.fullName || u.email || ''
+        userRole = u.role || ''
+      } catch {
+        // ignore
+      }
+    }
+
+    const res = await fetch(`/api/v1/loans/${numericId}/audit-review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(userName ? { 'X-User-Name': userName } : {}),
+        ...(userRole ? { 'X-User-Role': userRole } : {}),
+      },
+      body: JSON.stringify({
+        action: payload.action,
+        remark: payload.remark,
+      }),
+    })
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}))
+      throw new Error(errData.detail || 'Failed to submit loan audit review.')
+    }
+
+    const data = await res.json()
+    const mapped = mapBackendLoanToItem(data)
+    inMemoryLoans = inMemoryLoans.map((l) => (l.id === id || l.id === `loan_${numericId}` ? mapped : l))
+    saveStoredLoans(inMemoryLoans)
+    return mapped
   },
 
   async approveLoan(

@@ -14,6 +14,8 @@ from app.schemas.loan import (
     LoanOut,
     LoanUpdate,
     LoanApproveRequest,
+    LoanEndorseRequest,
+    LoanAuditReviewRequest,
     LoanRepaymentCreate,
     LoanRepaymentOut,
     LoanStatementOut,
@@ -338,8 +340,13 @@ def get_loans(
     status: Optional[str] = Query(None, description="Filter by Loan Status"),
     start_date: Optional[date] = Query(None, description="Filter from loan date"),
     end_date: Optional[date] = Query(None, description="Filter to loan date"),
+    user_role: Optional[str] = Query(None, description="Current user role"),
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
+    role = (user_role or (request.headers.get("X-User-Role") if request else None) or "").strip().lower()
+    is_auditor = role in {"audit", "auditor"}
+
     try:
         client = get_supabase_admin_client()
         id_to_name, name_to_id = get_supabase_company_mapping(client, db)
@@ -377,6 +384,10 @@ def get_loans(
 
         result: List[LoanOut] = []
         for r in rows:
+            row_status = r.get("status") or "Pending Finance Endorsement"
+            if is_auditor and row_status in {"Pending Finance Endorsement", "Pending Approval"}:
+                continue
+
             b_id = r.get("borrower")
             l_id = r.get("lender")
             p_amt = Decimal(str(r.get("principal_amount") or 0.0))
@@ -398,7 +409,13 @@ def get_loans(
                     due_date=r.get("due_date"),
                     description=desc,
                     particulars=desc,
-                    status=r.get("status") or "Pending Approval",
+                    status=row_status,
+                    endorsed_by=r.get("endorsed_by"),
+                    endorsed_at=r.get("endorsed_at"),
+                    finance_remark=r.get("finance_remark"),
+                    audit_reviewed_by=r.get("audit_reviewed_by"),
+                    audit_reviewed_at=r.get("audit_reviewed_at"),
+                    audit_remark=r.get("audit_remark"),
                     created_at=r.get("created_at"),
                     updated_at=r.get("updated_at"),
                 )
@@ -431,6 +448,9 @@ def get_loans(
         if isinstance(status, str) and status.lower() != "all":
             query = query.filter(Loan.status == status)
 
+        if is_auditor:
+            query = query.filter(~Loan.status.in_(["Pending Finance Endorsement", "Pending Approval"]))
+
         if isinstance(start_date, (date, datetime)):
             query = query.filter(Loan.loan_date >= start_date)
         if isinstance(end_date, (date, datetime)):
@@ -457,7 +477,13 @@ def get_loans(
                 due_date=l.due_date,
                 description=l.description,
                 particulars=l.description,
-                status=getattr(l, "status", None) or "Pending Approval",
+                status=getattr(l, "status", None) or "Pending Finance Endorsement",
+                endorsed_by=getattr(l, "endorsed_by", None),
+                endorsed_at=getattr(l, "endorsed_at", None),
+                finance_remark=getattr(l, "finance_remark", None),
+                audit_reviewed_by=getattr(l, "audit_reviewed_by", None),
+                audit_reviewed_at=getattr(l, "audit_reviewed_at", None),
+                audit_remark=getattr(l, "audit_remark", None),
                 created_at=l.created_at,
                 updated_at=l.updated_at,
             )
@@ -507,7 +533,7 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
         "loan_date": loan_in.loan_date.isoformat(),
         "due_date": loan_in.due_date.isoformat() if loan_in.due_date else None,
         "description": desc,
-        "status": "Pending Approval",
+        "status": "Pending Finance Endorsement",
     }
 
     created_row = None
@@ -534,7 +560,7 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
             loan_date=loan_in.loan_date,
             due_date=loan_in.due_date,
             description=desc,
-            status="Pending Approval",
+            status="Pending Finance Endorsement",
         )
         try:
             db.add(sqlite_loan)
@@ -573,7 +599,7 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
         due_date=loan_in.due_date,
         description=desc,
         particulars=desc,
-        status="Pending Approval",
+        status="Pending Finance Endorsement",
         created_at=datetime.now(),
         updated_at=datetime.now(),
     )
@@ -606,10 +632,10 @@ def update_loan(loan_id: int, loan_update: LoanUpdate, db: Session = Depends(get
     if not existing_row and not sql_loan:
         raise HTTPException(status_code=404, detail="Loan not found.")
 
-    if existing_status and existing_status.strip().lower() != "pending approval":
+    if existing_status and existing_status.strip().lower() not in {"pending approval", "pending finance endorsement"}:
         raise HTTPException(
             status_code=400,
-            detail=f"Loan is already {existing_status}. Once approved, loans can no longer be edited."
+            detail=f"Loan is already {existing_status}. Once reviewed, loans can no longer be edited."
         )
 
     update_payload = {}
@@ -686,12 +712,277 @@ def update_loan(loan_id: int, loan_update: LoanUpdate, db: Session = Depends(get
             due_date=final_row.get("due_date"),
             description=final_row.get("description"),
             particulars=final_row.get("description"),
-            status=final_row.get("status") or "Pending Approval",
+            status=final_row.get("status") or "Pending Finance Endorsement",
+            endorsed_by=final_row.get("endorsed_by"),
+            endorsed_at=final_row.get("endorsed_at"),
+            finance_remark=final_row.get("finance_remark"),
+            audit_reviewed_by=final_row.get("audit_reviewed_by"),
+            audit_reviewed_at=final_row.get("audit_reviewed_at"),
+            audit_remark=final_row.get("audit_remark"),
             created_at=final_row.get("created_at"),
             updated_at=final_row.get("updated_at"),
         )
 
     return LoanOut.model_validate(sql_loan)
+
+
+@router.post("/{loan_id}/endorse", response_model=LoanOut, summary="Finance endorses or rejects a pending loan request")
+def endorse_loan(
+    loan_id: int,
+    endorse_in: LoanEndorseRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client = None
+    name_to_id = {}
+    id_to_name = {}
+    try:
+        client = get_supabase_admin_client()
+        id_to_name, name_to_id = get_supabase_company_mapping(client, db)
+    except Exception:
+        pass
+
+    sql_loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
+    existing_row = None
+    if client:
+        try:
+            res = client.table("loan").select("*").eq("loan_id", loan_id).execute()
+            if res.data and len(res.data) > 0:
+                existing_row = res.data[0]
+        except Exception:
+            pass
+
+    if not existing_row and not sql_loan:
+        raise HTTPException(status_code=404, detail="Loan not found.")
+
+    borrower_id = (existing_row.get("borrower") if existing_row else None) or (sql_loan.borrower if sql_loan else None)
+
+    action_norm = (endorse_in.action or "endorse").strip().lower()
+    remark_text = (endorse_in.remark or "").strip()
+    if not remark_text:
+        raise HTTPException(status_code=400, detail="Finance endorsement or rejection remark is required.")
+
+    endorser_name = request.headers.get("X-User-Name") or "Finance Officer"
+    now_ts = datetime.now()
+
+    if action_norm == "endorse":
+        new_lender_id = None
+        if endorse_in.lender or endorse_in.lender_company:
+            new_lender_id = resolve_company_id(endorse_in.lender, endorse_in.lender_company, name_to_id, db)
+        current_lender = (existing_row.get("lender") if existing_row else None) or (sql_loan.lender if sql_loan else None)
+        final_lender_id = new_lender_id or current_lender
+        if not final_lender_id:
+            raise HTTPException(status_code=400, detail="A lending company must be selected by Finance to endorse this loan.")
+        if borrower_id and final_lender_id == borrower_id:
+            raise HTTPException(status_code=400, detail="Lender company cannot be the same as the borrower company.")
+
+        new_status = "Pending Audit Approval"
+    else:
+        final_lender_id = (existing_row.get("lender") if existing_row else None) or (sql_loan.lender if sql_loan else None)
+        new_status = "Rejected by Finance"
+
+    update_payload = {
+        "status": new_status,
+        "endorsed_by": endorser_name,
+        "endorsed_at": now_ts.isoformat(),
+        "finance_remark": remark_text,
+        "updated_at": now_ts.isoformat(),
+    }
+    if final_lender_id:
+        update_payload["lender"] = final_lender_id
+    if endorse_in.interest_rate is not None:
+        update_payload["interest_rate"] = float(endorse_in.interest_rate)
+    if endorse_in.due_date is not None:
+        update_payload["due_date"] = endorse_in.due_date.isoformat()
+
+    updated_row = None
+    if client:
+        try:
+            sb_res = client.table("loan").update(update_payload).eq("loan_id", loan_id).execute()
+            if sb_res.data and len(sb_res.data) > 0:
+                updated_row = sb_res.data[0]
+        except Exception as e:
+            print(f"Supabase endorse loan error: {e}")
+
+    if sql_loan:
+        sql_loan.status = new_status
+        sql_loan.endorsed_by = endorser_name
+        sql_loan.endorsed_at = now_ts
+        sql_loan.finance_remark = remark_text
+        if final_lender_id:
+            sql_loan.lender = final_lender_id
+        if endorse_in.interest_rate is not None:
+            sql_loan.interest_rate = Decimal(str(endorse_in.interest_rate))
+        if endorse_in.due_date is not None:
+            sql_loan.due_date = endorse_in.due_date
+        db.commit()
+        db.refresh(sql_loan)
+
+    if not id_to_name and client:
+        id_to_name, _ = get_supabase_company_mapping(client)
+    if not id_to_name:
+        comps = db.query(Company).all()
+        id_to_name = {c.company_id: c.company_name for c in comps}
+
+    final_source = updated_row or (existing_row or {})
+    final_lender = final_lender_id or final_source.get("lender")
+    p_amt = Decimal(str(final_source.get("principal_amount") or (sql_loan.principal_amount if sql_loan else 0.0)))
+
+    try:
+        log_transaction(
+            db, AuditAction.LOAN_UPDATED,
+            user_id=None, company_id=borrower_id,
+            ip_address=request.client.host if request.client else "unknown",
+            record_id=loan_id, record_type="loan_endorsement",
+            extra={"action": action_norm, "status": new_status, "finance_remark": remark_text},
+        )
+    except Exception:
+        pass
+
+    return LoanOut(
+        loan_id=loan_id,
+        borrower=borrower_id,
+        lender=final_lender,
+        borrower_name=id_to_name.get(borrower_id) or f"Company #{borrower_id}",
+        lender_name=id_to_name.get(final_lender) if final_lender else "Pending Finance Assignment",
+        loan_ref_no=final_source.get("loan_ref_no") or (sql_loan.loan_ref_no if sql_loan else None),
+        principal_amount=p_amt,
+        amount=p_amt,
+        interest_rate=Decimal(str(update_payload.get("interest_rate") or final_source.get("interest_rate") or (sql_loan.interest_rate if sql_loan else 0.0))),
+        interest_type=final_source.get("interest_type") or "simple",
+        loan_date=final_source.get("loan_date") or (sql_loan.loan_date if sql_loan else None),
+        due_date=endorse_in.due_date or final_source.get("due_date") or (sql_loan.due_date if sql_loan else None),
+        description=final_source.get("description") or (sql_loan.description if sql_loan else None),
+        particulars=final_source.get("description") or (sql_loan.description if sql_loan else None),
+        status=new_status,
+        endorsed_by=endorser_name,
+        endorsed_at=now_ts,
+        finance_remark=remark_text,
+        audit_reviewed_by=final_source.get("audit_reviewed_by"),
+        audit_reviewed_at=final_source.get("audit_reviewed_at"),
+        audit_remark=final_source.get("audit_remark"),
+        created_at=final_source.get("created_at") or datetime.now(),
+        updated_at=now_ts,
+    )
+
+
+@router.post("/{loan_id}/audit-review", response_model=LoanOut, summary="Audit approves or disapproves a finance endorsed loan")
+def audit_review_loan(
+    loan_id: int,
+    review_in: LoanAuditReviewRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client = None
+    name_to_id = {}
+    id_to_name = {}
+    try:
+        client = get_supabase_admin_client()
+        id_to_name, name_to_id = get_supabase_company_mapping(client, db)
+    except Exception:
+        pass
+
+    sql_loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
+    existing_row = None
+    if client:
+        try:
+            res = client.table("loan").select("*").eq("loan_id", loan_id).execute()
+            if res.data and len(res.data) > 0:
+                existing_row = res.data[0]
+        except Exception:
+            pass
+
+    if not existing_row and not sql_loan:
+        raise HTTPException(status_code=404, detail="Loan not found.")
+
+    borrower_id = (existing_row.get("borrower") if existing_row else None) or (sql_loan.borrower if sql_loan else None)
+    lender_id = (existing_row.get("lender") if existing_row else None) or (sql_loan.lender if sql_loan else None)
+
+    action_norm = (review_in.action or "").strip().lower()
+    remark_text = (review_in.remark or "").strip()
+    if not remark_text:
+        raise HTTPException(status_code=400, detail="Audit remark is required.")
+
+    reviewer_name = request.headers.get("X-User-Name") or "Internal Auditor"
+    now_ts = datetime.now()
+
+    if action_norm == "approve":
+        new_status = "Approved"
+    elif action_norm in {"disapprove", "reject"}:
+        new_status = "Disapproved by Audit"
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid action '{review_in.action}'. Allowed: approve, disapprove.")
+
+    update_payload = {
+        "status": new_status,
+        "audit_reviewed_by": reviewer_name,
+        "audit_reviewed_at": now_ts.isoformat(),
+        "audit_remark": remark_text,
+        "updated_at": now_ts.isoformat(),
+    }
+
+    updated_row = None
+    if client:
+        try:
+            sb_res = client.table("loan").update(update_payload).eq("loan_id", loan_id).execute()
+            if sb_res.data and len(sb_res.data) > 0:
+                updated_row = sb_res.data[0]
+        except Exception as e:
+            print(f"Supabase audit review loan error: {e}")
+
+    if sql_loan:
+        sql_loan.status = new_status
+        sql_loan.audit_reviewed_by = reviewer_name
+        sql_loan.audit_reviewed_at = now_ts
+        sql_loan.audit_remark = remark_text
+        db.commit()
+        db.refresh(sql_loan)
+
+    if not id_to_name and client:
+        id_to_name, _ = get_supabase_company_mapping(client)
+    if not id_to_name:
+        comps = db.query(Company).all()
+        id_to_name = {c.company_id: c.company_name for c in comps}
+
+    final_source = updated_row or (existing_row or {})
+    p_amt = Decimal(str(final_source.get("principal_amount") or (sql_loan.principal_amount if sql_loan else 0.0)))
+
+    try:
+        log_transaction(
+            db, AuditAction.LOAN_UPDATED,
+            user_id=None, company_id=borrower_id,
+            ip_address=request.client.host if request.client else "unknown",
+            record_id=loan_id, record_type="loan_audit_review",
+            extra={"action": action_norm, "status": new_status, "audit_remark": remark_text},
+        )
+    except Exception:
+        pass
+
+    return LoanOut(
+        loan_id=loan_id,
+        borrower=borrower_id,
+        lender=lender_id,
+        borrower_name=id_to_name.get(borrower_id) or f"Company #{borrower_id}",
+        lender_name=id_to_name.get(lender_id) if lender_id else "Pending Finance Assignment",
+        loan_ref_no=final_source.get("loan_ref_no") or (sql_loan.loan_ref_no if sql_loan else None),
+        principal_amount=p_amt,
+        amount=p_amt,
+        interest_rate=Decimal(str(final_source.get("interest_rate") or (sql_loan.interest_rate if sql_loan else 0.0))),
+        interest_type=final_source.get("interest_type") or "simple",
+        loan_date=final_source.get("loan_date") or (sql_loan.loan_date if sql_loan else None),
+        due_date=final_source.get("due_date") or (sql_loan.due_date if sql_loan else None),
+        description=final_source.get("description") or (sql_loan.description if sql_loan else None),
+        particulars=final_source.get("description") or (sql_loan.description if sql_loan else None),
+        status=new_status,
+        endorsed_by=final_source.get("endorsed_by") or (sql_loan.endorsed_by if sql_loan else None),
+        endorsed_at=final_source.get("endorsed_at") or (sql_loan.endorsed_at if sql_loan else None),
+        finance_remark=final_source.get("finance_remark") or (sql_loan.finance_remark if sql_loan else None),
+        audit_reviewed_by=reviewer_name,
+        audit_reviewed_at=now_ts,
+        audit_remark=remark_text,
+        created_at=final_source.get("created_at") or datetime.now(),
+        updated_at=now_ts,
+    )
 
 
 @router.patch("/{loan_id}/approve", response_model=LoanOut, summary="Finance approves a pending loan request and assigns lender")
@@ -853,7 +1144,7 @@ def delete_loan(loan_id: int, db: Session = Depends(get_db)):
     if not existing_status and not sql_loan:
         raise HTTPException(status_code=404, detail="Loan not found.")
 
-    if existing_status and existing_status.strip().lower() != "pending approval":
+    if existing_status and existing_status.strip().lower() not in {"pending approval", "pending finance endorsement"}:
         raise HTTPException(
             status_code=400,
             detail=f"Approved loans cannot be deleted (current status: {existing_status})."

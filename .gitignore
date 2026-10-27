@@ -239,3 +239,6 @@ nginx/ssl/
 
 # Docker build artifacts
 *.log
+
+# IDE & AI Assistant local state
+.gemini/

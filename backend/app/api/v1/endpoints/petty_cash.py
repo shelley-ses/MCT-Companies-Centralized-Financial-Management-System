@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.petty_cash import (
+    PettyCashEndorseIn,
     PettyCashLedgerEntry,
+    PettyCashReviewIn,
     PettyCashSummaryOut,
     PettyCashTopUpCreate,
     PettyCashTopUpOut,
@@ -51,13 +53,16 @@ def get_ledger(
     company_name: Optional[str] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    user_role: Optional[str] = Query(None),
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     service = PettyCashService(db)
     company = None
     if company_id or (company_name and company_name.strip().lower() != "all companies"):
         company = service.resolve_company(company_id, company_name)
-    return service.list_ledger(company, start_date, end_date)
+    role = user_role or (request.headers.get("X-User-Role") if request else None)
+    return service.list_ledger(company, start_date, end_date, user_role=role)
 
 
 @router.post("/topups", response_model=PettyCashTopUpOut, status_code=status.HTTP_201_CREATED, summary="Top up petty cash from sales")
@@ -69,6 +74,54 @@ def create_topup(topup_in: PettyCashTopUpCreate, request: Request, db: Session =
         ip_address=_client_ip(request),
         record_id=topup.topup_id, record_type="petty_cash_topup",
         extra={"amount": float(topup.amount), "topup_date": topup.topup_date.isoformat()},
+    )
+    return topup
+
+
+@router.post("/topups/{topup_id}/endorse", response_model=PettyCashTopUpOut, summary="Finance endorse or reject petty cash request")
+def endorse_topup(
+    topup_id: int,
+    endorse_in: PettyCashEndorseIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    endorser = request.headers.get("X-User-Name") or "Finance Officer"
+    topup = PettyCashService(db).endorse_topup(
+        topup_id=topup_id,
+        action=endorse_in.action,
+        remark=endorse_in.remark,
+        endorser_name=endorser,
+    )
+    log_transaction(
+        db, AuditAction.PETTY_CASH_TOPUP_CREATED,
+        user_id=None, company_id=topup.company_id,
+        ip_address=_client_ip(request),
+        record_id=topup.topup_id, record_type="petty_cash_endorsement",
+        extra={"action": endorse_in.action, "remark": endorse_in.remark, "status": topup.status},
+    )
+    return topup
+
+
+@router.post("/topups/{topup_id}/review", response_model=PettyCashTopUpOut, summary="Audit approve or disapprove petty cash request")
+def review_topup(
+    topup_id: int,
+    review_in: PettyCashReviewIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    reviewer = request.headers.get("X-User-Name") or "Internal Auditor"
+    topup = PettyCashService(db).review_topup(
+        topup_id=topup_id,
+        action=review_in.action,
+        remark=review_in.remark,
+        reviewer_name=reviewer,
+    )
+    log_transaction(
+        db, AuditAction.PETTY_CASH_TOPUP_CREATED,
+        user_id=None, company_id=topup.company_id,
+        ip_address=_client_ip(request),
+        record_id=topup.topup_id, record_type="petty_cash_audit_review",
+        extra={"action": review_in.action, "remark": review_in.remark, "status": topup.status},
     )
     return topup
 

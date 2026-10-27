@@ -94,6 +94,8 @@ class PettyCashService:
                 query = query.ilike("payment_method", "%petty cash%")
 
             rows = query.execute().data or []
+            # Exclude any sample or seeded rows
+            rows = [r for r in rows if not (r.get("reference_no") or "").upper().startswith("SEED-")]
 
             return [
                 {
@@ -121,6 +123,7 @@ class PettyCashService:
             )
             if company_id:
                 query = query.filter(Expense.company_id == company_id)
+            query = query.filter(~Expense.reference_no.like("SEED-%") | (Expense.reference_no == None))
             return [
                 {
                     "expense_id": exp.expense_id,
@@ -135,7 +138,9 @@ class PettyCashService:
             ]
 
     def _topups(self, company_id: Optional[int] = None) -> List[PettyCashTopUp]:
-        query = self.db.query(PettyCashTopUp)
+        query = self.db.query(PettyCashTopUp).filter(
+            ~PettyCashTopUp.reference_no.like("SEED-%") | (PettyCashTopUp.reference_no == None)
+        )
         if company_id:
             query = query.filter(PettyCashTopUp.company_id == company_id)
         return query.all()
@@ -150,7 +155,8 @@ class PettyCashService:
         return _resolve_company(self.db, company_id, company_name)
 
     def get_balance(self, company_id: int, exclude_expense_id: Optional[int] = None) -> Decimal:
-        topped_up = sum((_to_decimal(t.amount) for t in self._topups(company_id)), ZERO)
+        approved_topups = [t for t in self._topups(company_id) if (t.status or "Approved").lower() == "approved"]
+        topped_up = sum((_to_decimal(t.amount) for t in approved_topups), ZERO)
         spent = sum(
             (e["amount"] for e in self._petty_cash_expenses(company_id) if e["expense_id"] != exclude_expense_id),
             ZERO,
@@ -176,9 +182,10 @@ class PettyCashService:
         start: Optional[date],
         end: Optional[date],
     ) -> PettyCashSummaryOut:
-        total_topups = sum((_to_decimal(t.amount) for t in topups), ZERO)
+        approved_topups = [t for t in topups if (t.status or "Approved").lower() == "approved"]
+        total_topups = sum((_to_decimal(t.amount) for t in approved_topups), ZERO)
         total_spent = sum((e["amount"] for e in expenses), ZERO)
-        period_topups = sum((_to_decimal(t.amount) for t in topups if _in_period(t.topup_date, start, end)), ZERO)
+        period_topups = sum((_to_decimal(t.amount) for t in approved_topups if _in_period(t.topup_date, start, end)), ZERO)
         period_spent = sum((e["amount"] for e in expenses if _in_period(e["expense_date"], start, end)), ZERO)
         balance = total_topups - total_spent
         threshold = self._threshold(company.company_id)
@@ -219,31 +226,60 @@ class PettyCashService:
             for company in sorted(companies, key=lambda c: c.company_name)
         ]
 
-    def list_ledger(self, company: Optional[Company] = None, start: Optional[date] = None, end: Optional[date] = None) -> List[PettyCashLedgerEntry]:
-        """Top-ups and petty cash expenses, newest first, each with the balance after it."""
+    def list_ledger(
+        self,
+        company: Optional[Company] = None,
+        start: Optional[date] = None,
+        end: Optional[date] = None,
+        user_role: Optional[str] = None,
+    ) -> List[PettyCashLedgerEntry]:
+        """Top-ups, requests, and petty cash expenses, newest first, each with the balance after it."""
         company_id = company.company_id if company else None
         comp_map = {c.company_id: c.company_name for c in self.db.query(Company).all()}
 
         topups = self._topups(company_id)
+        # Internal Audit cannot see unendorsed submissions
+        is_auditor = bool(user_role and ("audit" in user_role.lower() or "auditor" in user_role.lower()))
+        if is_auditor:
+            topups = [
+                t for t in topups
+                if (t.status or "").lower() not in ["pending finance endorsement", "pending finance approval"]
+            ]
+
         expenses = self._petty_cash_expenses(company_id)
 
-        entries = [
-            {
+        entries = []
+        for t in topups:
+            status_val = t.status or "Approved"
+            is_approved = status_val.lower() == "approved"
+            amt = _to_decimal(t.amount)
+            entries.append({
                 "entry_id": f"topup-{t.topup_id}",
-                "entry_type": "topup",
+                "entry_type": "topup" if is_approved else "request",
                 "record_id": t.topup_id,
                 "company_id": t.company_id,
                 "company_name": comp_map.get(t.company_id, t.company.company_name if t.company else "Unknown"),
                 "entry_date": t.topup_date,
-                "description": t.description or "Top-up from sales",
+                "description": t.description or ("Top-up from sales" if is_approved else "Petty cash replenishment request"),
                 "category": None,
                 "reference_no": t.reference_no,
-                "amount_in": _to_decimal(t.amount),
+                "amount_requested": amt,
+                "amount_in": amt if is_approved else ZERO,
                 "amount_out": ZERO,
-            }
-            for t in topups
-        ] + [
-            {
+                "status": status_val,
+                "endorsed_by": t.endorsed_by,
+                "endorsed_at": t.endorsed_at,
+                "finance_remark": t.finance_remark,
+                "remark": t.remark,
+                "reviewed_by": t.reviewed_by,
+                "reviewed_at": t.reviewed_at,
+            })
+
+        for e in expenses:
+            if not e["expense_date"]:
+                continue
+            amt_out = e["amount"]
+            entries.append({
                 "entry_id": f"expense-{e['expense_id']}",
                 "entry_type": "expense",
                 "record_id": e["expense_id"],
@@ -253,15 +289,20 @@ class PettyCashService:
                 "description": e["description"],
                 "category": e["category"],
                 "reference_no": e["reference_no"],
+                "amount_requested": ZERO,
                 "amount_in": ZERO,
-                "amount_out": e["amount"],
-            }
-            for e in expenses
-            if e["expense_date"]
-        ]
+                "amount_out": amt_out,
+                "status": "Approved",
+                "endorsed_by": None,
+                "endorsed_at": None,
+                "finance_remark": None,
+                "remark": None,
+                "reviewed_by": None,
+                "reviewed_at": None,
+            })
 
-        # Running balance is computed over the full history, top-ups first on the same day
-        entries.sort(key=lambda e: (e["entry_date"], 0 if e["entry_type"] == "topup" else 1, e["record_id"]))
+        # Running balance is computed over the full history chronologically
+        entries.sort(key=lambda e: (e["entry_date"], 0 if e["entry_type"] == "topup" else (1 if e["entry_type"] == "request" else 2), e["record_id"]))
         running = ZERO
         for entry in entries:
             running += entry["amount_in"] - entry["amount_out"]
@@ -282,15 +323,79 @@ class PettyCashService:
 
     def create_topup(self, topup_in: PettyCashTopUpCreate) -> PettyCashTopUpOut:
         company = self.resolve_company(topup_in.company_id, topup_in.company)
+        status_to_use = topup_in.status or "Pending Finance Endorsement"
         topup = PettyCashTopUp(
             company_id=company.company_id,
             amount=topup_in.amount,
             topup_date=topup_in.topup_date,
             reference_no=(topup_in.reference_no or "").strip() or None,
             description=(topup_in.description or "").strip() or None,
+            status=status_to_use,
+            endorsed_by=None,
+            endorsed_at=None,
+            finance_remark=None,
+            remark=None,
+            reviewed_by=None,
+            reviewed_at=None,
             created_by=topup_in.created_by,
         )
         self.db.add(topup)
+        self.db.commit()
+        self.db.refresh(topup)
+        return self._topup_output(topup)
+
+    def endorse_topup(
+        self,
+        topup_id: int,
+        action: str,
+        remark: str,
+        endorser_name: Optional[str] = None,
+    ) -> PettyCashTopUpOut:
+        topup = self.db.query(PettyCashTopUp).filter(PettyCashTopUp.topup_id == topup_id).first()
+        if not topup:
+            raise HTTPException(status_code=404, detail="Petty cash transaction not found.")
+
+        current_status = (topup.status or "").lower()
+        if current_status == "approved":
+            raise HTTPException(status_code=400, detail="This transaction is already approved and cannot be changed.")
+
+        if not remark or not remark.strip():
+            raise HTTPException(status_code=422, detail="A remark is required when endorsing or rejecting.")
+
+        new_status = "Pending Audit Approval" if action.lower() == "endorse" else "Rejected by Finance"
+        topup.status = new_status
+        topup.finance_remark = remark.strip()
+        topup.endorsed_by = endorser_name or "Finance Officer"
+        topup.endorsed_at = func.now()
+
+        self.db.commit()
+        self.db.refresh(topup)
+        return self._topup_output(topup)
+
+    def review_topup(
+        self,
+        topup_id: int,
+        action: str,
+        remark: str,
+        reviewer_name: Optional[str] = None,
+    ) -> PettyCashTopUpOut:
+        topup = self.db.query(PettyCashTopUp).filter(PettyCashTopUp.topup_id == topup_id).first()
+        if not topup:
+            raise HTTPException(status_code=404, detail="Petty cash transaction not found.")
+
+        current_status = (topup.status or "").lower()
+        if current_status == "approved":
+            raise HTTPException(status_code=400, detail="This transaction is already approved and cannot be changed.")
+
+        if not remark or not remark.strip():
+            raise HTTPException(status_code=422, detail="A remark is required when approving or disapproving.")
+
+        new_status = "Approved" if action.lower() == "approve" else "Disapproved by Audit"
+        topup.status = new_status
+        topup.remark = remark.strip()
+        topup.reviewed_by = reviewer_name or "Internal Auditor"
+        topup.reviewed_at = func.now()
+
         self.db.commit()
         self.db.refresh(topup)
         return self._topup_output(topup)

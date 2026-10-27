@@ -16,13 +16,12 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
-  Trash2,
   Download,
   MoreVertical,
   Eye,
-  Pencil,
   AlertCircle,
   ArrowUpRight,
+  MessageSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -49,7 +48,6 @@ import {
 } from '@/components/ui/DateRangePicker'
 import {
   TopUpPettyCashModal,
-  CORPORATE_BANK_ACCOUNTS,
   type PettyCashTopUpRecord,
 } from '@/components/dashboard/TopUpPettyCashModal'
 import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
@@ -58,29 +56,14 @@ import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { isDateInRange } from '@/utils/dateUtils'
+import { isCompanyMatch } from '@/utils/companyUtils'
+import { loanService } from '@/services/loanService'
+import {
+  pettyCashService,
+  type PettyCashLedgerEntry,
+} from '@/services/pettyCashService'
 
-export interface PettyCashTransaction {
-  id: string
-  recordId: number
-  companyName: string
-  date: string
-  type: 'topup' | 'expense' | 'request'
-  description: string
-  category?: string
-  referenceNo?: string
-  bankSource?: string
-  amountRequested: number
-  amountIn: number
-  amountOut: number
-  runningBalance: number
-  status: 'Approved' | 'Pending Finance Approval' | 'Rejected'
-  requestedBy?: string
-  approvedBy?: string
-  approvedAt?: string
-}
-
-const STORAGE_KEY_LEDGER = 'mct_petty_cash_ledger_v3'
-const STORAGE_KEY_BALANCES = 'mct_petty_cash_balances_v3'
+export type PettyCashTransaction = PettyCashLedgerEntry
 
 const COMPANY_LIST = [
   'All Companies',
@@ -94,161 +77,6 @@ const COMPANY_LIST = [
   'JK Property and Ventures',
   'Golden Sunburst Ventures',
   'FilCap Prime Holdings Corp.',
-]
-
-const INITIAL_COMPANY_BALANCES: Record<string, number> = {
-  'MCT Kitchen': 25000,
-  'MCT Hotel': 45000,
-  'JK Cafe': 18000,
-  'Annex Nine': 12000,
-  'Merillon': 20000,
-  'JK Printing': 14000,
-  'Speedbox': 16000,
-  'JK Property and Ventures': 35000,
-  'Golden Sunburst Ventures': 22000,
-  'FilCap Prime Holdings Corp.': 40000,
-}
-
-const INITIAL_LEDGER: PettyCashTransaction[] = [
-  {
-    id: 'pc-req-001',
-    recordId: 101,
-    companyName: 'MCT Kitchen',
-    date: '2026-10-21',
-    type: 'request',
-    description: 'Weekly commissary petty cash buffer for perishable ingredients & local market trips',
-    referenceNo: 'PC-REQ-2026-8812',
-    bankSource: 'Bank Account (Finance Designated)',
-    amountRequested: 15000,
-    amountIn: 0, // Unapproved: not in IN column yet
-    amountOut: 0,
-    runningBalance: 25000,
-    status: 'Pending Finance Approval',
-    requestedBy: 'Supervisor (MCT Kitchen)',
-  },
-  {
-    id: 'pc-topup-001',
-    recordId: 102,
-    companyName: 'MCT Kitchen',
-    date: '2026-10-18',
-    type: 'topup',
-    description: 'Petty cash top up from BDO corporate checking for minor dining room consumables',
-    referenceNo: 'PC-TOPUP-2026-004',
-    bankSource: 'BDO Unibank (0012-3456-7890)',
-    amountRequested: 20000,
-    amountIn: 20000, // Approved: received into IN column
-    amountOut: 0,
-    runningBalance: 25000,
-    status: 'Approved',
-    requestedBy: 'Supervisor',
-    approvedBy: 'Finance Officer',
-    approvedAt: '2026-10-18T10:30:00Z',
-  },
-  {
-    id: 'pc-exp-001',
-    recordId: 103,
-    companyName: 'MCT Kitchen',
-    date: '2026-10-19',
-    type: 'expense',
-    description: 'Emergency culinary gas tank replacement and safety hose fitting',
-    category: 'Repairs & Maintenance',
-    referenceNo: 'OR-GAS-9912',
-    bankSource: 'Petty Cash Fund',
-    amountRequested: 0,
-    amountIn: 0,
-    amountOut: 3200,
-    runningBalance: 21800,
-    status: 'Approved',
-    requestedBy: 'Kitchen Supervisor',
-  },
-  {
-    id: 'pc-exp-002',
-    recordId: 104,
-    companyName: 'MCT Kitchen',
-    date: '2026-10-20',
-    type: 'expense',
-    description: 'Printing of updated banquet menu flyers and laminated table signs',
-    category: 'Marketing & Office Supplies',
-    referenceNo: 'OR-PRT-4401',
-    bankSource: 'Petty Cash Fund',
-    amountRequested: 0,
-    amountIn: 0,
-    amountOut: 1850,
-    runningBalance: 19950,
-    status: 'Approved',
-    requestedBy: 'Supervisor',
-  },
-  {
-    id: 'pc-topup-002',
-    recordId: 105,
-    companyName: 'MCT Hotel',
-    date: '2026-10-15',
-    type: 'topup',
-    description: 'Petty cash replenishment from BPI Commercial Operating for front desk cash float',
-    referenceNo: 'PC-TOPUP-2026-003',
-    bankSource: 'BPI (0987-6543-2100)',
-    amountRequested: 30000,
-    amountIn: 30000,
-    amountOut: 0,
-    runningBalance: 45000,
-    status: 'Approved',
-    requestedBy: 'Finance',
-    approvedBy: 'Finance Manager',
-    approvedAt: '2026-10-15T09:15:00Z',
-  },
-  {
-    id: 'pc-exp-003',
-    recordId: 106,
-    companyName: 'MCT Hotel',
-    date: '2026-10-17',
-    type: 'expense',
-    description: 'VIP guest lobby welcome basket supplies and fresh floral arrangement',
-    category: 'Guest Hospitality',
-    referenceNo: 'OR-HTL-1120',
-    bankSource: 'Petty Cash Fund',
-    amountRequested: 0,
-    amountIn: 0,
-    amountOut: 2450,
-    runningBalance: 42550,
-    status: 'Approved',
-    requestedBy: 'Hotel Front Office',
-  },
-  {
-    id: 'pc-topup-003',
-    recordId: 107,
-    companyName: 'JK Property and Ventures',
-    date: '2026-10-14',
-    type: 'topup',
-    description: 'Replenishment from Metrobank Central Treasury for commercial building hardware repairs',
-    referenceNo: 'PC-TOPUP-2026-002',
-    bankSource: 'Metrobank (0554-1234-9876)',
-    amountRequested: 25000,
-    amountIn: 25000,
-    amountOut: 0,
-    runningBalance: 35000,
-    status: 'Approved',
-    requestedBy: 'Property Supervisor',
-    approvedBy: 'Finance Officer',
-    approvedAt: '2026-10-14T14:00:00Z',
-  },
-  {
-    id: 'pc-topup-004',
-    recordId: 108,
-    companyName: 'FilCap Prime Holdings Corp.',
-    date: '2026-10-12',
-    type: 'topup',
-    description: 'Petty cash fund replenishment from UnionBank Digital Treasury',
-    referenceNo: 'PC-TOPUP-2026-001',
-    bankSource: 'UnionBank (1029-3847-5610)',
-    amountRequested: 20000,
-    amountIn: 20000,
-    amountOut: 0,
-    runningBalance: 40000,
-    status: 'Approved',
-    requestedBy: 'Finance',
-    approvedBy: 'Finance',
-    approvedAt: '2026-10-12T11:00:00Z',
-  },
 ]
 
 const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
@@ -281,54 +109,39 @@ export const PettyCashPage: React.FC = () => {
     }
   }, [activeCompany, isCompanyScoped])
 
-  // Company balances
-  const [balances, setBalances] = React.useState<Record<string, number>>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_BALANCES)
-      if (stored) return JSON.parse(stored)
-    } catch (e) {
-      console.error('Failed to parse petty cash balances from storage', e)
-    }
-    return INITIAL_COMPANY_BALANCES
-  })
-
-  // Ledger transactions
-  const [ledger, setLedger] = React.useState<PettyCashTransaction[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_LEDGER)
-      if (stored) return JSON.parse(stored)
-    } catch (e) {
-      console.error('Failed to parse petty cash ledger from storage', e)
-    }
-    return INITIAL_LEDGER
-  })
-
-  // Sync to localStorage
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_BALANCES, JSON.stringify(balances))
-    } catch (e) {
-      console.error('Failed to persist petty cash balances', e)
-    }
-  }, [balances])
+  // Dynamic company options from backend
+  const [companyList, setCompanyList] = React.useState<string[]>(COMPANY_LIST)
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_LEDGER, JSON.stringify(ledger))
-    } catch (e) {
-      console.error('Failed to persist petty cash ledger', e)
+    let mounted = true
+    loanService.getCompanies().then((companies) => {
+      if (mounted && companies.length > 0) {
+        const names = companies.map((c) => c.company_name).filter(Boolean)
+        const combined = Array.from(new Set(['All Companies', ...names, ...COMPANY_LIST]))
+        setCompanyList(combined)
+      }
+    })
+    return () => {
+      mounted = false
     }
-  }, [ledger])
+  }, [])
 
-  // Filters state matching One UI
+  // Company balances & ledger directly from backend
+  const [balances, setBalances] = React.useState<Record<string, number>>({})
+  const [ledger, setLedger] = React.useState<PettyCashTransaction[]>([])
+  const [isLoading, setIsLoading] = React.useState(true)
+
+  // Filters state
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Approved' | 'Pending Finance Approval' | 'Expense'>('All')
+  const [statusFilter, setStatusFilter] = React.useState<
+    'All' | 'Approved' | 'Pending Finance Endorsement' | 'Pending Audit Approval' | 'Disapproved' | 'Expense'
+  >('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-    label: 'Last 30 Days',
-    preset: 'Last 30 Days',
+    startDate: '',
+    endDate: '',
+    label: 'All Time',
+    preset: 'All Time',
   })
 
   // Dropdowns state
@@ -348,26 +161,51 @@ export const PettyCashPage: React.FC = () => {
 
   // Modals state
   const [isTopUpModalOpen, setIsTopUpModalOpen] = React.useState(false)
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = React.useState(false)
   const [isSummaryModalOpen, setIsSummaryModalOpen] = React.useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = React.useState(false)
-  const [isFinanceApproveModalOpen, setIsFinanceApproveModalOpen] = React.useState(false)
+  const [isReviewConfirmModalOpen, setIsReviewConfirmModalOpen] = React.useState(false)
 
-  // Target entry for actions
+  // Target entry & review data
   const [targetEntry, setTargetEntry] = React.useState<PettyCashTransaction | null>(null)
-  const [editFormData, setEditFormData] = React.useState({
-    amountRequested: '',
-    date: '',
-    description: '',
-    referenceNo: '',
-  })
-  const [selectedDisbursementBank, setSelectedDisbursementBank] = React.useState(CORPORATE_BANK_ACCOUNTS[0].id)
+  const [reviewAction, setReviewAction] = React.useState<'endorse' | 'reject' | 'approve' | 'disapprove'>('endorse')
+  const [reviewRemark, setReviewRemark] = React.useState('')
+  const [reviewError, setReviewError] = React.useState('')
+  const [isSubmittingReview, setIsSubmittingReview] = React.useState(false)
   const [approvalFeedback, setApprovalFeedback] = React.useState<string | null>(null)
 
   // 3-dots floating menu state
   const [menuOpenEntryId, setMenuOpenEntryId] = React.useState<string | null>(null)
   const [menuPosition, setMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
+
+  // Load live data from backend database
+  const loadData = React.useCallback(async () => {
+    try {
+      setIsLoading(true)
+      const compParam = selectedCompany !== 'All Companies' ? selectedCompany : undefined
+      const [summaries, ledgerData] = await Promise.all([
+        pettyCashService.getAllSummaries(),
+        pettyCashService.getLedger(compParam, {
+          startDate: dateRange.startDate || undefined,
+          endDate: dateRange.endDate || undefined,
+        }),
+      ])
+
+      const balanceMap: Record<string, number> = {}
+      summaries.forEach((s) => {
+        balanceMap[s.companyName] = s.balance
+      })
+      setBalances(balanceMap)
+      setLedger(ledgerData)
+    } catch (err: any) {
+      console.error('Failed to load petty cash data from backend:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [selectedCompany, dateRange.startDate, dateRange.endDate])
+
+  React.useEffect(() => {
+    loadData()
+  }, [loadData])
 
   // Close dropdowns on outside click
   React.useEffect(() => {
@@ -399,15 +237,32 @@ export const PettyCashPage: React.FC = () => {
     if (isAllCompanies) {
       return Object.values(balances).reduce((sum, b) => sum + b, 0)
     }
-    return balances[selectedCompany] || 0
+    if (balances[selectedCompany] !== undefined) {
+      return balances[selectedCompany]
+    }
+    const matchedKey = Object.keys(balances).find((k) => isCompanyMatch(k, selectedCompany))
+    if (matchedKey && balances[matchedKey] !== undefined) {
+      return balances[matchedKey]
+    }
+    return 0
   }, [balances, selectedCompany, isAllCompanies])
 
   // Filtered ledger records
   const filteredLedger = React.useMemo(() => {
     return ledger.filter((item) => {
-      // 1. Company Filter
+      // 0. Exclude any seeded sample records
+      if (item.referenceNo && item.referenceNo.toUpperCase().startsWith('SEED-')) {
+        return false
+      }
+
+      // 0.1 If Auditor, hide initial unendorsed transactions
+      if (isAudit && (item.status === 'Pending Finance Endorsement' || item.status === 'Pending Finance Approval')) {
+        return false
+      }
+
+      // 1. Company Filter (using alias & entity matching)
       if (!isAllCompanies) {
-        if (item.companyName.toLowerCase() !== selectedCompany.toLowerCase()) {
+        if (!isCompanyMatch(item.companyName, selectedCompany)) {
           return false
         }
       }
@@ -415,19 +270,29 @@ export const PettyCashPage: React.FC = () => {
       // 2. Status Filter
       if (statusFilter !== 'All') {
         if (statusFilter === 'Approved' && item.status !== 'Approved') return false
-        if (statusFilter === 'Pending Finance Approval' && item.status !== 'Pending Finance Approval') return false
+        if (
+          statusFilter === 'Pending Finance Endorsement' &&
+          item.status !== 'Pending Finance Endorsement' &&
+          item.status !== 'Pending Finance Approval'
+        ) {
+          return false
+        }
+        if (statusFilter === 'Pending Audit Approval' && item.status !== 'Pending Audit Approval') return false
+        if (statusFilter === 'Disapproved' && !['Disapproved', 'Rejected', 'Rejected by Finance', 'Disapproved by Audit'].includes(item.status)) {
+          return false
+        }
         if (statusFilter === 'Expense' && item.type !== 'expense') return false
       }
 
       // 3. Search Query Filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
-        const matchesDesc = item.description.toLowerCase().includes(q)
-        const matchesRef = item.referenceNo?.toLowerCase().includes(q) || false
-        const matchesBank = item.bankSource?.toLowerCase().includes(q) || false
-        const matchesComp = item.companyName.toLowerCase().includes(q)
-        const matchesCat = item.category?.toLowerCase().includes(q) || false
-        if (!matchesDesc && !matchesRef && !matchesBank && !matchesComp && !matchesCat) {
+        const matchesDesc = (item.description || '').toLowerCase().includes(q)
+        const matchesComp = (item.companyName || '').toLowerCase().includes(q)
+        const matchesCat = (item.category || '').toLowerCase().includes(q)
+        const matchesRemark = (item.remark || '').toLowerCase().includes(q)
+        const matchesFinRemark = (item.financeRemark || '').toLowerCase().includes(q)
+        if (!matchesDesc && !matchesComp && !matchesCat && !matchesRemark && !matchesFinRemark) {
           return false
         }
       }
@@ -441,7 +306,7 @@ export const PettyCashPage: React.FC = () => {
 
       return true
     })
-  }, [ledger, isAllCompanies, selectedCompany, statusFilter, searchQuery, dateRange])
+  }, [ledger, isAllCompanies, selectedCompany, statusFilter, searchQuery, dateRange, isAudit])
 
   // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(filteredLedger.length / itemsPerPage))
@@ -450,168 +315,69 @@ export const PettyCashPage: React.FC = () => {
     return filteredLedger.slice(start, start + itemsPerPage)
   }, [filteredLedger, currentPage, itemsPerPage])
 
-  // Open Row Summary Modal
+  // Open Transaction Detail Summary
   const handleOpenSummary = (entry: PettyCashTransaction) => {
     setTargetEntry(entry)
     setIsSummaryModalOpen(true)
     setMenuOpenEntryId(null)
   }
 
-  // Open Edit Modal for pending request
-  const handleOpenEdit = (entry: PettyCashTransaction, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation()
-    setTargetEntry(entry)
-    setEditFormData({
-      amountRequested: String(entry.amountRequested || entry.amountIn || 0),
-      date: entry.date,
-      description: entry.description,
-      referenceNo: entry.referenceNo || '',
-    })
-    setIsEditModalOpen(true)
-    setMenuOpenEntryId(null)
+  // Open Confirmation Modal for Endorse, Reject, Approve or Disapprove
+  const handleOpenReviewConfirm = (action: 'endorse' | 'reject' | 'approve' | 'disapprove') => {
+    setReviewAction(action)
+    setReviewRemark('')
+    setReviewError('')
+    setIsReviewConfirmModalOpen(true)
   }
 
-  // Open Delete Confirmation Modal
-  const handleOpenDelete = (entry: PettyCashTransaction, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation()
-    setTargetEntry(entry)
-    setIsDeleteModalOpen(true)
-    setMenuOpenEntryId(null)
-  }
-
-  // Confirm Delete
-  const handleConfirmDelete = () => {
-    if (!targetEntry) return
-    setLedger((prev) => prev.filter((item) => item.id !== targetEntry.id))
-    setIsDeleteModalOpen(false)
-    setTargetEntry(null)
-    setApprovalFeedback('Record successfully removed.')
-    setTimeout(() => setApprovalFeedback(null), 4000)
-  }
-
-  // Open Finance Approval Modal (where Finance chooses/confirms bank account)
-  const handleOpenFinanceApprove = (entry: PettyCashTransaction, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation()
-    setTargetEntry(entry)
-    setSelectedDisbursementBank(CORPORATE_BANK_ACCOUNTS[0].id)
-    setIsFinanceApproveModalOpen(true)
-    setMenuOpenEntryId(null)
-  }
-
-  // Finance confirms approval & bank disbursement
-  const handleConfirmFinanceApproval = () => {
-    if (!targetEntry) return
-
-    const approvedBank = CORPORATE_BANK_ACCOUNTS.find((b) => b.id === selectedDisbursementBank) || CORPORATE_BANK_ACCOUNTS[0]
-    const approvedAmount = targetEntry.amountRequested
-    const targetComp = targetEntry.companyName
-    const bankLabel = `${approvedBank.bankName} (${approvedBank.accountNumber})`
-
-    // Update balances
-    setBalances((prev) => {
-      const current = prev[targetComp] || 0
-      return {
-        ...prev,
-        [targetComp]: current + approvedAmount,
-      }
-    })
-
-    // Update ledger entry: amountIn becomes the received amount, status becomes Approved
-    setLedger((prev) =>
-      prev.map((item) => {
-        if (item.id === targetEntry.id) {
-          return {
-            ...item,
-            status: 'Approved',
-            type: 'topup',
-            bankSource: bankLabel,
-            amountIn: approvedAmount, // Now credited into IN column!
-            runningBalance: (balances[targetComp] || 0) + approvedAmount,
-            approvedBy: user?.fullName || user?.email || 'Finance Officer',
-            approvedAt: new Date().toISOString(),
-          }
-        }
-        return item
-      })
-    )
-
-    setIsFinanceApproveModalOpen(false)
-    setTargetEntry(null)
-    setApprovalFeedback(
-      `Approved: ${formatPHP(approvedAmount)} credited to ${targetComp}'s petty cash fund from ${bankLabel}.`
-    )
-    setTimeout(() => setApprovalFeedback(null), 5000)
-  }
-
-  // Decline Request
-  const handleDeclineRequest = (entry: PettyCashTransaction, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation()
-    if (!window.confirm(`Decline top-up request for ${formatPHP(entry.amountRequested)}?`)) return
-
-    setLedger((prev) =>
-      prev.map((item) => {
-        if (item.id === entry.id) {
-          return {
-            ...item,
-            status: 'Rejected',
-          }
-        }
-        return item
-      })
-    )
-    setMenuOpenEntryId(null)
-  }
-
-  // Save Edit Request
-  const handleSaveEdit = (e: React.FormEvent) => {
+  // Submit Review / Endorsement decision with required remark
+  const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!targetEntry) return
 
-    const amt = parseFloat(editFormData.amountRequested)
-    if (isNaN(amt) || amt < 1) return
+    if (!reviewRemark.trim()) {
+      setReviewError('A remark is required when submitting your review decision.')
+      return
+    }
 
-    setLedger((prev) =>
-      prev.map((item) => {
-        if (item.id === targetEntry.id) {
-          return {
-            ...item,
-            amountRequested: amt,
-            date: editFormData.date,
-            description: editFormData.description.trim(),
-            referenceNo: editFormData.referenceNo.trim() || undefined,
-          }
-        }
-        return item
-      })
-    )
+    setIsSubmittingReview(true)
+    setReviewError('')
 
-    setIsEditModalOpen(false)
-    setTargetEntry(null)
-    setApprovalFeedback('Request details updated.')
-    setTimeout(() => setApprovalFeedback(null), 4000)
+    try {
+      if (reviewAction === 'endorse' || reviewAction === 'reject') {
+        await pettyCashService.endorseTopUp(targetEntry.recordId, reviewAction, reviewRemark.trim())
+      } else {
+        await pettyCashService.reviewTopUp(targetEntry.recordId, reviewAction, reviewRemark.trim())
+      }
+      await loadData()
+
+      setIsReviewConfirmModalOpen(false)
+      setIsSummaryModalOpen(false)
+      setTargetEntry(null)
+
+      let actionText = 'Reviewed'
+      if (reviewAction === 'endorse') actionText = 'Endorsed to Audit'
+      else if (reviewAction === 'reject') actionText = 'Rejected by Finance'
+      else if (reviewAction === 'approve') actionText = 'Approved'
+      else if (reviewAction === 'disapprove') actionText = 'Disapproved by Audit'
+
+      setApprovalFeedback(`Petty cash request has been ${actionText} with the remark recorded.`)
+      setTimeout(() => setApprovalFeedback(null), 5000)
+    } catch (err: any) {
+      setReviewError(err?.message || 'Failed to submit decision.')
+    } finally {
+      setIsSubmittingReview(false)
+    }
   }
 
-  // Handle new top up created from modal
-  const handleTopUpSuccess = (newRecord: PettyCashTopUpRecord) => {
-    if (newRecord.status === 'Approved') {
-      setBalances((prev) => {
-        const cur = prev[newRecord.companyName] || 0
-        return {
-          ...prev,
-          [newRecord.companyName]: cur + newRecord.amountIn,
-        }
-      })
-      setApprovalFeedback(
-        `Top-up successful: ${formatPHP(newRecord.amountIn)} credited to ${newRecord.companyName} from ${newRecord.bankSource}.`
-      )
-    } else {
-      setApprovalFeedback(
-        `Top-up request for ${formatPHP(newRecord.amountRequested)} submitted. Awaiting Finance review and bank disbursement.`
-      )
-    }
+  // Handle new request success
+  const handleTopUpSuccess = async () => {
+    setCurrentPage(1)
+    setStatusFilter('All')
+    setSearchQuery('')
+    await loadData()
+    setApprovalFeedback('Petty cash request submitted to the Finance team successfully.')
     setTimeout(() => setApprovalFeedback(null), 5000)
-
-    setLedger((prev) => [newRecord, ...prev])
   }
 
   // Export CSV
@@ -621,33 +387,36 @@ export const PettyCashPage: React.FC = () => {
       'Date',
       'Company',
       'Particulars',
-      'Bank / Source',
-      'Reference No',
       'Amount Requested (PHP)',
       'Cash In (PHP)',
       'Cash Out (PHP)',
       'Running Balance (PHP)',
       'Status',
+      'Remark',
+      'Reviewed By',
     ]
 
     const rows = filteredLedger.map((e) => [
       `"${e.date}"`,
-      `"${e.companyName.replace(/"/g, '""')}"`,
-      `"${e.description.replace(/"/g, '""')}"`,
-      `"${(e.bankSource || '').replace(/"/g, '""')}"`,
-      `"${e.referenceNo || ''}"`,
+      `"${(e.companyName || '').replace(/"/g, '""')}"`,
+      `"${(e.description || '').replace(/"/g, '""')}"`,
       e.amountRequested,
       e.amountIn,
       e.amountOut,
       e.runningBalance,
       `"${e.status}"`,
+      `"${(e.remark || '').replace(/"/g, '""')}"`,
+      `"${(e.reviewedBy || '').replace(/"/g, '""')}"`,
     ])
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement('a')
     link.setAttribute('href', encodedUri)
-    link.setAttribute('download', `Petty_Cash_${selectedCompany.replace(/\s+/g, '_')}_${dateRange.startDate}_to_${dateRange.endDate}.csv`)
+    link.setAttribute(
+      'download',
+      `Petty_Cash_${selectedCompany.replace(/\s+/g, '_')}_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.csv`
+    )
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -664,14 +433,30 @@ export const PettyCashPage: React.FC = () => {
 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
-      {/* 1. Top Header Row matching Sales, Loan, Expense pages */}
+      {/* Feedback Banner */}
+      {approvalFeedback && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 flex items-center justify-between shadow-xs animate-in slide-in-from-top-2">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span>{approvalFeedback}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setApprovalFeedback(null)}
+            className="text-emerald-700 hover:text-emerald-900 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Top Header Row */}
       <div className="space-y-3">
-        {/* Top Row: Action Buttons (Date/Time, Export & Top Up from Sales Button) */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 flex-wrap">
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
             <LiveDateTimeBadge />
 
-            {/* Export Dropdown Button (White style) */}
+            {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
@@ -708,7 +493,7 @@ export const PettyCashPage: React.FC = () => {
               )}
             </div>
 
-            {/* Top Up from Sales Button (Hidden for Audit - Audit only views) */}
+            {/* Request Petty Cash Button (Hidden for Audit) */}
             {!isAudit && (
               <Button
                 type="button"
@@ -716,7 +501,7 @@ export const PettyCashPage: React.FC = () => {
                 className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
               >
                 <Plus className="h-4 w-4 shrink-0" />
-                <span>Top Up from Sales</span>
+                <span>Request Petty Cash</span>
               </Button>
             )}
           </div>
@@ -732,18 +517,18 @@ export const PettyCashPage: React.FC = () => {
               {pendingCount > 0 && isFinanceOrAdmin && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-700 border border-amber-500/20 animate-pulse">
                   <Clock className="w-3.5 h-3.5" />
-                  {pendingCount} Pending Approval
+                  {pendingCount} Pending Finance Review
                 </span>
               )}
             </div>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Top up company&rsquo;s petty cash wallet from sales and corporate bank accounts
+              Petty cash requests, approvals, and disbursements connected live to the MCT database
             </p>
           </div>
 
-          {/* Filter Toolbar matching Sales, Loan, Expense layout */}
+          {/* Filter Toolbar */}
           <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
-            {/* Custom Period Dropdown: Daily, Quarterly, Monthly, Annually */}
+            {/* Custom Period Dropdown */}
             <div ref={periodDropdownRef} className="relative inline-block">
               <button
                 type="button"
@@ -812,11 +597,17 @@ export const PettyCashPage: React.FC = () => {
               </button>
 
               {isStatusDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
                   {[
                     { id: 'All', label: 'All Transactions' },
-                    { id: 'Approved', label: 'Approved Top-Ups' },
-                    { id: 'Pending Finance Approval', label: 'Pending Approval' },
+                    ...(isAudit
+                      ? [{ id: 'Pending Audit Approval', label: 'Pending Audit Review' }]
+                      : [
+                          { id: 'Pending Finance Endorsement', label: 'Pending Finance' },
+                          { id: 'Pending Audit Approval', label: 'Pending Audit' },
+                        ]),
+                    { id: 'Approved', label: 'Approved' },
+                    { id: 'Disapproved', label: 'Rejected / Disapproved' },
                     { id: 'Expense', label: 'Expenses' },
                   ].map((st) => (
                     <button
@@ -844,7 +635,7 @@ export const PettyCashPage: React.FC = () => {
               )}
             </div>
 
-            {/* Unified Date Range Picker */}
+            {/* Date Range Picker */}
             <DateRangePicker
               value={dateRange}
               onChange={(newRange) => {
@@ -854,7 +645,7 @@ export const PettyCashPage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope Dropdown / Pill */}
+            {/* Company Scope Dropdown */}
             {isCompanyScoped ? (
               <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs select-none">
                 <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
@@ -884,7 +675,7 @@ export const PettyCashPage: React.FC = () => {
 
                 {isCompanyDropdownOpen && (
                   <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-64 overflow-y-auto">
-                    {COMPANY_LIST.map((comp) => (
+                    {companyList.map((comp) => (
                       <button
                         key={comp}
                         type="button"
@@ -915,25 +706,17 @@ export const PettyCashPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Real-time Feedback Banner */}
-      {approvalFeedback && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs sm:text-sm text-emerald-800 font-medium flex items-center gap-2.5 animate-in fade-in duration-200">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{approvalFeedback}</span>
-        </div>
-      )}
-
-      {/* 2. ONLY ONE KPI CARD: Current Balance of the Petty Cash (matching Sales, Loan, Expense pages) */}
-      <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
-        <div className="w-full max-w-[calc(100%-60px)]">
-          <span className="text-xs font-semibold text-muted-fg block uppercase tracking-wider">
+      {/* 2. Top Summary KPI Card */}
+      <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-6 shadow-xs flex items-center justify-between">
+        <div>
+          <span className="text-2xs sm:text-xs font-bold uppercase tracking-wider text-muted-fg">
             Current Balance
           </span>
           <h3 className="text-xl sm:text-2xl font-bold text-focus mt-1 tabular-nums tracking-tight">
             {formatPHP(currentBalance)}
           </h3>
           <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-            Available petty cash reserve for minor operational disbursements • {displayedCompanyTitle}
+            Available petty cash reserve for operational disbursements • {displayedCompanyTitle}
           </p>
         </div>
         <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600 shrink-0 shadow-2xs">
@@ -941,15 +724,15 @@ export const PettyCashPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* 3. Main Table Card matching Sales, Loan, Expense Page */}
+      {/* 3. Main Table Card */}
       <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6">
-        {/* Table Search Bar Toolbar */}
+        {/* Table Search Bar */}
         <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
           <div className="relative w-full">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
             <Input
               type="text"
-              placeholder="Search by particulars, reference no, category, bank account…"
+              placeholder="Search by particulars, company, category, remarks…"
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value)
@@ -970,20 +753,18 @@ export const PettyCashPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Unified Table Structure with new Amount Requested column and Status before Actions */}
+        {/* Clean Table Structure: Reference / Voucher No and Funding Source are Removed */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table className="w-full table-fixed min-w-[1100px]">
+          <Table className="w-full table-fixed min-w-[1000px]">
             <colgroup>
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '17%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '25%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '8%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '6%' }} />
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
@@ -995,9 +776,6 @@ export const PettyCashPage: React.FC = () => {
                 </TableHead>
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
-                </TableHead>
-                <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                  SOURCE / REF
                 </TableHead>
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
                   AMOUNT REQUESTED
@@ -1014,31 +792,38 @@ export const PettyCashPage: React.FC = () => {
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   STATUS
                 </TableHead>
-                <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
-                  ACTIONS
-                </TableHead>
               </TableRow>
             </TableHeader>
 
             <TableBody>
-              {paginatedLedger.length === 0 ? (
+              {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
+                  <TableCell colSpan={8} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
+                    <Clock className="w-6 h-6 text-muted-fg/40 mx-auto mb-2 animate-spin" />
+                    Loading petty cash transactions from database...
+                  </TableCell>
+                </TableRow>
+              ) : paginatedLedger.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
                     <Wallet className="w-8 h-8 text-muted-fg/40 mx-auto mb-2" />
                     No petty cash transactions found for the selected criteria.
                   </TableCell>
                 </TableRow>
               ) : (
                 paginatedLedger.map((entry) => {
-                  const isPending = entry.status === 'Pending Finance Approval'
+                  const isPendingFinance = entry.status === 'Pending Finance Endorsement' || entry.status === 'Pending Finance Approval'
+                  const isPendingAudit = entry.status === 'Pending Audit Approval'
                   const isApproved = entry.status === 'Approved'
-                  const isRejected = entry.status === 'Rejected'
+                  const isRejectedFinance = entry.status === 'Rejected by Finance'
+                  const isDisapprovedAudit = entry.status === 'Disapproved by Audit' || entry.status === 'Disapproved' || entry.status === 'Rejected'
 
                   return (
                     <TableRow
                       key={entry.id}
                       onClick={() => handleOpenSummary(entry)}
                       className="border-b border-slate-100 hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                      title="Click transaction to view details or review"
                     >
                       {/* 1. Date */}
                       <TableCell className="px-3 py-3.5 text-xs text-muted-fg tabular-nums font-medium">
@@ -1047,102 +832,89 @@ export const PettyCashPage: React.FC = () => {
 
                       {/* 2. Company */}
                       <TableCell className="px-3 py-3.5">
-                        <div className="font-semibold text-xs text-focus truncate group-hover:text-primary transition-colors" title={entry.companyName}>
-                          {entry.companyName}
+                        <div
+                          className="font-semibold text-xs text-focus truncate group-hover:text-primary transition-colors"
+                          title={entry.companyName || ''}
+                        >
+                          {entry.companyName || '—'}
                         </div>
                       </TableCell>
 
-                      {/* 3. Particulars */}
+                      {/* 3. Particulars & Remarks */}
                       <TableCell className="px-3 py-3.5">
                         <div className="font-medium text-xs text-focus line-clamp-1" title={entry.description}>
                           {entry.description || '—'}
                         </div>
-                        {entry.category && (
-                          <div className="text-[11px] text-muted-fg line-clamp-1">
-                            {entry.category}
+                        {entry.financeRemark && (
+                          <div className="text-[11px] text-blue-800 bg-blue-50/80 px-2 py-0.5 rounded-md mt-1 inline-flex items-center gap-1 max-w-full truncate border border-blue-200/50">
+                            <MessageSquare className="w-3 h-3 shrink-0 text-blue-600" />
+                            <span className="truncate italic">Finance: {entry.financeRemark}</span>
                           </div>
+                        )}
+                        {entry.remark && (
+                          <div className="text-[11px] text-amber-800 bg-amber-50/80 px-2 py-0.5 rounded-md mt-1 inline-flex items-center gap-1 max-w-full truncate border border-amber-200/50">
+                            <MessageSquare className="w-3 h-3 shrink-0 text-amber-600" />
+                            <span className="truncate italic">Audit: {entry.remark}</span>
+                          </div>
+                        )}
+                        {entry.category && !entry.remark && !entry.financeRemark && (
+                          <div className="text-[11px] text-muted-fg line-clamp-1">{entry.category}</div>
                         )}
                       </TableCell>
 
-                      {/* 4. Source / Ref */}
-                      <TableCell className="px-3 py-3.5">
-                        <div className="text-xs text-focus font-medium truncate" title={entry.bankSource || entry.referenceNo || '—'}>
-                          {entry.bankSource || entry.referenceNo || '—'}
-                        </div>
-                        {entry.referenceNo && entry.bankSource && (
-                          <div className="text-[11px] text-muted-fg font-mono truncate">
-                            {entry.referenceNo}
-                          </div>
-                        )}
-                      </TableCell>
-
-                      {/* 5. Amount Requested (New Column) */}
+                      {/* 4. Amount Requested */}
                       <TableCell className="px-3 py-3.5 text-right font-semibold text-xs text-focus tabular-nums">
                         {entry.amountRequested > 0 ? formatPHP(entry.amountRequested) : '—'}
                       </TableCell>
 
-                      {/* 6. In (+) Validation: If unapproved/pending, displays '—' */}
+                      {/* 5. In (+) */}
                       <TableCell className="px-3 py-3.5 text-right font-bold text-xs text-emerald-700 tabular-nums">
                         {isApproved && entry.amountIn > 0 ? formatPHP(entry.amountIn) : '—'}
                       </TableCell>
 
-                      {/* 7. Out (-) */}
+                      {/* 6. Out (-) */}
                       <TableCell className="px-3 py-3.5 text-right font-bold text-xs text-rose-600 tabular-nums">
                         {entry.amountOut > 0 ? formatPHP(entry.amountOut) : '—'}
                       </TableCell>
 
-                      {/* 8. Running Balance */}
+                      {/* 7. Running Balance */}
                       <TableCell className="px-3 py-3.5 text-right font-semibold text-xs text-focus tabular-nums">
                         {formatPHP(entry.runningBalance)}
                       </TableCell>
 
-                      {/* 9. Status (Positioned before Actions column) */}
+                      {/* 8. Status */}
                       <TableCell className="px-3 py-3.5 text-center">
-                        {isPending ? (
+                        {isPendingFinance ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-700 border border-amber-500/20 whitespace-nowrap">
                             <Clock className="w-3 h-3 shrink-0" />
                             <span>Pending Finance</span>
                           </span>
-                        ) : isRejected ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200">
+                        ) : isPendingAudit ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/10 text-indigo-700 border border-indigo-500/20 whitespace-nowrap">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>Pending Audit</span>
+                          </span>
+                        ) : isRejectedFinance ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
                             <XCircle className="w-3 h-3" />
-                            <span>Declined</span>
+                            <span>Rejected (Finance)</span>
+                          </span>
+                        ) : isDisapprovedAudit ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                            <XCircle className="w-3 h-3" />
+                            <span>Disapproved (Audit)</span>
                           </span>
                         ) : entry.type === 'expense' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-700 border border-slate-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-700 border border-slate-200 whitespace-nowrap">
                             <ArrowUpRight className="w-3 h-3" />
                             <span>Expense</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                             <Check className="w-3 h-3" />
                             <span>Approved</span>
                           </span>
                         )}
-                      </TableCell>
-
-                      {/* 10. Actions (3 Dots Dropdown Menu) */}
-                      <TableCell
-                        className="px-3 py-3.5 text-center"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            const rect = e.currentTarget.getBoundingClientRect()
-                            setMenuPosition({
-                              top: rect.bottom + window.scrollY + 4,
-                              left: rect.right + window.scrollX - 170,
-                            })
-                            setMenuOpenEntryId(menuOpenEntryId === entry.id ? null : entry.id)
-                            setTargetEntry(entry)
-                          }}
-                          className="p-1.5 rounded-lg text-muted-fg hover:text-focus hover:bg-slate-100 transition-colors"
-                          title="Actions"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
                       </TableCell>
                     </TableRow>
                   )
@@ -1152,7 +924,7 @@ export const PettyCashPage: React.FC = () => {
           </Table>
         </div>
 
-        {/* Pagination Toolbar matching Sales, Loan, Expense pages */}
+        {/* Pagination Toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-5 mt-2 border-t border-slate-100 text-xs text-muted-fg">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
@@ -1201,97 +973,30 @@ export const PettyCashPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* 3-Dots Floating Menu Portal */}
-      {menuOpenEntryId && menuPosition && targetEntry && (
-        createPortal(
-          <div
-            ref={menuRef}
-            style={{ top: menuPosition.top, left: menuPosition.left }}
-            className="fixed w-44 bg-white rounded-xl border border-stroke/50 shadow-xl z-50 py-1 overflow-hidden animate-in fade-in-50 zoom-in-95 duration-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* View Summary (Available to all, including Audit) */}
-            <button
-              type="button"
-              onClick={() => handleOpenSummary(targetEntry)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-focus hover:bg-primary/5 hover:text-primary transition-colors text-left"
-            >
-              <Eye className="w-3.5 h-3.5 text-primary" />
-              <span>View Summary</span>
-            </button>
-
-            {/* If Pending Approval & user is Finance / Admin: Approve or Decline */}
-            {!isAudit && targetEntry.status === 'Pending Finance Approval' && isFinanceOrAdmin && (
-              <>
-                <button
-                  type="button"
-                  onClick={(e) => handleOpenFinanceApprove(targetEntry, e)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors text-left font-semibold"
-                >
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Approve Request</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleDeclineRequest(targetEntry, e)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50 transition-colors text-left"
-                >
-                  <XCircle className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Decline Request</span>
-                </button>
-              </>
-            )}
-
-            {/* Edit (if pending approval and not audit) */}
-            {!isAudit && targetEntry.status === 'Pending Finance Approval' && (
-              <button
-                type="button"
-                onClick={(e) => handleOpenEdit(targetEntry, e)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-focus hover:bg-slate-50 transition-colors text-left"
-              >
-                <Pencil className="w-3.5 h-3.5 text-muted-fg" />
-                <span>Edit Request</span>
-              </button>
-            )}
-
-            {/* Delete (with confirmation modal) - Not available to Audit */}
-            {!isAudit && (
-              <button
-                type="button"
-                onClick={(e) => handleOpenDelete(targetEntry, e)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors text-left"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                <span>Delete Record</span>
-              </button>
-            )}
-          </div>,
-          document.body
-        )
-      )}
-
-      {/* MODAL: Row Detail Summary on Row Click */}
+      {/* MODAL 1: Transaction Detail & Action Dialog on Row Click */}
       <Dialog open={isSummaryModalOpen} onOpenChange={setIsSummaryModalOpen}>
-        <DialogContent className="sm:max-w-[550px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[560px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="pb-3 border-b border-stroke/20">
             <div className="flex items-center justify-between">
               <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
                 <Wallet className="w-5 h-5 text-primary" />
-                <span>Petty Cash Transaction Summary</span>
+                <span>Petty Cash Transaction Details</span>
               </DialogTitle>
               <span
                 className={cn(
                   'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider',
                   targetEntry?.status === 'Approved' && 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-                  targetEntry?.status === 'Pending Finance Approval' && 'bg-amber-50 text-amber-700 border border-amber-200',
-                  targetEntry?.status === 'Rejected' && 'bg-red-50 text-red-700 border border-red-200'
+                  targetEntry?.status === 'Pending Finance Approval' &&
+                    'bg-amber-50 text-amber-700 border border-amber-200',
+                  (targetEntry?.status === 'Disapproved' || targetEntry?.status === 'Rejected') &&
+                    'bg-red-50 text-red-700 border border-red-200'
                 )}
               >
                 {targetEntry?.status}
               </span>
             </div>
             <DialogDescription className="text-xs text-muted-fg">
-              Reference: {targetEntry?.referenceNo || 'None'} • {targetEntry?.companyName}
+              {targetEntry?.companyName} • {targetEntry?.date}
             </DialogDescription>
           </DialogHeader>
 
@@ -1315,7 +1020,9 @@ export const PettyCashPage: React.FC = () => {
                 <div>
                   <span className="text-[11px] text-muted-fg">Cash In (Received)</span>
                   <div className="font-bold text-emerald-700 mt-0.5">
-                    {targetEntry.status === 'Approved' && targetEntry.amountIn > 0 ? formatPHP(targetEntry.amountIn) : '—'}
+                    {targetEntry.status === 'Approved' && targetEntry.amountIn > 0
+                      ? formatPHP(targetEntry.amountIn)
+                      : '—'}
                   </div>
                 </div>
                 <div>
@@ -1328,29 +1035,57 @@ export const PettyCashPage: React.FC = () => {
                   <span className="text-[11px] text-muted-fg">Running Balance</span>
                   <div className="font-bold text-focus mt-0.5">{formatPHP(targetEntry.runningBalance)}</div>
                 </div>
-                <div className="col-span-2">
-                  <span className="text-[11px] text-muted-fg">Bank Source / Account</span>
-                  <div className="font-semibold text-focus mt-0.5">{targetEntry.bankSource || '—'}</div>
-                </div>
               </div>
 
               <div className="space-y-1 text-xs">
                 <span className="font-semibold text-focus">Particulars / Description</span>
-                <p className="p-3 rounded-xl bg-surface border border-stroke/40 text-muted-fg leading-relaxed">
+                <p className="p-3 rounded-xl bg-surface border border-stroke/40 text-focus leading-relaxed text-xs">
                   {targetEntry.description}
                 </p>
               </div>
 
-              {targetEntry.requestedBy && (
-                <div className="flex items-center justify-between text-xs text-muted-fg px-1">
-                  <span>Requested By: <strong className="text-focus">{targetEntry.requestedBy}</strong></span>
-                  {targetEntry.approvedBy && (
-                    <span>Approved By: <strong className="text-emerald-700">{targetEntry.approvedBy}</strong></span>
+              {/* Display Finance Endorsement Remark if present */}
+              {targetEntry.financeRemark && (
+                <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200 space-y-1 text-xs">
+                  <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider block">
+                    Finance Endorsement Remark
+                  </span>
+                  <p className="text-xs text-blue-950 font-medium italic leading-relaxed">
+                    "{targetEntry.financeRemark}"
+                  </p>
+                  {targetEntry.endorsedBy && (
+                    <div className="text-[11px] text-blue-800 pt-1">
+                      Endorsed by: <strong>{targetEntry.endorsedBy}</strong>
+                      {targetEntry.endorsedAt && (
+                        <span> on {new Date(targetEntry.endorsedAt).toLocaleString()}</span>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
 
-              <div className="flex justify-end pt-2 border-t border-stroke/20">
+              {/* Display Audit Review Remark if present */}
+              {targetEntry.remark && (
+                <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 space-y-1 text-xs">
+                  <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider block">
+                    Audit Review Remark
+                  </span>
+                  <p className="text-xs text-amber-950 font-medium italic leading-relaxed">
+                    "{targetEntry.remark}"
+                  </p>
+                  {targetEntry.reviewedBy && (
+                    <div className="text-[11px] text-amber-800 pt-1">
+                      Reviewed by: <strong>{targetEntry.reviewedBy}</strong>
+                      {targetEntry.reviewedAt && (
+                        <span> on {new Date(targetEntry.reviewedAt).toLocaleString()}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-between pt-3 border-t border-stroke/20 gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1360,120 +1095,165 @@ export const PettyCashPage: React.FC = () => {
                 >
                   Close
                 </Button>
+
+                {/* Finance Team Actions: Endorse to Audit or Reject */}
+                {!isAudit && isFinanceOrAdmin && (targetEntry.status === 'Pending Finance Endorsement' || targetEntry.status === 'Pending Finance Approval') && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleOpenReviewConfirm('reject')}
+                      className="h-9 px-4 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Reject</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleOpenReviewConfirm('endorse')}
+                      className="h-9 px-4 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Endorse to Audit</span>
+                    </Button>
+                  </div>
+                )}
+
+                {/* Audit Team Actions: Approve or Disapprove */}
+                {isAudit && targetEntry.status === 'Pending Audit Approval' && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleOpenReviewConfirm('disapprove')}
+                      className="h-9 px-4 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Disapprove</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleOpenReviewConfirm('approve')}
+                      className="h-9 px-4 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Approve</span>
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: Delete Confirmation */}
-      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-rose-600" />
-              <span>Delete Petty Cash Record</span>
+      {/* MODAL 2: Confirmation Modal with Mandatory Remark */}
+      <Dialog open={isReviewConfirmModalOpen} onOpenChange={setIsReviewConfirmModalOpen}>
+        <DialogContent className="sm:max-w-[480px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+          <DialogHeader className="pb-3 border-b border-stroke/20">
+            <DialogTitle
+              className={cn(
+                'text-lg font-bold flex items-center gap-2',
+                reviewAction === 'endorse' || reviewAction === 'approve' ? 'text-emerald-800' : 'text-rose-700'
+              )}
+            >
+              {reviewAction === 'endorse' ? (
+                <>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <span>Confirm Finance Endorsement to Audit</span>
+                </>
+              ) : reviewAction === 'reject' ? (
+                <>
+                  <XCircle className="w-5 h-5 text-rose-600" />
+                  <span>Confirm Finance Rejection</span>
+                </>
+              ) : reviewAction === 'approve' ? (
+                <>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <span>Confirm Petty Cash Audit Approval</span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-5 h-5 text-rose-600" />
+                  <span>Confirm Petty Cash Audit Disapproval</span>
+                </>
+              )}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg pt-1">
-              Are you sure you want to delete this record for{' '}
-              <strong className="text-focus">{targetEntry?.companyName}</strong> dated{' '}
-              <strong className="text-focus">{targetEntry?.date}</strong>?
+              {reviewAction === 'endorse'
+                ? `You are endorsing this petty cash request for ${targetEntry?.companyName} to the Internal Audit team. An endorsement remark is required.`
+                : reviewAction === 'reject'
+                ? `You are rejecting this petty cash request for ${targetEntry?.companyName} as Finance. A rejection remark is required.`
+                : reviewAction === 'approve'
+                ? `You are granting final Audit approval for ${targetEntry?.companyName}'s petty cash top-up. A remark is required.`
+                : `You are disapproving this petty cash request for ${targetEntry?.companyName} upon Audit compliance review. A remark is required.`}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-3 rounded-xl bg-slate-50 border border-stroke/30 text-xs space-y-1">
-            <div className="text-muted-fg font-medium">{targetEntry?.description}</div>
-            <div className="font-bold text-focus">
-              Amount: {formatPHP(targetEntry?.amountRequested || targetEntry?.amountIn || targetEntry?.amountOut || 0)}
+          <form onSubmit={handleSubmitReview} className="space-y-4 pt-2">
+            {reviewError && (
+              <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{reviewError}</span>
+              </div>
+            )}
+
+            {/* Transaction Brief */}
+            <div className="p-3 rounded-xl bg-slate-50 border border-stroke/30 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-fg">Company:</span>
+                <span className="font-semibold text-focus">{targetEntry?.companyName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-fg">Amount:</span>
+                <span className="font-bold text-focus">{formatPHP(targetEntry?.amountRequested || 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-fg">Particulars:</span>
+                <span className="font-medium text-focus truncate max-w-[240px]">{targetEntry?.description}</span>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center justify-end gap-2.5 pt-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsDeleteModalOpen(false)}
-              className="h-9 text-xs font-semibold"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleConfirmDelete}
-              className="h-9 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white"
-            >
-              Delete Record
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* MODAL: Edit Pending Request */}
-      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-[500px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader className="pb-3 border-b border-stroke/20">
-            <DialogTitle className="text-lg font-bold text-focus">
-              Edit Top Up Request
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-fg">
-              Modify unreviewed top-up request details before Finance approval.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleSaveEdit} className="space-y-3.5 pt-2">
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold text-focus block">Requested Amount (₱)</Label>
-              <Input
-                type="number"
-                min="1"
-                step="any"
-                value={editFormData.amountRequested}
-                onChange={(e) => setEditFormData({ ...editFormData, amountRequested: e.target.value })}
-                className="h-9 text-xs font-semibold"
+            {/* Mandatory Remark Field */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-focus block">
+                  Remark / Justification <span className="text-red-500">* (Required)</span>
+                </Label>
+                <span className="text-[11px] text-muted-fg font-medium">Mandatory</span>
+              </div>
+              <textarea
+                value={reviewRemark}
+                onChange={(e) => {
+                  setReviewRemark(e.target.value)
+                  if (reviewError) setReviewError('')
+                }}
+                rows={3}
+                placeholder={
+                  reviewAction === 'endorse'
+                    ? 'Enter finance endorsement notes, budget availability, or verification remarks (required)...'
+                    : reviewAction === 'reject'
+                    ? 'Enter reason for finance rejection (required)...'
+                    : reviewAction === 'approve'
+                    ? 'Enter audit verification notes or compliance approval justification (required)...'
+                    : 'Enter audit disapproval reason or missing requirement details (required)...'
+                }
+                className="w-full p-3 rounded-xl border border-stroke/60 bg-white text-xs font-medium text-focus focus:outline-none focus:ring-2 focus:ring-focus placeholder:text-muted-fg resize-none"
                 required
               />
+              <p className="text-[11px] text-muted-fg">
+                This remark is permanent and will be recorded in the official audit trail.
+              </p>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold text-focus block">Request Date</Label>
-              <Input
-                type="date"
-                value={editFormData.date}
-                onChange={(e) => setEditFormData({ ...editFormData, date: e.target.value })}
-                className="h-9 text-xs"
-                required
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold text-focus block">Particulars / Description</Label>
-              <Input
-                type="text"
-                value={editFormData.description}
-                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                className="h-9 text-xs"
-                required
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold text-focus block">Reference No.</Label>
-              <Input
-                type="text"
-                value={editFormData.referenceNo}
-                onChange={(e) => setEditFormData({ ...editFormData, referenceNo: e.target.value })}
-                className="h-9 text-xs"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stroke/20">
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stroke/20">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setIsEditModalOpen(false)}
+                onClick={() => setIsReviewConfirmModalOpen(false)}
                 className="h-9 text-xs font-semibold"
               >
                 Cancel
@@ -1481,93 +1261,36 @@ export const PettyCashPage: React.FC = () => {
               <Button
                 type="submit"
                 size="sm"
-                className="h-9 text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white"
+                disabled={isSubmittingReview}
+                className={cn(
+                  'h-9 px-4 text-xs font-bold text-white shadow-xs cursor-pointer',
+                  reviewAction === 'endorse' || reviewAction === 'approve'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                )}
               >
-                Save Changes
+                {isSubmittingReview
+                  ? 'Saving...'
+                  : reviewAction === 'endorse'
+                  ? 'Confirm Endorsement'
+                  : reviewAction === 'reject'
+                  ? 'Confirm Rejection'
+                  : reviewAction === 'approve'
+                  ? 'Confirm Approval'
+                  : 'Confirm Disapproval'}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: Finance Approval & Bank Designation */}
-      <Dialog open={isFinanceApproveModalOpen} onOpenChange={setIsFinanceApproveModalOpen}>
-        <DialogContent className="sm:max-w-[500px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader className="pb-3 border-b border-stroke/20">
-            <DialogTitle className="text-lg font-bold text-emerald-800 flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              <span>Approve & Disburse from Bank</span>
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-fg">
-              Designate corporate bank account to disburse funds to{' '}
-              <strong className="text-focus">{targetEntry?.companyName}</strong>.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-stroke/30 space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-muted-fg">Requested Amount:</span>
-              <span className="font-bold text-focus">{formatPHP(targetEntry?.amountRequested || 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-fg">Requested By:</span>
-              <span className="font-medium text-focus">{targetEntry?.requestedBy || 'Supervisor'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-fg">Particulars:</span>
-              <span className="font-medium text-focus truncate max-w-[280px]">{targetEntry?.description}</span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5 pt-1">
-            <Label className="text-xs font-semibold text-focus block">
-              Disburse from Corporate Bank Account <span className="text-red-500">*</span>
-            </Label>
-            <select
-              value={selectedDisbursementBank}
-              onChange={(e) => setSelectedDisbursementBank(e.target.value)}
-              className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs font-medium text-focus focus:outline-none focus:ring-2 focus:ring-focus"
-            >
-              {CORPORATE_BANK_ACCOUNTS.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.bankName} — {b.accountNumber} ({b.type})
-                </option>
-              ))}
-            </select>
-            <p className="text-[11px] text-muted-fg">
-              Upon approval, this amount will immediately credit to {targetEntry?.companyName}&rsquo;s petty cash fund and reflect in IN (+).
-            </p>
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stroke/20">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsFinanceApproveModalOpen(false)}
-              className="h-9 text-xs font-semibold"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleConfirmFinanceApproval}
-              className="h-9 px-4 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
-            >
-              Confirm Disbursement & Credit
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Top Up from Sales / Bank Modal */}
+      {/* Top Up / Request Petty Cash Modal */}
       <TopUpPettyCashModal
         open={isTopUpModalOpen}
         onOpenChange={setIsTopUpModalOpen}
         company={selectedCompany === 'All Companies' ? (user?.assignedCompany || 'MCT Kitchen') : selectedCompany}
         currentBalance={currentBalance}
-        companies={COMPANY_LIST}
+        companies={companyList}
         onSuccess={handleTopUpSuccess}
       />
     </div>

@@ -40,7 +40,7 @@ class LoanBase(BaseModel):
     due_date: Optional[date] = None
     description: Optional[str] = None
     particulars: Optional[str] = None
-    status: str = Field(default="Pending Approval", description="Pending Approval, Approved, Paid, Overdue")
+    status: str = Field(default="Pending Finance Endorsement", description="Pending Finance Endorsement, Pending Audit Approval, Approved, Paid, Overdue, Rejected")
 
 class LoanCreate(LoanBase):
     borrower_company: Optional[str] = None
@@ -73,11 +73,31 @@ class LoanApproveRequest(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
 
+class LoanEndorseRequest(BaseModel):
+    action: str = Field(default="endorse", description="endorse or reject")
+    lender: Optional[int] = Field(None, description="Company_ID of assigned lender")
+    lender_company: Optional[str] = Field(None, description="Company name of assigned lender")
+    interest_rate: Optional[Decimal] = Field(None, ge=0, decimal_places=2, description="Interest rate percentage")
+    due_date: Optional[date] = None
+    remark: str = Field(..., min_length=1, description="Finance endorsement or rejection remark")
+
+class LoanAuditReviewRequest(BaseModel):
+    action: str = Field(..., description="approve or disapprove")
+    remark: str = Field(..., min_length=1, description="Audit review remark is required")
+
 class LoanOut(LoanBase):
     loan_id: int
     borrower: int
     lender: Optional[int] = None
     amount: Optional[Decimal] = None
+    borrower_name: Optional[str] = None
+    lender_name: Optional[str] = None
+    endorsed_by: Optional[str] = None
+    endorsed_at: Optional[datetime] = None
+    finance_remark: Optional[str] = None
+    audit_reviewed_by: Optional[str] = None
+    audit_reviewed_at: Optional[datetime] = None
+    audit_remark: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

@@ -45,6 +45,7 @@ import {
 import { AddLoanModal } from '@/components/dashboard/AddLoanModal'
 import { EditLoanModal } from '@/components/dashboard/EditLoanModal'
 import { ApproveLoanModal } from '@/components/dashboard/ApproveLoanModal'
+import { AuditReviewLoanModal } from '@/components/dashboard/AuditReviewLoanModal'
 import { RecordPaymentModal } from '@/components/dashboard/RecordPaymentModal'
 import { LoanHorizontalBarChart } from '@/components/dashboard/LoanHorizontalBarChart'
 import { AdminCompanyLoansView } from '@/components/dashboard/AdminCompanyLoansView'
@@ -145,9 +146,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
       setSelectedCompany(activeCompany)
     }
   }, [activeCompany, isAuditor])
-  const [statusFilter, setStatusFilter] = React.useState<
-    'All' | 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue'
-  >('All')
+  const [statusFilter, setStatusFilter] = React.useState<string>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
     preset: 'This Month',
@@ -175,6 +174,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
   const [editLoan, setEditLoan] = React.useState<LoanItem | null>(null)
   const [approveLoanItem, setApproveLoanItem] = React.useState<LoanItem | null>(null)
+  const [auditReviewLoanItem, setAuditReviewLoanItem] = React.useState<LoanItem | null>(null)
   const [deleteConfirmLoan, setDeleteConfirmLoan] = React.useState<LoanItem | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
 
@@ -325,10 +325,24 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Status options tailored by user role
+  const statusOptions = React.useMemo(() => {
+    if (isAuditor) {
+      return ['All', 'Pending Audit Approval', 'Approved', 'Paid', 'Partially Paid', 'Disapproved by Audit']
+    }
+    if (canApprove) {
+      return ['All', 'Pending Finance Endorsement', 'Pending Audit Approval', 'Approved', 'Paid', 'Partially Paid', 'Rejected by Finance']
+    }
+    return ['All', 'Pending Finance Endorsement', 'Pending Audit Approval', 'Approved', 'Paid', 'Partially Paid']
+  }, [isAuditor, canApprove])
+
   // Client-side filtering and sorting
   const filteredLoans = React.useMemo(() => {
     return loans
       .filter((item) => {
+        // Exclude test seed items
+        if (item.refNo?.startsWith('SEED-')) return false
+
         // Tab separation: Borrower vs Lender
         const currentTargetCompany = isAuditor
           ? (assignedCompany || '').trim().toLowerCase()
@@ -340,6 +354,16 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           } else {
             if ((item.lender || '').trim().toLowerCase() !== currentTargetCompany) return false
           }
+        }
+
+        // Auditors cannot view loan requests that are still pending finance endorsement
+        if (
+          isAuditor &&
+          (item.status === 'Pending Finance Endorsement' ||
+            item.status === 'Pending Approval' ||
+            item.status === 'Rejected by Finance')
+        ) {
+          return false
         }
 
         if (!isDateInRange(item.rawDate || item.date, dateRange.startDate, dateRange.endDate)) {
@@ -397,8 +421,15 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   // Total Loans KPI
   const kpis = React.useMemo(() => {
     const total = filteredLoans.reduce((sum, l) => sum + (l.amount || 0), 0)
-    const pending = filteredLoans.filter((l) => l.status === 'Pending Approval').length
-    const approved = filteredLoans.filter((l) => l.status === 'Approved').length
+    const pending = filteredLoans.filter(
+      (l) =>
+        l.status === 'Pending Approval' ||
+        l.status === 'Pending Finance Endorsement' ||
+        l.status === 'Pending Audit Approval'
+    ).length
+    const approved = filteredLoans.filter(
+      (l) => l.status === 'Approved' || l.status === 'Paid' || l.status === 'Partially Paid'
+    ).length
     return { totalLoans: total, pendingCount: pending, approvedCount: approved }
   }, [filteredLoans])
 
@@ -476,20 +507,32 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   }
 
   const handleRowClick = (loan: LoanItem) => {
-    if (loan.status === 'Pending Approval') {
+    const isPendingFinance =
+      loan.status === 'Pending Finance Endorsement' || loan.status === 'Pending Approval'
+    const isPendingAudit = loan.status === 'Pending Audit Approval'
+
+    if (isPendingFinance) {
       if (canApprove) {
         setApproveLoanItem(loan)
       } else {
         setEditLoan(loan)
       }
-    } else {
-      if (loanType === 'Lender') {
-        // In the Lender tab, loans are extended to partner companies, so lenders don't pay loans
-        return
-      }
-      setPaymentLoan(loan)
-      setIsPaymentModalOpen(true)
+      return
     }
+
+    if (isPendingAudit) {
+      if (isAuditor) {
+        setAuditReviewLoanItem(loan)
+      }
+      return
+    }
+
+    if (loanType === 'Lender') {
+      // In the Lender tab, loans are extended to partner companies, so lenders don't pay loans
+      return
+    }
+    setPaymentLoan(loan)
+    setIsPaymentModalOpen(true)
   }
 
   const handleConfirmDelete = async () => {
@@ -689,8 +732,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               </button>
 
               {isStatusDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {(['All', 'Pending Approval', 'Approved', 'Paid', 'Pending', 'Overdue'] as const).map((st) => (
+                <div className="absolute left-0 top-full mt-2 w-56 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  {statusOptions.map((st) => (
                     <button
                       key={st}
                       type="button"
@@ -1030,8 +1073,21 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                 </TableRow>
               ) : (
                 paginatedLoans.map((loan) => {
-                  const isPending = loan.status === 'Pending Approval'
-                  const isClickable = isPending || loanType === 'Borrower'
+                  const isPendingFinance =
+                    loan.status === 'Pending Finance Endorsement' || loan.status === 'Pending Approval'
+                  const isPendingAudit = loan.status === 'Pending Audit Approval'
+                  const isRejectedFinance = loan.status === 'Rejected by Finance'
+                  const isDisapprovedAudit = loan.status === 'Disapproved by Audit'
+                  const isApproved =
+                    loan.status === 'Approved' ||
+                    loan.status === 'Paid' ||
+                    loan.status === 'Partially Paid' ||
+                    (!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit)
+
+                  const isClickable =
+                    (isPendingFinance && (canApprove || loanType === 'Borrower')) ||
+                    (isPendingAudit && isAuditor) ||
+                    (isApproved && loanType === 'Borrower')
 
                   return (
                     <TableRow
@@ -1041,15 +1097,31 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       className={cn(
                         'border-b transition-colors',
                         isClickable ? 'cursor-pointer' : 'cursor-default',
-                        isPending
-                          ? 'bg-amber-50/70 hover:bg-amber-100/60 border-amber-200/50'
-                          : 'border-slate-100 hover:bg-slate-50/80',
+                        isPendingFinance && 'bg-amber-50/70 hover:bg-amber-100/60 border-amber-200/50',
+                        isPendingAudit && 'bg-indigo-50/60 hover:bg-indigo-100/50 border-indigo-200/50',
+                        (isRejectedFinance || isDisapprovedAudit) &&
+                          'bg-rose-50/50 hover:bg-rose-100/50 border-rose-200/50',
+                        !isPendingFinance &&
+                          !isPendingAudit &&
+                          !isRejectedFinance &&
+                          !isDisapprovedAudit &&
+                          'border-slate-100 hover:bg-slate-50/80',
                         highlightedLoanId === loan.id &&
                           'bg-amber-100/90 ring-2 ring-amber-400 font-semibold'
                       )}
                       title={
-                        isPending
-                          ? 'Click to review or edit pending loan'
+                        isPendingFinance
+                          ? canApprove
+                            ? 'Click to review and endorse loan request'
+                            : 'Pending finance endorsement (click to edit)'
+                          : isPendingAudit
+                          ? isAuditor
+                            ? 'Click to perform audit review on endorsed loan'
+                            : 'Pending internal audit approval'
+                          : isRejectedFinance
+                          ? 'Rejected by central finance'
+                          : isDisapprovedAudit
+                          ? 'Disapproved by internal audit'
                           : loanType === 'Borrower'
                           ? 'Click row to record payment or update'
                           : 'Lender financing record'
@@ -1119,74 +1191,102 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       {/* 8. Actions / Status */}
                       <TableCell className="px-2 py-3 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Finance & Admin: Can approve pending loans and assign lender */}
-                          {canApprove && isPending && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => setApproveLoanItem(loan)}
-                              className="h-7 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
-                              title="Review and approve loan request (Select lending company)"
+                          {/* 1. Pending Finance Endorsement */}
+                          {isPendingFinance && (
+                            <>
+                              {canApprove ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => setApproveLoanItem(loan)}
+                                  className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Review and endorse loan to internal audit"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Endorse</span>
+                                </Button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-xs font-semibold shadow-2xs">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  <span>Pending Finance</span>
+                                </span>
+                              )}
+
+                              {/* Edit / Delete actions for borrower or finance */}
+                              {(canApprove || (!isAuditor && loanType === 'Borrower')) && (
+                                <>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setEditLoan(loan)}
+                                    className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
+                                    title="Edit Loan Request"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setDeleteConfirmLoan(loan)}
+                                    className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                                    title="Cancel / Delete Loan Request"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </>
+                          )}
+
+                          {/* 2. Pending Audit Approval */}
+                          {isPendingAudit && (
+                            <>
+                              {isAuditor ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => setAuditReviewLoanItem(loan)}
+                                  className="h-7 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Perform audit review to approve or disapprove this loan"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Audit Review</span>
+                                </Button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-xs font-semibold shadow-2xs">
+                                  <Clock className="w-3 h-3 text-indigo-600" />
+                                  <span>Pending Audit</span>
+                                </span>
+                              )}
+                            </>
+                          )}
+
+                          {/* 3. Rejected by Finance */}
+                          {isRejectedFinance && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
+                              title={loan.financeRemark || 'Rejected by finance'}
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Approve</span>
-                            </Button>
+                              <X className="w-3 h-3 text-rose-600" />
+                              <span>Rejected (Finance)</span>
+                            </span>
                           )}
 
-                          {/* Company user: Can edit or delete ONLY their own pending loan request */}
-                          {isPending && !canApprove && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setEditLoan(loan)}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
-                                title="Edit Loan Request (Allowed while Pending Approval)"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleteConfirmLoan(loan)}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                                title="Cancel / Delete Loan Request (Allowed while Pending Approval)"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </>
+                          {/* 4. Disapproved by Audit */}
+                          {isDisapprovedAudit && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
+                              title={loan.auditRemark || 'Disapproved by audit'}
+                            >
+                              <X className="w-3 h-3 text-rose-600" />
+                              <span>Disapproved (Audit)</span>
+                            </span>
                           )}
 
-                          {/* Finance/Admin: Can also edit/delete pending if needed */}
-                          {isPending && canApprove && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setEditLoan(loan)}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
-                                title="Edit Loan"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleteConfirmLoan(loan)}
-                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                                title="Delete Loan"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            </>
-                          )}
-
-                          {/* Approved / Active / Partially Paid / Paid: allow recording payment only for Borrower */}
-                          {!isPending && (
+                          {/* 5. Approved / Active / Partially Paid / Paid */}
+                          {!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit && (
                             <div className="flex items-center gap-1.5">
                               {loanType === 'Lender' ? (
                                 loan.status === 'Paid' ? (
@@ -1200,9 +1300,9 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                                     <span>Partially Paid</span>
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 text-xs font-semibold shadow-2xs">
-                                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                                    <span>Active</span>
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Approved</span>
                                   </span>
                                 )
                               ) : loan.status === 'Paid' ? (
@@ -1316,6 +1416,14 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         loan={approveLoanItem}
         onSuccess={handleLoanApproved}
         companies={companyNamesList}
+      />
+
+      {/* Audit Review Loan Modal */}
+      <AuditReviewLoanModal
+        open={Boolean(auditReviewLoanItem)}
+        onOpenChange={(open) => !open && setAuditReviewLoanItem(null)}
+        loan={auditReviewLoanItem}
+        onSuccess={handleLoanApproved}
       />
 
       {/* Delete Confirmation Modal */}

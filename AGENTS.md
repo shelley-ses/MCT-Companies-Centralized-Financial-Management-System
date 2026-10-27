@@ -5,6 +5,7 @@ This workspace is configured with specialized agent personas and on-demand skill
 ## Available Agents
 - **`develop`** ([.agents/agents/develop.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/agents/develop.md)): The builder agent that implements UI screens, backend endpoints, and business logic from specifications, validating input coverage and managing scope/spec states.
 - **`github-pr`** ([.agents/agents/github-pr.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/agents/github-pr.md)): Specialized in staging changes, creating semantic branch names, pushing commits to remote, and opening pull requests to the `dev` branch via the GitHub CLI.
+- **`security-auditor`** ([.agents/agents/security-auditor.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/agents/security-auditor.md)): Inspects changes for hardcoded secrets, credential leaks, broken access control, and web security vulnerabilities before commit or merge.
 
 ## Available Skills
 - **`develop`** ([.agents/skills/develop/SKILL.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/skills/develop/SKILL.md)): The builder skill that turns specifications and design tokens into functional UI and logical backend code, with strict spec gatekeeping.
@@ -17,6 +18,7 @@ This workspace is configured with specialized agent personas and on-demand skill
 - **`sync`** ([.agents/skills/sync/SKILL.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/skills/sync/SKILL.md)): Synchronizes context files, specs, and scope tracking with codebase reality.
 - **`debug`** ([.agents/skills/debug/SKILL.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/skills/debug/SKILL.md)): Diagnoses root causes for bugs and prepares regression tests.
 - **`code-reviewer`** ([.agents/skills/code-reviewer/SKILL.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/skills/code-reviewer/SKILL.md)): Automated static analysis, security check, and code quality review before submitting pull requests.
+- **`security-audit`** ([.agents/skills/security-audit/SKILL.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/skills/security-audit/SKILL.md)): Scans git diffs, staged files, backend endpoints, and frontend components for secrets, credential leaks, and vulnerabilities.
 - **`github-pr`** ([.agents/skills/github-pr/SKILL.md](file:///c:/Users/Shelley/Desktop/projects/python/MCT-Companies-Centralized-Financial-Management-System/.agents/skills/github-pr/SKILL.md)): Automated workflow runbook for git branching, pushing to remote, and generating pull requests targeting `dev`.
 
 ## General Project Conventions

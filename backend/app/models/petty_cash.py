@@ -21,6 +21,13 @@ class PettyCashTopUp(Base):
     topup_date = Column(Date, nullable=False, index=True)
     reference_no = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, default="Pending Finance Endorsement")
+    endorsed_by = Column(String(100), nullable=True)
+    endorsed_at = Column(DateTime(timezone=True), nullable=True)
+    finance_remark = Column(Text, nullable=True)
+    remark = Column(Text, nullable=True)
+    reviewed_by = Column(String(100), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
