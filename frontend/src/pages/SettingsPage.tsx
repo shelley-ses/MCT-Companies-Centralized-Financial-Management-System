@@ -60,6 +60,7 @@ export const SettingsPage: React.FC = () => {
   const [startingBalance, setStartingBalance] = React.useState<number>(0)
   const [currentBalance, setCurrentBalance] = React.useState<number>(0)
   const [logoUrl, setLogoUrl] = React.useState<string>(logo2Url)
+  const [logoFile, setLogoFile] = React.useState<File | null>(null)
 
   // Toggle Switches: Notifications
   const [notificationSettings, setNotificationSettings] =
@@ -152,6 +153,7 @@ export const SettingsPage: React.FC = () => {
       return
     }
 
+    setLogoFile(file)
     const reader = new FileReader()
     reader.onload = (e) => {
       if (e.target?.result) {
@@ -164,6 +166,7 @@ export const SettingsPage: React.FC = () => {
   // Reset image to default
   const handleRemoveImage = () => {
     setLogoUrl(logo2Url)
+    setLogoFile(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -176,15 +179,21 @@ export const SettingsPage: React.FC = () => {
 
     try {
       setSaving(true)
-      await employeeService.updateCompany(selectedCompanyId, {
+      const updated = await employeeService.updateCompany(selectedCompanyId, {
         name: companyName,
         contactPerson,
         telephoneNumber,
         contactNumber: telephoneNumber,
         email,
         address,
-        logoUrl,
+        logoUrl: logoFile ? undefined : logoUrl,
+        logoFile: logoFile || undefined,
       })
+
+      setLogoFile(null)
+      if (updated.logoUrl) {
+        setLogoUrl(updated.logoUrl)
+      }
 
       // Update local company list copy
       setCompanies((prev) =>
@@ -192,12 +201,12 @@ export const SettingsPage: React.FC = () => {
           c.id === selectedCompanyId
             ? {
                 ...c,
-                name: companyName,
+                name: updated.name || companyName,
                 contactPerson,
                 telephoneNumber,
                 email,
                 address,
-                logoUrl,
+                logoUrl: updated.logoUrl || logoUrl,
               }
             : c
         )

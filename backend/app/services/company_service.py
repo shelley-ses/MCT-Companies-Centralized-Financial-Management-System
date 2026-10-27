@@ -170,6 +170,47 @@ class CompanyService:
                 "The company picture could not be uploaded."
             ) from error
 
+    def upload_company_picture(
+        self,
+        company_id: int,
+        picture: bytes,
+        content_type: str,
+        filename: str,
+    ) -> Optional[CompanyOut]:
+        company = self.get_company(company_id)
+        if not company:
+            return None
+
+        storage_path = ""
+        try:
+            extension = PurePosixPath(filename).suffix.lower()
+            storage_path = f"company/{company.company_id}/{uuid4().hex}{extension}"
+            storage = get_supabase_admin_client().storage.from_(
+                self._company_picture_bucket
+            )
+            storage.upload(
+                storage_path,
+                picture,
+                {"content-type": content_type, "upsert": "false"},
+            )
+            company.logo_url = storage.get_public_url(storage_path)
+            self.db.commit()
+            self.db.refresh(company)
+            return self.to_response(company)
+        except SQLAlchemyError as error:
+            self.db.rollback()
+            if storage_path:
+                self._remove_picture(storage_path)
+            raise self._database_error("upload company picture", error)
+        except Exception as error:
+            self.db.rollback()
+            if storage_path:
+                self._remove_picture(storage_path)
+            logger.exception("Company picture upload failed (%s)", type(error).__name__)
+            raise CompanyServiceError(
+                "The company picture could not be uploaded."
+            ) from error
+
     def _remove_company(self, company: Company) -> None:
         try:
             self.db.delete(company)

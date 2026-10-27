@@ -151,6 +151,56 @@ def update_company(
     )
     return result
 
+@router.post(
+    "/{company_id}/picture",
+    response_model=CompanyOut,
+    summary="Upload or update profile picture for an existing company",
+)
+async def upload_company_picture(
+    company_id: int,
+    request: Request,
+    picture: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    if not picture.content_type or not picture.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Company picture must be an image.",
+        )
+
+    picture_data = await picture.read()
+    if len(picture_data) > MAX_COMPANY_PICTURE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Company picture must be 5 MB or smaller.",
+        )
+
+    try:
+        result = CompanyService(db).upload_company_picture(
+            company_id,
+            picture_data,
+            picture.content_type,
+            picture.filename or "company-picture",
+        )
+    except CompanyServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+
+    log_company_management(
+        db,
+        AuditAction.COMPANY_UPDATED,
+        user_id=None,
+        company_id=result.id,
+        ip_address=request.client.host if request.client else "unknown",
+        extra={"company_name": result.name, "action": "update_picture"},
+    )
+    return result
+
 # delete a company
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a company")
 def delete_company(company_id: int, request: Request, db: Session = Depends(get_db)):

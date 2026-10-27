@@ -549,6 +549,7 @@ export const employeeService = {
       phone: payload.telephoneNumber || null,
       starting_balance: payload.startingBalance,
       petty_cash: payload.pettyCash || 0,
+      logo_url: payload.logoUrl && !payload.logoUrl.startsWith('data:') ? payload.logoUrl : null,
     })
 
     if (payload.logoFile) {
@@ -571,11 +572,7 @@ export const employeeService = {
       body,
     })
 
-    const comp = await mapApiResponse(response, mapCompany)
-    if (payload.logoUrl) {
-      comp.logoUrl = payload.logoUrl
-    }
-    return comp
+    return await mapApiResponse(response, mapCompany)
   },
 
   async updateCompany(
@@ -589,6 +586,9 @@ export const employeeService = {
     if (payload.telephoneNumber !== undefined) body.phone = payload.telephoneNumber || null
     if (payload.startingBalance !== undefined) body.starting_balance = payload.startingBalance
     if (payload.pettyCash !== undefined) body.petty_cash = payload.pettyCash
+    if (payload.logoUrl !== undefined && !payload.logoUrl.startsWith('data:')) {
+      body.logo_url = payload.logoUrl
+    }
 
     const response = await fetch(`/api/v1/companies/${id}`, {
       method: 'PATCH',
@@ -596,10 +596,19 @@ export const employeeService = {
       body: JSON.stringify(body),
     })
 
-    const comp = await mapApiResponse(response, mapCompany)
-    if (payload.logoUrl !== undefined) {
-      comp.logoUrl = payload.logoUrl
+    let comp = await mapApiResponse(response, mapCompany)
+
+    if (payload.logoFile) {
+      const formData = new FormData()
+      formData.append('picture', payload.logoFile)
+      const picResponse = await fetch(`/api/v1/companies/${id}/picture`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      })
+      comp = await mapApiResponse(picResponse, mapCompany)
     }
+
     return comp
   },
 
