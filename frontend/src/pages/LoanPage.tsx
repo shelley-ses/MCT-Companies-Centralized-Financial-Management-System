@@ -89,8 +89,9 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const isAudit = userRole === 'audit' || userRole.includes('auditor')
   const isFinance = userRole === 'finance'
   const isAdmin = userRole === 'admin'
-  const canApprove = (isFinance || isAdmin) && !isAudit
   const isAuditor = isAudit
+  const isCompanyScoped = !isAdmin && !isFinance
+  const canApprove = (isFinance || isAdmin) && !isAudit
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const location = useLocation()
@@ -100,7 +101,6 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     if (path.includes('borrower')) return 'Borrower'
     return initialType
   })
-
 
   // Sync loanType with URL changes
   React.useEffect(() => {
@@ -129,22 +129,22 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
   // Filter state
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isAuditor ? assignedCompany : (activeCompany || 'All Companies')
+    isCompanyScoped ? assignedCompany : (activeCompany || 'All Companies')
   )
 
   // Keep selectedCompany in sync if user profile loads after initial render
   React.useEffect(() => {
-    if (isAuditor && user?.assignedCompany) {
+    if (isCompanyScoped && user?.assignedCompany) {
       setSelectedCompany(user.assignedCompany)
     }
-  }, [isAuditor, user?.assignedCompany])
+  }, [isCompanyScoped, user?.assignedCompany])
 
   // Keep selectedCompany in sync with global activeCompany from context
   React.useEffect(() => {
-    if (!isAuditor && activeCompany) {
+    if (!isCompanyScoped && activeCompany) {
       setSelectedCompany(activeCompany)
     }
-  }, [activeCompany, isAuditor])
+  }, [activeCompany, isCompanyScoped])
   const [statusFilter, setStatusFilter] = React.useState<
     'All' | 'Pending Approval' | 'Approved' | 'Paid' | 'Pending' | 'Overdue'
   >('All')
@@ -287,7 +287,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     try {
       setLoading(true)
       const data = await loanService.getLoans({
-        company: isAuditor ? assignedCompany : (selectedCompany === 'All Companies' ? undefined : selectedCompany),
+        company: isCompanyScoped ? assignedCompany : (selectedCompany === 'All Companies' ? undefined : selectedCompany),
         scope: loanType.toLowerCase() as 'borrower' | 'lender',
       })
       setLoans(data)
@@ -296,7 +296,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     } finally {
       setLoading(false)
     }
-  }, [isAuditor, assignedCompany, selectedCompany, loanType])
+  }, [isCompanyScoped, assignedCompany, selectedCompany, loanType])
 
   React.useEffect(() => {
     loadLoans()
@@ -330,7 +330,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     return loans
       .filter((item) => {
         // Tab separation: Borrower vs Lender
-        const currentTargetCompany = isAuditor
+        const currentTargetCompany = isCompanyScoped
           ? (assignedCompany || '').trim().toLowerCase()
           : (selectedCompany || '').trim().toLowerCase()
 
@@ -513,7 +513,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     )
   }, [companySearch, companyNamesList])
 
-  const displayedCompanyTitle = isAuditor
+  const displayedCompanyTitle = isCompanyScoped
     ? assignedCompany
     : selectedCompany === 'All Companies'
     ? 'All Subsidiaries'
@@ -553,15 +553,30 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant="outline"
+                variant={!isAuditor ? 'default' : 'outline'}
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                className={cn(
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  !isAuditor
+                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
+                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
+                )}
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 shrink-0 text-focus/70" />
+                <Download
+                  className={cn(
+                    'h-4 w-4 shrink-0',
+                    !isAuditor ? 'text-white' : 'text-focus/70'
+                  )}
+                />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 ml-0.5',
+                    !isAuditor ? 'text-white/90' : 'text-muted-fg'
+                  )}
+                />
               </Button>
 
               {isExportDropdownOpen && (
@@ -723,8 +738,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               compact
             />
 
-            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor/Company Employee */}
-            {isAuditor ? (
+            {/* Company Scope: Locked static badge for all employee roles, dropdown for Admin/Finance */}
+            {isCompanyScoped ? (
               <div className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs font-medium shadow-xs shrink-0 whitespace-nowrap">
                 <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
                 <span className="font-semibold text-focus/90 truncate max-w-[130px]">

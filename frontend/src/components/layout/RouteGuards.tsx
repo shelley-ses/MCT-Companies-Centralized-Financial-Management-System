@@ -81,11 +81,20 @@ export const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
 
 export const LendingRouteGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useSession()
-  const isCompanyUser =
-    user?.role === 'Company' || user?.role === 'Company Auditor' || user?.role === 'Supervisor'
+  const userRole = (user?.role || '').toLowerCase()
+  const isAdmin = userRole === 'admin'
+  const isFinance = userRole === 'finance'
+  const isAudit = userRole === 'audit' || userRole.includes('auditor')
+  const isCompanyScoped = Boolean(
+    user?.assignedCompany &&
+      user.assignedCompany !== 'All Companies' &&
+      !isAdmin &&
+      !isFinance &&
+      !isAudit
+  )
 
   // Company-scoped users assigned to non-lending companies are blocked immediately
-  if (isCompanyUser && !isLendingEnabledCompany(user?.assignedCompany)) {
+  if (isCompanyScoped && !isLendingEnabledCompany(user?.assignedCompany)) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -94,11 +103,20 @@ export const LendingRouteGuard: React.FC<{ children: React.ReactNode }> = ({ chi
 
 export const TenantRouteGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useSession()
-  const isCompanyUser =
-    user?.role === 'Company' || user?.role === 'Company Auditor' || user?.role === 'Supervisor'
+  const userRole = (user?.role || '').toLowerCase()
+  const isAdmin = userRole === 'admin'
+  const isFinance = userRole === 'finance'
+  const isAudit = userRole === 'audit' || userRole.includes('auditor')
+  const isCompanyScoped = Boolean(
+    user?.assignedCompany &&
+      user.assignedCompany !== 'All Companies' &&
+      !isAdmin &&
+      !isFinance &&
+      !isAudit
+  )
 
   // Company-scoped users assigned to non-tenant companies are blocked immediately
-  if (isCompanyUser && !isTenantEnabledCompany(user?.assignedCompany)) {
+  if (isCompanyScoped && !isTenantEnabledCompany(user?.assignedCompany)) {
     return <Navigate to="/dashboard" replace />
   }
 

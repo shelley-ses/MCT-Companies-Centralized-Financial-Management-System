@@ -4,6 +4,7 @@ export interface ParticularItem {
   quantity: number
   unitPrice: number
   total: number
+  status?: 'Pending' | 'On hold' | 'Paid'
 }
 
 /**
