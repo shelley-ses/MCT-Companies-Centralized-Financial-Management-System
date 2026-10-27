@@ -38,8 +38,8 @@ import { pettyCashService } from '@/services/pettyCashService'
 import { loanService, type CompanyOption } from '@/services/loanService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
-import { formatToYYYYMMDD } from '@/utils/dateUtils'
-import { formatParticularsString, type ParticularItem } from '@/utils/particularsUtils'
+import { formatToYYYYMMDD, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { formatParticularsString, parseParticulars, type ParticularItem } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { SALES_CATEGORY_LIST } from '@/utils/categoryConstants'
 
@@ -49,7 +49,7 @@ interface ParticularsRow {
   particulars: string
   unitPrice: number | ''
   quantity: number | ''
-  status: 'Paid' | 'Unpaid' | 'Pending'
+  status: 'Paid' | 'Unpaid' | 'Pending' | 'On hold'
 }
 
 const SALES_PAYMENT_METHODS = [
@@ -157,13 +157,22 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const isAuditor = user?.role === 'Supervisor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
+  const editItem =
+    (location.state as any)?.editSale ||
+    (location.state as any)?.editExpense ||
+    (location.state as any)?.editTransaction ||
+    null
+
+  const isEditMode = Boolean(editItem)
+
   // Strict transaction type determined by initialType or URL path (Sales stays in Sales, Expense stays in Expense)
   const transactionType: 'Sales' | 'Expense' = React.useMemo(() => {
     if (initialType) return initialType
+    if (editItem?.type) return editItem.type === 'Expense' ? 'Expense' : 'Sales'
     const path = location.pathname.toLowerCase()
     if (path.includes('expense')) return 'Expense'
     return 'Sales'
-  }, [initialType, location.pathname])
+  }, [initialType, location.pathname, editItem])
 
   // Top header metadata form fields
   const [date, setDate] = React.useState(() => formatToYYYYMMDD(new Date()))
@@ -279,8 +288,73 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   // Dynamic document title
   React.useEffect(() => {
-    document.title = `Add ${transactionType} (Excel Sheet) - MCT Centralized Financial System`
-  }, [transactionType])
+    document.title = isEditMode
+      ? `Edit ${transactionType} (Excel Sheet) - MCT Centralized Financial System`
+      : `Add ${transactionType} (Excel Sheet) - MCT Centralized Financial System`
+  }, [transactionType, isEditMode])
+
+  // Prevent editing if transaction has already been audited
+  React.useEffect(() => {
+    if (editItem && (editItem.auditStatus === 'Verified' || editItem.isAudited)) {
+      alert('This transaction has already been audited and verified. Records cannot be edited.')
+      navigate(transactionType === 'Sales' ? '/sales' : '/expense', { replace: true })
+    }
+  }, [editItem, transactionType, navigate])
+
+  // Pre-fill form fields and particulars rows when editing an existing transaction
+  React.useEffect(() => {
+    if (!editItem) return
+
+    if (editItem.rawDate) {
+      setDate(editItem.rawDate)
+    } else if (editItem.date) {
+      setDate(normalizeDateToYYYYMMDD(editItem.date))
+    }
+    if (editItem.company) {
+      setSelectedCompany(editItem.company)
+    }
+    if (editItem.paymentMethod) {
+      setPaymentMethod(editItem.paymentMethod)
+    }
+    if (editItem.chequeNo) {
+      setChequeNo(editItem.chequeNo)
+    }
+    if (editItem.category) {
+      setCategory(editItem.category)
+    }
+
+    // Populate rows from structured items or parsed particulars string
+    if (editItem.items && Array.isArray(editItem.items) && editItem.items.length > 0) {
+      setRows(
+        editItem.items.map((it: any, idx: number) => ({
+          id: it.id || `row-${idx}`,
+          pettyCashCategory: '',
+          particulars: it.particulars || '',
+          unitPrice: typeof it.unitPrice === 'number' ? it.unitPrice : (it.total || ''),
+          quantity: typeof it.quantity === 'number' ? it.quantity : 1,
+          status: (it.status || editItem.status || 'Paid') as 'Paid' | 'Pending' | 'On hold',
+        }))
+      )
+    } else if (editItem.particulars) {
+      const parsed = parseParticulars(
+        editItem.particulars,
+        null,
+        editItem.amount || editItem.deposit || editItem.withdrawal || editItem.netAmount
+      )
+      if (parsed.length > 0) {
+        setRows(
+          parsed.map((p, idx) => ({
+            id: p.id || `row-${idx}`,
+            pettyCashCategory: '',
+            particulars: p.particulars,
+            unitPrice: typeof p.unitPrice === 'number' && p.unitPrice > 0 ? p.unitPrice : (p.total || ''),
+            quantity: typeof p.quantity === 'number' && p.quantity > 0 ? p.quantity : 1,
+            status: (p.status || editItem.status || 'Paid') as 'Paid' | 'Pending' | 'On hold',
+          }))
+        )
+      }
+    }
+  }, [editItem])
 
   // Excel-style rows state: initialize with 4 clean rows
   const [rows, setRows] = React.useState<ParticularsRow[]>([
@@ -476,38 +550,67 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
         ? 'Unpaid'
         : 'Pending'
 
-      if (transactionType === 'Sales') {
-        // Record all particulars consolidated as ONE single entry (category is removed in sales)
-        await salesService.addSale({
-          company: companyToUse,
-          date,
-          particulars: formattedParticulars,
-          amount: grandTotal,
-          paymentMethod: paymentMethod,
-          chequeNo: chequeNo.trim() || undefined,
-          category: category || SALES_CATEGORY_LIST[0],
-          status: overallStatus,
-          items: itemizedParticulars,
-        })
+      if (isEditMode) {
+        if (transactionType === 'Sales') {
+          await salesService.updateSale(editItem.id, {
+            company: companyToUse,
+            date,
+            particulars: formattedParticulars,
+            amount: grandTotal,
+            paymentMethod: paymentMethod,
+            chequeNo: chequeNo.trim() || undefined,
+            category: category || SALES_CATEGORY_LIST[0],
+            status: overallStatus,
+            items: itemizedParticulars,
+          })
+        } else {
+          await expenseService.updateExpense(editItem.id, {
+            company: companyToUse,
+            date,
+            particulars: formattedParticulars,
+            withdrawal: grandTotal,
+            netAmount: grandTotal,
+            category: isPettyCash ? 'Petty Cash' : (category || 'Rendered Fee'),
+            paymentMethod: paymentMethod,
+            chequeNo: chequeNo.trim() || undefined,
+            status: overallStatus,
+            items: itemizedParticulars,
+          })
+        }
       } else {
-        // Record all particulars consolidated as ONE single entry
-        await expenseService.addExpense({
-          company: companyToUse,
-          date,
-          particulars: formattedParticulars,
-          amount: grandTotal,
-          category: isPettyCash ? 'Petty Cash' : (category || 'Rendered Fee'),
-          paymentMethod: paymentMethod,
-          chequeNo: chequeNo.trim() || undefined,
-          status: overallStatus,
-          items: itemizedParticulars,
-        })
+        if (transactionType === 'Sales') {
+          // Record all particulars consolidated as ONE single entry (category is removed in sales)
+          await salesService.addSale({
+            company: companyToUse,
+            date,
+            particulars: formattedParticulars,
+            amount: grandTotal,
+            paymentMethod: paymentMethod,
+            chequeNo: chequeNo.trim() || undefined,
+            category: category || SALES_CATEGORY_LIST[0],
+            status: overallStatus,
+            items: itemizedParticulars,
+          })
+        } else {
+          // Record all particulars consolidated as ONE single entry
+          await expenseService.addExpense({
+            company: companyToUse,
+            date,
+            particulars: formattedParticulars,
+            amount: grandTotal,
+            category: isPettyCash ? 'Petty Cash' : (category || 'Rendered Fee'),
+            paymentMethod: paymentMethod,
+            chequeNo: chequeNo.trim() || undefined,
+            status: overallStatus,
+            items: itemizedParticulars,
+          })
+        }
       }
 
       setSuccessBanner({
         count: validItems.length,
         total: grandTotal,
-        type: transactionType,
+        type: isEditMode ? `${transactionType} (Updated)` : transactionType,
       })
 
       // Redirect back after brief delay
@@ -563,10 +666,12 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-focus tracking-tight">
-                Add {transactionType}
+                {isEditMode ? `Edit ${transactionType}` : `Add ${transactionType}`}
               </h1>
               <p className="text-xs sm:text-sm text-muted-fg font-normal">
-                {isSales
+                {isEditMode
+                  ? `Editing particulars for ${editItem?.refNo || 'transaction'}. You can adjust particulars, unit prices, quantities, and status.`
+                  : isSales
                   ? 'Excel-style spreadsheet entry for sales particulars, unit pricing, and deposit calculations.'
                   : 'Excel-style spreadsheet entry for operational expense particulars, unit pricing, and withdrawal calculations.'}
               </p>
@@ -1110,14 +1215,15 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Saving {validRowsCount} items…</span>
+                <span>{isEditMode ? 'Updating transaction…' : `Saving ${validRowsCount} items…`}</span>
               </>
             ) : (
               <>
                 <Check className="w-4 h-4" />
                 <span>
-                  Save {validRowsCount > 0 ? `${validRowsCount} ` : ''}
-                  {transactionType} {validRowsCount > 1 ? 'Records' : 'Record'}
+                  {isEditMode
+                    ? 'Update Transaction'
+                    : `Save ${validRowsCount > 0 ? `${validRowsCount} ` : ''}${transactionType} ${validRowsCount > 1 ? 'Records' : 'Record'}`}
                 </span>
               </>
             )}

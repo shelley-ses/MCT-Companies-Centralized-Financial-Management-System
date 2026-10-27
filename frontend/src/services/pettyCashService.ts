@@ -43,6 +43,9 @@ export interface PettyCashLedgerEntry {
   endorsedBy?: string | null
   endorsedAt?: string | null
   financeRemark?: string | null
+  auditStatus?: 'Verified' | 'Pending Audit' | 'Flagged'
+  auditDate?: string | null
+  auditedBy?: string | null
 }
 
 export interface NewPettyCashTopUpInput {

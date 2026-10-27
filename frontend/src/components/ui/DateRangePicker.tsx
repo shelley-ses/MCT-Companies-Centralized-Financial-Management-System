@@ -271,7 +271,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               compact
                 ? 'h-9 px-2.5 sm:px-3 text-xs gap-1.5'
                 : 'h-10 sm:h-11 px-3 sm:px-4 text-xs sm:text-sm gap-2',
-              isPresetOpen && 'ring-2 ring-focus/20 border-focus'
+              isPresetOpen && 'ring-2 ring-slate-100 border-slate-300'
             )}
             aria-expanded={isPresetOpen}
             aria-haspopup="listbox"

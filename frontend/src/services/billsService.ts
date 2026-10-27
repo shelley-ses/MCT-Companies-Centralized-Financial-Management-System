@@ -72,6 +72,9 @@ export interface BillItem {
   payments?: BillPaymentRecord[]
   createdAt: string
   updatedAt: string
+  auditStatus?: 'Verified' | 'Pending Audit' | 'Flagged'
+  auditDate?: string
+  auditedBy?: string
 }
 
 export interface NewBillInput {

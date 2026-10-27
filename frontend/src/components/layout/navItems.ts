@@ -111,7 +111,7 @@ export const NAV_ITEM_TENANTS: NavItem = {
 
 export const NAV_ITEM_BANK_MANAGEMENT: NavItem = {
   id: 'bank-management',
-  title: 'Bank Management',
+  title: 'Bank',
   href: '/bank-management',
   icon: Landmark,
 }
@@ -179,27 +179,35 @@ export function getSidebarNavSections(
   const isJK = isJKPropertyCompany(targetCompany)
 
   // 1. MAIN ITEMS
+  // Admin Main: Dashboard only (configuration & management scoped)
   // Audit Main: Dashboard -> Transactions -> Petty Cash -> Bills
-  // Supervisor / Finance / Company / Admin Main: Dashboard -> Petty Cash -> Bills -> Transactions
-  const mainItems: NavItem[] = isAudit
+  // Supervisor / Finance / Company Main: Dashboard -> Petty Cash -> Bills -> Transactions
+  const mainItems: NavItem[] = isAdmin
+    ? [NAV_ITEM_DASHBOARD]
+    : isAudit
     ? [NAV_ITEM_DASHBOARD, NAV_ITEM_TRANSACTIONS, NAV_ITEM_PETTY_CASH, NAV_ITEM_BILLS]
     : [NAV_ITEM_DASHBOARD, NAV_ITEM_PETTY_CASH, NAV_ITEM_BILLS, NAV_ITEM_TRANSACTIONS]
 
   // 2. OPERATIONS ITEMS
-  // Base operations for all roles: Sales, Expense, Loan
-  const operationsItems: NavItem[] = [NAV_ITEM_SALES, NAV_ITEM_EXPENSE, NAV_ITEM_LOAN]
+  // Admin has no operations items per system scope (Admin is responsible only for configuration & management)
+  const operationsItems: NavItem[] = []
 
-  // Bank Management in Operations for Finance, Audit, Admin, and Company accounts
-  operationsItems.push(NAV_ITEM_BANK_MANAGEMENT)
+  if (!isAdmin) {
+    // Base operations for operational roles: Sales, Expense, Loan
+    operationsItems.push(NAV_ITEM_SALES, NAV_ITEM_EXPENSE, NAV_ITEM_LOAN)
 
-  // FilCap gets Lending in Operations (also accessible to Audit, Finance, and Admin)
-  if (isFilCap || isAudit || isFinance || isAdmin) {
-    operationsItems.push(NAV_ITEM_LENDING)
-  }
+    // Bank Management in Operations for Finance, Audit, and Company accounts
+    operationsItems.push(NAV_ITEM_BANK_MANAGEMENT)
 
-  // JK Property gets Tenants in Operations (also accessible to Audit, Finance, and Admin)
-  if (isJK || isAudit || isFinance || isAdmin) {
-    operationsItems.push(NAV_ITEM_TENANTS)
+    // FilCap gets Lending in Operations (also accessible to Audit and Finance)
+    if (isFilCap || isAudit || isFinance) {
+      operationsItems.push(NAV_ITEM_LENDING)
+    }
+
+    // JK Property gets Tenants in Operations (also accessible to Audit and Finance)
+    if (isJK || isAudit || isFinance) {
+      operationsItems.push(NAV_ITEM_TENANTS)
+    }
   }
 
   // 3. ADMINISTRATION ITEMS (Admin only)

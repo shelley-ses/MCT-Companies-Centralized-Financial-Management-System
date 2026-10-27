@@ -860,41 +860,6 @@ export const loanService = {
     throw new Error('Loan record not found')
   },
 
-  async deleteLoan(id: string): Promise<boolean> {
-    const numericId = id.replace(/^loan_/, '')
-    try {
-      const token =
-        typeof window !== 'undefined'
-          ? sessionStorage.getItem('mct_access_token')
-          : null
-
-      const res = await fetch(`/api/v1/loans/${numericId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      })
-      if (res.ok) {
-        inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id && l.id !== `loan_${numericId}`)
-        saveStoredLoans(inMemoryLoans)
-        return true
-      } else {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.detail || 'Failed to delete loan.')
-      }
-    } catch (err: any) {
-      if (err.message && !err.message.includes('fetch')) {
-        throw err
-      }
-      console.warn('Backend DELETE /loans failed, deleting locally:', err)
-    }
-
-    inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id && l.id !== `loan_${numericId}`)
-    saveStoredLoans(inMemoryLoans)
-    return true
-  },
-
   exportCsv(items: LoanItem[], scope: 'Borrower' | 'Lender', filename = 'loan_report.csv') {
     const isBorrower = scope === 'Borrower'
 

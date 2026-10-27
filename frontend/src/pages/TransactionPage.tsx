@@ -11,6 +11,10 @@ import {
   FileSpreadsheet,
   FileText,
   CheckCircle2,
+  TrendingUp,
+  ArrowDownLeft,
+  Check,
+  AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,6 +38,7 @@ import { useSession } from '@/hooks/useSession'
 import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { cn } from '@/lib/utils'
 
 export const TransactionPage: React.FC = () => {
   const { user } = useSession()
@@ -47,35 +52,51 @@ export const TransactionPage: React.FC = () => {
   const [loading, setLoading] = React.useState(true)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
 
-  // Filters (Company dropdown removed per user request)
-  const [searchQuery, setSearchQuery] = React.useState('')
-  const [dateRange, setDateRange] = React.useState<DateRange>({
+  // Switch bar tab: 'deposit' | 'sales'
+  const [activeTab, setActiveTab] = React.useState<'deposit' | 'sales'>('deposit')
+
+  // Independent Filters & Pagination for DEPOSIT Tab
+  const [depositSearchQuery, setDepositSearchQuery] = React.useState('')
+  const [depositDateRange, setDepositDateRange] = React.useState<DateRange>({
     startDate: null,
     endDate: null,
     label: 'All Dates',
   })
-  const [sortOrder, setSortOrder] = React.useState<'desc' | 'asc'>('desc')
+  const [depositSortOrder, setDepositSortOrder] = React.useState<'desc' | 'asc'>('desc')
+  const [depositCurrentPage, setDepositCurrentPage] = React.useState(1)
+
+  // Independent Filters & Pagination for SALES RECORD Tab
+  const [salesSearchQuery, setSalesSearchQuery] = React.useState('')
+  const [salesStatusFilter, setSalesStatusFilter] = React.useState<'All' | 'Paid' | 'Unpaid' | 'Pending' | 'On hold'>('All')
+  const [salesDateRange, setSalesDateRange] = React.useState<DateRange>({
+    startDate: null,
+    endDate: null,
+    label: 'All Dates',
+  })
+  const [salesSortOrder, setSalesSortOrder] = React.useState<'desc' | 'asc'>('desc')
+  const [salesCurrentPage, setSalesCurrentPage] = React.useState(1)
+  const [isSalesStatusDropdownOpen, setIsSalesStatusDropdownOpen] = React.useState(false)
+  const salesStatusDropdownRef = React.useRef<HTMLDivElement>(null)
 
   // Export dropdown state
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
 
-  // Pagination
-  const [currentPage, setCurrentPage] = React.useState(1)
   const itemsPerPage = 12
 
   // Modal inspection
   const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
   const [isModalOpen, setIsModalOpen] = React.useState(false)
 
-  // Close export dropdown on click outside
+  // Close dropdowns on click outside
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (
-        exportDropdownRef.current &&
-        !exportDropdownRef.current.contains(e.target as Node)
-      ) {
+      const target = e.target as Node
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) {
         setIsExportDropdownOpen(false)
+      }
+      if (salesStatusDropdownRef.current && !salesStatusDropdownRef.current.contains(target)) {
+        setIsSalesStatusDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -109,6 +130,7 @@ export const TransactionPage: React.FC = () => {
         withdrawal: s.withdrawal || 0,
         deposit: s.deposit || 0,
         category: s.category as any,
+        paymentMethod: s.paymentMethod,
         status: s.status,
         auditStatus: s.auditStatus,
         auditedBy: s.auditedBy,
@@ -118,6 +140,7 @@ export const TransactionPage: React.FC = () => {
         createdAt: s.createdAt || s.rawDate,
         updatedAt: s.updatedAt,
         attachments: [],
+        items: s.items,
       }))
 
       const unifiedExpenses: DashboardTransactionItem[] = expenseData.map((e) => ({
@@ -133,6 +156,7 @@ export const TransactionPage: React.FC = () => {
         withdrawal: e.withdrawal || e.netAmount || 0,
         deposit: 0,
         category: e.category as any,
+        paymentMethod: e.paymentMethod,
         status: e.status,
         auditStatus: e.auditStatus,
         auditedBy: e.auditedBy,
@@ -142,6 +166,7 @@ export const TransactionPage: React.FC = () => {
         createdAt: e.createdAt || e.rawDate,
         updatedAt: e.updatedAt,
         attachments: [],
+        items: e.items,
       }))
 
       const unifiedLoans: DashboardTransactionItem[] = loanData.map((l) => ({
@@ -186,25 +211,27 @@ export const TransactionPage: React.FC = () => {
     await fetchAllTransactions()
   }
 
-  // Filtered and sorted transactions
-  const filteredTransactions = React.useMemo(() => {
-    let result = transactions
+  // 1. FILTERED DEPOSITS (All transactions / particulars that have already been deposited)
+  const filteredDepositTransactions = React.useMemo(() => {
+    let list = transactions.filter(
+      (t) => (t.deposit || 0) > 0 || (t.type === 'Sales' && t.status === 'Paid')
+    )
 
-    // Supervisors only see their assigned company
+    // Company scope
     if (isCompanyScoped) {
-      result = result.filter(
+      list = list.filter(
         (t) => (t.company || '').toLowerCase().trim() === assignedCompany.toLowerCase().trim()
       )
     } else if (activeCompany && activeCompany !== 'All Companies') {
-      result = result.filter(
+      list = list.filter(
         (t) => (t.company || '').toLowerCase().trim() === activeCompany.toLowerCase().trim()
       )
     }
 
     // Search query
-    const q = searchQuery.toLowerCase().trim()
+    const q = depositSearchQuery.toLowerCase().trim()
     if (q) {
-      result = result.filter(
+      list = list.filter(
         (t) =>
           t.refNo.toLowerCase().includes(q) ||
           (t.chequeNo && t.chequeNo.toLowerCase().includes(q)) ||
@@ -215,52 +242,140 @@ export const TransactionPage: React.FC = () => {
       )
     }
 
-    // Date range filter
-    if (dateRange.startDate && dateRange.endDate) {
-      result = result.filter((t) =>
-        isDateInRange(t.date, dateRange.startDate, dateRange.endDate)
+    // Date range
+    if (depositDateRange.startDate && depositDateRange.endDate) {
+      list = list.filter((t) =>
+        isDateInRange(t.date, depositDateRange.startDate, depositDateRange.endDate)
       )
     }
 
-    // Chronological sort (by date and timestamp)
-    result = [...result].sort((a, b) => {
+    // Sort
+    list = [...list].sort((a, b) => {
       const dateA = normalizeDateToYYYYMMDD(a.date)
       const dateB = normalizeDateToYYYYMMDD(b.date)
       const cmp = dateB.localeCompare(dateA)
       if (cmp !== 0) {
-        return sortOrder === 'desc' ? cmp : -cmp
+        return depositSortOrder === 'desc' ? cmp : -cmp
       }
       const timeCmp = (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
-      return sortOrder === 'desc' ? timeCmp : -timeCmp
+      return depositSortOrder === 'desc' ? timeCmp : -timeCmp
     })
 
-    return result
+    return list
   }, [
     transactions,
     isCompanyScoped,
     assignedCompany,
     activeCompany,
-    searchQuery,
-    dateRange,
-    sortOrder,
+    depositSearchQuery,
+    depositDateRange,
+    depositSortOrder,
   ])
 
-  // Pagination calculation
-  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / itemsPerPage))
-  const displayedTransactions = React.useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage
-    return filteredTransactions.slice(start, start + itemsPerPage)
-  }, [filteredTransactions, currentPage, itemsPerPage])
+  const depositTotalPages = Math.max(1, Math.ceil(filteredDepositTransactions.length / itemsPerPage))
+  const displayedDepositTransactions = React.useMemo(() => {
+    const start = (depositCurrentPage - 1) * itemsPerPage
+    return filteredDepositTransactions.slice(start, start + itemsPerPage)
+  }, [filteredDepositTransactions, depositCurrentPage, itemsPerPage])
 
-  const handleClearFilters = () => {
-    setSearchQuery('')
-    setDateRange({ startDate: null, endDate: null, label: 'All Dates' })
-    setCurrentPage(1)
+  // 2. FILTERED SALES RECORDS (All sales with paid and unpaid, including status filter)
+  const filteredSalesTransactions = React.useMemo(() => {
+    let list = transactions.filter((t) => t.type === 'Sales')
+
+    // Company scope
+    if (isCompanyScoped) {
+      list = list.filter(
+        (t) => (t.company || '').toLowerCase().trim() === assignedCompany.toLowerCase().trim()
+      )
+    } else if (activeCompany && activeCompany !== 'All Companies') {
+      list = list.filter(
+        (t) => (t.company || '').toLowerCase().trim() === activeCompany.toLowerCase().trim()
+      )
+    }
+
+    // Status filter: All | Paid | Unpaid | Pending | On hold
+    if (salesStatusFilter !== 'All') {
+      if (salesStatusFilter === 'Unpaid') {
+        list = list.filter((t) => t.status !== 'Paid')
+      } else {
+        list = list.filter((t) => t.status === salesStatusFilter)
+      }
+    }
+
+    // Search query
+    const q = salesSearchQuery.toLowerCase().trim()
+    if (q) {
+      list = list.filter(
+        (t) =>
+          t.refNo.toLowerCase().includes(q) ||
+          (t.chequeNo && t.chequeNo.toLowerCase().includes(q)) ||
+          t.description.toLowerCase().includes(q) ||
+          (t.particulars && t.particulars.toLowerCase().includes(q)) ||
+          t.company.toLowerCase().includes(q) ||
+          (t.paymentMethod && t.paymentMethod.toLowerCase().includes(q))
+      )
+    }
+
+    // Date range
+    if (salesDateRange.startDate && salesDateRange.endDate) {
+      list = list.filter((t) =>
+        isDateInRange(t.date, salesDateRange.startDate, salesDateRange.endDate)
+      )
+    }
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      const dateA = normalizeDateToYYYYMMDD(a.date)
+      const dateB = normalizeDateToYYYYMMDD(b.date)
+      const cmp = dateB.localeCompare(dateA)
+      if (cmp !== 0) {
+        return salesSortOrder === 'desc' ? cmp : -cmp
+      }
+      const timeCmp = (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
+      return salesSortOrder === 'desc' ? timeCmp : -timeCmp
+    })
+
+    return list
+  }, [
+    transactions,
+    isCompanyScoped,
+    assignedCompany,
+    activeCompany,
+    salesStatusFilter,
+    salesSearchQuery,
+    salesDateRange,
+    salesSortOrder,
+  ])
+
+  const salesTotalPages = Math.max(1, Math.ceil(filteredSalesTransactions.length / itemsPerPage))
+  const displayedSalesTransactions = React.useMemo(() => {
+    const start = (salesCurrentPage - 1) * itemsPerPage
+    return filteredSalesTransactions.slice(start, start + itemsPerPage)
+  }, [filteredSalesTransactions, salesCurrentPage, itemsPerPage])
+
+  // Active dataset & clear filters check
+  const activeDataset = activeTab === 'deposit' ? filteredDepositTransactions : filteredSalesTransactions
+  const hasDepositActiveFilters =
+    depositSearchQuery.trim().length > 0 ||
+    (depositDateRange.startDate !== null && depositDateRange.endDate !== null)
+
+  const hasSalesActiveFilters =
+    salesSearchQuery.trim().length > 0 ||
+    salesStatusFilter !== 'All' ||
+    (salesDateRange.startDate !== null && salesDateRange.endDate !== null)
+
+  const handleClearDepositFilters = () => {
+    setDepositSearchQuery('')
+    setDepositDateRange({ startDate: null, endDate: null, label: 'All Dates' })
+    setDepositCurrentPage(1)
   }
 
-  const hasActiveFilters =
-    searchQuery.trim().length > 0 ||
-    (dateRange.startDate !== null && dateRange.endDate !== null)
+  const handleClearSalesFilters = () => {
+    setSalesSearchQuery('')
+    setSalesStatusFilter('All')
+    setSalesDateRange({ startDate: null, endDate: null, label: 'All Dates' })
+    setSalesCurrentPage(1)
+  }
 
   const handleRowClick = (tx: DashboardTransactionItem) => {
     setSelectedTx(tx)
@@ -309,28 +424,32 @@ export const TransactionPage: React.FC = () => {
 
   // Export CSV handler
   const handleExportCsv = () => {
-    const headers = [
-      'DATE',
-      'COMPANY',
-      'CHEQUE NO.',
-      'PARTICULARS',
-      'WITHDRAWAL',
-      'DEPOSIT',
-      'CATEGORY',
-      'NET AMOUNT',
-    ]
+    const isDeposit = activeTab === 'deposit'
+    const headers = isDeposit
+      ? ['DATE', 'COMPANY', 'CHEQUE NO.', 'PARTICULARS', 'CATEGORY', 'DEPOSIT AMOUNT', 'AUDIT STATUS']
+      : ['DATE', 'COMPANY', 'REF NO.', 'PARTICULARS', 'PAYMENT METHOD', 'AMOUNT', 'STATUS', 'AUDIT STATUS']
 
-    const rows = filteredTransactions.map((t) => {
-      const net = (t.deposit || 0) - (t.withdrawal || 0)
+    const rows = (isDeposit ? filteredDepositTransactions : filteredSalesTransactions).map((t) => {
+      if (isDeposit) {
+        return [
+          `"${t.date}"`,
+          `"${(t.company || '').replace(/"/g, '""')}"`,
+          `"${t.chequeNo || '—'}"`,
+          `"${(t.particulars || t.description).replace(/"/g, '""')}"`,
+          `"${t.category}"`,
+          t.deposit > 0 ? t.deposit : (t.amount || 0),
+          `"${t.auditStatus || 'Pending Audit'}"`,
+        ]
+      }
       return [
         `"${t.date}"`,
         `"${(t.company || '').replace(/"/g, '""')}"`,
-        `"${t.chequeNo || '—'}"`,
+        `"${t.refNo || '—'}"`,
         `"${(t.particulars || t.description).replace(/"/g, '""')}"`,
-        t.withdrawal > 0 ? t.withdrawal : 0,
-        t.deposit > 0 ? t.deposit : 0,
-        `"${t.category}"`,
-        net,
+        `"${t.paymentMethod || 'Cash'}"`,
+        t.deposit || t.amount || 0,
+        `"${t.status || 'Paid'}"`,
+        `"${t.auditStatus || 'Pending Audit'}"`,
       ]
     })
 
@@ -339,7 +458,7 @@ export const TransactionPage: React.FC = () => {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', `mct_transactions_${new Date().toISOString().slice(0, 10)}.csv`)
+    link.setAttribute('download', `mct_${activeTab}_records_${new Date().toISOString().slice(0, 10)}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -355,22 +474,39 @@ export const TransactionPage: React.FC = () => {
       return
     }
 
+    const isDeposit = activeTab === 'deposit'
+    const records = isDeposit ? filteredDepositTransactions : filteredSalesTransactions
+
     const rowsHtml =
-      filteredTransactions.length === 0
-        ? `<tr><td colspan="7" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No transaction records found for this selection.</td></tr>`
-        : filteredTransactions
+      records.length === 0
+        ? `<tr><td colspan="7" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No ${activeTab} records found for this selection.</td></tr>`
+        : records
             .map((tx) => {
-              const netAmount = (tx.deposit || 0) - (tx.withdrawal || 0)
-              return `
+              if (isDeposit) {
+                const amt = tx.deposit > 0 ? tx.deposit : (tx.amount || 0)
+                return `
         <tr>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.date}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${tx.company || '—'}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${tx.chequeNo || '—'}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.particulars || tx.description}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #dc2626;">${tx.withdrawal > 0 ? `₱${tx.withdrawal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #16a34a; font-weight: 600;">${tx.deposit > 0 ? `₱${tx.deposit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.category}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">₱${netAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #16a34a; font-weight: 700;">₱${amt.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.auditStatus === 'Verified' ? 'Audited' : 'Pending Audit'}</td>
+        </tr>
+      `
+              }
+              const amt = tx.deposit || tx.amount || 0
+              return `
+        <tr>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.date}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${tx.company || '—'}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${tx.refNo || '—'}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.particulars || tx.description}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.paymentMethod || 'Cash'}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">₱${amt.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${tx.status || 'Paid'}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.auditStatus === 'Verified' ? 'Audited' : 'Pending Audit'}</td>
         </tr>
       `
             })
@@ -386,7 +522,7 @@ export const TransactionPage: React.FC = () => {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Transactions Report - ${displayedTitle}</title>
+          <title>${isDeposit ? 'Deposits' : 'Sales Records'} Report - ${displayedTitle}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0F172A; padding: 24px; }
             h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: #960C01; }
@@ -402,18 +538,18 @@ export const TransactionPage: React.FC = () => {
         </head>
         <body>
           <h1>MCT Group of Companies</h1>
-          <p>Consolidated Transactions Report for <strong>${displayedTitle}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
+          <p>Consolidated <strong>${isDeposit ? 'Deposit Records' : 'Sales Records'}</strong> for <strong>${displayedTitle}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
           <table>
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Company</th>
-                <th>Cheque No.</th>
+                <th>${isDeposit ? 'Cheque No.' : 'Ref No.'}</th>
                 <th>Particulars</th>
-                <th style="text-align: right;">Withdrawal</th>
-                <th style="text-align: right;">Deposit</th>
-                <th>Category</th>
-                <th style="text-align: right;">Net Amount</th>
+                <th>${isDeposit ? 'Category' : 'Payment Method'}</th>
+                <th style="text-align: right;">Amount</th>
+                ${!isDeposit ? '<th>Status</th>' : ''}
+                <th>Audit Status</th>
               </tr>
             </thead>
             <tbody>
@@ -421,7 +557,7 @@ export const TransactionPage: React.FC = () => {
             </tbody>
           </table>
           <div class="summary">
-            <div><strong>Total Records:</strong> ${filteredTransactions.length}</div>
+            <div><strong>Total Records:</strong> ${records.length}</div>
           </div>
           <script>
             window.onload = function() {
@@ -436,8 +572,8 @@ export const TransactionPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
-      {/* 1. Header & Actions */}
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300 select-none">
+      {/* 1. Header & Actions Block */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
@@ -445,10 +581,10 @@ export const TransactionPage: React.FC = () => {
           </h1>
           <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
             {isCompanyScoped
-              ? `Financial transactions record for ${assignedCompany}`
+              ? `Financial transaction ledger for ${assignedCompany}`
               : activeCompany !== 'All Companies'
-              ? `Financial transactions record for ${activeCompany}`
-              : 'Consolidated record of all transactions in chronological order'}
+              ? `Financial transaction ledger for ${activeCompany}`
+              : 'Consolidated records for deposits, sales inflows, and settlements'}
           </p>
         </div>
 
@@ -457,13 +593,21 @@ export const TransactionPage: React.FC = () => {
           <Button
             type="button"
             variant="outline"
-            onClick={() => setSortOrder((o) => (o === 'desc' ? 'asc' : 'desc'))}
+            onClick={() => {
+              if (activeTab === 'deposit') {
+                setDepositSortOrder((o) => (o === 'desc' ? 'asc' : 'desc'))
+              } else {
+                setSalesSortOrder((o) => (o === 'desc' ? 'asc' : 'desc'))
+              }
+            }}
             className="h-10 sm:h-11 px-3.5 rounded-xl border border-stroke/50 bg-white text-focus hover:bg-surface font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer"
             title="Toggle chronological sorting order"
           >
             <ArrowUpDown className="h-4 w-4 text-focus/70 shrink-0" />
             <span className="hidden sm:inline">
-              {sortOrder === 'desc' ? 'Latest First' : 'Oldest First'}
+              {(activeTab === 'deposit' ? depositSortOrder : salesSortOrder) === 'desc'
+                ? 'Latest First'
+                : 'Oldest First'}
             </span>
           </Button>
 
@@ -487,7 +631,7 @@ export const TransactionPage: React.FC = () => {
           <div ref={exportDropdownRef} className="relative inline-block">
             <Button
               type="button"
-              disabled={filteredTransactions.length === 0}
+              disabled={activeDataset.length === 0}
               onClick={() => setIsExportDropdownOpen((prev) => !prev)}
               className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent disabled:opacity-50"
               aria-haspopup="true"
@@ -523,55 +667,200 @@ export const TransactionPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Filters Toolbar with Extended Width Search Bar and No Company Dropdown */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        {/* Left: Expanded Width Search Bar */}
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg" />
-          <Input
-            type="search"
-            placeholder="Search by Cheque No., particulars, category, or reference..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              setCurrentPage(1)
-            }}
-            className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
-          />
-        </div>
-
-        {/* Right: Date Range Picker & Clear Button */}
-        <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
-          {/* Date Range Picker */}
-          <DateRangePicker
-            value={dateRange}
-            onChange={(newRange) => {
-              setDateRange(newRange)
-              setCurrentPage(1)
-            }}
-          />
-
-          {/* Clear Filters Button */}
-          {hasActiveFilters && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-              className="h-10 px-3 rounded-full text-xs font-semibold text-muted-fg hover:text-focus hover:bg-surface flex items-center gap-1.5 cursor-pointer"
+      {/* 2. Switch Bar: Deposit vs. Sales Record (Left Side) */}
+      <div className="flex items-center justify-start w-full">
+        <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-stroke/30">
+          <button
+            type="button"
+            onClick={() => setActiveTab('deposit')}
+            className={cn(
+              'flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-xs',
+              activeTab === 'deposit'
+                ? 'bg-[#960C01] text-white shadow-sm ring-1 ring-[#960C01]/30'
+                : 'text-focus/80 hover:bg-white hover:text-focus'
+            )}
+          >
+            <ArrowDownLeft className="h-4 w-4 shrink-0" />
+            <span>Deposit</span>
+            <span
+              className={cn(
+                'text-[11px] px-2 py-0.5 rounded-full font-bold ml-1',
+                activeTab === 'deposit' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
+              )}
             >
-              <FilterX className="h-3.5 w-3.5" />
-              <span>Clear</span>
-            </Button>
-          )}
+              {filteredDepositTransactions.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('sales')}
+            className={cn(
+              'flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-xs',
+              activeTab === 'sales'
+                ? 'bg-[#960C01] text-white shadow-sm ring-1 ring-[#960C01]/30'
+                : 'text-focus/80 hover:bg-white hover:text-focus'
+            )}
+          >
+            <TrendingUp className="h-4 w-4 shrink-0" />
+            <span>Sales Record</span>
+            <span
+              className={cn(
+                'text-[11px] px-2 py-0.5 rounded-full font-bold ml-1',
+                activeTab === 'sales' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
+              )}
+            >
+              {filteredSalesTransactions.length}
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* 3. Main Transactions Card & Table matching Recent Transactions in Dashboard */}
+      {/* 3. Independent Filters Toolbar per Active Tab */}
+      {activeTab === 'deposit' ? (
+        /* DEPOSIT FILTERS TOOLBAR */
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg" />
+            <Input
+              type="search"
+              placeholder="Search deposited transactions by Cheque No., particulars, category..."
+              value={depositSearchQuery}
+              onChange={(e) => {
+                setDepositSearchQuery(e.target.value)
+                setDepositCurrentPage(1)
+              }}
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
+          </div>
+
+          {/* Right Controls: Date Range Picker & Clear Button */}
+          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+            <DateRangePicker
+              value={depositDateRange}
+              onChange={(newRange) => {
+                setDepositDateRange(newRange)
+                setDepositCurrentPage(1)
+              }}
+            />
+
+            {hasDepositActiveFilters && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearDepositFilters}
+                className="h-10 px-3 rounded-full text-xs font-semibold text-muted-fg hover:text-focus hover:bg-surface flex items-center gap-1.5 cursor-pointer"
+              >
+                <FilterX className="h-3.5 w-3.5" />
+                <span>Clear</span>
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* SALES RECORD FILTERS TOOLBAR (Includes Status Dropdown for Paid and Unpaid) */
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg" />
+            <Input
+              type="search"
+              placeholder="Search sales particulars, Ref No., Cheque No., payment method..."
+              value={salesSearchQuery}
+              onChange={(e) => {
+                setSalesSearchQuery(e.target.value)
+                setSalesCurrentPage(1)
+              }}
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
+          </div>
+
+          {/* Right Controls: Status Filter (Paid/Unpaid/Pending), Date Range Picker & Clear Button */}
+          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+            {/* Status Filter Dropdown */}
+            <div ref={salesStatusDropdownRef} className="relative inline-block">
+              <button
+                type="button"
+                onClick={() => setIsSalesStatusDropdownOpen((prev) => !prev)}
+                className={cn(
+                  'inline-flex items-center gap-2 h-10 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                  isSalesStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
+                )}
+              >
+                <span className="font-semibold text-focus/90">
+                  {salesStatusFilter === 'All' ? 'Status: All' : `Status: ${salesStatusFilter}`}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+              </button>
+
+              {isSalesStatusDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                  <div className="space-y-1">
+                    {[
+                      { label: 'All Statuses', value: 'All' as const, dot: 'bg-slate-400' },
+                      { label: 'Paid', value: 'Paid' as const, dot: 'bg-emerald-500' },
+                      { label: 'Unpaid', value: 'Unpaid' as const, dot: 'bg-rose-500' },
+                      { label: 'Pending', value: 'Pending' as const, dot: 'bg-amber-500' },
+                      { label: 'On hold', value: 'On hold' as const, dot: 'bg-stone-500' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setSalesStatusFilter(opt.value)
+                          setIsSalesStatusDropdownOpen(false)
+                          setSalesCurrentPage(1)
+                        }}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                          salesStatusFilter === opt.value
+                            ? 'bg-primary/10 text-primary font-semibold'
+                            : 'text-focus/80 hover:bg-slate-50'
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={cn('w-2 h-2 rounded-full shrink-0', opt.dot)} />
+                          <span>{opt.label}</span>
+                        </div>
+                        {salesStatusFilter === opt.value && (
+                          <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Date Range Picker */}
+            <DateRangePicker
+              value={salesDateRange}
+              onChange={(newRange) => {
+                setSalesDateRange(newRange)
+                setSalesCurrentPage(1)
+              }}
+            />
+
+            {hasSalesActiveFilters && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearSalesFilters}
+                className="h-10 px-3 rounded-full text-xs font-semibold text-muted-fg hover:text-focus hover:bg-surface flex items-center gap-1.5 cursor-pointer"
+              >
+                <FilterX className="h-3.5 w-3.5" />
+                <span>Clear</span>
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Table Card Rendering Based on Active Tab */}
       <div className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
-        {/* Table containing strictly:
-            DATE | CHEQUE NO. | PARTICULARS | WITHDRAWAL | DEPOSIT | CATEGORY | NET AMOUNT
-        */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table>
             <TableHeader>
@@ -583,22 +872,24 @@ export const TransactionPage: React.FC = () => {
                   COMPANY
                 </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
-                  CHEQUE NO.
+                  {activeTab === 'deposit' ? 'CHEQUE NO.' : 'REF NO.'}
                 </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
-                  WITHDRAWAL
-                </TableHead>
-                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
-                  DEPOSIT
-                </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
-                  CATEGORY
+                  {activeTab === 'deposit' ? 'CATEGORY' : 'PAYMENT METHOD'}
                 </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
-                  NET AMOUNT
+                  AMOUNT
+                </TableHead>
+                {activeTab === 'sales' && (
+                  <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                    STATUS
+                  </TableHead>
+                )}
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
+                  AUDIT STATUS
                 </TableHead>
                 {isAdmin && (
                   <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
@@ -610,16 +901,18 @@ export const TransactionPage: React.FC = () => {
 
             <TableBody>
               {loading ? (
-                Array.from({ length: 10 }).map((_, i) => (
+                Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-28 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-24 rounded-md" /></TableCell>
-                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-52 rounded-md" /></TableCell>
-                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
-                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
+                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-48 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md" /></TableCell>
-                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-24 rounded-md ml-auto" /></TableCell>
+                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
+                    {activeTab === 'sales' && (
+                      <TableCell className="px-4 py-3.5"><Skeleton className="h-5 w-16 rounded-full mx-auto" /></TableCell>
+                    )}
+                    <TableCell className="px-4 py-3.5"><Skeleton className="h-5 w-16 rounded-full mx-auto" /></TableCell>
                     {isAdmin && (
                       <TableCell className="px-4 py-3.5 text-center">
                         <Skeleton className="h-6 w-16 rounded-md mx-auto" />
@@ -627,24 +920,24 @@ export const TransactionPage: React.FC = () => {
                     )}
                   </TableRow>
                 ))
-              ) : displayedTransactions.length === 0 ? (
+              ) : (activeTab === 'deposit' ? displayedDepositTransactions : displayedSalesTransactions).length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={isAdmin ? 9 : 8}
+                    colSpan={activeTab === 'sales' ? (isAdmin ? 9 : 8) : (isAdmin ? 8 : 7)}
                     className="py-12 text-center text-xs sm:text-sm text-muted-fg"
                   >
-                    No transactions found for the selected filter criteria.
+                    No {activeTab === 'deposit' ? 'deposit records' : 'sales records'} found for the selected filter criteria.
                   </TableCell>
                 </TableRow>
               ) : (
-                displayedTransactions.map((tx) => {
-                  const netAmount = (tx.deposit || 0) - (tx.withdrawal || 0)
+                (activeTab === 'deposit' ? displayedDepositTransactions : displayedSalesTransactions).map((tx) => {
+                  const depositAmt = tx.deposit > 0 ? tx.deposit : (tx.amount || 0)
 
                   return (
                     <TableRow
                       key={tx.id}
                       onClick={() => handleRowClick(tx)}
-                      title="Click to view complete details"
+                      title="Click to view transaction details"
                       className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors cursor-pointer"
                     >
                       {/* 1. Date */}
@@ -659,37 +952,65 @@ export const TransactionPage: React.FC = () => {
                         </span>
                       </TableCell>
 
-                      {/* 3. Cheque No. */}
+                      {/* 3. Cheque No / Ref No */}
                       <TableCell className="px-4 py-3.5 text-xs text-focus/90 whitespace-nowrap font-mono">
-                        {tx.chequeNo || '—'}
+                        {activeTab === 'deposit' ? (tx.chequeNo || '—') : (tx.refNo || '—')}
                       </TableCell>
 
-                      {/* 3. Particulars */}
+                      {/* 4. Particulars */}
                       <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-xs">
                         <span className="line-clamp-1">{tx.particulars || tx.description}</span>
                       </TableCell>
 
-                      {/* 4. Withdrawal */}
-                      <TableCell className="px-4 py-3.5 text-xs font-medium text-right tabular-nums whitespace-nowrap text-muted-fg">
-                        {tx.withdrawal > 0 ? formatPHP(tx.withdrawal) : ''}
-                      </TableCell>
-
-                      {/* 5. Deposit */}
-                      <TableCell className="px-4 py-3.5 text-xs font-semibold text-right tabular-nums whitespace-nowrap text-emerald-600">
-                        {tx.deposit > 0 ? formatPHP(tx.deposit) : ''}
-                      </TableCell>
-
-                      {/* 6. Category */}
+                      {/* 5. Category or Payment Method */}
                       <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-medium whitespace-nowrap">
-                        {tx.category}
+                        {activeTab === 'deposit' ? tx.category : (tx.paymentMethod || 'Cash')}
                       </TableCell>
 
-                      {/* 7. Net Amount */}
-                      <TableCell className="px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap text-focus">
-                        {formatPHP(netAmount)}
+                      {/* 6. Amount */}
+                      <TableCell className="px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap text-emerald-600">
+                        {formatPHP(depositAmt)}
                       </TableCell>
 
-                      {/* 8. Action (Audit Button) for Admin */}
+                      {/* 7. Status (Sales Tab only: Paid, Unpaid, Pending, On hold) */}
+                      {activeTab === 'sales' && (
+                        <TableCell className="px-4 py-3.5 text-center whitespace-nowrap">
+                          {tx.status === 'Paid' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Paid
+                            </span>
+                          ) : tx.status === 'Pending' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              Pending
+                            </span>
+                          ) : tx.status === 'On hold' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-stone-100 text-stone-700 border border-stone-200">
+                              On hold
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              Unpaid
+                            </span>
+                          )}
+                        </TableCell>
+                      )}
+
+                      {/* 8. Audit Status Badge */}
+                      <TableCell className="px-4 py-3.5 text-center whitespace-nowrap">
+                        {tx.auditStatus === 'Verified' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Audited</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs">
+                            <AlertCircle className="w-3 h-3 text-amber-600" />
+                            <span>Pending</span>
+                          </span>
+                        )}
+                      </TableCell>
+
+                      {/* 9. Action for Admin */}
                       {isAdmin && (
                         <TableCell
                           className="px-4 py-3.5 text-center whitespace-nowrap"
@@ -703,7 +1024,7 @@ export const TransactionPage: React.FC = () => {
                                 size="sm"
                                 onClick={() => handleRowClick(tx)}
                                 className="h-7 px-2.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 flex items-center gap-1.5 cursor-pointer border border-emerald-300/80 shadow-2xs transition-all"
-                                title="Audited (Click to view details or unmark)"
+                                title="Audited (Click to inspect or unmark)"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                 <span>Audited</span>
@@ -715,7 +1036,7 @@ export const TransactionPage: React.FC = () => {
                                 size="sm"
                                 onClick={(e) => handleMarkTxAudited(tx, e)}
                                 className="h-7 px-2.5 rounded-lg text-xs font-semibold text-focus/80 hover:text-primary hover:bg-red-50/50 flex items-center gap-1.5 cursor-pointer border border-slate-200/80 hover:border-primary/30 shadow-2xs transition-all"
-                                title="Click to automatically mark as audited"
+                                title="Click to verify and mark as audited"
                               >
                                 <FileText className="w-3.5 h-3.5 text-primary" />
                                 <span>Audit</span>
@@ -732,30 +1053,46 @@ export const TransactionPage: React.FC = () => {
           </Table>
         </div>
 
-        {/* 4. Pagination Footer matching Recent Transactions */}
+        {/* 5. Pagination Footer */}
         <div className="pt-4 mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
           {/* Record summary */}
           <span className="font-medium text-focus/80">
-            {filteredTransactions.length === 0
-              ? 'Showing 0 of 0 records'
-              : `Showing ${(currentPage - 1) * itemsPerPage + 1}-${Math.min(
-                  currentPage * itemsPerPage,
-                  filteredTransactions.length
-                )} of ${filteredTransactions.length} records`}
+            {activeTab === 'deposit'
+              ? filteredDepositTransactions.length === 0
+                ? 'Showing 0 of 0 deposit records'
+                : `Showing ${(depositCurrentPage - 1) * itemsPerPage + 1}-${Math.min(
+                    depositCurrentPage * itemsPerPage,
+                    filteredDepositTransactions.length
+                  )} of ${filteredDepositTransactions.length} deposit records`
+              : filteredSalesTransactions.length === 0
+              ? 'Showing 0 of 0 sales records'
+              : `Showing ${(salesCurrentPage - 1) * itemsPerPage + 1}-${Math.min(
+                  salesCurrentPage * itemsPerPage,
+                  filteredSalesTransactions.length
+                )} of ${filteredSalesTransactions.length} sales records`}
           </span>
 
           {/* Page Indicator & Navigation */}
           <div className="flex items-center gap-2 self-end sm:self-auto">
             <span className="text-xs text-muted-fg italic">
-              Page {currentPage} out of {totalPages}
+              Page {activeTab === 'deposit' ? depositCurrentPage : salesCurrentPage} out of{' '}
+              {activeTab === 'deposit' ? depositTotalPages : salesTotalPages}
             </span>
 
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={
+                activeTab === 'deposit' ? depositCurrentPage <= 1 : salesCurrentPage <= 1
+              }
+              onClick={() => {
+                if (activeTab === 'deposit') {
+                  setDepositCurrentPage((p) => Math.max(1, p - 1))
+                } else {
+                  setSalesCurrentPage((p) => Math.max(1, p - 1))
+                }
+              }}
               className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
               aria-label="Previous page"
             >
@@ -766,8 +1103,18 @@ export const TransactionPage: React.FC = () => {
               type="button"
               variant="outline"
               size="sm"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={
+                activeTab === 'deposit'
+                  ? depositCurrentPage >= depositTotalPages
+                  : salesCurrentPage >= salesTotalPages
+              }
+              onClick={() => {
+                if (activeTab === 'deposit') {
+                  setDepositCurrentPage((p) => Math.min(depositTotalPages, p + 1))
+                } else {
+                  setSalesCurrentPage((p) => Math.min(salesTotalPages, p + 1))
+                }
+              }}
               className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
               aria-label="Next page"
             >
@@ -777,12 +1124,13 @@ export const TransactionPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 5. Complete Read-Only Transaction Details Modal */}
+      {/* 6. Transaction Details Modal (If audited, editing is locked; if not audited, provides edit in Excel sheet) */}
       <AuditTransactionModal
         open={isModalOpen}
         onOpenChange={setIsModalOpen}
         transaction={selectedTx}
         onTransactionUpdated={handleTransactionUpdated}
+        editable={!isAdmin}
       />
     </div>
   )

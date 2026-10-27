@@ -319,7 +319,7 @@ export const ActivityLogPage: React.FC = () => {
       {/* 2. Filters Toolbar with Extended Width Search Bar & Date Range Filter */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         {/* Extended width search bar */}
-        <div className="relative flex-1 max-w-full lg:max-w-2xl xl:max-w-3xl">
+        <div className="relative flex-1 w-full">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
           <Input
             type="search"

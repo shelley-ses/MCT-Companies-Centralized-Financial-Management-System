@@ -9,6 +9,7 @@ import {
   Mail,
   Upload,
   User as UserIcon,
+  Crop,
 } from 'lucide-react'
 import {
   Dialog,
@@ -18,7 +19,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   employeeService,
   type Company,
@@ -27,6 +27,7 @@ import {
 } from '@/services/employeeService'
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog'
 import { cn } from '@/lib/utils'
+import { ImageCropperModal } from '@/components/common/ImageCropperModal'
 
 interface ViewUserModalProps {
   open: boolean
@@ -57,9 +58,11 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
 
-  // Photo upload in edit mode
+  // Photo upload and cropping in edit mode
   const [editProfilePreview, setEditProfilePreview] = React.useState<string | null>(null)
   const [editAvatarFile, setEditAvatarFile] = React.useState<File | null>(null)
+  const [rawImageForCrop, setRawImageForCrop] = React.useState<string | null>(null)
+  const [isCropperOpen, setIsCropperOpen] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   // Multi-company selection state
@@ -71,6 +74,7 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
     email: '',
     assignedCompany: '',
     role: 'Supervisor',
+    avatarUrl: '',
   })
 
 
@@ -97,6 +101,8 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
       setEditSelectedCompanies(initialCompanies)
       setEditProfilePreview(user.avatarUrl || null)
       setEditAvatarFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
     }
   }, [user, open])
 
@@ -117,6 +123,8 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
       setEditSelectedCompanies(initialCompanies)
       setEditProfilePreview(user.avatarUrl || null)
       setEditAvatarFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
       setIsEditing(true)
     }
   }
@@ -127,13 +135,38 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
       setEditAvatarFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
-        setEditProfilePreview(reader.result as string)
+        const result = reader.result as string
+        setRawImageForCrop(result)
+        setIsCropperOpen(true)
       }
       reader.readAsDataURL(file)
     }
     e.target.value = ''
   }
 
+  const handleCropComplete = (croppedDataUrl: string) => {
+    setEditProfilePreview(croppedDataUrl)
+    setFormData((prev) => ({ ...prev, avatarUrl: croppedDataUrl }))
+    try {
+      const arr = croppedDataUrl.split(',')
+      const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png'
+      const bstr = atob(arr[1])
+      let n = bstr.length
+      const u8arr = new Uint8Array(n)
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n)
+      }
+      setEditAvatarFile(new File([u8arr], 'user-avatar.png', { type: mime }))
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleOpenCropper = () => {
+    if (rawImageForCrop || editProfilePreview) {
+      setIsCropperOpen(true)
+    }
+  }
   const handleRoleChange = (role: string) => {
     setFormData((prev) => ({ ...prev, role }))
   }
@@ -143,7 +176,10 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
       setIsEditing(false)
       setIsConfirmEditOpen(false)
       setIsConfirmDeleteOpen(false)
+      setEditProfilePreview(null)
       setEditAvatarFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
     }
     onOpenChange(nextOpen)
   }
@@ -169,10 +205,14 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
         assignedCompany: editSelectedCompanies[0] || '',
         assignedCompanies: editSelectedCompanies,
         avatarFile: editAvatarFile || undefined,
+        avatarUrl: editProfilePreview || formData.avatarUrl || user.avatarUrl,
       })
       setIsConfirmEditOpen(false)
       setIsEditing(false)
+      setEditProfilePreview(null)
       setEditAvatarFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
       onOpenChange(false)
       onUpdate?.(updated)
     } catch (error) {
@@ -224,43 +264,81 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
                 <p className="text-xs text-muted-fg mt-0.5">Update user account, role and assigned company</p>
               </div>
 
-              {/* Photo Upload in Edit Mode */}
-              <div className="flex items-center gap-3.5 pb-2 border-b border-stroke/15">
-                <div className="h-14 w-14 rounded-full border-2 border-primary/90 flex items-center justify-center shrink-0 bg-red-50 text-primary font-bold text-base shadow-xs overflow-hidden">
+              {/* Editable User Profile Photo (Matching Edit Company Modal with Zoom & Crop) */}
+              <div className="flex flex-col items-center justify-center py-2">
+                <div
+                  onClick={() => {
+                    if (editProfilePreview) {
+                      handleOpenCropper()
+                    } else {
+                      fileInputRef.current?.click()
+                    }
+                  }}
+                  className="relative group h-24 w-24 sm:h-28 sm:w-28 rounded-full border-2 border-dashed border-primary/50 hover:border-primary flex items-center justify-center p-1 bg-red-50 text-primary font-bold text-2xl shadow-xs cursor-pointer transition-all overflow-hidden"
+                  title={editProfilePreview ? 'Click to crop / adjust photo' : 'Click to upload photo'}
+                >
                   {editProfilePreview ? (
                     <img
                       src={editProfilePreview}
-                      alt="Avatar Preview"
-                      className="h-full w-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none'
-                        if (e.currentTarget.parentElement) {
-                          e.currentTarget.parentElement.innerText = initials || 'U'
-                        }
-                      }}
+                      alt="User Avatar Preview"
+                      className="h-full w-full object-cover rounded-full"
                     />
                   ) : (
-                    initials || <UserIcon className="h-6 w-6 text-primary" />
+                    initials || <UserIcon className="h-10 w-10 text-primary" />
                   )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white rounded-full">
+                    <Crop className="h-5 w-5" />
+                    <span className="text-[10px] font-semibold mt-1">Crop</span>
+                  </div>
                 </div>
-                <div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageFileChange}
-                    className="hidden"
-                  />
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImageFileChange}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                <div className="flex items-center gap-2 mt-2">
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
-                    className="h-8 px-3 text-xs text-primary font-semibold hover:bg-red-50 cursor-pointer"
+                    className="h-7 px-2.5 text-xs text-primary hover:text-primary hover:bg-primary/10 font-semibold cursor-pointer"
                   >
-                    <Upload className="h-3.5 w-3.5 mr-1" />
-                    Change Photo
+                    <Upload className="h-3 w-3 mr-1" />
+                    Upload Photo
                   </Button>
+                  {editProfilePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleOpenCropper}
+                      className="h-7 px-2.5 text-xs text-primary hover:text-primary hover:bg-primary/10 font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Crop className="h-3 w-3 mr-1" />
+                      Crop / Adjust
+                    </Button>
+                  )}
+                  {editProfilePreview && editProfilePreview !== user.avatarUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditProfilePreview(user.avatarUrl || null)
+                        setEditAvatarFile(null)
+                        setRawImageForCrop(null)
+                        setFormData((prev) => ({ ...prev, avatarUrl: user.avatarUrl }))
+                      }}
+                      className="h-7 px-2 text-xs text-muted-fg hover:text-focus cursor-pointer"
+                    >
+                      Reset
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -581,6 +659,15 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
         variant="destructive"
         isLoading={isSubmitting}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* Image Cropper Modal */}
+      <ImageCropperModal
+        open={isCropperOpen}
+        onOpenChange={setIsCropperOpen}
+        imageSrc={rawImageForCrop || editProfilePreview}
+        onCropComplete={handleCropComplete}
+        title="Crop Profile Photo"
       />
     </>
   )
