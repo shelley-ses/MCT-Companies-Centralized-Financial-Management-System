@@ -667,7 +667,7 @@ export const ExpensePage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor/Company Employee */}
+            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor */}
             {isCompanyScoped ? (
               <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs">
                 <Building2 className="h-4 w-4 text-muted-fg shrink-0" />

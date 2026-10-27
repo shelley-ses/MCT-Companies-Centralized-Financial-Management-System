@@ -190,7 +190,7 @@ export const TransactionPage: React.FC = () => {
   const filteredTransactions = React.useMemo(() => {
     let result = transactions
 
-    // Company employees and supervisors only see their assigned company
+    // Supervisors only see their assigned company
     if (isCompanyScoped) {
       result = result.filter(
         (t) => (t.company || '').toLowerCase().trim() === assignedCompany.toLowerCase().trim()

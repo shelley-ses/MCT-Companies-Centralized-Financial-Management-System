@@ -29,6 +29,7 @@ CANONICAL_COMPANY_MAP = {
     14: "FILCAP Prime Holdings Corp.",
 }
 
+from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access
 from app.core.cache import get_cached, set_cached
 
 def get_supabase_mappings(client):
@@ -75,27 +76,46 @@ def get_expenses(
     category_id: Optional[int] = Query(None, description="Filter by Category ID"),
     start_date: Optional[date] = Query(None, description="Filter from date"),
     end_date: Optional[date] = Query(None, description="Filter to date"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    user_company_ids = current_user.get("company_ids") or []
+    if not is_admin and not user_company_ids and current_user.get("company_id"):
+        user_company_ids = [current_user["company_id"]]
+
     try:
         client = get_supabase_admin_client()
         company_map, cat_map = get_supabase_mappings(client)
 
         sb_query = client.table("expenses").select("*")
 
-        # Company filter
+        # Company filter & access check
         resolved_company_id = company_id
-        if not resolved_company_id and company_name and company_name.lower() != "all companies":
+        if resolved_company_id:
+            check_company_access(current_user, resolved_company_id)
+            sb_query = sb_query.eq("company_id", resolved_company_id)
+        elif company_name and company_name.lower() != "all companies":
             target_norm = company_name.strip().lower()
             matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() == target_norm]
             if not matching_cids and target_norm in ("speedbox", "speedfire"):
                 matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() in ("speedbox", "speedfire")]
+            if not is_admin:
+                matching_cids = [cid for cid in matching_cids if cid in user_company_ids]
+                if not matching_cids:
+                    return []
             if len(matching_cids) == 1:
                 sb_query = sb_query.eq("company_id", matching_cids[0])
             elif len(matching_cids) > 1:
                 sb_query = sb_query.in_("company_id", matching_cids)
-        elif resolved_company_id:
-            sb_query = sb_query.eq("company_id", resolved_company_id)
+        elif not is_admin:
+            if not user_company_ids:
+                return []
+            if len(user_company_ids) == 1:
+                sb_query = sb_query.eq("company_id", user_company_ids[0])
+            else:
+                sb_query = sb_query.in_("company_id", user_company_ids)
+
         if category_id:
             sb_query = sb_query.eq("category_id", category_id)
         if start_date:
@@ -128,6 +148,8 @@ def get_expenses(
             )
             for row in rows
         ]
+    except HTTPException:
+        raise
     except Exception as e:
         # Fallback to local SQLite if Supabase is unavailable
         query = (
@@ -141,9 +163,16 @@ def get_expenses(
         )
 
         if company_id:
+            check_company_access(current_user, company_id)
             query = query.filter(Expense.company_id == company_id)
         elif company_name and company_name.lower() != "all companies":
             query = query.filter(func.lower(Company.company_name) == func.lower(company_name.strip()))
+            if not is_admin:
+                query = query.filter(Expense.company_id.in_(user_company_ids))
+        elif not is_admin:
+            if not user_company_ids:
+                return []
+            query = query.filter(Expense.company_id.in_(user_company_ids))
 
         if category_id:
             query = query.filter(Expense.category_id == category_id)
@@ -178,7 +207,13 @@ def get_expenses(
         ]
 
 @router.post("", response_model=ExpenseOut, status_code=status.HTTP_201_CREATED, summary="Record a new expense")
-def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = Depends(get_db)):
+def create_expense(
+    expense_in: ExpenseCreate,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     if expense_in.amount < Decimal("1.00"):
         raise HTTPException(status_code=400, detail="Withdrawal amount must be at least 1.00 (cannot be 0 or negative).")
 
@@ -224,6 +259,8 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
                     target_company_id = ins_comp.data[0]["company_id"]
             else:
                 raise HTTPException(status_code=400, detail="Invalid company specified.")
+
+        check_company_access(current_user, target_company_id)
 
         # Petty cash expenses are paid from the company's petty cash wallet, not sales
         PettyCashService(db).ensure_sufficient_balance(target_company_id, expense_in.payment_method, expense_in.amount)
@@ -403,19 +440,26 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
         )
 
 @router.get("/{expense_id}", response_model=ExpenseOut, summary="Get expense details")
-def get_expense(expense_id: int, db: Session = Depends(get_db)):
+def get_expense(
+    expense_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     try:
         client = get_supabase_admin_client()
         company_map, cat_map = get_supabase_mappings(client)
         res = client.table("expenses").select("*").eq("expense_id", expense_id).execute()
         if res.data:
             row = res.data[0]
+            check_company_access(current_user, row.get("company_id"))
             return ExpenseOut(
                 expense_id=row["expense_id"],
                 company_id=row.get("company_id"),
                 company_name=company_map.get(row.get("company_id")) or "Unknown",
                 category_id=row.get("category_id"),
                 category_name=cat_map.get(row.get("category_id")) or "None",
+                payment_method=row.get("payment_method"),
                 created_by=row.get("created_by"),
                 expense_date=row.get("expense_date"),
                 reference_no=row.get("reference_no"),
@@ -428,6 +472,8 @@ def get_expense(expense_id: int, db: Session = Depends(get_db)):
                 created_at=row.get("created_at"),
                 updated_at=row.get("updated_at")
             )
+    except HTTPException:
+        raise
     except Exception:
         pass
 
@@ -445,12 +491,14 @@ def get_expense(expense_id: int, db: Session = Depends(get_db)):
     if not result:
         raise HTTPException(status_code=404, detail="Expense not found")
     exp, c_name, cat_name = result
+    check_company_access(current_user, exp.company_id)
     return ExpenseOut(
         expense_id=exp.expense_id,
         company_id=exp.company_id,
         company_name=c_name,
         category_id=exp.category_id,
         category_name=cat_name or "None",
+        payment_method=exp.payment_method,
         created_by=exp.created_by,
         expense_date=exp.expense_date,
         reference_no=exp.reference_no,
@@ -466,7 +514,14 @@ def get_expense(expense_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{expense_id}", response_model=ExpenseOut, summary="Update an existing expense")
 @router.patch("/{expense_id}", response_model=ExpenseOut, summary="Update an existing expense")
-def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request, db: Session = Depends(get_db)):
+def update_expense(
+    expense_id: int,
+    expense_in: ExpenseUpdate,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     target_amt = expense_in.amount if expense_in.amount is not None else expense_in.withdrawal
     if target_amt is not None and target_amt < Decimal("1.00"):
         raise HTTPException(status_code=400, detail="Withdrawal amount must be at least 1.00 (cannot be 0 or negative).")
@@ -474,8 +529,12 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
     if expense_in.expense_date is not None and expense_in.expense_date > date.today():
         raise HTTPException(status_code=400, detail="Expense date cannot be in the future (maximum date is today).")
 
-    # Re-check the petty cash wallet with this expense's old amount added back
+    # Fetch existing expense to verify company access
     current = _current_expense_row(db, expense_id)
+    if current and current.get("company_id"):
+        check_company_access(current_user, current.get("company_id"))
+
+    # Re-check the petty cash wallet with this expense's old amount added back
     if current:
         PettyCashService(db).ensure_sufficient_balance(
             current.get("company_id"),
@@ -567,7 +626,7 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
         company_map, cat_map = get_supabase_mappings(client)
         log_transaction(
             db, AuditAction.EXPENSE_UPDATED,
-            user_id=None, company_id=updated_row.get("company_id"),
+            user_id=current_user.get("user_id"), company_id=updated_row.get("company_id"),
             ip_address=request.client.host if request.client else "unknown",
             record_id=expense_id, record_type="expense",
         )
@@ -599,7 +658,7 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
 
     log_transaction(
         db, AuditAction.EXPENSE_UPDATED,
-        user_id=None, company_id=expense.company_id,
+        user_id=current_user.get("user_id"), company_id=expense.company_id,
         ip_address=request.client.host if request.client else "unknown",
         record_id=expense_id, record_type="expense",
     )
@@ -609,6 +668,7 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
         company_name=company.company_name if company else None,
         category_id=expense.category_id,
         category_name=category.name if category else "None",
+        payment_method=expense.payment_method,
         created_by=expense.created_by,
         expense_date=expense.expense_date,
         reference_no=expense.reference_no,
@@ -623,7 +683,13 @@ def update_expense(expense_id: int, expense_in: ExpenseUpdate, request: Request,
     )
 
 @router.delete("/{expense_id}", status_code=status.HTTP_200_OK, summary="Delete an expense")
-def delete_expense(expense_id: int, request: Request, db: Session = Depends(get_db)):
+def delete_expense(
+    expense_id: int,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     deleted_from_supabase = False
     deleted_company_id = None
     try:
@@ -631,22 +697,34 @@ def delete_expense(expense_id: int, request: Request, db: Session = Depends(get_
         existing = client.table("expenses").select("company_id").eq("expense_id", expense_id).limit(1).execute()
         if existing.data:
             deleted_company_id = existing.data[0].get("company_id")
-        sb_res = client.table("expenses").delete().eq("expense_id", expense_id).execute()
-        if sb_res.data and len(sb_res.data) > 0:
-            deleted_from_supabase = True
     except Exception as e:
-        print(f"Supabase delete expense error: {e}")
+        print(f"Supabase fetch before delete error: {e}")
 
     expense = db.query(Expense).filter(Expense.expense_id == expense_id).first()
     if expense:
         deleted_company_id = deleted_company_id or expense.company_id
+
+    if not deleted_company_id and not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    check_company_access(current_user, deleted_company_id)
+
+    if client:
+        try:
+            sb_res = client.table("expenses").delete().eq("expense_id", expense_id).execute()
+            if sb_res.data and len(sb_res.data) > 0:
+                deleted_from_supabase = True
+        except Exception as e:
+            print(f"Supabase delete expense error: {e}")
+
+    if expense:
         db.delete(expense)
         db.commit()
 
     try:
         log_transaction(
             db, AuditAction.EXPENSE_DELETED,
-            user_id=None, company_id=deleted_company_id,
+            user_id=current_user.get("user_id"), company_id=deleted_company_id,
             ip_address=request.client.host if request.client else "unknown",
             record_id=expense_id, record_type="expense",
         )

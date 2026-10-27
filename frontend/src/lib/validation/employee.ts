@@ -7,7 +7,8 @@ export const createUserSchema = z.object({
     .trim()
     .min(1, 'Email is required')
     .email('Please enter a valid email address'),
-  assignedCompany: z.string().min(1, 'Assigned company is required'),
+  assignedCompany: z.string().optional(),
+  assignedCompanies: z.array(z.string()),
   role: z.string().min(1, 'Role is required'),
   avatarUrl: z.string().optional(),
 })

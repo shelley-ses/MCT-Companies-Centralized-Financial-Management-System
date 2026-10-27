@@ -57,8 +57,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       ? 'Supervisor'
       : user?.role === 'Audit'
       ? 'Audit'
-      : user?.role === 'Company' || user?.role === 'Company Auditor'
-      ? 'Company'
       : 'Admin'
 
   // Dynamic role-based & company-specific sections: Main, Operations, Administration

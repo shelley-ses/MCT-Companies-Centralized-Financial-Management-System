@@ -22,7 +22,7 @@ from app.schemas.loan import (
     CompanyLoanOut,
     CompanyLoanListOut,
 )
-from app.core.dependencies import AdminUser, CurrentUser
+from app.core.dependencies import AdminUser, AuthenticatedUser, CurrentUser, get_current_user, check_company_access
 from app.core.cache import system_cache
 from app.core.websocket import ws_manager
 from app.services.finance_service import FinanceService, FinanceCalculator
@@ -280,7 +280,6 @@ def get_company_loans(
 
 @router.get("/company/export", summary="Export approved company loans as CSV")
 def export_company_loans(
-    _admin: AdminUser,
     borrower_id: Optional[int] = Query(None),
     lender_id: Optional[int] = Query(None),
     company_id: Optional[int] = Query(None),
@@ -290,16 +289,37 @@ def export_company_loans(
     payment_status: Optional[str] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
     import csv
     import io
+
+
+    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    user_company_ids = current_user.get("company_ids") or []
+    if not is_admin and not user_company_ids and current_user.get("company_id"):
+        user_company_ids = [current_user["company_id"]]
+
+    if company_id:
+        check_company_access(current_user, company_id)
+    if borrower_id:
+        check_company_access(current_user, borrower_id)
+    if lender_id:
+        check_company_access(current_user, lender_id)
 
     company_names = {c.company_id: c.company_name for c in db.query(Company).all()}
     query = _company_loan_query(
         db, borrower_id, lender_id, company_id, category, reference,
         particulars, payment_status, start_date, end_date,
     )
+
+    if not is_admin:
+        if not user_company_ids:
+            query = query.filter(Loan.loan_id == -1)
+        else:
+            query = query.filter(or_(Loan.borrower.in_(user_company_ids), Loan.lender.in_(user_company_ids)))
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -344,15 +364,26 @@ def get_loans(
     end_date: Optional[date] = Query(None, description="Filter to loan date"),
     user_role: Optional[str] = Query(None, description="Current user role"),
     request: Request = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    role = (user_role or (request.headers.get("X-User-Role") if request else None) or "").strip().lower()
+    role = (user_role or (request.headers.get("X-User-Role") if request else None) or current_user.get("role") or "").strip().lower()
     is_auditor = role in {"audit", "auditor"}
 
     cache_key = f"loans_{borrower_id}_{lender_id}_{company_name}_{scope}_{status}_{start_date}_{end_date}_{role}"
     cached = system_cache.get(cache_key)
     if cached is not None:
         return cached
+
+    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    user_company_ids = current_user.get("company_ids") or []
+    if not is_admin and not user_company_ids and current_user.get("company_id"):
+        user_company_ids = [current_user["company_id"]]
+
+    if borrower_id:
+        check_company_access(current_user, borrower_id)
+    if lender_id:
+        check_company_access(current_user, lender_id)
 
     try:
         client = get_supabase_admin_client()
@@ -361,6 +392,8 @@ def get_loans(
         resolved_target_cid = None
         if company_name and company_name.lower() != "all companies":
             resolved_target_cid = resolve_company_id(None, company_name, name_to_id, db)
+            if resolved_target_cid and not is_admin:
+                check_company_access(current_user, resolved_target_cid)
 
         sb_query = client.table("loan").select("*")
 
@@ -377,6 +410,15 @@ def get_loans(
             else:
                 # Matches either borrower or lender
                 sb_query = sb_query.or_(f"borrower.eq.{resolved_target_cid},lender.eq.{resolved_target_cid}")
+        elif not is_admin:
+            if not user_company_ids:
+                return []
+            if len(user_company_ids) == 1:
+                cid = user_company_ids[0]
+                sb_query = sb_query.or_(f"borrower.eq.{cid},lender.eq.{cid}")
+            else:
+                or_clause = ",".join([f"borrower.eq.{cid},lender.eq.{cid}" for cid in user_company_ids])
+                sb_query = sb_query.or_(or_clause)
 
         if isinstance(status, str) and status.lower() != "all":
             sb_query = sb_query.eq("status", status)
@@ -430,6 +472,8 @@ def get_loans(
         system_cache.set(cache_key, result, ttl=45, tags=["loans"])
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Supabase GET /loans failed, falling back to local SQLite: {e}")
         query = db.query(Loan)
@@ -439,6 +483,8 @@ def get_loans(
             comp = db.query(Company).filter(func.lower(Company.company_name) == company_name.strip().lower()).first()
             if comp:
                 resolved_target_cid = comp.company_id
+                if not is_admin:
+                    check_company_access(current_user, resolved_target_cid)
 
         if isinstance(borrower_id, int):
             query = query.filter(Loan.borrower == borrower_id)
@@ -452,6 +498,10 @@ def get_loans(
                 query = query.filter(Loan.lender == resolved_target_cid)
             else:
                 query = query.filter(or_(Loan.borrower == resolved_target_cid, Loan.lender == resolved_target_cid))
+        elif not is_admin:
+            if not user_company_ids:
+                return []
+            query = query.filter(or_(Loan.borrower.in_(user_company_ids), Loan.lender.in_(user_company_ids)))
 
         if isinstance(status, str) and status.lower() != "all":
             query = query.filter(Loan.status == status)
@@ -502,7 +552,13 @@ def get_loans(
 
 
 @router.post("", response_model=LoanOut, status_code=status.HTTP_201_CREATED, summary="Create a new loan record")
-def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get_db)):
+def create_loan(
+    loan_in: LoanCreate,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     client = None
     name_to_id = {}
     id_to_name = {}
@@ -517,6 +573,8 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
 
     if not borrower_id:
         raise HTTPException(status_code=400, detail="Borrower company could not be resolved.")
+
+    check_company_access(current_user, borrower_id)
 
     if lender_id and borrower_id == lender_id:
         raise HTTPException(status_code=400, detail="Borrower and lender cannot be the same company.")
@@ -619,7 +677,13 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
 
 
 @router.put("/{loan_id}", response_model=LoanOut, summary="Update an existing loan (Only allowed if Pending Approval)")
-def update_loan(loan_id: int, loan_update: LoanUpdate, db: Session = Depends(get_db)):
+def update_loan(
+    loan_id: int,
+    loan_update: LoanUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     client = None
     try:
         client = get_supabase_admin_client()
@@ -644,6 +708,10 @@ def update_loan(loan_id: int, loan_update: LoanUpdate, db: Session = Depends(get
 
     if not existing_row and not sql_loan:
         raise HTTPException(status_code=404, detail="Loan not found.")
+
+    borrower_id = (existing_row.get("borrower") if existing_row else None) or (sql_loan.borrower if sql_loan else None)
+    if borrower_id:
+        check_company_access(current_user, borrower_id)
 
     if existing_status and existing_status.strip().lower() not in {"pending approval", "pending finance endorsement"}:
         raise HTTPException(
@@ -1191,7 +1259,12 @@ def approve_loan(
 
 
 @router.delete("/{loan_id}", status_code=status.HTTP_200_OK, summary="Delete loan (Only allowed if Pending Approval)")
-def delete_loan(loan_id: int, db: Session = Depends(get_db)):
+def delete_loan(
+    loan_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     client = None
     try:
         client = get_supabase_admin_client()
@@ -1200,11 +1273,13 @@ def delete_loan(loan_id: int, db: Session = Depends(get_db)):
 
     # Check status
     existing_status = None
+    existing_row = None
     if client:
         try:
-            res = client.table("loan").select("status").eq("loan_id", loan_id).execute()
+            res = client.table("loan").select("*").eq("loan_id", loan_id).execute()
             if res.data and len(res.data) > 0:
-                existing_status = res.data[0].get("status")
+                existing_row = res.data[0]
+                existing_status = existing_row.get("status")
         except Exception:
             pass
 
@@ -1214,6 +1289,10 @@ def delete_loan(loan_id: int, db: Session = Depends(get_db)):
 
     if not existing_status and not sql_loan:
         raise HTTPException(status_code=404, detail="Loan not found.")
+
+    borrower_id = (existing_row.get("borrower") if existing_row else None) or (sql_loan.borrower if sql_loan else None)
+    if borrower_id:
+        check_company_access(current_user, borrower_id)
 
     if existing_status and existing_status.strip().lower() not in {"pending approval", "pending finance endorsement"}:
         raise HTTPException(
@@ -1243,7 +1322,7 @@ def delete_loan(loan_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{loan_id}/statement", response_model=LoanStatementOut, summary="Get full loan statement and amortized balance")
-def get_loan_statement(loan_id: int, current_user: CurrentUser, db: Session = Depends(get_db)):
+def get_loan_statement(loan_id: int, current_user: AuthenticatedUser = Depends(get_current_user), db: Session = Depends(get_db)):
     loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")

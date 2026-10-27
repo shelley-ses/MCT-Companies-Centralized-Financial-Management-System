@@ -46,19 +46,16 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [profilePreview, setProfilePreview] = React.useState<string | null>(null)
+  const [profileFile, setProfileFile] = React.useState<File | null>(null)
   const [formErrors, setFormErrors] = React.useState<Record<string, string>>({})
 
   // Edit form state
   const [formData, setFormData] = React.useState<CreateCompanyPayload>({
     name: '',
-    email: '',
     address: '',
-    contactPerson: '',
-    contactPersonEmail: '',
     contactNumber: '',
     telephoneNumber: '',
     startingBalance: 0,
-    currentBalance: 0,
     pettyCash: 0,
     logoUrl: undefined,
   })
@@ -67,18 +64,15 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
     if (company) {
       setFormData({
         name: company.name,
-        email: company.email,
         address: company.address,
-        contactPerson: company.contactPerson,
-        contactPersonEmail: company.contactPersonEmail || '',
         contactNumber: company.contactNumber,
         telephoneNumber: company.telephoneNumber || '',
         startingBalance: company.startingBalance,
-        currentBalance: company.currentBalance,
         pettyCash: company.pettyCash || 0,
         logoUrl: company.logoUrl,
       })
       setProfilePreview(company.logoUrl || null)
+      setProfileFile(null)
       setFormErrors({})
       setIsEditing(true)
     }
@@ -87,11 +81,11 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      setProfileFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         const result = reader.result as string
         setProfilePreview(result)
-        setFormData((prev) => ({ ...prev, logoUrl: result }))
       }
       reader.readAsDataURL(file)
     }
@@ -103,6 +97,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
       setIsConfirmEditOpen(false)
       setIsConfirmDeleteOpen(false)
       setProfilePreview(null)
+      setProfileFile(null)
       setFormErrors({})
     }
     onOpenChange(nextOpen)
@@ -134,10 +129,12 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
         ...formData,
         startingBalance: Number(formData.startingBalance) || 0,
         pettyCash: Number(formData.pettyCash) || 0,
+        logoFile: profileFile || undefined,
       })
       onUpdate?.(updated)
       setIsConfirmEditOpen(false)
       setIsEditing(false)
+      setProfileFile(null)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to update company.')
     } finally {
