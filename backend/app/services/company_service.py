@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 from typing import List, Optional
 from uuid import uuid4
 
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -27,10 +28,7 @@ class CompanyService:
     _required_update_fields = {
         "name",
         "location",
-        "contact_person",
-        "email",
         "starting_balance",
-        "current_balance",
     }
 
     # initialize the CompanyService with a database session and a FinanceService
@@ -74,12 +72,9 @@ class CompanyService:
         company = Company(
             company_name=company_in.name,
             location=company_in.location,
-            contact_person=company_in.contact_person,
             contact_number=company_in.contact_number,
             phone=company_in.phone,
-            email=company_in.email,
             starting_balance=company_in.starting_balance,
-            current_balance=company_in.current_balance,
             petty_cash=company_in.petty_cash or Decimal("0.00"),
             logo_url=company_in.logo_url,
         )
@@ -116,12 +111,9 @@ class CompanyService:
         company = Company(
             company_name=company_in.name,
             location=company_in.location,
-            contact_person=company_in.contact_person,
             contact_number=company_in.contact_number,
             phone=company_in.phone,
-            email=company_in.email,
             starting_balance=company_in.starting_balance,
-            current_balance=company_in.current_balance,
             petty_cash=company_in.petty_cash or Decimal("0.00"),
         )
         storage_path = ""
@@ -227,13 +219,27 @@ class CompanyService:
         except SQLAlchemyError as error:
             raise self._database_error("update company", error)
 
-    #deletes a company from the database by its ID. It first retrieves the company using the get_company method. If the company is found, it deletes it from the database and commits the transaction, returning True. If the company is not found, it returns False.
     def delete_company(self, company_id: int) -> bool:
         company = self.get_company(company_id)
         if not company:
             return False
 
         try:
+            # Cascade deletion of all dependent child records
+            self.db.execute(text("DELETE FROM petty_cash_topups WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM petty_cash_wallets WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM bill_payments WHERE bill_id IN (SELECT bill_id FROM bills WHERE company_id = :id)"), {"id": company_id})
+            self.db.execute(text("DELETE FROM bills WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM expenses WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM sales WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM cash_inflow WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM budget WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM loans_repayments WHERE loan_id IN (SELECT loan_id FROM loan WHERE borrower = :id OR lender = :id)"), {"id": company_id})
+            self.db.execute(text("DELETE FROM loan WHERE borrower = :id OR lender = :id"), {"id": company_id})
+            self.db.execute(text("DELETE FROM staff_credits WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("UPDATE users SET company_id = NULL WHERE company_id = :id"), {"id": company_id})
+            self.db.execute(text("UPDATE audit_logs SET company_id = NULL WHERE company_id = :id"), {"id": company_id})
+
             self.db.delete(company)
             self.db.commit()
             return True
@@ -250,12 +256,9 @@ class CompanyService:
                 id=company.company_id,
                 name=company.company_name,
                 location=company.location,
-                contact_person=company.contact_person,
                 contact_number=company.contact_number,
                 phone=company.phone,
-                email=company.email,
                 starting_balance=float(company.starting_balance),
-                current_balance=float(company.current_balance),
                 petty_cash=float(getattr(company, "petty_cash", 0.0) or 0.0),
                 logo_url=company.logo_url,
                 total_revenue=float(summary.total_revenue),

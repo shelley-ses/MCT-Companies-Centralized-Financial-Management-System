@@ -104,12 +104,12 @@ export const SettingsPage: React.FC = () => {
   const populateCompanyData = (target: Company) => {
     setSelectedCompanyId(target.id)
     setCompanyName(target.name)
-    setContactPerson(target.contactPerson)
-    setTelephoneNumber(target.telephoneNumber || target.contactNumber)
-    setEmail(target.email)
+    setContactPerson(target.contactPerson || '')
+    setTelephoneNumber(target.telephoneNumber || target.contactNumber || '')
+    setEmail(target.email || '')
     setAddress(target.address)
     setStartingBalance(target.startingBalance)
-    setCurrentBalance(target.currentBalance)
+    setCurrentBalance(target.currentBalance || 0)
     setLogoUrl(target.logoUrl || logo2Url)
   }
 

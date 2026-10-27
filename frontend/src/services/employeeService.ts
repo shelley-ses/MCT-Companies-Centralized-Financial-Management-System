@@ -1,14 +1,14 @@
 export interface Company {
   id: string
   name: string
-  email: string
+  email?: string
   address: string
-  contactPerson: string
+  contactPerson?: string
   contactPersonEmail?: string
   contactNumber: string
   telephoneNumber: string
   startingBalance: number
-  currentBalance: number
+  currentBalance?: number
   pettyCash?: number
   status: 'Active' | 'Inactive'
   createdAt: string
@@ -179,204 +179,6 @@ export const INITIAL_ACTIVITY_LOGS: ActivityLogItem[] = [
   },
 ]
 
-export const INITIAL_COMPANIES: Company[] = [
-  {
-    id: 'comp_mct_kitchen',
-    name: 'MCT Kitchen',
-    email: 'kitchen@mctgroup.com',
-    address: 'Building 1, Complex A, Pasig City',
-    contactPerson: 'Chef Marco Antonio',
-    contactNumber: '+63 917 123 4567',
-    telephoneNumber: '(02) 8123-4567',
-    startingBalance: 1500000,
-    currentBalance: 1820000,
-    status: 'Active',
-    createdAt: '2026-01-10',
-  },
-  {
-    id: 'comp_mct_hotel',
-    name: 'MCT Hotel',
-    email: 'hotel@mctgroup.com',
-    address: 'Grand Avenue, Bonifacio Global City, Taguig',
-    contactPerson: 'Elena Rostova',
-    contactNumber: '+63 918 234 5678',
-    telephoneNumber: '(02) 8234-5678',
-    startingBalance: 5000000,
-    currentBalance: 6420500,
-    status: 'Active',
-    createdAt: '2026-01-15',
-  },
-  {
-    id: 'comp_golden_jupiter',
-    name: 'Golden Jupiter Ventures',
-    email: 'gjv@mctgroup.com',
-    address: 'Ayala Ave, Makati City',
-    contactPerson: 'Arthur Vance',
-    contactNumber: '+63 919 345 6789',
-    telephoneNumber: '(02) 8345-6789',
-    startingBalance: 2500000,
-    currentBalance: 3100200,
-    status: 'Active',
-    createdAt: '2026-02-01',
-  },
-  {
-    id: 'comp_jk_property',
-    name: 'JK Property Ventures',
-    email: 'jkp@mctgroup.com',
-    address: 'Ortigas Center, Pasig City',
-    contactPerson: 'Jessica Kho',
-    contactNumber: '+63 920 456 7890',
-    telephoneNumber: '(02) 8456-7890',
-    startingBalance: 8000000,
-    currentBalance: 9850000,
-    status: 'Active',
-    createdAt: '2026-02-10',
-  },
-  {
-    id: 'comp_medsys',
-    name: 'MedSys',
-    email: 'medsys@mctgroup.com',
-    address: 'Medical Plaza, Quezon City',
-    contactPerson: 'Dr. Raymond Reyes',
-    contactNumber: '+63 921 567 8901',
-    telephoneNumber: '(02) 8567-8901',
-    startingBalance: 3200000,
-    currentBalance: 4120000,
-    status: 'Active',
-    createdAt: '2026-02-15',
-  },
-  {
-    id: 'comp_speed_fire',
-    name: 'Speed Fire',
-    email: 'speedfire@mctgroup.com',
-    address: 'Industrial Valley, Marikina City',
-    contactPerson: 'Carlos Mendez',
-    contactNumber: '+63 922 678 9012',
-    telephoneNumber: '(02) 8678-9012',
-    startingBalance: 1200000,
-    currentBalance: 1450000,
-    status: 'Active',
-    createdAt: '2026-02-20',
-  },
-  {
-    id: 'comp_teresitos',
-    name: 'Teresitos',
-    email: 'teresitos@mctgroup.com',
-    address: 'Heritage Blvd, San Juan City',
-    contactPerson: 'Teresa Santos',
-    contactNumber: '+63 923 789 0123',
-    telephoneNumber: '(02) 8789-0123',
-    startingBalance: 950000,
-    currentBalance: 1105000,
-    status: 'Active',
-    createdAt: '2026-03-01',
-  },
-  {
-    id: 'comp_jk_printing',
-    name: 'JK Printing',
-    email: 'printing@mctgroup.com',
-    address: 'Press Road, Mandaluyong City',
-    contactPerson: 'Jonathan King',
-    contactNumber: '+63 924 890 1234',
-    telephoneNumber: '(02) 8890-1234',
-    startingBalance: 1800000,
-    currentBalance: 2050000,
-    status: 'Active',
-    createdAt: '2026-03-05',
-  },
-  {
-    id: 'comp_mct_head_office',
-    name: 'MCT Head Office',
-    email: 'headoffice@mctgroup.com',
-    address: 'MCT Tower, Global City',
-    contactPerson: 'Remi Lee',
-    contactNumber: '+63 925 901 2345',
-    telephoneNumber: '(02) 8901-2345',
-    startingBalance: 12000000,
-    currentBalance: 15400000,
-    status: 'Active',
-    createdAt: '2026-01-01',
-  },
-  {
-    id: 'comp_mct_north',
-    name: 'MCT North Branch',
-    email: 'north@mctgroup.com',
-    address: 'North Edsa, Quezon City',
-    contactPerson: 'Alex Chen',
-    contactNumber: '+63 926 012 3456',
-    telephoneNumber: '(02) 8012-3456',
-    startingBalance: 2000000,
-    currentBalance: 2450000,
-    status: 'Active',
-    createdAt: '2026-03-10',
-  },
-  {
-    id: 'comp_mct_south',
-    name: 'MCT South Branch',
-    email: 'south@mctgroup.com',
-    address: 'Alabang, Muntinlupa City',
-    contactPerson: 'Maya Patel',
-    contactNumber: '+63 927 123 7890',
-    telephoneNumber: '(02) 8123-7890',
-    startingBalance: 2200000,
-    currentBalance: 2600000,
-    status: 'Active',
-    createdAt: '2026-03-12',
-  },
-  {
-    id: 'comp_mct_east',
-    name: 'MCT East Branch',
-    email: 'east@mctgroup.com',
-    address: 'Blk 43, Lot 24 Regalado Highway, Fairview, Quezon City, Metro Manila',
-    contactPerson: 'Jordan Smith',
-    contactNumber: '+63 928 234 8901',
-    telephoneNumber: '(02) 8234-8901',
-    startingBalance: 1800000,
-    currentBalance: 2150000,
-    status: 'Active',
-    createdAt: '2026-03-15',
-  },
-  {
-    id: 'comp_mct_west',
-    name: 'MCT West Branch',
-    email: 'west@mctgroup.com',
-    address: 'Blk 43, Lot 24 Regalado Highway, Fairview, Quezon City, Metro Manila',
-    contactPerson: 'Sam Rivera',
-    contactNumber: '+63 929 345 6789',
-    telephoneNumber: '(02) 8345-6789',
-    startingBalance: 2100000,
-    currentBalance: 2550000,
-    status: 'Active',
-    createdAt: '2026-03-18',
-  },
-  {
-    id: 'comp_mct_express',
-    name: 'MCT Express Logistics',
-    email: 'express@mctgroup.com',
-    address: 'Blk 43, Lot 24 Regalado Highway, Fairview, Quezon City, Metro Manila',
-    contactPerson: 'Dominic Cruz',
-    contactNumber: '+63 930 456 7890',
-    telephoneNumber: '(02) 8456-7890',
-    startingBalance: 3400000,
-    currentBalance: 3950000,
-    status: 'Active',
-    createdAt: '2026-03-20',
-  },
-  {
-    id: 'comp_mct_central',
-    name: 'MCT Central Hub',
-    email: 'central@mctgroup.com',
-    address: 'Blk 43, Lot 24 Regalado Highway, Fairview, Quezon City, Metro Manila',
-    contactPerson: 'Clara Del Rosario',
-    contactNumber: '+63 931 567 8901',
-    telephoneNumber: '(02) 8567-8901',
-    startingBalance: 4500000,
-    currentBalance: 5200000,
-    status: 'Active',
-    createdAt: '2026-03-22',
-  },
-]
-
 export const INITIAL_USERS: EmployeeUser[] = [
   {
     id: 'usr_1',
@@ -482,7 +284,6 @@ export const PERMISSION_COMPANIES = [
   { id: 'comp_jk_printing', name: 'JK Printing' },
 ]
 
-let inMemoryCompanies: Company[] = [...INITIAL_COMPANIES]
 let inMemoryUsers: EmployeeUser[] = [...INITIAL_USERS]
 const inMemoryPermissions: Record<string, Record<string, UserPermissionActions>> = {}
 
@@ -556,12 +357,9 @@ function mapCompany(value: unknown): Company {
     id: number
     name: string
     location: string
-    contact_person: string
     contact_number: string | null
     phone: string | null
-    email: string
     starting_balance: number
-    current_balance: number
     petty_cash?: number
     created_at: string | null
     logo_url?: string | null
@@ -569,13 +367,10 @@ function mapCompany(value: unknown): Company {
   return {
     id: String(company.id),
     name: company.name,
-    email: company.email,
     address: company.location,
-    contactPerson: company.contact_person,
     contactNumber: company.contact_number || '',
     telephoneNumber: company.phone || '',
     startingBalance: Number(company.starting_balance),
-    currentBalance: Number(company.current_balance),
     pettyCash: Number(company.petty_cash || 0),
     status: 'Active',
     createdAt: company.created_at || '',
@@ -610,23 +405,21 @@ export const employeeService = {
         headers: getAuthHeaders(),
       })
       if (response.ok) {
-        const companies = await mapApiResponse(response, (value) =>
+        return await mapApiResponse(response, (value) =>
           (value as unknown[]).map(mapCompany)
         )
-        if (companies && companies.length > 0) {
-          inMemoryCompanies = companies
-          return companies
-        }
       }
-    } catch {
-      // Fallback
+      console.warn('GET /api/v1/companies failed with status', response.status)
+    } catch (error) {
+      console.warn('Failed to fetch companies from the backend:', error)
     }
-    return [...inMemoryCompanies]
+    return []
   },
 
   async createUser(payload: CreateUserPayload): Promise<EmployeeUser> {
-    const company = inMemoryCompanies.find((item) => item.name === payload.assignedCompany)
-    const companyId = company?.id || 'comp_mct_head_office'
+    const companies = await employeeService.getCompanies()
+    const company = companies.find((item) => item.name === payload.assignedCompany)
+    const companyId = company?.id || ''
     const companyName = company?.name || payload.assignedCompany
 
     let created: EmployeeUser | null = null
@@ -679,8 +472,9 @@ export const employeeService = {
 
   async updateUser(id: string, payload: UpdateUserPayload): Promise<EmployeeUser> {
     const existing = inMemoryUsers.find((u) => u.id === id)
+    const companies = payload.assignedCompany ? await employeeService.getCompanies() : []
     const company = payload.assignedCompany
-      ? inMemoryCompanies.find((item) => item.name === payload.assignedCompany)
+      ? companies.find((item) => item.name === payload.assignedCompany)
       : undefined
 
     const updatedUser: EmployeeUser = {
@@ -743,83 +537,44 @@ export const employeeService = {
   },
 
   async createCompany(payload: CreateCompanyPayload): Promise<Company> {
-    let comp: Company | null = null
-    try {
-      let endpoint = '/api/v1/companies'
-      let headers: HeadersInit = {
-        ...getAuthHeaders(),
-        'Content-Type': 'application/json',
-      }
-      let body: BodyInit = JSON.stringify({
-        name: payload.name,
-        location: payload.address,
-        contact_person: payload.contactPerson || payload.name,
-        contact_number: payload.contactNumber || null,
-        phone: payload.telephoneNumber || null,
-        email: payload.email || '',
-        starting_balance: payload.startingBalance,
-        current_balance: payload.currentBalance ?? payload.startingBalance,
-        petty_cash: payload.pettyCash || 0,
-      })
+    let endpoint = '/api/v1/companies'
+    let headers: HeadersInit = {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    }
+    let body: BodyInit = JSON.stringify({
+      name: payload.name,
+      location: payload.address,
+      contact_number: payload.contactNumber || null,
+      phone: payload.telephoneNumber || null,
+      starting_balance: payload.startingBalance,
+      petty_cash: payload.pettyCash || 0,
+    })
 
-      if (payload.logoFile) {
-        const formData = new FormData()
-        formData.append('name', payload.name)
-        formData.append('location', payload.address)
-        formData.append('contact_person', payload.contactPerson || payload.name)
-        formData.append('contact_number', payload.contactNumber || '')
-        formData.append('phone', payload.telephoneNumber || '')
-        formData.append('email', payload.email || '')
-        formData.append('starting_balance', String(payload.startingBalance))
-        formData.append(
-          'current_balance',
-          String(payload.currentBalance ?? payload.startingBalance)
-        )
-        formData.append('petty_cash', String(payload.pettyCash || 0))
-        formData.append('picture', payload.logoFile)
-        endpoint = '/api/v1/companies/with-picture'
-        headers = getAuthHeaders()
-        body = formData
-      }
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body,
-      })
-      if (payload.logoFile) {
-        comp = await mapApiResponse(response, mapCompany)
-      } else if (response.ok) {
-        comp = await mapApiResponse(response, mapCompany)
-      }
-    } catch (error) {
-      if (payload.logoFile) throw error
-      // Handled below
+    if (payload.logoFile) {
+      const formData = new FormData()
+      formData.append('name', payload.name)
+      formData.append('location', payload.address)
+      formData.append('contact_number', payload.contactNumber || '')
+      formData.append('phone', payload.telephoneNumber || '')
+      formData.append('starting_balance', String(payload.startingBalance))
+      formData.append('petty_cash', String(payload.pettyCash || 0))
+      formData.append('picture', payload.logoFile)
+      endpoint = '/api/v1/companies/with-picture'
+      headers = getAuthHeaders()
+      body = formData
     }
 
-    if (!comp) {
-      comp = {
-        id: `comp_${Date.now()}`,
-        name: payload.name,
-        address: payload.address,
-        email: payload.email || '',
-        contactPerson: payload.contactPerson || payload.name,
-        contactNumber: payload.contactNumber,
-        telephoneNumber: payload.telephoneNumber || '',
-        startingBalance: payload.startingBalance,
-        currentBalance: payload.currentBalance ?? payload.startingBalance,
-        pettyCash: payload.pettyCash || 0,
-        status: 'Active',
-        createdAt: new Date().toISOString().slice(0, 10),
-        logoUrl: payload.logoUrl,
-      }
-    }
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body,
+    })
 
+    const comp = await mapApiResponse(response, mapCompany)
     if (payload.logoUrl) {
       comp.logoUrl = payload.logoUrl
     }
-
-    inMemoryCompanies = [comp, ...inMemoryCompanies]
     return comp
   },
 
@@ -827,62 +582,34 @@ export const employeeService = {
     id: string,
     payload: Partial<CreateCompanyPayload>
   ): Promise<Company> {
-    const existing = inMemoryCompanies.find((c) => c.id === id)
-    const updated: Company = {
-      ...(existing || {
-        id,
-        name: payload.name || 'Company',
-        email: payload.email || '',
-        address: payload.address || '',
-        contactPerson: payload.contactPerson || '',
-        contactNumber: payload.contactNumber || '',
-        telephoneNumber: payload.telephoneNumber || '',
-        startingBalance: payload.startingBalance || 0,
-        currentBalance: payload.currentBalance || 0,
-        status: 'Active',
-        createdAt: '',
-      }),
-      ...(payload.name ? { name: payload.name } : {}),
-      ...(payload.address ? { address: payload.address } : {}),
-      ...(payload.contactNumber ? { contactNumber: payload.contactNumber } : {}),
-      ...(payload.telephoneNumber !== undefined ? { telephoneNumber: payload.telephoneNumber } : {}),
-      ...(payload.startingBalance !== undefined ? { startingBalance: payload.startingBalance } : {}),
-      ...(payload.pettyCash !== undefined ? { pettyCash: payload.pettyCash } : {}),
-      ...(payload.logoUrl !== undefined ? { logoUrl: payload.logoUrl } : {}),
+    const body: Record<string, unknown> = {}
+    if (payload.name !== undefined) body.name = payload.name
+    if (payload.address !== undefined) body.location = payload.address
+    if (payload.contactNumber !== undefined) body.contact_number = payload.contactNumber || null
+    if (payload.telephoneNumber !== undefined) body.phone = payload.telephoneNumber || null
+    if (payload.startingBalance !== undefined) body.starting_balance = payload.startingBalance
+    if (payload.pettyCash !== undefined) body.petty_cash = payload.pettyCash
+
+    const response = await fetch(`/api/v1/companies/${id}`, {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    const comp = await mapApiResponse(response, mapCompany)
+    if (payload.logoUrl !== undefined) {
+      comp.logoUrl = payload.logoUrl
     }
-
-    inMemoryCompanies = inMemoryCompanies.map((c) => (c.id === id ? updated : c))
-
-    try {
-      const body: Record<string, unknown> = {}
-      if (payload.name !== undefined) body.name = payload.name
-      if (payload.address !== undefined) body.location = payload.address
-      if (payload.contactNumber !== undefined) body.contact_number = payload.contactNumber || null
-      if (payload.telephoneNumber !== undefined) body.phone = payload.telephoneNumber || null
-      if (payload.startingBalance !== undefined) body.starting_balance = payload.startingBalance
-      if (payload.pettyCash !== undefined) body.petty_cash = payload.pettyCash
-
-      await fetch(`/api/v1/companies/${id}`, {
-        method: 'PATCH',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-    } catch {
-      // Handled via inMemoryCompanies
-    }
-
-    return updated
+    return comp
   },
 
   async deleteCompany(id: string): Promise<void> {
-    inMemoryCompanies = inMemoryCompanies.filter((c) => c.id !== id)
-    try {
-      await fetch(`/api/v1/companies/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      })
-    } catch {
-      // Handled
+    const response = await fetch(`/api/v1/companies/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
     }
   },
 

@@ -67,12 +67,9 @@ async def create_company_with_picture(
     request: Request,
     name: str = Form(...),
     location: str = Form(...),
-    contact_person: str = Form(...),
     contact_number: str | None = Form(None),
     phone: str | None = Form(None),
-    email: str = Form(""),
     starting_balance: Decimal = Form(...),
-    current_balance: Decimal = Form(...),
     petty_cash: Decimal = Form(Decimal("0.00")),
     picture: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -93,12 +90,9 @@ async def create_company_with_picture(
     company = CompanyCreate(
         name=name,
         location=location,
-        contact_person=contact_person,
         contact_number=contact_number,
         phone=phone,
-        email=email,
         starting_balance=starting_balance,
-        current_balance=current_balance,
         petty_cash=petty_cash,
     )
     try:
@@ -173,6 +167,7 @@ def delete_company(company_id: int, request: Request, db: Session = Depends(get_
     log_company_management(
         db, AuditAction.COMPANY_DELETED,
         user_id=None,
-        company_id=company_id,
+        company_id=None,
         ip_address=request.client.host if request.client else "unknown",
+        extra={"deleted_company_id": company_id},
     )

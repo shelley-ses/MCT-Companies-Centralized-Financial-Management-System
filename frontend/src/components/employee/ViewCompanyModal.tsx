@@ -51,14 +51,10 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
   // Edit form state
   const [formData, setFormData] = React.useState<CreateCompanyPayload>({
     name: '',
-    email: '',
     address: '',
-    contactPerson: '',
-    contactPersonEmail: '',
     contactNumber: '',
     telephoneNumber: '',
     startingBalance: 0,
-    currentBalance: 0,
     pettyCash: 0,
     logoUrl: undefined,
   })
@@ -67,14 +63,10 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
     if (company) {
       setFormData({
         name: company.name,
-        email: company.email,
         address: company.address,
-        contactPerson: company.contactPerson,
-        contactPersonEmail: company.contactPersonEmail || '',
         contactNumber: company.contactNumber,
         telephoneNumber: company.telephoneNumber || '',
         startingBalance: company.startingBalance,
-        currentBalance: company.currentBalance,
         pettyCash: company.pettyCash || 0,
         logoUrl: company.logoUrl,
       })

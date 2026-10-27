@@ -127,12 +127,9 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
       const created = await employeeService.createCompany({
         name: pendingValues.name,
         address: pendingValues.address,
-        contactPerson: pendingValues.name,
-        email: '',
         contactNumber: pendingValues.contactNumber,
         telephoneNumber: pendingValues.telephoneNumber || '',
         startingBalance: Number(pendingValues.startingBalance) || 0,
-        currentBalance: Number(pendingValues.startingBalance) || 0,
         pettyCash: Number(pendingValues.pettyCash) || 0,
         logoUrl: pendingValues.logoUrl,
         logoFile: profileFile || undefined,
