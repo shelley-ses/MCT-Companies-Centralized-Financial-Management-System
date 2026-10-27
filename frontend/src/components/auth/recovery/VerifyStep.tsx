@@ -147,7 +147,7 @@ export const VerifyStep: React.FC<VerifyStepProps> = ({ email, onVerified }) => 
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col items-center justify-center gap-3 w-full max-w-sm mx-auto">
           <Button
             type="submit"
             disabled={isVerifyDisabled}

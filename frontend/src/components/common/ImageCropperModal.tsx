@@ -26,6 +26,7 @@ interface ImageCropperModalProps {
   onCropComplete: (croppedDataUrl: string, croppedFile: File) => void
   initialShape?: 'circle' | 'square'
   outputSize?: number
+  title?: string
 }
 
 const VIEWPORT_SIZE = 260
@@ -38,6 +39,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   onCropComplete,
   initialShape = 'circle',
   outputSize = 512,
+  title = 'Crop Image',
 }) => {
   const [zoom, setZoom] = React.useState<number>(1)
   const [pan, setPan] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -184,7 +186,7 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
         <DialogHeader className="text-left space-y-1">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg sm:text-xl font-bold text-focus">
-              Crop Company Logo
+              {title}
             </DialogTitle>
             <div className="flex items-center gap-1 bg-surface p-1 rounded-xl border border-stroke/30">
               <button

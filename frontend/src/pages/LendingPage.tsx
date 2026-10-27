@@ -77,6 +77,9 @@ export interface LendingFacility {
   lenderCompany: string
   notes?: string
   dailyPayments: DailyPaymentRecord[]
+  auditStatus?: 'Verified' | 'Flagged'
+  auditDate?: string
+  auditedBy?: string
 }
 
 const STORAGE_KEY = 'mct_filcap_lending_facilities_v2'
@@ -973,7 +976,7 @@ export const LendingPage: React.FC = () => {
                 onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isPeriodDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
@@ -1017,7 +1020,7 @@ export const LendingPage: React.FC = () => {
                 onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-medium text-focus/90">
@@ -1261,6 +1264,25 @@ export const LendingPage: React.FC = () => {
                         >
                           {facility.status}
                         </span>
+                        {facility.auditStatus && (
+                          <div className="mt-1 flex items-center justify-center gap-1">
+                            <span
+                              className={cn(
+                                'inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold border',
+                                facility.auditStatus === 'Verified'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                              )}
+                            >
+                              {facility.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
+                            </span>
+                          </div>
+                        )}
+                        {facility.auditDate && (
+                          <span className="block text-[9.5px] text-muted-fg font-mono mt-0.5">
+                            {facility.auditDate}
+                          </span>
+                        )}
                       </TableCell>
 
                       {/* 10. Actions: 3 dots dropdown (Edit, Delete, Update) */}
@@ -1357,23 +1379,93 @@ export const LendingPage: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {isAudit ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  const fac = activeMenuFacility
-                  setOpenMenuFacilityId(null)
-                  setMenuPosition(null)
-                  setActiveMenuFacility(null)
-                  if (fac) {
-                    handleRowClick(fac)
-                  }
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer"
-              >
-                <Eye className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>View Details</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const fac = activeMenuFacility
+                    if (fac) {
+                      const timestamp = new Date().toLocaleString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
+                      })
+                      const updated = facilities.map((item) =>
+                        item.id === fac.id
+                          ? { ...item, auditStatus: 'Verified' as const, auditDate: timestamp, auditedBy: user?.fullName || 'Audit' }
+                          : item
+                      )
+                      setFacilities(updated)
+                      if (typeof window !== 'undefined') {
+                        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)) } catch (err) {}
+                      }
+                      setOpenMenuFacilityId(null)
+                      setMenuPosition(null)
+                      setActiveMenuFacility(null)
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Mark as Audit</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const fac = activeMenuFacility
+                    if (fac) {
+                      const timestamp = new Date().toLocaleString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true,
+                      })
+                      const updated = facilities.map((item) =>
+                        item.id === fac.id
+                          ? { ...item, auditStatus: 'Flagged' as const, auditDate: timestamp, auditedBy: user?.fullName || 'Audit' }
+                          : item
+                      )
+                      setFacilities(updated)
+                      if (typeof window !== 'undefined') {
+                        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)) } catch (err) {}
+                      }
+                      setOpenMenuFacilityId(null)
+                      setMenuPosition(null)
+                      setActiveMenuFacility(null)
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-left cursor-pointer"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Mark as Discrepancy</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const fac = activeMenuFacility
+                    setOpenMenuFacilityId(null)
+                    setMenuPosition(null)
+                    setActiveMenuFacility(null)
+                    if (fac) {
+                      handleRowClick(fac)
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer border-t border-slate-100 mt-1 pt-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                  <span>View Details</span>
+                </button>
+              </>
             ) : (
               <>
                 {/* Update: Everyday payment */}
@@ -2397,16 +2489,18 @@ export const LendingPage: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsDetailModalOpen(false)}
-                      className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer"
-                    >
-                      Close
-                    </Button>
-                  </div>
+                  {!isAudit && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setIsDetailModalOpen(false)}
+                        className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

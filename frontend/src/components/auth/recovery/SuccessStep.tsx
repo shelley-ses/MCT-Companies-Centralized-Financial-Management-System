@@ -29,11 +29,11 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({ onLoginClick }) => {
         </DialogDescription>
       </DialogHeader>
 
-      <div className="pt-4">
+      <div className="pt-4 flex justify-center w-full">
         <Button
           type="button"
           onClick={onLoginClick}
-          className="w-full h-12 text-base font-semibold"
+          className="w-full max-w-sm h-12 text-base font-semibold"
         >
           Log In
         </Button>

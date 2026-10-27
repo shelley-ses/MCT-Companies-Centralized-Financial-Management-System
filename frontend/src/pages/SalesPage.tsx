@@ -18,7 +18,11 @@ import {
   Trash2,
   Loader2,
   CheckCircle2,
+  ArrowDownLeft,
+  MoreVertical,
+  Eye,
 } from 'lucide-react'
+import { createPortal } from 'react-dom'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -117,6 +121,7 @@ export const SalesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Unpaid'>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
+  const [tableTab, setTableTab] = React.useState<'Deposit' | 'Sales Record'>('Sales Record')
 
   // Handle switching period (Daily, Quarterly, Monthly, Annually)
   const handlePeriodChange = (period: PeriodType) => {
@@ -224,22 +229,33 @@ export const SalesPage: React.FC = () => {
     }
   }
 
-  const handleMarkSaleAudited = (sale: SalesItem, e: React.MouseEvent) => {
-    e.stopPropagation()
-    const today = new Date().toLocaleDateString('en-US', {
+  // 3-Dots Action Menu for Audit
+  const [openMenuSaleId, setOpenMenuSaleId] = React.useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = React.useState<{ top: number; right: number; openUpward: boolean } | null>(null)
+  const [activeMenuSale, setActiveMenuSale] = React.useState<SalesItem | null>(null)
+
+  const handleMarkSaleAudit = (sale: SalesItem, status: 'Verified' | 'Flagged', e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    const timestamp = new Date().toLocaleString('en-US', {
       month: '2-digit',
       day: '2-digit',
       year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     })
-    const auditorName = user?.fullName || 'Admin'
+    const auditorName = user?.fullName || 'Audit'
     const updated: SalesItem = {
       ...sale,
-      auditStatus: 'Verified',
+      auditStatus: status,
       auditedBy: auditorName,
-      auditDate: today,
+      auditDate: timestamp,
     }
     setSales((prev) => prev.map((s) => (s.id === sale.id ? updated : s)))
-    salesService.updateSaleAuditStatus(sale.id, 'Verified', auditorName)
+    salesService.updateSaleAuditStatus(sale.id, status, auditorName)
+    setOpenMenuSaleId(null)
+    setMenuPosition(null)
+    setActiveMenuSale(null)
   }
 
   // Pagination state
@@ -296,6 +312,12 @@ export const SalesPage: React.FC = () => {
 
     return sales
       .filter((item) => {
+        // 0. Tab filter
+        if (tableTab === 'Deposit') {
+          const hasDeposit = (item.deposit || 0) > 0 || item.status === 'Paid'
+          if (!hasDeposit) return false
+        }
+
         // 1. Company filter
         if (
           targetCompany !== 'All Companies' &&
@@ -353,12 +375,14 @@ export const SalesPage: React.FC = () => {
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [sales, isAuditor, selectedCompany, dateRange, statusFilter, searchQuery])
+  }, [sales, isAuditor, selectedCompany, dateRange, statusFilter, searchQuery, tableTab, isCompanyScoped, assignedCompany])
 
   // Reset to page 1 on filter change
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod])
+  }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod, tableTab])
+
+
 
   // KPI Calculation: Total Sales & Total Cash
   const kpis = React.useMemo(() => {
@@ -554,7 +578,7 @@ export const SalesPage: React.FC = () => {
                 onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isPeriodDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
@@ -598,7 +622,7 @@ export const SalesPage: React.FC = () => {
                 onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-medium text-focus/90">
@@ -667,7 +691,7 @@ export const SalesPage: React.FC = () => {
                   onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
                   className={cn(
                     'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                    isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                    isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                   aria-label="Filter sales by company"
                 >
@@ -774,6 +798,7 @@ export const SalesPage: React.FC = () => {
         </div>
       </div>
 
+
       {/* 3. Total Sales & Total Cash KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Total Sales Card */}
@@ -864,7 +889,7 @@ export const SalesPage: React.FC = () => {
       >
         {/* Table Search Bar Toolbar */}
         <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative w-full">
+          <div className="relative flex-1">
             <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -884,7 +909,38 @@ export const SalesPage: React.FC = () => {
               </button>
             )}
           </div>
+
+          {/* Tab Switcher: Deposit / Sales Record */}
+          <div className="flex items-center bg-white border border-stroke/50 rounded-xl p-1 gap-0.5 shrink-0 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setTableTab('Deposit')}
+              className={cn(
+                'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
+                tableTab === 'Deposit'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-focus/60 hover:bg-slate-100 hover:text-focus'
+              )}
+            >
+              <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
+              Deposit
+            </button>
+            <button
+              type="button"
+              onClick={() => setTableTab('Sales Record')}
+              className={cn(
+                'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
+                tableTab === 'Sales Record'
+                  ? 'bg-[#960C01] text-white shadow-sm'
+                  : 'text-focus/60 hover:bg-slate-100 hover:text-focus'
+              )}
+            >
+              <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+              Sales Record
+            </button>
+          </div>
         </div>
+
 
         {/* Table matching the Sales table from mockup with equal spacing across all columns */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
@@ -992,11 +1048,32 @@ export const SalesPage: React.FC = () => {
                   >
                     {/* 1. Date */}
                     <TableCell className="w-[10%] px-3.5 py-3.5 text-xs font-medium text-focus truncate text-left">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span>{sale.date}</span>
-                        {highlightedSaleId === sale.id && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white shadow-xs animate-bounce shrink-0">
-                            NEW
+                      <div className="flex flex-col truncate">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span>{sale.date}</span>
+                          {highlightedSaleId === sale.id && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white shadow-xs animate-bounce shrink-0">
+                              NEW
+                            </span>
+                          )}
+                        </div>
+                        {sale.auditStatus && (
+                          <div className="mt-1 flex items-center gap-1">
+                            <span
+                              className={cn(
+                                'inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold border',
+                                sale.auditStatus === 'Verified'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                              )}
+                            >
+                              {sale.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
+                            </span>
+                          </div>
+                        )}
+                        {sale.auditDate && (
+                          <span className="text-[9.5px] text-muted-fg font-mono mt-0.5">
+                            {sale.auditDate}
                           </span>
                         )}
                       </div>
@@ -1062,32 +1139,34 @@ export const SalesPage: React.FC = () => {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-center">
-                        {isAdmin ? (
-                          sale.auditStatus === 'Verified' ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleOpenRow(sale)}
-                              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 flex items-center gap-1.5 cursor-pointer border border-emerald-300/80 shadow-2xs transition-all"
-                              title="Audited (Click to view details or unmark)"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Audited</span>
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => handleMarkSaleAudited(sale, e)}
-                              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-focus/80 hover:text-primary hover:bg-red-50/50 flex items-center gap-1.5 cursor-pointer border border-slate-200/80 hover:border-primary/30 shadow-2xs transition-all"
-                              title="Click to automatically mark as audited"
-                            >
-                              <FileText className="w-3.5 h-3.5 text-primary" />
-                              <span>Audit</span>
-                            </Button>
-                          )
+                        {isAudit ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (openMenuSaleId === sale.id) {
+                                setOpenMenuSaleId(null)
+                                setMenuPosition(null)
+                                setActiveMenuSale(null)
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const openUpward = rect.bottom + 140 > window.innerHeight
+                                setMenuPosition({
+                                  top: openUpward ? rect.top - 6 : rect.bottom + 6,
+                                  right: Math.max(12, window.innerWidth - rect.right),
+                                  openUpward,
+                                })
+                                setActiveMenuSale(sale)
+                                setOpenMenuSaleId(sale.id)
+                              }
+                            }}
+                            className="h-8 w-8 p-0 rounded-lg text-muted-fg hover:text-focus hover:bg-slate-100 cursor-pointer flex items-center justify-center transition-colors"
+                            title="Audit Actions"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
                         ) : (
                           <Button
                             type="button"
@@ -1223,6 +1302,55 @@ export const SalesPage: React.FC = () => {
         onSaleUpdated={handleSaleUpdated}
         editable={!isAdmin}
       />
+      {/* 3-Dots Action Portal Menu for Audit */}
+      {openMenuSaleId && activeMenuSale && menuPosition && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed w-44 bg-white rounded-xl border border-slate-200 shadow-2xl p-1.5 z-[99999] animate-in fade-in-50 zoom-in-95 duration-150"
+            style={{
+              top: `${menuPosition.top}px`,
+              right: `${menuPosition.right}px`,
+              transform: menuPosition.openUpward ? 'translateY(-100%)' : 'none',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={(e) => handleMarkSaleAudit(activeMenuSale, 'Verified', e)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Mark as Audit</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => handleMarkSaleAudit(activeMenuSale, 'Flagged', e)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-left cursor-pointer"
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+              <span>Mark as Discrepancy</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                const s = activeMenuSale
+                setOpenMenuSaleId(null)
+                setMenuPosition(null)
+                setActiveMenuSale(null)
+                if (s) handleOpenRow(s)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer border-t border-slate-100 mt-1 pt-1.5"
+            >
+              <Eye className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+              <span>View Details</span>
+            </button>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

@@ -273,7 +273,7 @@ export const SettingsPage: React.FC = () => {
                 onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-10 sm:h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
                 aria-label="Select company to configure"
               >

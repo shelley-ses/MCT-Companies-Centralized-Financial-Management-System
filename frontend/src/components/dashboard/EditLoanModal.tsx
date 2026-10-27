@@ -233,7 +233,7 @@ export const EditLoanModal: React.FC<EditLoanModalProps> = ({
                 onClick={() => setIsLenderDropdownOpen((p) => !p)}
                 className={cn(
                   'w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium flex items-center justify-between shadow-xs transition-colors cursor-pointer',
-                  isLenderDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isLenderDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <div className="flex items-center gap-2 truncate">

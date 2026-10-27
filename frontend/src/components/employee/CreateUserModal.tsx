@@ -5,8 +5,8 @@ import {
   Check,
   UserPlus,
   Loader2,
-  Camera,
   Upload,
+  Crop,
   Building2,
   User as UserIcon,
 } from 'lucide-react'
@@ -20,7 +20,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Form,
   FormControl,
@@ -38,6 +37,7 @@ import {
   type EmployeeUser,
 } from '@/services/employeeService'
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog'
+import { ImageCropperModal } from '@/components/common/ImageCropperModal'
 import { cn } from '@/lib/utils'
 
 interface CreateUserModalProps {
@@ -67,6 +67,8 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
   // Profile image upload state
   const [profilePreview, setProfilePreview] = React.useState<string | null>(null)
   const [avatarFile, setAvatarFile] = React.useState<File | null>(null)
+  const [rawImageForCrop, setRawImageForCrop] = React.useState<string | null>(null)
+  const [isCropperOpen, setIsCropperOpen] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   // Multi-company selection state
@@ -123,7 +125,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
     form.setValue('assignedCompany', '')
   }
 
-  // Handle image upload with FileReader preview
+  // Handle image upload with FileReader preview & open cropper
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -131,12 +133,37 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
       const reader = new FileReader()
       reader.onloadend = () => {
         const result = reader.result as string
-        setProfilePreview(result)
-        form.setValue('avatarUrl', result)
+        setRawImageForCrop(result)
+        setIsCropperOpen(true)
       }
       reader.readAsDataURL(file)
     }
     e.target.value = ''
+
+  }
+
+  const handleCropComplete = (croppedDataUrl: string) => {
+    setProfilePreview(croppedDataUrl)
+    form.setValue('avatarUrl', croppedDataUrl)
+    try {
+      const arr = croppedDataUrl.split(',')
+      const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png'
+      const bstr = atob(arr[1])
+      let n = bstr.length
+      const u8arr = new Uint8Array(n)
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n)
+      }
+      setAvatarFile(new File([u8arr], 'user-avatar.png', { type: mime }))
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleOpenCropper = () => {
+    if (rawImageForCrop || profilePreview) {
+      setIsCropperOpen(true)
+    }
   }
 
   const handleRoleChange = (role: string) => {
@@ -155,6 +182,8 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
       })
       setProfilePreview(null)
       setAvatarFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
       setSelectedCompanies([])
       setCompanyError(null)
       setPendingValues(null)
@@ -214,9 +243,15 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
               {/* 1. Display Profile Image Upload */}
               <div className="flex flex-col items-center justify-center py-1">
                 <div
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    if (profilePreview) {
+                      handleOpenCropper()
+                    } else {
+                      fileInputRef.current?.click()
+                    }
+                  }}
                   className="relative group h-24 w-24 sm:h-28 sm:w-28 rounded-full border-2 border-dashed border-primary/50 hover:border-primary flex items-center justify-center p-1 bg-red-50/40 shadow-xs cursor-pointer transition-all overflow-hidden"
-                  title="Click to upload display profile photo"
+                  title={profilePreview ? 'Click to crop / adjust photo' : 'Click to upload display profile photo'}
                 >
                   {profilePreview ? (
                     <img
@@ -234,8 +269,8 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
                     </div>
                   )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white rounded-full">
-                    <Camera className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold mt-1">Upload</span>
+                    <Crop className="h-5 w-5" />
+                    <span className="text-[10px] font-semibold mt-1">Crop</span>
                   </div>
                 </div>
 
@@ -263,8 +298,21 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
                       type="button"
                       variant="ghost"
                       size="sm"
+                      onClick={handleOpenCropper}
+                      className="h-7 px-2.5 text-xs text-primary hover:text-primary hover:bg-primary/10 font-semibold cursor-pointer flex items-center gap-1"
+                    >
+                      <Crop className="h-3 w-3 mr-1" />
+                      Crop / Adjust
+                    </Button>
+                  )}
+                  {profilePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => {
                         setProfilePreview(null)
+                        setRawImageForCrop(null)
                         form.setValue('avatarUrl', undefined)
                       }}
                       className="h-7 px-2 text-xs text-muted-fg hover:text-focus cursor-pointer"
@@ -521,6 +569,15 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
         variant="primary"
         isLoading={isSubmitting}
         onConfirm={handleConfirmCreate}
+      />
+
+      {/* Image Cropper Modal */}
+      <ImageCropperModal
+        open={isCropperOpen}
+        onOpenChange={setIsCropperOpen}
+        imageSrc={rawImageForCrop || profilePreview}
+        onCropComplete={handleCropComplete}
+        title="Crop Profile Photo"
       />
     </>
   )
