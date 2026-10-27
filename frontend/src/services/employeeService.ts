@@ -15,40 +15,20 @@ export interface Company {
   logoUrl?: string
 }
 
-export interface UserPermissionActions {
-  addSales: boolean
-  addExpense: boolean
-  requestLoans: boolean
-  exportData: boolean
-  viewRecords: boolean
-  deleteRecords: boolean
-  editRecords: boolean
-  // Backward compatibility aliases
-  view?: boolean
-  create?: boolean
-  edit?: boolean
-  delete?: boolean
-  export?: boolean
-}
-
-export interface CompanyPermissionRow {
-  companyId: string
-  companyName: string
-  permissions: UserPermissionActions
-}
-
 export interface EmployeeUser {
   id: string
   fullName: string
   email: string
   companyId: string
+  companyIds?: string[]
   companyName: string
+  companyNames?: string[]
   role?: string
   status: 'Active' | 'Inactive'
   lastLogin: string
   isAdmin?: boolean
+  isProtected?: boolean
   avatarUrl?: string
-  permissions?: Record<string, UserPermissionActions>
 }
 
 export interface CreateCompanyPayload {
@@ -69,22 +49,26 @@ export interface CreateCompanyPayload {
 export interface CreateUserPayload {
   fullName: string
   email: string
-  assignedCompany: string
+  assignedCompany?: string
+  assignedCompanies?: string[]
+  companyIds?: number[]
   role: string
   password?: string
   avatarUrl?: string
-  permissions?: Record<string, UserPermissionActions>
+  avatarFile?: File
 }
 
 export interface UpdateUserPayload {
   fullName?: string
   email?: string
   assignedCompany?: string
+  assignedCompanies?: string[]
+  companyIds?: number[]
   role?: string
   password?: string
   avatarUrl?: string
+  avatarFile?: File
   status?: 'Active' | 'Inactive'
-  permissions?: Record<string, UserPermissionActions>
 }
 
 export interface ActivityLogItem {
@@ -179,113 +163,6 @@ export const INITIAL_ACTIVITY_LOGS: ActivityLogItem[] = [
   },
 ]
 
-export const INITIAL_USERS: EmployeeUser[] = [
-  {
-    id: 'usr_1',
-    fullName: 'Remi Lee',
-    email: 'remi.lee@example.com',
-    companyId: 'comp_mct_head_office',
-    companyName: 'MCT Head Office',
-    role: 'Admin',
-    status: 'Active',
-    lastLogin: 'Oct 6, 2026 · 9:15 AM',
-  },
-  {
-    id: 'usr_2',
-    fullName: 'Alex Chen',
-    email: 'alex.chen@example.com',
-    companyId: 'comp_mct_north',
-    companyName: 'MCT North Branch',
-    role: 'Finance',
-    status: 'Active',
-    lastLogin: 'Oct 5, 2026 · 4:30 PM',
-  },
-  {
-    id: 'usr_3',
-    fullName: 'Maya Patel',
-    email: 'maya.patel@example.com',
-    companyId: 'comp_mct_south',
-    companyName: 'MCT South Branch',
-    role: 'Supervisor',
-    status: 'Active',
-    lastLogin: 'Oct 6, 2026 · 8:45 AM',
-  },
-  {
-    id: 'usr_4',
-    fullName: 'Jordan Smith',
-    email: 'jordan.smith@example.com',
-    companyId: 'comp_mct_east',
-    companyName: 'MCT East Branch',
-    role: 'Company Employee',
-    status: 'Active',
-    lastLogin: 'Oct 5, 2026 · 8:45 AM',
-  },
-  {
-    id: 'usr_5',
-    fullName: 'Sam Rivera',
-    email: 'sam.rivera@example.com',
-    companyId: 'comp_mct_west',
-    companyName: 'MCT West Branch',
-    role: 'Cashier',
-    status: 'Active',
-    lastLogin: 'Sep 22, 2026 · 2:10 PM',
-  },
-  {
-    id: 'usr_6',
-    fullName: 'Elena Rostova',
-    email: 'elena.rostova@example.com',
-    companyId: 'comp_mct_hotel',
-    companyName: 'MCT Hotel',
-    role: 'Supervisor',
-    status: 'Active',
-    lastLogin: 'Oct 6, 2026 · 11:30 AM',
-  },
-  {
-    id: 'usr_7',
-    fullName: 'Arthur Vance',
-    email: 'arthur.vance@example.com',
-    companyId: 'comp_golden_jupiter',
-    companyName: 'Golden Jupiter Ventures',
-    role: 'Finance',
-    status: 'Active',
-    lastLogin: 'Oct 4, 2026 · 2:15 PM',
-  },
-  {
-    id: 'usr_8',
-    fullName: 'Jessica Kho',
-    email: 'jessica.kho@example.com',
-    companyId: 'comp_jk_property',
-    companyName: 'JK Property Ventures',
-    role: 'Supervisor',
-    status: 'Active',
-    lastLogin: 'Oct 5, 2026 · 1:20 PM',
-  },
-  {
-    id: 'usr_9',
-    fullName: 'Carlos Mendez',
-    email: 'carlos.mendez@example.com',
-    companyId: 'comp_speed_fire',
-    companyName: 'Speed Fire',
-    role: 'Company Employee',
-    status: 'Active',
-    lastLogin: 'Oct 6, 2026 · 10:00 AM',
-  },
-]
-
-// The companies configured for the permission modal as displayed in Image 3
-export const PERMISSION_COMPANIES = [
-  { id: 'comp_kitchen', name: 'MCT Kitchen' },
-  { id: 'comp_hotel', name: 'MCT Hotel' },
-  { id: 'comp_golden_jupiter', name: 'Golden Jupiter Ventures' },
-  { id: 'comp_jk_property', name: 'JK Property Ventures' },
-  { id: 'comp_medsys', name: 'MedSys' },
-  { id: 'comp_speed_fire', name: 'Speed Fire' },
-  { id: 'comp_teresitos', name: 'Teresitos' },
-  { id: 'comp_jk_printing', name: 'JK Printing' },
-]
-
-let inMemoryUsers: EmployeeUser[] = [...INITIAL_USERS]
-const inMemoryPermissions: Record<string, Record<string, UserPermissionActions>> = {}
 
 function getAuthHeaders(): HeadersInit {
   const token = sessionStorage.getItem(['mct', 'access', 'token'].join('_'))
@@ -325,30 +202,51 @@ function mapUser(value: unknown): EmployeeUser {
     name: string
     email: string
     company_id: number | null
+    company_ids?: number[]
     company_name: string | null
+    company_names?: string[]
     is_admin: boolean
+    is_protected?: boolean
     role?: string
+    photo_url?: string | null
     last_login_at: string | null
   }
 
-  const roleName = user.role
-    ? user.role.charAt(0).toUpperCase() + user.role.slice(1)
-    : user.is_admin
-    ? 'Admin'
-    : 'Company Employee'
+  let roleName = (user.role || '').toLowerCase()
+  if (roleName === 'admin' || user.is_admin) {
+    roleName = 'Admin'
+  } else if (roleName === 'audit') {
+    roleName = 'Audit'
+  } else if (roleName === 'finance') {
+    roleName = 'Finance'
+  } else {
+    roleName = 'Supervisor'
+  }
+
+  const cids = (user.company_ids && user.company_ids.length > 0)
+    ? user.company_ids.map(String)
+    : (user.company_id !== null && user.company_id !== undefined ? [String(user.company_id)] : [])
+
+  const cnames = (user.company_names && user.company_names.length > 0)
+    ? user.company_names
+    : (user.company_name ? [user.company_name] : [])
 
   return {
     id: String(user.user_id),
     fullName: user.name,
     email: user.email,
     companyId: user.company_id === null ? '' : String(user.company_id),
-    companyName: user.company_name || 'MCT Head Office',
+    companyIds: cids,
+    companyName: cnames.join(', ') || 'MCT Group',
+    companyNames: cnames,
     role: roleName,
     status: 'Active',
     lastLogin: user.last_login_at
       ? new Date(user.last_login_at).toLocaleString()
       : 'Never',
     isAdmin: user.is_admin,
+    isProtected: Boolean(user.is_protected || user.user_id === 1 || user.email.toLowerCase() === 'admin@mct.com'),
+    avatarUrl: user.photo_url || undefined,
   }
 }
 
@@ -380,23 +278,15 @@ function mapCompany(value: unknown): Company {
 
 export const employeeService = {
   async getUsers(): Promise<EmployeeUser[]> {
-    try {
-      const response = await fetch('/api/v1/users', {
-        headers: getAuthHeaders(),
-      })
-      if (response.ok) {
-        const users = await mapApiResponse(response, (value) =>
-          (value as unknown[]).map(mapUser)
-        )
-        if (users && users.length > 0) {
-          inMemoryUsers = users
-          return users
-        }
-      }
-    } catch {
-      // Fallback to inMemoryUsers
+    const response = await fetch('/api/v1/users', {
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
     }
-    return [...inMemoryUsers]
+    return await mapApiResponse(response, (value) =>
+      (value as unknown[]).map(mapUser)
+    )
   },
 
   async getCompanies(): Promise<Company[]> {
@@ -418,121 +308,142 @@ export const employeeService = {
 
   async createUser(payload: CreateUserPayload): Promise<EmployeeUser> {
     const companies = await employeeService.getCompanies()
-    const company = companies.find((item) => item.name === payload.assignedCompany)
-    const companyId = company?.id || ''
-    const companyName = company?.name || payload.assignedCompany
-
-    let created: EmployeeUser | null = null
-
-    try {
-      const response = await fetch('/api/v1/users', {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: payload.fullName,
-          email: payload.email,
-          password: payload.password || 'Password123!',
-          company_id: company && !isNaN(Number(company.id)) ? Number(company.id) : null,
-          is_admin: payload.role === 'Admin',
-          role: payload.role.toLowerCase(),
-        }),
-      })
-      if (response.ok) {
-        created = await mapApiResponse(response, mapUser)
-        created.role = payload.role
+    
+    // Resolve company IDs from assignedCompanies, assignedCompany, or companyIds
+    const companyIds: number[] = []
+    if (payload.companyIds && payload.companyIds.length > 0) {
+      companyIds.push(...payload.companyIds)
+    } else if (payload.assignedCompanies && payload.assignedCompanies.length > 0) {
+      for (const nameOrId of payload.assignedCompanies) {
+        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId)
+        if (found && !isNaN(Number(found.id))) {
+          companyIds.push(Number(found.id))
+        }
       }
-    } catch {
-      // Fallback below
+    } else if (payload.assignedCompany) {
+      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany)
+      if (found && !isNaN(Number(found.id))) {
+        companyIds.push(Number(found.id))
+      }
     }
 
-    if (!created) {
-      created = {
-        id: `usr_${Date.now()}`,
-        fullName: payload.fullName,
+    const primaryCompanyId = companyIds.length > 0 ? companyIds[0] : null
+
+    const response = await fetch('/api/v1/users', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: payload.fullName,
         email: payload.email,
-        companyId: String(companyId),
-        companyName,
-        role: payload.role,
-        status: 'Active',
-        lastLogin: 'Never',
-        isAdmin: payload.role === 'Admin',
-        avatarUrl: payload.avatarUrl,
-        permissions: payload.permissions,
+        password: payload.password || 'Password123!',
+        company_id: primaryCompanyId,
+        company_ids: companyIds,
+        is_admin: payload.role === 'Admin',
+        role: payload.role.toLowerCase(),
+        photo_url: payload.avatarUrl && !payload.avatarUrl.startsWith('data:') ? payload.avatarUrl : null,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
+
+    let created = await mapApiResponse(response, mapUser)
+
+    if (payload.avatarFile) {
+      const formData = new FormData()
+      formData.append('picture', payload.avatarFile)
+      const picResponse = await fetch(`/api/v1/users/${created.id}/picture`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      })
+      if (picResponse.ok) {
+        created = await mapApiResponse(picResponse, mapUser)
       }
     }
 
-    inMemoryUsers = [created, ...inMemoryUsers]
-
-    if (payload.permissions) {
-      inMemoryPermissions[created.id] = { ...payload.permissions }
-    }
 
     return created
   },
 
   async updateUser(id: string, payload: UpdateUserPayload): Promise<EmployeeUser> {
-    const existing = inMemoryUsers.find((u) => u.id === id)
-    const companies = payload.assignedCompany ? await employeeService.getCompanies() : []
-    const company = payload.assignedCompany
-      ? companies.find((item) => item.name === payload.assignedCompany)
-      : undefined
+    const companies = (payload.assignedCompanies || payload.assignedCompany || payload.companyIds)
+      ? await employeeService.getCompanies()
+      : []
 
-    const updatedUser: EmployeeUser = {
-      ...(existing || {
-        id,
-        fullName: payload.fullName || 'User',
-        email: payload.email || '',
-        companyId: company ? String(company.id) : '',
-        companyName: company ? company.name : payload.assignedCompany || '',
-        status: 'Active',
-        lastLogin: 'Never',
-      }),
-      ...(payload.fullName ? { fullName: payload.fullName } : {}),
-      ...(payload.email ? { email: payload.email } : {}),
-      ...(payload.assignedCompany ? { companyName: payload.assignedCompany, companyId: company ? String(company.id) : '' } : {}),
-      ...(payload.role ? { role: payload.role, isAdmin: payload.role === 'Admin' } : {}),
-      ...(payload.avatarUrl ? { avatarUrl: payload.avatarUrl } : {}),
-      ...(payload.status ? { status: payload.status } : {}),
-      ...(payload.permissions ? { permissions: payload.permissions } : {}),
+    const body: Record<string, unknown> = {}
+    if (payload.fullName !== undefined) body.name = payload.fullName
+    if (payload.email !== undefined) body.email = payload.email
+    if (payload.role !== undefined) {
+      body.role = payload.role.toLowerCase()
+      body.is_admin = payload.role === 'Admin'
+    }
+    if (payload.password) body.password = payload.password
+    if (payload.avatarUrl !== undefined && !payload.avatarUrl.startsWith('data:')) {
+      body.photo_url = payload.avatarUrl
     }
 
-    inMemoryUsers = inMemoryUsers.map((u) => (u.id === id ? updatedUser : u))
-
-    if (payload.permissions) {
-      inMemoryPermissions[id] = { ...payload.permissions }
+    if (payload.companyIds !== undefined) {
+      body.company_ids = payload.companyIds
+      body.company_id = payload.companyIds[0] || null
+    } else if (payload.assignedCompanies !== undefined) {
+      const resolvedIds: number[] = []
+      for (const nameOrId of payload.assignedCompanies) {
+        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId)
+        if (found && !isNaN(Number(found.id))) {
+          resolvedIds.push(Number(found.id))
+        }
+      }
+      body.company_ids = resolvedIds
+      body.company_id = resolvedIds[0] || null
+    } else if (payload.assignedCompany !== undefined) {
+      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany)
+      if (found && !isNaN(Number(found.id))) {
+        body.company_ids = [Number(found.id)]
+        body.company_id = Number(found.id)
+      } else {
+        body.company_ids = []
+        body.company_id = null
+      }
     }
 
-    try {
-      const body: Record<string, unknown> = {}
-      if (payload.fullName !== undefined) body.name = payload.fullName
-      if (payload.email !== undefined) body.email = payload.email
-      if (company && !isNaN(Number(company.id))) body.company_id = Number(company.id)
-      if (payload.role) body.role = payload.role.toLowerCase()
-      if (payload.password) body.password = payload.password
+    const response = await fetch(`/api/v1/users/${id}`, {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
 
-      await fetch(`/api/v1/users/${id}`, {
-        method: 'PATCH',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
+
+    let updated = await mapApiResponse(response, mapUser)
+
+    if (payload.avatarFile) {
+      const formData = new FormData()
+      formData.append('picture', payload.avatarFile)
+      const picResponse = await fetch(`/api/v1/users/${id}/picture`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
       })
-    } catch {
-      // Handled via inMemoryUsers
+      if (picResponse.ok) {
+        updated = await mapApiResponse(picResponse, mapUser)
+      }
     }
 
-    return updatedUser
+
+    return updated
   },
 
   async deleteUser(id: string): Promise<void> {
-    inMemoryUsers = inMemoryUsers.filter((u) => u.id !== id)
-    delete inMemoryPermissions[id]
-
-    try {
-      await fetch(`/api/v1/users/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      })
-    } catch {
-      // Handled via inMemoryUsers
+    const response = await fetch(`/api/v1/users/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
     }
   },
 
@@ -625,39 +536,5 @@ export const employeeService = {
   async getActivityLogs(): Promise<ActivityLogItem[]> {
     await new Promise((resolve) => setTimeout(resolve, 80))
     return [...INITIAL_ACTIVITY_LOGS]
-  },
-
-  async getUserPermissions(userId: string): Promise<Record<string, UserPermissionActions>> {
-    await new Promise((resolve) => setTimeout(resolve, 80))
-    if (!inMemoryPermissions[userId]) {
-      // Initialize with default unchecked or semi-checked permissions per company
-      const defaultMap: Record<string, UserPermissionActions> = {}
-      PERMISSION_COMPANIES.forEach((comp) => {
-        defaultMap[comp.name] = {
-          addSales: false,
-          addExpense: false,
-          requestLoans: false,
-          exportData: false,
-          viewRecords: false,
-          deleteRecords: false,
-          editRecords: false,
-          view: false,
-          create: false,
-          edit: false,
-          delete: false,
-          export: false,
-        }
-      })
-      inMemoryPermissions[userId] = defaultMap
-    }
-    return { ...inMemoryPermissions[userId] }
-  },
-
-  async saveUserPermissions(
-    userId: string,
-    permissions: Record<string, UserPermissionActions>
-  ): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    inMemoryPermissions[userId] = { ...permissions }
   },
 }

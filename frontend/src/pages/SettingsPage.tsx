@@ -36,8 +36,7 @@ interface NotificationSettings {
 
 export const SettingsPage: React.FC = () => {
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
-  const isAuditor = isCompanyUser
+  const isAuditor = user?.role === 'Supervisor'
   const isRestrictedRole = user?.role === 'Admin' || user?.role === 'Finance' || user?.role === 'Audit'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 

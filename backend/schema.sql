@@ -21,19 +21,23 @@ CREATE TABLE IF NOT EXISTS users (
     company_id BIGINT REFERENCES company(company_id) ON DELETE SET NULL,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'company',
+    photo_url TEXT,
     last_login_at TIMESTAMPTZ,
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. Permissions Table
-CREATE TABLE IF NOT EXISTS permissions (
-    permission_id BIGSERIAL PRIMARY KEY,
-    permission_name VARCHAR(100) UNIQUE NOT NULL,
+-- 2.1 User Companies (Many-to-Many Assignment)
+CREATE TABLE IF NOT EXISTS user_companies (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    company_id BIGINT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    CONSTRAINT uq_user_company UNIQUE (user_id, company_id)
 );
+
 
 -- 4. Audit Logs Table
 CREATE TABLE IF NOT EXISTS audit_logs (

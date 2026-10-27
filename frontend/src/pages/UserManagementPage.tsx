@@ -77,6 +77,7 @@ export const UserManagementPage: React.FC = () => {
           u.fullName.toLowerCase().includes(q) ||
           u.email.toLowerCase().includes(q) ||
           (u.companyName && u.companyName.toLowerCase().includes(q)) ||
+          (u.companyNames && u.companyNames.some((c) => c.toLowerCase().includes(q))) ||
           (u.role && u.role.toLowerCase().includes(q))
       )
     }
@@ -201,7 +202,7 @@ export const UserManagementPage: React.FC = () => {
                 .join('')
                 .toUpperCase()
 
-              const roleDisplay = usr.role || (usr.isAdmin ? 'Admin' : 'Company Employee')
+              const roleDisplay = usr.role || (usr.isAdmin ? 'Admin' : 'Supervisor')
 
               return (
                 <div
@@ -221,7 +222,17 @@ export const UserManagementPage: React.FC = () => {
                   {/* Left circular badge */}
                   <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full border-2 border-primary/90 flex items-center justify-center shrink-0 bg-red-50 text-primary font-bold text-lg sm:text-xl shadow-xs group-hover:scale-105 transition-transform duration-200 overflow-hidden">
                     {usr.avatarUrl ? (
-                      <img src={usr.avatarUrl} alt={usr.fullName} className="h-full w-full object-cover" />
+                      <img
+                        src={usr.avatarUrl}
+                        alt={usr.fullName}
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                          if (e.currentTarget.parentElement) {
+                            e.currentTarget.parentElement.innerText = initials || 'U'
+                          }
+                        }}
+                      />
                     ) : (
                       initials || <UserIcon className="h-7 w-7 text-primary" />
                     )}
@@ -237,15 +248,28 @@ export const UserManagementPage: React.FC = () => {
                     </p>
 
                     <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-focus/90 border border-slate-200/60 max-w-[140px] truncate">
+                      <span
+                        className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-focus/90 border border-slate-200/60 max-w-[150px] truncate"
+                        title={usr.companyNames && usr.companyNames.length > 0 ? usr.companyNames.join(', ') : (usr.companyName || 'MCT Group')}
+                      >
                         <Building2 className="h-3 w-3 text-muted-fg shrink-0" />
-                        <span className="truncate">{usr.companyName || 'MCT Group'}</span>
+                        <span className="truncate">
+                          {usr.companyNames && usr.companyNames.length > 1
+                            ? `${usr.companyNames.length} Companies`
+                            : (usr.companyNames?.[0] || usr.companyName || 'MCT Group')}
+                        </span>
                       </span>
 
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
                         <Shield className="h-3 w-3 text-primary shrink-0" />
                         <span>{roleDisplay}</span>
                       </span>
+
+                      {(usr.isProtected || usr.id === '1' || usr.email.toLowerCase() === 'admin@mct.com') && (
+                        <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                          Protected
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

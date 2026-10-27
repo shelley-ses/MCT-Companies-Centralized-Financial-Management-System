@@ -264,7 +264,7 @@ export const PettyCashPage: React.FC = () => {
   const isSupervisor = userRole === 'supervisor'
   const isAdmin = userRole === 'admin'
   const isFinanceOrAdmin = isFinance || isAdmin
-  const isCompanyScoped = isSupervisor || userRole === 'company'
+  const isCompanyScoped = isSupervisor
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Selected company filter

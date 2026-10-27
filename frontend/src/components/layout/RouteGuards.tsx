@@ -81,8 +81,7 @@ export const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
 
 export const LendingRouteGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useSession()
-  const isCompanyUser =
-    user?.role === 'Company' || user?.role === 'Company Auditor' || user?.role === 'Supervisor'
+  const isCompanyUser = user?.role === 'Supervisor'
 
   // Company-scoped users assigned to non-lending companies are blocked immediately
   if (isCompanyUser && !isLendingEnabledCompany(user?.assignedCompany)) {
@@ -94,8 +93,7 @@ export const LendingRouteGuard: React.FC<{ children: React.ReactNode }> = ({ chi
 
 export const TenantRouteGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useSession()
-  const isCompanyUser =
-    user?.role === 'Company' || user?.role === 'Company Auditor' || user?.role === 'Supervisor'
+  const isCompanyUser = user?.role === 'Supervisor'
 
   // Company-scoped users assigned to non-tenant companies are blocked immediately
   if (isCompanyUser && !isTenantEnabledCompany(user?.assignedCompany)) {

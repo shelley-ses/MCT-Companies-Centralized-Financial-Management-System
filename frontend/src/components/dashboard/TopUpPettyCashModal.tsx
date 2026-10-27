@@ -110,7 +110,7 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
   const userRole = (user?.role || '').toLowerCase()
   const isFinanceOrAdmin = userRole === 'finance' || userRole === 'admin'
   const isSupervisor = userRole === 'supervisor'
-  const isCompanyScoped = isSupervisor || userRole === 'company' || userRole === 'company auditor'
+  const isCompanyScoped = isSupervisor
 
   const [requestingCompany, setRequestingCompany] = React.useState(company)
   const [selectedBank, setSelectedBank] = React.useState(CORPORATE_BANK_ACCOUNTS[0].id)

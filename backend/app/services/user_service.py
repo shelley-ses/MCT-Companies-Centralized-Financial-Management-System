@@ -1,12 +1,14 @@
 import logging
+from pathlib import PurePosixPath
 from typing import List, Optional
+from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.supabase import get_supabase_admin_client
 from app.models.company import Company
-from app.models.user import User
+from app.models.user import User, UserCompany
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 logger = logging.getLogger(__name__)
@@ -22,51 +24,149 @@ class UserValidationError(ValueError):
 
 class UserService:
     """Database profile operations and Supabase Auth coordination."""
+    _user_picture_bucket = "user profiles"
+
+    ALLOWED_ROLES = {"finance", "audit", "supervisor"}
 
     def __init__(self, db: Session):
         self.db = db
 
-    #get all users, optionally filtered by company_id
+    @staticmethod
+    def is_protected_admin(user: User) -> bool:
+        """Check if user is the protected primary Admin account."""
+        if not user:
+            return False
+        return user.user_id == 1 or (user.email and user.email.strip().lower() == "admin@mct.com")
+
+    def _extract_storage_path(self, photo_url: Optional[str]) -> Optional[str]:
+        if not photo_url:
+            return None
+        clean = photo_url.split("?")[0]
+        for token in ("user%20profiles/", "user profiles/"):
+            if token in clean:
+                return clean.split(token, 1)[-1].strip("/")
+        if clean.startswith("user/"):
+            return clean.strip("/")
+        return None
+
+    def _sign_url(self, storage_path: str) -> Optional[str]:
+        if not storage_path:
+            return None
+        try:
+            storage = get_supabase_admin_client().storage.from_(self._user_picture_bucket)
+            signed = storage.create_signed_url(storage_path, 604800)  # 7 days
+            if isinstance(signed, dict):
+                return signed.get("signedURL") or signed.get("signedUrl")
+            return str(signed)
+        except Exception as e:
+            logger.warning("Could not generate signed URL for %s: %s", storage_path, e)
+            return None
+
+
+
+    # get all users, optionally filtered by company_id
     def list_users(self, company_id: int | None = None) -> List[UserResponse]:
         try:
             query = self.db.query(User)
             if company_id is not None:
-                query = query.filter(User.company_id == company_id)
-            return [self.to_response(user) for user in query.order_by(User.user_id.asc()).all()]
+                query = query.filter(
+                    (User.company_id == company_id) |
+                    (User.user_id.in_(
+                        self.db.query(UserCompany.user_id).filter(UserCompany.company_id == company_id)
+                    ))
+                )
+            users = query.order_by(User.user_id.asc()).all()
+
+            # Batch sign URLs for user profiles
+            path_map = {}
+            paths_to_sign = []
+            for u in users:
+                if u.photo_url:
+                    p = self._extract_storage_path(u.photo_url)
+                    if p:
+                        paths_to_sign.append(p)
+                        path_map[u.user_id] = p
+
+            signed_urls = {}
+            if paths_to_sign:
+                try:
+                    storage = get_supabase_admin_client().storage.from_(self._user_picture_bucket)
+                    batch_res = storage.create_signed_urls(paths_to_sign, 604800)
+                    if isinstance(batch_res, list):
+                        for item in batch_res:
+                            if isinstance(item, dict) and item.get("path"):
+                                s_url = item.get("signedURL") or item.get("signedUrl")
+                                if s_url:
+                                    signed_urls[item["path"]] = s_url
+                except Exception as e:
+                    logger.warning("Batch signed URL generation failed: %s", e)
+
+            return [
+                self.to_response(u, signed_url=signed_urls.get(path_map.get(u.user_id)))
+                for u in users
+            ]
         except SQLAlchemyError as error:
             raise self._database_error("list users", error)
 
-    #get a single user by ID
+    # get a single user by ID
     def get_user(self, user_id: int) -> Optional[User]:
         try:
             return self.db.query(User).filter(User.user_id == user_id).first()
         except SQLAlchemyError as error:
             raise self._database_error("get user", error)
 
-    #get a single user by ID and return a UserResponse
+    # get a single user by ID and return a UserResponse
     def get_user_response(self, user_id: int) -> Optional[UserResponse]:
         user = self.get_user(user_id)
         return self.to_response(user) if user else None
 
-    #create a new user and return a UserResponse
+    # create a new user and return a UserResponse
     def create_user(self, user_in: UserCreate) -> UserResponse:
-        user_role = str(user_in.role or ("admin" if user_in.is_admin else "company")).lower()
-        self._validate_user_assignment(user_in.company_id, user_in.is_admin, user_role)
-        self._ensure_company_exists(user_in.company_id)
+        raw_role = (user_in.role or "supervisor").strip().lower()
+        if raw_role in ("company", "company employee", "company_employee"):
+            raw_role = "supervisor"
+
+        if raw_role == "admin" or user_in.is_admin:
+            raise UserValidationError("Cannot create additional Admin accounts. The system allows only one primary administrator.")
+
+        if raw_role not in self.ALLOWED_ROLES:
+            raise UserValidationError(f"Invalid role '{user_in.role}'. Allowed roles: Finance, Audit, Supervisor.")
+
+        user_role = raw_role
+
+        # Consolidate company IDs
+        company_ids = list(user_in.company_ids)
+        if user_in.company_id and user_in.company_id not in company_ids:
+            company_ids.append(user_in.company_id)
+
+        self._validate_user_assignment(company_ids, False, user_role)
         self._ensure_email_available(user_in.email)
         auth_user_id = self._create_auth_user(user_in, user_in.email)
+
+        primary_company_id = company_ids[0] if company_ids else user_in.company_id
 
         user = User(
             name=user_in.name.strip(),
             email=user_in.email,
-            company_id=user_in.company_id,
-            is_admin=user_in.is_admin or (user_role == "admin"),
+            company_id=primary_company_id,
+            is_admin=False,
             role=user_role,
+            photo_url=user_in.photo_url,
         )
         try:
             self.db.add(user)
             self.db.commit()
             self.db.refresh(user)
+
+            # Insert into user_companies
+            for cid in company_ids:
+                self.db.add(UserCompany(user_id=user.user_id, company_id=cid))
+            if company_ids:
+                self.db.commit()
+                self.db.refresh(user)
+
+
+
             return self.to_response(user)
         except IntegrityError as error:
             self.db.rollback()
@@ -76,7 +176,7 @@ class UserService:
             self._delete_auth_user(auth_user_id)
             raise self._database_error("create user", error)
 
-    #update an existing user and return a UserResponse, or None if not found
+    # update an existing user and return a UserResponse, or None if not found
     def update_user(
         self,
         user_id: int,
@@ -86,12 +186,44 @@ class UserService:
         if not user:
             return None
 
+        if self.is_protected_admin(user):
+            raise UserValidationError("The primary administrator account is protected and cannot be modified.")
+
         update_data = user_in.model_dump(exclude_unset=True)
-        company_id = update_data.get("company_id", user.company_id)
-        is_admin = update_data.get("is_admin", user.is_admin)
-        role = update_data.get("role", getattr(user, "role", "company"))
-        self._validate_user_assignment(company_id, is_admin, role)
-        self._ensure_company_exists(company_id)
+
+        if "role" in update_data:
+            role_val = str(update_data["role"]).strip().lower()
+            if role_val in ("company", "company employee", "company_employee"):
+                role_val = "supervisor"
+            if role_val == "admin":
+                raise UserValidationError("Cannot assign the Admin role. The system allows only one primary administrator.")
+            if role_val not in self.ALLOWED_ROLES:
+                raise UserValidationError(f"Invalid role '{update_data['role']}'. Allowed roles: Finance, Audit, Supervisor.")
+            update_data["role"] = role_val
+
+        if update_data.get("is_admin") is True:
+            raise UserValidationError("Cannot grant Administrator privileges. The system allows only one primary administrator.")
+
+
+
+        company_ids = update_data.pop("company_ids", None)
+        if company_ids is not None:
+            self._validate_user_assignment(company_ids, update_data.get("is_admin", user.is_admin), update_data.get("role", user.role))
+            # Delete old user_companies and re-insert
+            self.db.query(UserCompany).filter(UserCompany.user_id == user_id).delete()
+            for cid in company_ids:
+                self.db.add(UserCompany(user_id=user_id, company_id=cid))
+            user.company_id = company_ids[0] if company_ids else None
+        elif "company_id" in update_data:
+            cid = update_data["company_id"]
+            if cid:
+                self._ensure_company_exists(cid)
+                exists = self.db.query(UserCompany).filter(
+                    UserCompany.user_id == user_id,
+                    UserCompany.company_id == cid
+                ).first()
+                if not exists:
+                    self.db.add(UserCompany(user_id=user_id, company_id=cid))
 
         auth_changes = {}
         if "email" in update_data:
@@ -110,6 +242,7 @@ class UserService:
                 setattr(user, field, value)
             self.db.commit()
             self.db.refresh(user)
+
             return self.to_response(user)
         except IntegrityError as error:
             self.db.rollback()
@@ -117,46 +250,128 @@ class UserService:
         except SQLAlchemyError as error:
             raise self._database_error("update user", error)
 
-    #delete a user by ID and return True if deleted, False if not found
+    # delete a user by ID and return True if deleted, False if not found
     def delete_user(self, user_id: int) -> bool:
         user = self.get_user(user_id)
         if not user:
             return False
-        auth_user_id = self._find_auth_user_id(user.email)
+
+        if self.is_protected_admin(user):
+            raise UserValidationError("The primary administrator account is protected and cannot be deleted.")
+
+        auth_user_id = None
         try:
-            self._delete_auth_user(auth_user_id)
+            auth_user_id = self._find_auth_user_id(user.email)
+        except Exception:
+            pass
+
+        # Cleanup photo in storage if present
+        if user.photo_url and ("user%20profiles" in user.photo_url or "user profiles" in user.photo_url):
+            self._remove_picture_by_url(user.photo_url)
+
+        try:
+            if auth_user_id:
+                try:
+                    self._delete_auth_user(auth_user_id)
+                except Exception as e:
+                    logger.warning("Could not delete Supabase auth user: %s", e)
             self.db.delete(user)
             self.db.commit()
             return True
         except SQLAlchemyError as error:
             raise self._database_error("delete user", error)
 
-    #convert a User model instance to a UserResponse schema instance
-    def to_response(self, user: User) -> UserResponse:
+    def upload_user_picture(
+        self,
+        user_id: int,
+        picture: bytes,
+        content_type: str,
+        filename: str,
+    ) -> Optional[UserResponse]:
+        user = self.get_user(user_id)
+        if not user:
+            return None
+
+        if self.is_protected_admin(user):
+            raise UserValidationError("The primary administrator account is protected and cannot be modified.")
+
+        storage_path = ""
         try:
-            company_name = None
-            if user.company_id is not None:
-                company = self.db.query(Company).filter(
-                    Company.company_id == user.company_id
-                ).first()
-                company_name = company.company_name if company else None
-            user_role = str(getattr(user, "role", "admin" if user.is_admin else "company") or ("admin" if user.is_admin else "company")).lower()
+            extension = PurePosixPath(filename).suffix.lower()
+            if not extension:
+                extension = ".png"
+            storage_path = f"user/{user.user_id}/{uuid4().hex}{extension}"
+            storage = get_supabase_admin_client().storage.from_(self._user_picture_bucket)
+            storage.upload(
+                storage_path,
+                picture,
+                {"content-type": content_type, "upsert": "false"},
+            )
+            user.photo_url = storage_path
+            self.db.commit()
+            self.db.refresh(user)
+            signed_url = self._sign_url(storage_path)
+            return self.to_response(user, signed_url=signed_url)
+        except SQLAlchemyError as error:
+            self.db.rollback()
+            if storage_path:
+                self._remove_picture(storage_path)
+            raise self._database_error("upload user picture", error)
+        except Exception as error:
+            self.db.rollback()
+            if storage_path:
+                self._remove_picture(storage_path)
+            logger.exception("User picture upload failed (%s)", type(error).__name__)
+            raise UserServiceError("The user profile picture could not be uploaded.") from error
+
+    # convert a User model instance to a UserResponse schema instance
+    def to_response(self, user: User, signed_url: Optional[str] = None) -> UserResponse:
+        try:
+            # Query user_companies
+            user_company_rows = self.db.query(UserCompany).filter(UserCompany.user_id == user.user_id).all()
+            assigned_cids = [uc.company_id for uc in user_company_rows]
+            if not assigned_cids and user.company_id is not None:
+                assigned_cids = [user.company_id]
+
+            company_names: list[str] = []
+            if assigned_cids:
+                companies = self.db.query(Company).filter(Company.company_id.in_(assigned_cids)).all()
+                comp_map = {c.company_id: c.company_name for c in companies}
+                company_names = [comp_map[cid] for cid in assigned_cids if cid in comp_map]
+
+            company_name = company_names[0] if company_names else None
+            user_role = str(getattr(user, "role", "admin" if user.is_admin else "supervisor") or ("admin" if user.is_admin else "supervisor")).lower()
+            if user_role in ("company", "company employee"):
+                user_role = "supervisor"
+
+            # Resolve signed photo URL
+            photo_url = signed_url
+            if not photo_url and user.photo_url:
+                path = self._extract_storage_path(user.photo_url)
+                if path:
+                    photo_url = self._sign_url(path)
+                else:
+                    photo_url = user.photo_url
+
             return UserResponse(
                 user_id=user.user_id,
                 name=user.name,
                 email=user.email,
                 company_id=user.company_id,
+                company_ids=assigned_cids,
                 is_admin=user.is_admin,
                 role=user_role,
+                photo_url=photo_url,
                 last_login_at=user.last_login_at,
                 created_at=user.created_at,
                 updated_at=user.updated_at,
                 company_name=company_name,
+                company_names=company_names,
+                is_protected=self.is_protected_admin(user),
             )
         except SQLAlchemyError as error:
             raise self._database_error("build user response", error)
 
-    #validate that the specified company exists in the database, if provided
     def _ensure_company_exists(self, company_id: int | None) -> None:
         if company_id is None:
             return
@@ -167,9 +382,8 @@ class UserService:
         except SQLAlchemyError as error:
             raise self._database_error("validate user company", error)
         if exists is None:
-            raise UserValidationError("The selected company does not exist.")
+            raise UserValidationError(f"The company with ID {company_id} does not exist.")
 
-    #validate that the specified email is not already used by another user, optionally excluding a specific user ID
     def _ensure_email_available(
         self,
         email: str,
@@ -184,20 +398,10 @@ class UserService:
         except SQLAlchemyError as error:
             raise self._database_error("validate user email", error)
 
-    #validate that the user assignment is consistent with business rules regarding admin status and company association
-    @staticmethod
-    def _validate_user_assignment(company_id: int | None, is_admin: bool, role: str = "company") -> None:
-        r = (role or "").lower()
-        if (is_admin or r in ["audit", "admin"]) and company_id is not None:
-            raise UserValidationError(
-                "An administrator cannot be assigned to a company."
-            )
-        if r == "company" and not is_admin and company_id is None:
-            raise UserValidationError(
-                "A company user must be assigned to a company."
-            )
+    def _validate_user_assignment(self, company_ids: list[int], is_admin: bool, role: str = "company") -> None:
+        for cid in company_ids:
+            self._ensure_company_exists(cid)
 
-    #create a new Supabase Auth user and return the auth user ID
     @staticmethod
     def _create_auth_user(user_in: UserCreate, email: str) -> str:
         try:
@@ -216,11 +420,16 @@ class UserService:
             raise
         except Exception as error:
             logger.exception("Supabase Auth user creation failed (%s)", type(error).__name__)
+            # Fallback if already in Supabase Auth
+            if "already registered" in str(error).lower() or "already exists" in str(error).lower():
+                try:
+                    return UserService._find_auth_user_id(email)
+                except Exception:
+                    pass
             raise UserValidationError(
                 "The user could not be created in authentication."
             ) from error
 
-    #find the Supabase Auth user ID for a given email, raising an error if not found
     @classmethod
     def _find_auth_user_id(cls, email: str) -> str:
         try:
@@ -234,7 +443,6 @@ class UserService:
             raise UserServiceError("The user operation could not be completed.") from error
         raise UserValidationError("The authentication user was not found.")
 
-    #update the Supabase Auth user with the specified changes, raising an error if the operation fails
     @classmethod
     def _update_auth_user(cls, email: str, changes: dict[str, object]) -> None:
         auth_user_id = cls._find_auth_user_id(email)
@@ -247,7 +455,6 @@ class UserService:
             logger.exception("Supabase Auth user update failed (%s)", type(error).__name__)
             raise UserServiceError("The user authentication could not be updated.") from error
 
-    #delete the Supabase Auth user with the specified auth user ID, raising an error if the operation fails
     @staticmethod
     def _delete_auth_user(auth_user_id: str) -> None:
         try:
@@ -256,7 +463,23 @@ class UserService:
             logger.exception("Supabase Auth user deletion failed (%s)", type(error).__name__)
             raise UserServiceError("The user operation could not be completed.") from error
 
-    #handle database errors by rolling back the session, logging the error, and raising a UserServiceError
+    def _remove_picture(self, storage_path: str) -> None:
+        try:
+            get_supabase_admin_client().storage.from_(
+                self._user_picture_bucket
+            ).remove([storage_path])
+        except Exception:
+            logger.exception("Could not clean up user picture: %s", storage_path)
+
+    def _remove_picture_by_url(self, photo_url: str) -> None:
+        try:
+            bucket_token = "user%20profiles/" if "user%20profiles/" in photo_url else "user profiles/"
+            if bucket_token in photo_url:
+                storage_path = photo_url.split(bucket_token)[-1]
+                self._remove_picture(storage_path)
+        except Exception:
+            logger.exception("Could not clean up user picture by url: %s", photo_url)
+
     def _database_error(self, operation: str, error: SQLAlchemyError) -> UserServiceError:
         self.db.rollback()
         logger.exception(

@@ -178,7 +178,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [deleteConfirmLoan, setDeleteConfirmLoan] = React.useState<LoanItem | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
 
-  // Payment modal state for borrower loans (supervisor and company employees)
+  // Payment modal state for borrower loans (supervisor)
   const [paymentLoan, setPaymentLoan] = React.useState<LoanItem | null>(null)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = React.useState(false)
 
@@ -723,7 +723,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               compact
             />
 
-            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor/Company Employee */}
+            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor */}
             {isAuditor ? (
               <div className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs font-medium shadow-xs shrink-0 whitespace-nowrap">
                 <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />

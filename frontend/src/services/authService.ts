@@ -2,7 +2,7 @@ import type { SignInFormValues } from '@/lib/validation/auth'
 import logo2Url from '@/assets/LOGO2.png'
 import { encryptPayload } from '@/services/payloadEncryption'
 
-export type UserRole = 'Admin' | 'Finance' | 'Company' | 'Company Auditor' | 'Audit'
+export type UserRole = 'Admin' | 'Finance' | 'Audit' | 'Supervisor'
 
 /**
  * User session model
@@ -92,12 +92,12 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     assignedCompany: 'All Companies',
     avatarUrl: logo2Url,
   },
-  // 4. Company accounts (Operational branch employees)
+  // 4. Supervisor accounts (Operational branch supervisors)
   {
     id: 'usr_kitchen_00',
     fullName: 'Temporary Employee',
     email: 'temporaryemployee@gmail.com',
-    role: 'Company',
+    role: 'Supervisor',
     assignedCompany: 'MCT Kitchen',
     avatarUrl: logo2Url,
   },
@@ -105,7 +105,7 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     id: 'usr_kitchen_01',
     fullName: 'Temporary Employee',
     email: 'temporary.employee@mct.com',
-    role: 'Company',
+    role: 'Supervisor',
     assignedCompany: 'MCT Kitchen',
     avatarUrl: logo2Url,
   },
@@ -113,7 +113,7 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     id: 'usr_hotel_01',
     fullName: 'Temporary Employee 1',
     email: 'temporary.employee1@mct.com',
-    role: 'Company',
+    role: 'Supervisor',
     assignedCompany: 'MCT Hotel',
     avatarUrl: logo2Url,
   },
@@ -121,7 +121,7 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     id: 'usr_jk_property_01',
     fullName: 'Jessica Kho (JK Property)',
     email: 'jkproperty@mct.com',
-    role: 'Company',
+    role: 'Supervisor',
     assignedCompany: 'JK Property and Ventures',
     avatarUrl: logo2Url,
   },
@@ -129,7 +129,7 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
     id: 'usr_filcap_01',
     fullName: 'Carlos Tan (FilCap)',
     email: 'filcap@mct.com',
-    role: 'Company',
+    role: 'Supervisor',
     assignedCompany: 'FilCap Prime Holdings Corp.',
     avatarUrl: logo2Url,
   },
@@ -138,7 +138,8 @@ export const SEEDED_ACCOUNTS: SeededAccount[] = [
 export const ADMIN_USER: User = SEEDED_ACCOUNTS[0]
 export const AUDIT_USER: User = SEEDED_ACCOUNTS[2]
 export const FINANCE_USER: User = SEEDED_ACCOUNTS[4]
-export const COMPANY_USER: User = SEEDED_ACCOUNTS[6]
+export const SUPERVISOR_USER: User = SEEDED_ACCOUNTS[6]
+export const COMPANY_USER: User = SUPERVISOR_USER
 export const AUDITOR_USER: User = SEEDED_ACCOUNTS[2]
 const SESSION_STORAGE_KEY = 'mct_session_user'
 const ACCESS_TOKEN_KEY = 'mct_access_token'
@@ -221,13 +222,13 @@ export function detectUserByEmail(email: string): User {
     }
   }
 
-  // Detection by company auditor
-  if (normalized.includes('company_auditor') || normalized.includes('company-auditor')) {
+  // Detection by company auditor / supervisor
+  if (normalized.includes('company_auditor') || normalized.includes('company-auditor') || normalized.includes('supervisor')) {
     return {
-      id: `usr_auditor_${Date.now()}`,
-      fullName: 'Alex Cruz',
+      id: `usr_supervisor_${Date.now()}`,
+      fullName: 'Branch Supervisor',
       email: email.trim(),
-      role: 'Company Auditor',
+      role: 'Supervisor',
       assignedCompany: 'MCT Kitchen',
       avatarUrl: logo2Url,
     }
@@ -251,7 +252,7 @@ export function detectUserByEmail(email: string): User {
       id: `usr_jk_${Date.now()}`,
       fullName: 'Jessica Kho',
       email: email.trim(),
-      role: 'Company',
+      role: 'Supervisor',
       assignedCompany: 'JK Property and Ventures',
       avatarUrl: logo2Url,
     }
@@ -263,7 +264,7 @@ export function detectUserByEmail(email: string): User {
       id: `usr_filcap_${Date.now()}`,
       fullName: 'Carlos Tan',
       email: email.trim(),
-      role: 'Company',
+      role: 'Supervisor',
       assignedCompany: 'FilCap Prime Holdings Corp.',
       avatarUrl: logo2Url,
     }
@@ -318,8 +319,9 @@ function mapUser(user: {
   is_admin: boolean
   role?: string
   company_name?: string | null
+  photo_url?: string | null
 }): User {
-  let role: UserRole = 'Company'
+  let role: UserRole = 'Supervisor'
   const rawRole = (user.role || '').toLowerCase()
   const rawEmail = (user.email || '').toLowerCase()
 
@@ -335,9 +337,9 @@ function mapUser(user: {
   else if (rawRole === 'finance' || rawEmail.includes('finance')) {
     role = 'Finance'
   }
-  // 4. Operational Company user
+  // 4. Operational Supervisor user
   else {
-    role = 'Company'
+    role = 'Supervisor'
   }
 
   // Look up seeded account or detect from email
@@ -370,7 +372,7 @@ function mapUser(user: {
     email: user.email,
     role: role,
     assignedCompany: assignedCompany,
-    avatarUrl: logo2Url,
+    avatarUrl: user.photo_url || logo2Url,
   }
 }
 

@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Building2,
   Mail,
+  Upload,
   User as UserIcon,
 } from 'lucide-react'
 import {
@@ -22,10 +23,10 @@ import {
   employeeService,
   type Company,
   type EmployeeUser,
-  type UserPermissionActions,
   type UpdateUserPayload,
 } from '@/services/employeeService'
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog'
+import { cn } from '@/lib/utils'
 
 interface ViewUserModalProps {
   open: boolean
@@ -37,28 +38,11 @@ interface ViewUserModalProps {
 }
 
 const ROLES = [
-  'Admin',
-  'Audit',
   'Finance',
+  'Audit',
   'Supervisor',
-  'Company Employee',
-  'Cashier',
 ] as const
 
-const DEFAULT_PERMISSIONS: UserPermissionActions = {
-  addSales: true,
-  addExpense: true,
-  requestLoans: false,
-  exportData: true,
-  viewRecords: true,
-  deleteRecords: false,
-  editRecords: false,
-  view: true,
-  create: true,
-  edit: false,
-  delete: false,
-  export: true,
-}
 
 export const ViewUserModal: React.FC<ViewUserModalProps> = ({
   open,
@@ -73,95 +57,85 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
 
+  // Photo upload in edit mode
+  const [editProfilePreview, setEditProfilePreview] = React.useState<string | null>(null)
+  const [editAvatarFile, setEditAvatarFile] = React.useState<File | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  // Multi-company selection state
+  const [editSelectedCompanies, setEditSelectedCompanies] = React.useState<string[]>([])
+
   // Edit form state
   const [formData, setFormData] = React.useState<UpdateUserPayload>({
     fullName: '',
     email: '',
     assignedCompany: '',
-    role: 'Company Employee',
+    role: 'Supervisor',
   })
 
-  const [permissions, setPermissions] = React.useState<UserPermissionActions>(DEFAULT_PERMISSIONS)
+
+  const isProtectedAdmin = Boolean(
+    user?.isProtected ||
+    user?.id === '1' ||
+    (user?.email && user.email.toLowerCase() === 'admin@mct.com')
+  )
 
   React.useEffect(() => {
     if (user && open) {
+      const initialCompanies = user.companyNames && user.companyNames.length > 0
+        ? user.companyNames
+        : (user.companyName ? [user.companyName] : [])
+
       setFormData({
         fullName: user.fullName,
         email: user.email,
         assignedCompany: user.companyName,
-        role: user.role || (user.isAdmin ? 'Admin' : 'Company Employee'),
+        assignedCompanies: initialCompanies,
+        role: user.role || (user.isAdmin ? 'Admin' : 'Supervisor'),
         avatarUrl: user.avatarUrl,
       })
-
-      // Load user's permissions
-      employeeService.getUserPermissions(user.id).then((map) => {
-        const rawPerm = map[user.companyName] || (user.isAdmin ? {
-          addSales: true, addExpense: true, requestLoans: true, exportData: true, viewRecords: true, deleteRecords: true, editRecords: true,
-          view: true, create: true, edit: true, delete: true, export: true
-        } : DEFAULT_PERMISSIONS)
-
-        const normalizedPerm: UserPermissionActions = {
-          addSales: Boolean(rawPerm.addSales ?? rawPerm.create),
-          addExpense: Boolean(rawPerm.addExpense ?? rawPerm.create),
-          requestLoans: Boolean(rawPerm.requestLoans ?? false),
-          exportData: Boolean(rawPerm.exportData ?? rawPerm.export ?? true),
-          viewRecords: Boolean(rawPerm.viewRecords ?? rawPerm.view ?? true),
-          deleteRecords: Boolean(rawPerm.deleteRecords ?? rawPerm.delete ?? false),
-          editRecords: Boolean(rawPerm.editRecords ?? rawPerm.edit ?? false),
-          view: Boolean(rawPerm.viewRecords ?? rawPerm.view ?? true),
-          create: Boolean(rawPerm.addSales ?? rawPerm.create),
-          edit: Boolean(rawPerm.editRecords ?? rawPerm.edit ?? false),
-          delete: Boolean(rawPerm.deleteRecords ?? rawPerm.delete ?? false),
-          export: Boolean(rawPerm.exportData ?? rawPerm.export ?? true),
-        }
-        setPermissions(normalizedPerm)
-      }).catch(() => {
-        setPermissions(DEFAULT_PERMISSIONS)
-      })
+      setEditSelectedCompanies(initialCompanies)
+      setEditProfilePreview(user.avatarUrl || null)
+      setEditAvatarFile(null)
     }
   }, [user, open])
 
   const handleStartEdit = () => {
-    if (user) {
+    if (user && !isProtectedAdmin) {
+      const initialCompanies = user.companyNames && user.companyNames.length > 0
+        ? user.companyNames
+        : (user.companyName ? [user.companyName] : [])
+
       setFormData({
         fullName: user.fullName,
         email: user.email,
         assignedCompany: user.companyName,
-        role: user.role || (user.isAdmin ? 'Admin' : 'Company Employee'),
+        assignedCompanies: initialCompanies,
+        role: user.role || (user.isAdmin ? 'Admin' : 'Supervisor'),
         avatarUrl: user.avatarUrl,
       })
+      setEditSelectedCompanies(initialCompanies)
+      setEditProfilePreview(user.avatarUrl || null)
+      setEditAvatarFile(null)
       setIsEditing(true)
     }
   }
 
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setEditAvatarFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setEditProfilePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+    e.target.value = ''
+  }
+
   const handleRoleChange = (role: string) => {
     setFormData((prev) => ({ ...prev, role }))
-    if (role === 'Admin') {
-      setPermissions({
-        addSales: true, addExpense: true, requestLoans: true, exportData: true, viewRecords: true, deleteRecords: true, editRecords: true,
-        view: true, create: true, edit: true, delete: true, export: true
-      })
-    } else if (role === 'Audit') {
-      setPermissions({
-        addSales: false, addExpense: false, requestLoans: false, exportData: true, viewRecords: true, editRecords: false, deleteRecords: false,
-        view: true, create: false, edit: false, delete: false, export: true
-      })
-    } else if (role === 'Finance' || role === 'Supervisor') {
-      setPermissions({
-        addSales: true, addExpense: true, requestLoans: true, exportData: true, viewRecords: true, editRecords: true, deleteRecords: false,
-        view: true, create: true, edit: true, delete: false, export: true
-      })
-    } else if (role === 'Cashier') {
-      setPermissions({
-        addSales: true, addExpense: false, requestLoans: false, exportData: false, viewRecords: true, editRecords: false, deleteRecords: false,
-        view: true, create: true, edit: false, delete: false, export: false
-      })
-    } else {
-      setPermissions({
-        addSales: true, addExpense: true, requestLoans: false, exportData: true, viewRecords: true, editRecords: false, deleteRecords: false,
-        view: true, create: true, edit: false, delete: false, export: true
-      })
-    }
   }
 
   const handleModalOpenChange = (nextOpen: boolean) => {
@@ -169,6 +143,7 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
       setIsEditing(false)
       setIsConfirmEditOpen(false)
       setIsConfirmDeleteOpen(false)
+      setEditAvatarFile(null)
     }
     onOpenChange(nextOpen)
   }
@@ -177,23 +152,27 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (formData.role !== 'Admin' && formData.role !== 'Audit' && editSelectedCompanies.length === 0) {
+      window.alert('Please select at least one assigned company.')
+      return
+    }
     setIsConfirmEditOpen(true)
   }
 
   const handleConfirmSave = async () => {
     try {
-      setIsSubmitting(true)
-      const permsMap: Record<string, UserPermissionActions> = {
-        [formData.assignedCompany || user.companyName]: permissions,
-      }
       const updated = await employeeService.updateUser(user.id, {
-        ...formData,
-        permissions: permsMap,
+        fullName: formData.fullName,
+        email: formData.email,
+        role: formData.role,
+        assignedCompany: editSelectedCompanies[0] || '',
+        assignedCompanies: editSelectedCompanies,
+        avatarFile: editAvatarFile || undefined,
       })
-      await employeeService.saveUserPermissions(user.id, permsMap)
       onUpdate?.(updated)
       setIsConfirmEditOpen(false)
       setIsEditing(false)
+      setEditAvatarFile(null)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to update user.')
     } finally {
@@ -202,6 +181,10 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
   }
 
   const handleConfirmDelete = async () => {
+    if (isProtectedAdmin) {
+      window.alert('The primary administrator account is protected and cannot be deleted.')
+      return
+    }
     try {
       setIsSubmitting(true)
       await employeeService.deleteUser(user.id)
@@ -239,6 +222,46 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
                 <p className="text-xs text-muted-fg mt-0.5">Update user account, role and assigned company</p>
               </div>
 
+              {/* Photo Upload in Edit Mode */}
+              <div className="flex items-center gap-3.5 pb-2 border-b border-stroke/15">
+                <div className="h-14 w-14 rounded-full border-2 border-primary/90 flex items-center justify-center shrink-0 bg-red-50 text-primary font-bold text-base shadow-xs overflow-hidden">
+                  {editProfilePreview ? (
+                    <img
+                      src={editProfilePreview}
+                      alt="Avatar Preview"
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                        if (e.currentTarget.parentElement) {
+                          e.currentTarget.parentElement.innerText = initials || 'U'
+                        }
+                      }}
+                    />
+                  ) : (
+                    initials || <UserIcon className="h-6 w-6 text-primary" />
+                  )}
+                </div>
+                <div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-8 px-3 text-xs text-primary font-semibold hover:bg-red-50 cursor-pointer"
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1" />
+                    Change Photo
+                  </Button>
+                </div>
+              </div>
+
               {/* Form Inputs */}
               <div className="space-y-3">
                 <div className="space-y-1">
@@ -264,138 +287,104 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="edit-user-role" className="text-xs font-medium text-focus/80">Role</Label>
-                    <div className="relative">
-                      <select
-                        id="edit-user-role"
-                        value={formData.role}
-                        onChange={(e) => handleRoleChange(e.target.value)}
-                        className="flex h-10 w-full rounded-xl border border-stroke/60 bg-white px-3 py-2 text-xs sm:text-sm text-focus shadow-none transition-colors appearance-none focus:outline-none focus:ring-1 focus:ring-focus cursor-pointer"
-                      >
-                        {ROLES.map((role) => (
-                          <option key={role} value={role}>
-                            {role}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-muted-fg">
-                        <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
-                          <path
-                            fillRule="evenodd"
-                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label htmlFor="edit-user-company" className="text-xs font-medium text-focus/80">
-                      Company Assigned
-                    </Label>
-                    <div className="relative">
-                      <select
-                        id="edit-user-company"
-                        value={formData.assignedCompany}
-                        onChange={(e) => setFormData({ ...formData, assignedCompany: e.target.value })}
-                        className="flex h-10 w-full rounded-xl border border-stroke/60 bg-white px-3 py-2 text-xs sm:text-sm text-focus shadow-none transition-colors appearance-none focus:outline-none focus:ring-1 focus:ring-focus cursor-pointer"
-                      >
-                        {companies.map((comp) => (
-                          <option key={comp.id} value={comp.name}>
-                            {comp.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-muted-fg">
-                        <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
-                          <path
-                            fillRule="evenodd"
-                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </div>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-user-role" className="text-xs font-medium text-focus/80">Role</Label>
+                  <div className="relative">
+                    <select
+                      id="edit-user-role"
+                      value={formData.role}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                      className="flex h-10 w-full rounded-xl border border-stroke/60 bg-white px-3 py-2 text-xs sm:text-sm text-focus shadow-none transition-colors appearance-none focus:outline-none focus:ring-1 focus:ring-focus cursor-pointer"
+                    >
+                      {ROLES.map((role) => (
+                        <option key={role} value={role}>
+                          {role}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-muted-fg">
+                      <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
                     </div>
                   </div>
                 </div>
 
-                {/* Permissions checklist */}
-                <div className="space-y-2 pt-1 border-t border-stroke/20">
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <ShieldCheck className="h-4 w-4 text-primary" />
-                    <Label className="text-xs font-semibold text-focus">
-                      Assigned Permissions
+                {/* Companies Assigned - Multi-Select Checkboxes */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-focus/80">
+                      Companies Assigned ({editSelectedCompanies.length} selected)
                     </Label>
+                    <div className="flex items-center gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setEditSelectedCompanies(companies.map((c) => c.name))}
+                        className="text-primary hover:underline font-medium text-[11px] cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditSelectedCompanies([])}
+                        className="text-muted-fg hover:text-focus text-[11px] cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/60">
-                    <label className="flex items-center gap-2 text-xs font-medium text-focus/90 cursor-pointer select-none">
-                      <Checkbox
-                        checked={permissions.addSales}
-                        onCheckedChange={(checked) =>
-                          setPermissions((p) => ({ ...p, addSales: Boolean(checked) }))
-                        }
-                      />
-                      <span>Add Sales</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs font-medium text-focus/90 cursor-pointer select-none">
-                      <Checkbox
-                        checked={permissions.addExpense}
-                        onCheckedChange={(checked) =>
-                          setPermissions((p) => ({ ...p, addExpense: Boolean(checked) }))
-                        }
-                      />
-                      <span>Add Expense</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs font-medium text-focus/90 cursor-pointer select-none">
-                      <Checkbox
-                        checked={permissions.requestLoans}
-                        onCheckedChange={(checked) =>
-                          setPermissions((p) => ({ ...p, requestLoans: Boolean(checked) }))
-                        }
-                      />
-                      <span>Request Loans</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs font-medium text-focus/90 cursor-pointer select-none">
-                      <Checkbox
-                        checked={permissions.exportData}
-                        onCheckedChange={(checked) =>
-                          setPermissions((p) => ({ ...p, exportData: Boolean(checked) }))
-                        }
-                      />
-                      <span>Export Data</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs font-medium text-focus/90 cursor-pointer select-none">
-                      <Checkbox
-                        checked={permissions.viewRecords}
-                        onCheckedChange={(checked) =>
-                          setPermissions((p) => ({ ...p, viewRecords: Boolean(checked) }))
-                        }
-                      />
-                      <span>View Records</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs font-medium text-focus/90 cursor-pointer select-none">
-                      <Checkbox
-                        checked={permissions.editRecords}
-                        onCheckedChange={(checked) =>
-                          setPermissions((p) => ({ ...p, editRecords: Boolean(checked) }))
-                        }
-                      />
-                      <span>Edit Records</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs font-medium text-focus/90 cursor-pointer select-none">
-                      <Checkbox
-                        checked={permissions.deleteRecords}
-                        onCheckedChange={(checked) =>
-                          setPermissions((p) => ({ ...p, deleteRecords: Boolean(checked) }))
-                        }
-                      />
-                      <span>Delete Records</span>
-                    </label>
+
+                  <div className="max-h-36 overflow-y-auto pr-1 space-y-1.5 rounded-xl border border-stroke/40 p-2 bg-slate-50/50">
+                    {companies.map((comp) => {
+                      const isSelected = editSelectedCompanies.includes(comp.name)
+                      return (
+                        <div
+                          key={comp.id}
+                          onClick={() =>
+                            setEditSelectedCompanies((prev) =>
+                              prev.includes(comp.name)
+                                ? prev.filter((c) => c !== comp.name)
+                                : [...prev, comp.name]
+                            )
+                          }
+                          className={cn(
+                            'flex items-center justify-between p-2 rounded-lg border text-xs font-medium transition-all cursor-pointer select-none',
+                            isSelected
+                              ? 'border-[#960C01] bg-red-50/70 text-focus ring-1 ring-[#960C01]'
+                              : 'border-stroke/50 bg-white hover:bg-slate-100/70 text-focus/80'
+                          )}
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <div
+                              className={cn(
+                                'h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 transition-colors',
+                                isSelected ? 'border-[#960C01] bg-[#960C01]' : 'border-slate-300 bg-white'
+                              )}
+                            >
+                              {isSelected && <Check className="h-2.5 w-2.5 text-white stroke-[3]" />}
+                            </div>
+                            <span className="truncate">{comp.name}</span>
+                          </div>
+                          {isSelected && (
+                            <span className="text-[9px] font-bold text-primary uppercase px-1.5 py-0.5 rounded bg-red-100/70 shrink-0">
+                              Selected
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
+
+
               </div>
 
               {/* Action Buttons: Both on right side */}
@@ -434,7 +423,17 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
               {/* Centered Circular User Avatar Badge */}
               <div className="h-24 w-24 sm:h-28 sm:w-28 rounded-full border-2 border-primary flex items-center justify-center p-1 bg-red-50 text-primary shadow-xs font-bold text-2xl sm:text-3xl overflow-hidden">
                 {user.avatarUrl ? (
-                  <img src={user.avatarUrl} alt={user.fullName} className="h-full w-full object-cover rounded-full" />
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.fullName}
+                    className="h-full w-full object-cover rounded-full"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                      if (e.currentTarget.parentElement) {
+                        e.currentTarget.parentElement.innerText = initials || 'U'
+                      }
+                    }}
+                  />
                 ) : (
                   initials || <UserIcon className="h-10 w-10 text-primary" />
                 )}
@@ -444,7 +443,7 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
               </h2>
               <div className="flex items-center gap-2 mt-1.5">
                 <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-primary/10 text-primary border border-primary/20">
-                  {user.role || (user.isAdmin ? 'Admin' : 'Company Employee')}
+                  {user.role || (user.isAdmin ? 'Admin' : 'Supervisor')}
                 </span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   {user.status}
@@ -463,14 +462,27 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between gap-4 py-0.5">
-                  <span className="font-medium text-muted-fg text-sm shrink-0 flex items-center gap-1.5">
+                <div className="flex items-start justify-between gap-4 py-0.5">
+                  <span className="font-medium text-muted-fg text-sm shrink-0 mt-0.5 flex items-center gap-1.5">
                     <Building2 className="h-3.5 w-3.5 text-muted-fg" />
-                    Appointed Company:
+                    Appointed Companies:
                   </span>
-                  <span className="font-semibold text-focus text-sm text-right">
-                    {user.companyName || '—'}
-                  </span>
+                  <div className="flex flex-wrap gap-1 justify-end max-w-[280px]">
+                    {user.companyNames && user.companyNames.length > 0 ? (
+                      user.companyNames.map((cName) => (
+                        <span
+                          key={cName}
+                          className="text-xs px-2.5 py-0.5 rounded font-medium bg-slate-100 text-focus border border-slate-200"
+                        >
+                          {cName}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="font-semibold text-focus text-sm text-right">
+                        {user.companyName || '—'}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
@@ -479,39 +491,11 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
                     Role:
                   </span>
                   <span className="font-semibold text-focus text-sm text-right">
-                    {user.role || (user.isAdmin ? 'Admin' : 'Company Employee')}
+                    {user.role || (user.isAdmin ? 'Admin' : 'Supervisor')}
                   </span>
                 </div>
 
-                <div className="flex items-start justify-between gap-4 py-0.5">
-                  <span className="font-medium text-muted-fg text-sm shrink-0 mt-0.5 flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-muted-fg" />
-                    Permissions:
-                  </span>
-                  <div className="flex flex-wrap gap-1 justify-end max-w-[260px]">
-                    {permissions.addSales && (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-focus font-medium">Add Sales</span>
-                    )}
-                    {permissions.addExpense && (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-focus font-medium">Add Expense</span>
-                    )}
-                    {permissions.requestLoans && (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-focus font-medium">Request Loans</span>
-                    )}
-                    {permissions.exportData && (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-focus font-medium">Export Data</span>
-                    )}
-                    {permissions.viewRecords && (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-focus font-medium">View Records</span>
-                    )}
-                    {permissions.editRecords && (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-focus font-medium">Edit Records</span>
-                    )}
-                    {permissions.deleteRecords && (
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-focus font-medium">Delete Records</span>
-                    )}
-                  </div>
-                </div>
+
 
                 <div className="flex items-center justify-between gap-4 py-0.5">
                   <span className="font-medium text-muted-fg text-sm shrink-0">
@@ -525,26 +509,35 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
 
               {/* Modal Actions Footer */}
               <div className="flex items-center justify-end gap-3 pt-6 mt-4 border-t border-stroke/20 w-full">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isSubmitting}
-                  onClick={() => setIsConfirmDeleteOpen(true)}
-                  className="h-11 px-5 rounded-xl border border-stroke/50 text-focus hover:text-primary hover:border-primary/40 hover:bg-primary/5 font-medium text-sm flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="h-4 w-4 text-primary" />
-                  <span>Delete User</span>
-                </Button>
+                {isProtectedAdmin ? (
+                  <div className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium w-full">
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span>Primary System Administrator account is protected (read-only)</span>
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isSubmitting}
+                      onClick={() => setIsConfirmDeleteOpen(true)}
+                      className="h-11 px-5 rounded-xl border border-stroke/50 text-focus hover:text-primary hover:border-primary/40 hover:bg-primary/5 font-medium text-sm flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4 text-primary" />
+                      <span>Delete User</span>
+                    </Button>
 
-                <Button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={handleStartEdit}
-                  className="h-11 px-6 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-                >
-                  <Pencil className="h-4 w-4" />
-                  <span>Edit User</span>
-                </Button>
+                    <Button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={handleStartEdit}
+                      className="h-11 px-6 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-sm flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      <span>Edit User</span>
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}
