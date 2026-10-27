@@ -161,6 +161,7 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
 
   const handleConfirmSave = async () => {
     try {
+      setIsSubmitting(true)
       const updated = await employeeService.updateUser(user.id, {
         fullName: formData.fullName,
         email: formData.email,
@@ -169,10 +170,11 @@ export const ViewUserModal: React.FC<ViewUserModalProps> = ({
         assignedCompanies: editSelectedCompanies,
         avatarFile: editAvatarFile || undefined,
       })
-      onUpdate?.(updated)
       setIsConfirmEditOpen(false)
       setIsEditing(false)
       setEditAvatarFile(null)
+      onOpenChange(false)
+      onUpdate?.(updated)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to update user.')
     } finally {

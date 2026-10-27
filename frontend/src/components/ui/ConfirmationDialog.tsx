@@ -78,7 +78,7 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[460px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl text-center">
+      <DialogContent overlayClassName="z-[60]" className="sm:max-w-[460px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl text-center z-[70]">
         <div className="flex flex-col items-center space-y-4 pt-1">
           {getIcon()}
 
@@ -92,15 +92,17 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
           </DialogHeader>
 
           <div className="flex items-center justify-center gap-3 pt-4 w-full">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isLoading}
-              onClick={() => onOpenChange(false)}
-              className="flex-1 h-11 rounded-xl border border-stroke/50 text-focus hover:bg-surface text-sm font-medium transition-colors"
-            >
-              {cancelLabel}
-            </Button>
+            {Boolean(cancelLabel) && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isLoading}
+                onClick={() => onOpenChange(false)}
+                className="flex-1 h-11 rounded-xl border border-stroke/50 text-focus hover:bg-surface text-sm font-medium transition-colors"
+              >
+                {cancelLabel}
+              </Button>
+            )}
             <Button
               type="button"
               disabled={isLoading}

@@ -71,15 +71,15 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
 
   // Multi-company selection state
   const [selectedCompanies, setSelectedCompanies] = React.useState<string[]>([])
-
+  const [companyError, setCompanyError] = React.useState<string | null>(null)
 
   const form = useForm<CreateUserFormValues>({
     resolver: zodResolver(createUserSchema),
     defaultValues: {
       fullName: '',
       email: '',
-      assignedCompany: companies[0]?.name || 'MCT Head Office',
-      assignedCompanies: companies[0]?.name ? [companies[0].name] : [],
+      assignedCompany: '',
+      assignedCompanies: [],
       role: 'Supervisor',
       avatarUrl: '',
     },
@@ -98,21 +98,13 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
       .toUpperCase()
   }, [watchedName])
 
-  // Update default assignedCompany once companies load
-  React.useEffect(() => {
-    if (companies.length > 0 && selectedCompanies.length === 0) {
-      setSelectedCompanies([companies[0].name])
-      form.setValue('assignedCompany', companies[0].name)
-      form.setValue('assignedCompanies', [companies[0].name])
-    }
-  }, [companies, form, selectedCompanies.length])
-
   const toggleCompany = (companyName: string) => {
     setSelectedCompanies((prev) => {
       const exists = prev.includes(companyName)
       const next = exists ? prev.filter((c) => c !== companyName) : [...prev, companyName]
       form.setValue('assignedCompanies', next)
       form.setValue('assignedCompany', next[0] || '')
+      if (next.length > 0) setCompanyError(null)
       return next
     })
   }
@@ -122,6 +114,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
     setSelectedCompanies(all)
     form.setValue('assignedCompanies', all)
     form.setValue('assignedCompany', all[0] || '')
+    if (all.length > 0) setCompanyError(null)
   }
 
   const handleClearCompanies = () => {
@@ -155,14 +148,15 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
       form.reset({
         fullName: '',
         email: '',
-        assignedCompany: companies[0]?.name || 'MCT Head Office',
-        assignedCompanies: companies[0]?.name ? [companies[0].name] : [],
+        assignedCompany: '',
+        assignedCompanies: [],
         role: 'Supervisor',
         avatarUrl: '',
       })
       setProfilePreview(null)
       setAvatarFile(null)
-      setSelectedCompanies(companies[0]?.name ? [companies[0].name] : [])
+      setSelectedCompanies([])
+      setCompanyError(null)
       setPendingValues(null)
       setIsConfirmOpen(false)
     }
@@ -170,10 +164,11 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
   }
 
   const onSubmit = (values: CreateUserFormValues) => {
-    if (values.role !== 'Admin' && values.role !== 'Audit' && selectedCompanies.length === 0) {
-      window.alert('Please select at least one assigned company.')
+    if (selectedCompanies.length === 0) {
+      setCompanyError('Please select at least one assigned company.')
       return
     }
+    setCompanyError(null)
     setPendingValues(values)
     setIsConfirmOpen(true)
   }
@@ -374,8 +369,17 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
                     <Label className="text-xs sm:text-sm font-medium text-focus/90">
                       Company Assigned <span className="text-red-500">*</span>
                     </Label>
-                    <span className="text-[11px] font-semibold text-primary px-2 py-0.5 rounded-full bg-red-100/70">
-                      {selectedCompanies.length} selected
+                    <span
+                      className={cn(
+                        'text-[11px] font-semibold px-2 py-0.5 rounded-full transition-colors',
+                        selectedCompanies.length > 0
+                          ? 'bg-red-100/70 text-primary'
+                          : 'bg-slate-100 text-muted-fg'
+                      )}
+                    >
+                      {selectedCompanies.length === 0
+                        ? 'None selected'
+                        : `${selectedCompanies.length} selected`}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
@@ -455,6 +459,11 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
                     })
                   )}
                 </div>
+                {companyError && (
+                  <p className="text-xs text-red-600 font-medium pt-1 animate-in fade-in-50">
+                    {companyError}
+                  </p>
+                )}
               </div>
 
 
