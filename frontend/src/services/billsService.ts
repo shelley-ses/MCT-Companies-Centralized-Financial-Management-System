@@ -16,7 +16,7 @@ type BackendBill = {
   company_id?: number
   company?: string
   bill_name: string
-  category: string
+  category?: string
   account_no?: string
   amount: number | string
   recurring: 'daily' | 'monthly' | 'yearly'
@@ -24,7 +24,7 @@ type BackendBill = {
   next_period_date?: string
   due_date_reminder: number
   notes?: string
-  status: 'unpaid' | 'paid' | 'overdue' | 'due soon'
+  status: 'unpaid' | 'paid' | 'overdue' | 'due soon' | 'partially paid'
   payments?: Array<{
     bill_payment_id: number
     period_key: string
@@ -57,8 +57,8 @@ export interface BillItem {
   id: string
   billerName: string
   company: string
-  category: BillCategory | string
-  accountNo: string
+  category?: string
+  accountNo?: string
   amount: number
   dueDate: string // YYYY-MM-DD
   dueDayOfMonth?: number // e.g. 15 for 15th of the month
@@ -916,7 +916,6 @@ export const billsService = {
   },
 
   async createBill(input: NewBillInput): Promise<BillItem> {
-    const categoryToUse = (input.category || '').trim() || 'General'
     try {
       const response = await fetch('/api/v1/bills', {
         method: 'POST',
@@ -924,8 +923,6 @@ export const billsService = {
         body: JSON.stringify({
           company: input.company,
           bill_name: input.billerName,
-          category: categoryToUse,
-          account_no: input.accountNo || null,
           amount: input.amount,
           recurring: (input.billingCycle || 'Monthly').toLowerCase(),
           due_date: input.dueDate,
@@ -964,8 +961,6 @@ export const billsService = {
       id: `bill-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       billerName: input.billerName.trim(),
       company: input.company.trim(),
-      category: categoryToUse,
-      accountNo: (input.accountNo || '').trim(),
       amount: Number(input.amount) || 0,
       dueDate: input.dueDate,
       dueDayOfMonth: dueDay,
@@ -989,8 +984,6 @@ export const billsService = {
       const payload: Record<string, unknown> = {}
       if (input.billerName !== undefined) payload.bill_name = input.billerName
       if (input.company !== undefined) payload.company = input.company
-      if (input.category !== undefined) payload.category = input.category
-      if (input.accountNo !== undefined) payload.account_no = input.accountNo
       if (input.amount !== undefined) payload.amount = input.amount
       if (input.billingCycle !== undefined) payload.recurring = input.billingCycle.toLowerCase()
       if (input.dueDate !== undefined) payload.due_date = input.dueDate
@@ -1029,8 +1022,6 @@ export const billsService = {
       ...input,
       billerName: input.billerName !== undefined ? input.billerName.trim() : existing.billerName,
       company: input.company !== undefined ? input.company.trim() : existing.company,
-      category: input.category !== undefined ? input.category.trim() : existing.category,
-      accountNo: input.accountNo !== undefined ? input.accountNo.trim() : existing.accountNo,
       amount: input.amount !== undefined ? Number(input.amount) : existing.amount,
       dueDate: input.dueDate !== undefined ? input.dueDate : existing.dueDate,
       dueDayOfMonth: dueDay,
@@ -1112,6 +1103,14 @@ export const billsService = {
     const paymentPeriod = getBillPaymentOptions(bill).nextPayable
     const targetPeriodKey = payment.periodKey || paymentPeriod.key
 
+    const existingPayments = bill.payments || []
+    const existingPeriodPayment = existingPayments.find((p) => p.periodKey === targetPeriodKey)
+    const alreadyPaid = existingPeriodPayment ? existingPeriodPayment.amount : 0
+    const remaining = Math.max(0, bill.amount - alreadyPaid)
+    if (payment.amount > remaining + 0.01) {
+      throw new Error(`Amount paid cannot be greater than the Monthly Bill Amount or remaining balance (${remaining}).`)
+    }
+
     const newPaymentRecord: BillPaymentRecord = {
       id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       periodKey: targetPeriodKey,
@@ -1123,7 +1122,6 @@ export const billsService = {
       createdAt: nowIso,
     }
 
-    const existingPayments = bill.payments || []
     const today = nowIso.split('T')[0] || '2026-10-19'
     const updatedPayments = [newPaymentRecord, ...existingPayments]
     const latestPayment = [...updatedPayments].sort((a, b) =>

@@ -16,8 +16,6 @@ class Bill(Base):
         index=True,
     )
     bill_name = Column(String(255), nullable=False)
-    category = Column(String(100), nullable=False)
-    account_no = Column(String(100), nullable=True)
     amount = Column(Numeric(15, 2), nullable=False)
     recurring = Column(String(50), nullable=False, default="monthly")
     due_date = Column(Date, nullable=False)

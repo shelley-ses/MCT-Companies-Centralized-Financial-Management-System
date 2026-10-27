@@ -9,8 +9,6 @@ class BillBase(BaseModel):
     company_id: Optional[int] = None
     company: Optional[str] = Field(None, min_length=1, max_length=100)
     bill_name: str = Field(..., min_length=1, max_length=255)
-    category: Optional[str] = Field(default="General", max_length=100)
-    account_no: Optional[str] = Field(None, max_length=100)
     amount: Decimal = Field(..., gt=0, decimal_places=2)
     recurring: Literal["daily", "monthly", "yearly"] = Field(
         default="monthly",
@@ -37,8 +35,6 @@ class BillUpdate(BaseModel):
     company_id: Optional[int] = None
     company: Optional[str] = Field(None, min_length=1, max_length=100)
     bill_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    category: Optional[str] = Field(None, min_length=1, max_length=100)
-    account_no: Optional[str] = Field(None, max_length=100)
     amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
     recurring: Optional[Literal["daily", "monthly", "yearly"]] = None
     due_date: Optional[date] = None

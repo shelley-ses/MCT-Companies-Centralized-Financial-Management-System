@@ -182,8 +182,6 @@ CREATE TABLE IF NOT EXISTS bills (
     bill_id BIGSERIAL PRIMARY KEY,
     company_id BIGINT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
     bill_name VARCHAR(255) NOT NULL,
-    category VARCHAR(100) NOT NULL,
-    account_no VARCHAR(100),
     amount NUMERIC(15, 2) NOT NULL,
     recurring VARCHAR(50) NOT NULL DEFAULT 'monthly',
     due_date DATE NOT NULL,

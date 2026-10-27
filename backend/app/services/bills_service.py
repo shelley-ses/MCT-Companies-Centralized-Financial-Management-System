@@ -196,8 +196,6 @@ class BillsService:
             company_id=bill.company_id,
             company=bill.company.company_name if bill.company else None,
             bill_name=bill.bill_name,
-            category=bill.category,
-            account_no=bill.account_no,
             amount=bill.amount,
             recurring=_normalize_recurring(bill.recurring),
             due_date=bill.due_date,
@@ -248,8 +246,6 @@ class BillsService:
                 detail=f"A bill with provider name '{clean_name}' already exists for {company.company_name}."
             )
         values = data.model_dump(exclude={"company", "company_id", "status"})
-        if not values.get("category"):
-            values["category"] = "General"
         values.update(company_id=company.company_id, recurring=_normalize_recurring(data.recurring), status="unpaid")
         bill = Bill(**values)
         self.db.add(bill)
@@ -328,6 +324,14 @@ class BillsService:
             )
             .first()
         )
+
+        current_paid = existing_payment.amount if existing_payment else 0.0
+        remaining = max(0.0, bill.amount - current_paid)
+        if data.amount > (remaining + 0.01):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Amount paid cannot be greater than the Monthly Bill Amount or remaining balance (₱{remaining:,.2f})."
+            )
 
         if existing_payment:
             existing_payment.amount += data.amount
