@@ -175,11 +175,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '/bank-management',
-        element: (
-          <AdminOnlyRoute>
-            <BankManagementPage />
-          </AdminOnlyRoute>
-        ),
+        element: <BankManagementPage />,
       },
       // Operations & Management
       {
