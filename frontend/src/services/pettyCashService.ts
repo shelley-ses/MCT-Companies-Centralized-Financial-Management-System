@@ -3,6 +3,8 @@
 // by the backend, so there is no local fallback: when the backend is unreachable
 // the calls throw and callers show the wallet as unavailable.
 
+import { websocketService } from './websocketService'
+
 export const PETTY_CASH_METHOD = 'Petty Cash'
 
 export const isPettyCashMethod = (method?: string | null): boolean =>
@@ -22,7 +24,7 @@ export interface PettyCashSummary {
 
 export interface PettyCashLedgerEntry {
   id: string
-  type: 'topup' | 'expense'
+  type: 'topup' | 'expense' | 'request'
   recordId: number
   companyId?: number | null
   companyName?: string | null
@@ -30,17 +32,25 @@ export interface PettyCashLedgerEntry {
   description: string
   category?: string | null
   referenceNo?: string | null
+  amountRequested: number
   amountIn: number
   amountOut: number
   runningBalance: number
+  status: string
+  remark?: string | null
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  endorsedBy?: string | null
+  endorsedAt?: string | null
+  financeRemark?: string | null
 }
 
 export interface NewPettyCashTopUpInput {
   company: string
   amount: number
   date: string
-  referenceNo?: string
   description?: string
+  status?: string
 }
 
 export interface PettyCashPeriod {
@@ -62,7 +72,7 @@ interface BackendSummary {
 
 interface BackendLedgerEntry {
   entry_id: string
-  entry_type: 'topup' | 'expense'
+  entry_type: 'topup' | 'expense' | 'request'
   record_id: number
   company_id?: number | null
   company_name?: string | null
@@ -70,17 +80,40 @@ interface BackendLedgerEntry {
   description: string
   category?: string | null
   reference_no?: string | null
+  amount_requested?: string | number
   amount_in: string | number
   amount_out: string | number
   running_balance: string | number
+  status?: string | null
+  remark?: string | null
+  reviewed_by?: string | null
+  reviewed_at?: string | null
+  endorsed_by?: string | null
+  endorsed_at?: string | null
+  finance_remark?: string | null
 }
 
 function backendHeaders(): HeadersInit {
   const token =
     typeof window !== 'undefined' ? sessionStorage.getItem('mct_access_token') : null
+  const userStr = typeof window !== 'undefined' ? sessionStorage.getItem('mct_user') : null
+  let userName = ''
+  let userRole = ''
+  if (userStr) {
+    try {
+      const u = JSON.parse(userStr)
+      userName = u.fullName || u.email || ''
+      userRole = u.role || ''
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(userName ? { 'X-User-Name': userName } : {}),
+    ...(userRole ? { 'X-User-Role': userRole } : {}),
   }
 }
 
@@ -116,9 +149,17 @@ function mapLedgerEntry(data: BackendLedgerEntry): PettyCashLedgerEntry {
     description: data.description,
     category: data.category,
     referenceNo: data.reference_no,
+    amountRequested: Number(data.amount_requested || (data.entry_type === 'topup' ? data.amount_in : 0)),
     amountIn: Number(data.amount_in),
     amountOut: Number(data.amount_out),
     runningBalance: Number(data.running_balance),
+    status: (data.status as any) || 'Approved',
+    remark: data.remark,
+    reviewedBy: data.reviewed_by,
+    reviewedAt: data.reviewed_at,
+    endorsedBy: data.endorsed_by,
+    endorsedAt: data.endorsed_at,
+    financeRemark: data.finance_remark,
   }
 }
 
@@ -193,11 +234,49 @@ export const pettyCashService = {
         company: input.company,
         amount: input.amount,
         topup_date: input.date,
-        reference_no: input.referenceNo || null,
+        description: input.description || null,
+        status: input.status || 'Pending Finance Approval',
+      }),
+    })
+    if (!response.ok) throw await getBackendError(response)
+    this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
+  },
+
+  async updateTopUp(recordId: number, input: { amount?: number; description?: string }): Promise<void> {
+    const response = await fetch(`/api/v1/petty-cash/topups/${recordId}`, {
+      method: 'PUT',
+      headers: backendHeaders(),
+      body: JSON.stringify({
+        amount: input.amount,
         description: input.description || null,
       }),
     })
     if (!response.ok) throw await getBackendError(response)
+    this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
+  },
+
+  async endorseTopUp(recordId: number, action: 'endorse' | 'reject', remark: string): Promise<void> {
+    const response = await fetch(`/api/v1/petty-cash/topups/${recordId}/endorse`, {
+      method: 'POST',
+      headers: backendHeaders(),
+      body: JSON.stringify({ action, remark }),
+    })
+    if (!response.ok) throw await getBackendError(response)
+    this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
+  },
+
+  async reviewTopUp(recordId: number, action: 'approve' | 'disapprove', remark: string): Promise<void> {
+    const response = await fetch(`/api/v1/petty-cash/topups/${recordId}/review`, {
+      method: 'POST',
+      headers: backendHeaders(),
+      body: JSON.stringify({ action, remark }),
+    })
+    if (!response.ok) throw await getBackendError(response)
+    this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
   },
 
   async deleteTopUp(topUpId: number): Promise<void> {
@@ -206,6 +285,8 @@ export const pettyCashService = {
       headers: backendHeaders(),
     })
     if (!response.ok) throw await getBackendError(response)
+    this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
   },
 
   async updateThreshold(company: string, threshold: number): Promise<PettyCashSummary> {

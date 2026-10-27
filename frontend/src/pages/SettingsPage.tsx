@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Building2,
   Mail,
@@ -16,6 +17,7 @@ import {
   Check,
   Wallet,
   Coins,
+  ArrowLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,10 +37,19 @@ interface NotificationSettings {
 }
 
 export const SettingsPage: React.FC = () => {
+  const navigate = useNavigate()
   const { user } = useSession()
   const isAuditor = user?.role === 'Supervisor'
   const isRestrictedRole = user?.role === 'Admin' || user?.role === 'Finance' || user?.role === 'Audit'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate('/dashboard')
+    }
+  }
 
   // Company data states
   const [companies, setCompanies] = React.useState<Company[]>([])
@@ -235,6 +246,15 @@ export const SettingsPage: React.FC = () => {
       {/* 1. Header Toolbar (Identical unified level matching other pages) */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
+          <button
+            type="button"
+            onClick={handleBack}
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 -ml-2 text-muted-fg hover:text-focus text-xs font-semibold rounded-xl hover:bg-slate-100 transition-colors cursor-pointer mb-1.5"
+            aria-label="Go back to previous page"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
+          </button>
           <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
             Settings
           </h1>

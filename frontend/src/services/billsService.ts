@@ -1,3 +1,5 @@
+import { isCompanyMatch } from '@/utils/companyUtils'
+
 export interface BillPaymentRecord {
   id: string
   periodKey?: string
@@ -876,9 +878,7 @@ export const billsService = {
     if (!companyFilter || companyFilter === 'All Companies') {
       return updated
     }
-    return updated.filter(
-      (b) => b.company.trim().toLowerCase() === companyFilter.trim().toLowerCase()
-    )
+    return updated.filter((b) => isCompanyMatch(b.company, companyFilter))
   },
 
   async getBillById(id: string): Promise<BillItem | null> {
@@ -1069,15 +1069,11 @@ export const billsService = {
     const bill = bills[index]
     const nowIso = new Date().toISOString()
     const paymentPeriod = getBillPaymentOptions(bill).nextPayable
-    if (payment.periodKey && payment.periodKey !== paymentPeriod.key) {
-      throw new Error(
-        `Please settle ${paymentPeriod.label} before recording payment for another billing period.`
-      )
-    }
+    const targetPeriodKey = payment.periodKey || paymentPeriod.key
 
     const newPaymentRecord: BillPaymentRecord = {
       id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      periodKey: payment.periodKey || paymentPeriod.key,
+      periodKey: targetPeriodKey,
       paymentDate: payment.paymentDate,
       amount: payment.amount,
       paymentMethod: payment.paymentMethod,

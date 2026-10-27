@@ -12,6 +12,7 @@ class PettyCashTopUpCreate(BaseModel):
     topup_date: date
     reference_no: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
+    status: Optional[str] = "Pending Finance Endorsement"
     created_by: Optional[int] = None
 
     @model_validator(mode="after")
@@ -21,6 +22,11 @@ class PettyCashTopUpCreate(BaseModel):
         if self.topup_date > date.today():
             raise ValueError("Top-up date cannot be in the future.")
         return self
+
+
+class PettyCashTopUpUpdate(BaseModel):
+    amount: Optional[Decimal] = Field(None, ge=1, decimal_places=2)
+    description: Optional[str] = None
 
 
 class PettyCashTopUpOut(BaseModel):
@@ -33,8 +39,25 @@ class PettyCashTopUpOut(BaseModel):
     topup_date: date
     reference_no: Optional[str] = None
     description: Optional[str] = None
+    status: str = "Pending Finance Endorsement"
+    endorsed_by: Optional[str] = None
+    endorsed_at: Optional[datetime] = None
+    finance_remark: Optional[str] = None
+    remark: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     created_by: Optional[int] = None
     created_at: Optional[datetime] = None
+
+
+class PettyCashEndorseIn(BaseModel):
+    action: Literal["endorse", "reject"]
+    remark: str = Field(..., min_length=1, description="A remark is required when endorsing or rejecting.")
+
+
+class PettyCashReviewIn(BaseModel):
+    action: Literal["approve", "disapprove"]
+    remark: str = Field(..., min_length=1, description="A remark is required when approving or disapproving.")
 
 
 class PettyCashWalletUpdate(BaseModel):
@@ -55,7 +78,7 @@ class PettyCashSummaryOut(BaseModel):
 
 class PettyCashLedgerEntry(BaseModel):
     entry_id: str
-    entry_type: Literal["topup", "expense"]
+    entry_type: Literal["topup", "expense", "request"]
     record_id: int
     company_id: Optional[int] = None
     company_name: Optional[str] = None
@@ -63,6 +86,15 @@ class PettyCashLedgerEntry(BaseModel):
     description: str
     category: Optional[str] = None
     reference_no: Optional[str] = None
+    amount_requested: Decimal = Decimal("0.00")
     amount_in: Decimal
     amount_out: Decimal
     running_balance: Decimal
+    status: Optional[str] = "Approved"
+    endorsed_by: Optional[str] = None
+    endorsed_at: Optional[datetime] = None
+    finance_remark: Optional[str] = None
+    remark: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+

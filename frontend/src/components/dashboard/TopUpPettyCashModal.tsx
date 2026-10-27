@@ -15,13 +15,13 @@ import {
   AlertCircle,
   PlusCircle,
   Clock,
-  ShieldCheck,
-  Landmark,
 } from 'lucide-react'
 import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
 import { useSession } from '@/hooks/useSession'
 import { cn } from '@/lib/utils'
+
+import { pettyCashService } from '@/services/pettyCashService'
 
 export interface TopUpPettyCashModalProps {
   open: boolean
@@ -29,7 +29,7 @@ export interface TopUpPettyCashModalProps {
   company: string
   currentBalance?: number | null
   companies?: string[]
-  onSuccess?: (newRequest: PettyCashTopUpRecord) => void
+  onSuccess?: (newRequest?: PettyCashTopUpRecord) => void
 }
 
 export interface PettyCashTopUpRecord {
@@ -40,61 +40,17 @@ export interface PettyCashTopUpRecord {
   type: 'topup' | 'request'
   description: string
   referenceNo?: string
-  bankSource: string
+  bankSource?: string
   amountRequested: number
   amountIn: number
   amountOut: number
   runningBalance: number
-  status: 'Approved' | 'Pending Finance Approval' | 'Rejected'
+  status: 'Approved' | 'Pending Finance Approval' | 'Disapproved' | 'Rejected'
+  remark?: string
   requestedBy: string
   approvedBy?: string
   approvedAt?: string
 }
-
-export const CORPORATE_BANK_ACCOUNTS = [
-  {
-    id: 'bdo-01',
-    bankName: 'BDO Unibank',
-    accountName: 'MCT Holdings Corp.',
-    accountNumber: '0012-3456-7890',
-    type: 'Corporate Checking',
-  },
-  {
-    id: 'bpi-01',
-    bankName: 'Bank of the Philippine Islands (BPI)',
-    accountName: 'MCT Operating Account',
-    accountNumber: '0987-6543-2100',
-    type: 'Commercial Operating',
-  },
-  {
-    id: 'mb-01',
-    bankName: 'Metrobank',
-    accountName: 'MCT Central Treasury',
-    accountNumber: '0554-1234-9876',
-    type: 'Central Treasury',
-  },
-  {
-    id: 'ub-01',
-    bankName: 'UnionBank of the Philippines',
-    accountName: 'MCT Digital Treasury',
-    accountNumber: '1029-3847-5610',
-    type: 'Digital Treasury',
-  },
-  {
-    id: 'sb-01',
-    bankName: 'Security Bank',
-    accountName: 'MCT Commercial Operating',
-    accountNumber: '0321-6549-8712',
-    type: 'Corporate Commercial',
-  },
-  {
-    id: 'sales-dep',
-    bankName: 'Corporate Sales Depository',
-    accountName: 'Daily Sales Remittance Bank Account',
-    accountNumber: '5521-8890-4412',
-    type: 'Sales Remittance Depository',
-  },
-]
 
 const todayIso = () => formatToYYYYMMDD(new Date())
 
@@ -113,12 +69,9 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
   const isCompanyScoped = isSupervisor
 
   const [requestingCompany, setRequestingCompany] = React.useState(company)
-  const [selectedBank, setSelectedBank] = React.useState(CORPORATE_BANK_ACCOUNTS[0].id)
   const [amountInput, setAmountInput] = React.useState('')
   const [requestDate, setRequestDate] = React.useState(todayIso)
   const [particulars, setParticulars] = React.useState('')
-  const [referenceNo, setReferenceNo] = React.useState('')
-  const [directApprove, setDirectApprove] = React.useState(isFinanceOrAdmin)
   const [error, setError] = React.useState('')
   const [isSubmitting, setIsSubmitting] = React.useState(false)
 
@@ -127,26 +80,22 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
     if (open) {
       const initialComp = company && company !== 'All Companies' ? company : (user?.assignedCompany || 'MCT Kitchen')
       setRequestingCompany(initialComp)
-      setSelectedBank(CORPORATE_BANK_ACCOUNTS[0].id)
       setAmountInput('')
       setRequestDate(todayIso())
       setParticulars('')
-      setReferenceNo(`PC-REQ-${Math.floor(1000 + Math.random() * 9000)}`)
-      setDirectApprove(isFinanceOrAdmin)
       setError('')
       setIsSubmitting(false)
     }
-  }, [open, company, user?.assignedCompany, isFinanceOrAdmin])
+  }, [open, company, user?.assignedCompany])
 
   const parsedAmount = parseFloat(amountInput) || 0
-  const chosenBankObj = CORPORATE_BANK_ACCOUNTS.find((b) => b.id === selectedBank) || CORPORATE_BANK_ACCOUNTS[0]
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
     if (!parsedAmount || parsedAmount < 1) {
-      setError('Please enter a valid top-up amount of at least ₱1.00')
+      setError('Please enter a valid amount of at least ₱1.00')
       return
     }
 
@@ -156,37 +105,35 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
     }
 
     if (!particulars.trim()) {
-      setError('Please provide particulars / reason for the petty cash top up.')
+      setError('Please provide particulars / reason for the petty cash request.')
       return
     }
 
     setIsSubmitting(true)
 
     try {
-      const willApproveImmediately = isFinanceOrAdmin && directApprove
-      // Supervisors do not choose bank account; bank is designated by Finance upon review
-      const bankLabel = isFinanceOrAdmin
-        ? `${chosenBankObj.bankName} (${chosenBankObj.accountNumber})`
-        : 'Bank Account (Finance Designated)'
+      // Connect to backend database directly
+      await pettyCashService.createTopUp({
+        company: requestingCompany,
+        amount: parsedAmount,
+        date: requestDate,
+        description: particulars.trim(),
+        status: 'Pending Finance Approval',
+      })
 
       const newRecord: PettyCashTopUpRecord = {
         id: `pc-${Date.now()}`,
         recordId: Date.now(),
         companyName: requestingCompany,
         date: requestDate,
-        type: willApproveImmediately ? 'topup' : 'request',
+        type: 'request',
         description: particulars.trim(),
-        referenceNo: referenceNo.trim() || undefined,
-        bankSource: bankLabel,
         amountRequested: parsedAmount,
-        // Validation: If not yet approved, amountIn is 0 (unreceived)
-        amountIn: willApproveImmediately ? parsedAmount : 0,
+        amountIn: 0,
         amountOut: 0,
-        runningBalance: (currentBalance || 0) + (willApproveImmediately ? parsedAmount : 0),
-        status: willApproveImmediately ? 'Approved' : 'Pending Finance Approval',
-        requestedBy: user?.fullName || user?.email || (userRole === 'supervisor' ? 'Supervisor' : 'Finance'),
-        approvedBy: willApproveImmediately ? (user?.fullName || user?.email || 'Finance') : undefined,
-        approvedAt: willApproveImmediately ? new Date().toISOString() : undefined,
+        runningBalance: currentBalance || 0,
+        status: 'Pending Finance Approval',
+        requestedBy: user?.fullName || user?.email || (userRole === 'supervisor' ? 'Supervisor' : 'Company User'),
       }
 
       onSuccess?.(newRecord)
@@ -212,9 +159,7 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
                 Request Petty Cash Top Up
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5">
-                {isFinanceOrAdmin
-                  ? 'Disburse replenishment funds from corporate bank accounts into petty cash fund.'
-                  : 'Submit petty cash replenishment request. Finance will review and disburse from the corporate bank.'}
+                Submit petty cash replenishment request. Finance will review and record their decision with required remarks.
               </DialogDescription>
             </div>
           </div>
@@ -324,66 +269,7 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
             </div>
           </div>
 
-          {/* Row 3: Source Bank Account (Visible ONLY to Finance / Admin) OR Reference No */}
-          {isFinanceOrAdmin ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold text-focus block">
-                  Source Bank Account <span className="text-red-500">*</span>
-                </Label>
-                <select
-                  value={selectedBank}
-                  onChange={(e) => setSelectedBank(e.target.value)}
-                  className="w-full h-9 px-3 rounded-xl border border-stroke/60 bg-white text-xs font-medium text-focus focus:outline-none focus:ring-2 focus:ring-focus truncate"
-                >
-                  {CORPORATE_BANK_ACCOUNTS.map((bank) => (
-                    <option key={bank.id} value={bank.id}>
-                      {bank.bankName} — {bank.accountNumber} ({bank.type})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold text-focus block">
-                  Reference / Voucher No.
-                </Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. PC-TOPUP-2026-001"
-                  value={referenceNo}
-                  onChange={(e) => setReferenceNo(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
-                />
-              </div>
-            </div>
-          ) : (
-            /* For Supervisors: Source Bank Account options are removed. Reference No + Finance Routing Pill */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold text-focus block">
-                  Reference / Voucher No.
-                </Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. PC-REQ-2026-001"
-                  value={referenceNo}
-                  onChange={(e) => setReferenceNo(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold text-focus block">Funding Source</Label>
-                <div className="h-9 px-3 rounded-xl border border-stroke/40 bg-slate-50 text-muted-fg text-xs font-medium flex items-center gap-2 select-none truncate">
-                  <Landmark className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                  <span className="truncate">Designated by Finance upon review</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Row 4: Particulars / Purpose (Full Width) */}
+          {/* Row 3: Particulars / Purpose (Full Width) */}
           <div className="space-y-1">
             <Label className="text-xs font-semibold text-focus block">
               Particulars / Purpose <span className="text-red-500">*</span>
@@ -398,57 +284,13 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
             />
           </div>
 
-          {/* Finance Action Toggle (If user is Finance / Admin) OR Supervisor Notice */}
-          {isFinanceOrAdmin ? (
-            <div className="p-3 rounded-xl bg-slate-50 border border-stroke/40 flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <Label className="text-xs font-semibold text-focus block">
-                  Finance Action
-                </Label>
-                <p className="text-[11px] text-muted-fg">
-                  {directApprove
-                    ? 'Disburse from selected bank and credit to petty cash fund immediately.'
-                    : 'Save request as Pending Finance Approval.'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setDirectApprove(true)}
-                  className={cn(
-                    'flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-all',
-                    directApprove
-                      ? 'bg-emerald-500/10 border-emerald-500 text-emerald-700 shadow-xs'
-                      : 'border-stroke/60 bg-white text-muted-fg hover:bg-slate-100'
-                  )}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Approve & Disburse</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setDirectApprove(false)}
-                  className={cn(
-                    'flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-semibold transition-all',
-                    !directApprove
-                      ? 'bg-amber-500/10 border-amber-500 text-amber-700 shadow-xs'
-                      : 'border-stroke/60 bg-white text-muted-fg hover:bg-slate-100'
-                  )}
-                >
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Save as Pending</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/60 text-xs text-amber-900 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>
-                Request will be sent to Finance. The petty cash will be disbursed from the bank ONLY IF FINANCE APPROVES.
-              </span>
-            </div>
-          )}
+          {/* Notice to user */}
+          <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/60 text-xs text-amber-900 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              Request will be routed to the Finance team for review. Required remarks and approval are confirmed by Finance.
+            </span>
+          </div>
 
           {/* Action Buttons */}
           <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stroke/20">
@@ -465,14 +307,10 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
               type="submit"
               size="sm"
               disabled={isSubmitting}
-              className="h-9 px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs shadow-xs flex items-center gap-2"
+              className="h-9 px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs shadow-xs flex items-center gap-2 cursor-pointer"
             >
               <PlusCircle className="w-3.5 h-3.5" />
-              <span>
-                {isFinanceOrAdmin && directApprove
-                  ? 'Approve & Credit Petty Cash'
-                  : 'Submit Request to Finance'}
-              </span>
+              <span>{isSubmitting ? 'Submitting...' : 'Submit Request to Finance'}</span>
             </Button>
           </div>
         </form>

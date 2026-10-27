@@ -35,7 +35,7 @@ export interface ExpenseItem {
   totalPaid?: number
   outstandingBalance?: number
   repayments?: ExpenseRepaymentRecord[]
-  status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid'
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid' | 'On hold' | 'Unpaid'
   auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
   auditedBy?: string
   auditNotes?: string
@@ -54,7 +54,7 @@ export interface NewExpenseInput {
   category: string
   paymentMethod?: string
   company: string
-  status: 'Paid' | 'Pending'
+  status: 'Paid' | 'Pending' | 'On hold' | 'Unpaid'
   items?: ParticularItem[]
 }
 

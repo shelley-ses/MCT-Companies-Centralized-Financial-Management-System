@@ -91,10 +91,13 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
     return allCompanyNames.filter((c) => c.trim().toLowerCase() !== borrowerNorm)
   }, [allCompanyNames, loan])
 
+  const [remark, setRemark] = React.useState('')
+
   // Reset / initialize modal state when opened
   React.useEffect(() => {
     if (open && loan) {
       setError('')
+      setRemark('')
       setIsSubmitting(false)
       setIsLenderDropdownOpen(false)
       setInterestRate(String(loan.interestRate || 0))
@@ -127,7 +130,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
 
   if (!loan) return null
 
-  const handleApprove = async () => {
+  const handleEndorse = async () => {
     setError('')
     if (!selectedLender.trim()) {
       setError('Please choose what company will provide this loan.')
@@ -142,18 +145,47 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
       return
     }
 
+    if (!remark.trim()) {
+      setError('A finance endorsement remark is required.')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const parsedInterest = parseFloat(interestRate) || 0
-      const approved = await loanService.approveLoan(loan.id, {
+      const endorsed = await loanService.endorseLoan(loan.id, {
+        action: 'endorse',
         lenderCompany: selectedLender.trim(),
         interestRate: parsedInterest,
         dueDate: dueDate.trim() || undefined,
+        remark: remark.trim(),
       })
-      onSuccess(approved)
+      onSuccess(endorsed)
       onOpenChange(false)
     } catch (err: any) {
-      setError(err?.message || 'Failed to approve loan request.')
+      setError(err?.message || 'Failed to endorse loan request.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleReject = async () => {
+    setError('')
+    if (!remark.trim()) {
+      setError('Please provide a reason / remark for rejecting this loan.')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const rejected = await loanService.endorseLoan(loan.id, {
+        action: 'reject',
+        remark: remark.trim(),
+      })
+      onSuccess(rejected)
+      onOpenChange(false)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reject loan request.')
     } finally {
       setIsSubmitting(false)
     }
@@ -164,16 +196,16 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
       <DialogContent className="sm:max-w-[520px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
         <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 shadow-xs">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <DialogTitle className="text-lg sm:text-xl font-bold text-focus leading-tight">
-                Review & Approve Loan
+                Finance Review & Endorse Loan
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-fg font-normal">
-                Finance authorization for borrowing request from{' '}
-                <span className="font-semibold text-focus">{loan.borrower}</span>
+                Assign lender and endorse loan request from{' '}
+                <span className="font-semibold text-focus">{loan.borrower}</span> to Internal Audit
               </DialogDescription>
             </div>
           </div>
@@ -231,11 +263,11 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
                   onClick={() => setIsLenderDropdownOpen((prev) => !prev)}
                   className={cn(
                     'w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white hover:bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-2xs flex items-center justify-between transition-colors cursor-pointer',
-                    isLenderDropdownOpen && 'ring-2 ring-emerald-500/20 border-emerald-600'
+                    isLenderDropdownOpen && 'ring-2 ring-blue-500/20 border-blue-600'
                   )}
                 >
                   <div className="flex items-center gap-2 truncate">
-                    <Building2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
                     <span className="truncate font-semibold text-focus">
                       {selectedLender || 'Select lending company…'}
                     </span>
@@ -264,13 +296,13 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
                         className={cn(
                           'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
                           selectedLender === comp
-                            ? 'bg-emerald-50 text-emerald-800 font-semibold'
+                            ? 'bg-blue-50 text-blue-800 font-semibold'
                             : 'text-focus/90 hover:bg-slate-50'
                         )}
                       >
                         <span className="truncate">{comp}</span>
                         {selectedLender === comp && (
-                          <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0 ml-2" />
+                          <Check className="h-3.5 w-3.5 text-blue-600 shrink-0 ml-2" />
                         )}
                       </button>
                     ))}
@@ -279,7 +311,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
               </div>
             </div>
 
-            {/* 2. Optional Terms: Due Date and Interest Rate */}
+            {/* 2. Terms: Due Date and Interest Rate */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-focus block">
@@ -315,17 +347,34 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* 3. Mandatory Finance Remark */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-focus block">
+                  Finance Endorsement Remark <span className="text-red-500">* (Required)</span>
+                </Label>
+                <span className="text-[11px] text-muted-fg">Mandatory</span>
+              </div>
+              <textarea
+                value={remark}
+                onChange={(e) => {
+                  setRemark(e.target.value)
+                  if (error) setError('')
+                }}
+                rows={2}
+                placeholder="Enter treasury verification notes, fund allocation rationale, or reason..."
+                className="w-full p-2.5 rounded-xl border border-stroke/60 bg-white text-xs font-medium text-focus focus:outline-none focus:ring-2 focus:ring-focus placeholder:text-muted-fg resize-none"
+                required
+              />
+            </div>
           </div>
 
           <p className="text-2xs sm:text-xs text-slate-500 leading-relaxed pt-1">
-            As Finance, approving this loan will designate{' '}
-            <strong className="text-focus">{selectedLender || 'the selected lender'}</strong> as
-            the financing partner for{' '}
-            <strong className="text-focus">{loan.borrower}</strong>. Status will become{' '}
-            <span className="font-semibold text-emerald-700">Approved</span> and locked.
+            Endorsing forward will transmit this loan request to the Internal Audit team for final compliance review.
           </p>
 
-          <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-stroke/20">
+          <div className="pt-3 flex items-center justify-between gap-2.5 border-t border-stroke/20">
             <Button
               type="button"
               variant="outline"
@@ -334,15 +383,25 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              onClick={handleApprove}
-              disabled={isSubmitting || !selectedLender}
-              className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer flex items-center gap-1.5"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{isSubmitting ? 'Approving…' : 'Approve & Fund Loan'}</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                onClick={handleReject}
+                disabled={isSubmitting || !remark.trim()}
+                className="h-10 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer"
+              >
+                <span>{isSubmitting ? 'Rejecting…' : 'Reject'}</span>
+              </Button>
+              <Button
+                type="button"
+                onClick={handleEndorse}
+                disabled={isSubmitting || !selectedLender || !remark.trim()}
+                className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{isSubmitting ? 'Endorsing…' : 'Endorse to Audit'}</span>
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

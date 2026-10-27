@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Building2,
   Check,
   FileSpreadsheet,
   FileText,
@@ -43,7 +42,6 @@ import {
   DateRangePicker,
   type DateRange,
 } from '@/components/ui/DateRangePicker'
-import { useCompany } from '@/context/CompanyContext'
 import { useSession } from '@/hooks/useSession'
 import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { formatPHP } from '@/lib/format'
@@ -243,11 +241,7 @@ const INITIAL_FACILITIES: LendingFacility[] = [
 const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
 type PeriodType = (typeof PERIOD_OPTIONS)[number]
 
-const LENDING_COMPANIES = [
-  'FilCap Prime Holdings Corp.',
-  'JK Property and Ventures',
-  'All Lending Companies',
-]
+const COMPANY_NAME = 'FilCap Prime Holdings Corp.'
 
 const ITEMS_PER_PAGE = 10
 
@@ -255,31 +249,11 @@ export const LendingPage: React.FC = () => {
   const { user } = useSession()
   const userRole = (user?.role || '').toLowerCase()
   const isAudit = userRole === 'audit' || userRole.includes('auditor')
-  const { activeCompany, setActiveCompany } = useCompany()
 
   // Set document title
   React.useEffect(() => {
-    document.title = 'Lending - FilCap Prime Holdings Corp.'
+    document.title = `Lending - ${COMPANY_NAME}`
   }, [])
-
-  // Resolve lender company scope: defaults to FilCap Prime Holdings Corp.
-  const [selectedCompany, setSelectedCompany] = React.useState<string>(() => {
-    if (activeCompany && activeCompany.toLowerCase().includes('jk')) {
-      return 'JK Property and Ventures'
-    }
-    return 'FilCap Prime Holdings Corp.'
-  })
-
-  // Synchronize when global company changes to a lending-enabled company
-  React.useEffect(() => {
-    if (activeCompany) {
-      if (activeCompany.toLowerCase().includes('jk')) {
-        setSelectedCompany('JK Property and Ventures')
-      } else if (activeCompany.toLowerCase().includes('filcap') || activeCompany.toLowerCase().includes('filcam')) {
-        setSelectedCompany('FilCap Prime Holdings Corp.')
-      }
-    }
-  }, [activeCompany])
 
   // Persistent storage for facilities so updates remain live across interactions
   const [facilities, setFacilities] = React.useState<LendingFacility[]>(() => {
@@ -322,16 +296,14 @@ export const LendingPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = React.useState<'All' | 'Active' | 'Completed' | 'Overdue' | 'Pending'>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
 
-  // Dropdowns state matching SalesPage
+  // Dropdowns state matching SalesPage & TenantPage
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = React.useState(false)
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false)
-  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
 
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
   const periodDropdownRef = React.useRef<HTMLDivElement>(null)
   const statusDropdownRef = React.useRef<HTMLDivElement>(null)
-  const companyDropdownRef = React.useRef<HTMLDivElement>(null)
   const tableCardRef = React.useRef<HTMLDivElement>(null)
 
   // Modals state
@@ -450,9 +422,6 @@ export const LendingPage: React.FC = () => {
       if (statusDropdownRef.current && !statusDropdownRef.current.contains(target)) {
         setIsStatusDropdownOpen(false)
       }
-      if (companyDropdownRef.current && !companyDropdownRef.current.contains(target)) {
-        setIsCompanyDropdownOpen(false)
-      }
       if (!target.closest('.lending-portal-menu') && !target.closest('.lending-action-btn')) {
         setOpenMenuFacilityId(null)
         setMenuPosition(null)
@@ -485,18 +454,10 @@ export const LendingPage: React.FC = () => {
     }
   }, [])
 
-  // Filter facilities based on company, status, date range, and search query
+  // Filter facilities based on status, date range, and search query (locked to FilCap Prime Holdings Corp.)
   const filteredFacilities = React.useMemo(() => {
     return facilities.filter((item) => {
-      // 1. Company filter
-      if (selectedCompany !== 'All Lending Companies') {
-        const matchesLender = item.lenderCompany.toLowerCase().includes(
-          selectedCompany.toLowerCase().includes('jk') ? 'jk' : 'filcap'
-        )
-        if (!matchesLender) return false
-      }
-
-      // 2. Status filter
+      // 1. Status filter
       if (statusFilter !== 'All' && item.status !== statusFilter) {
         return false
       }
@@ -519,7 +480,7 @@ export const LendingPage: React.FC = () => {
 
       return true
     })
-  }, [facilities, selectedCompany, statusFilter, searchQuery, dateRange])
+  }, [facilities, statusFilter, searchQuery, dateRange])
 
   // Summary Metrics for KPI cards
   const metrics = React.useMemo(() => {
@@ -583,7 +544,7 @@ export const LendingPage: React.FC = () => {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', `lending_portfolio_${selectedCompany.replace(/\s+/g, '_')}_${Date.now()}.csv`)
+    link.setAttribute('download', `lending_portfolio_FilCap_Prime_Holdings_Corp_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -617,7 +578,7 @@ export const LendingPage: React.FC = () => {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Lending Portfolio - ${selectedCompany}</title>
+          <title>Lending Portfolio - ${COMPANY_NAME}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 24px; color: #1e293b; }
             h1 { font-size: 20px; margin: 0 0 4px; font-weight: 700; color: #0f172a; }
@@ -630,7 +591,7 @@ export const LendingPage: React.FC = () => {
         </head>
         <body>
           <h1>MCT Financial Management - Lending Module</h1>
-          <p>Portfolio Summary for <strong>${selectedCompany}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
+          <p>Portfolio Summary for <strong>${COMPANY_NAME}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
           <table>
             <thead>
               <tr>
@@ -669,6 +630,7 @@ export const LendingPage: React.FC = () => {
   // Create new Lending Facility handler (Requirement 2)
   const handleCreateFacility = (e: React.FormEvent) => {
     e.preventDefault()
+    if (isAudit) return
     const principalNum = parseFloat(formData.loanAmount)
     const rateNum = parseFloat(formData.interestRate)
 
@@ -694,9 +656,8 @@ export const LendingPage: React.FC = () => {
     const remainingBalance = totalAmountPayable
 
     // Generate unique Loan ID (e.g. LN-FC-2026-007)
-    const companyPrefix = selectedCompany.toLowerCase().includes('jk') ? 'JK' : 'FC'
     const newFacilityNumber = String(facilities.length + 1).padStart(3, '0')
-    const loanId = `LN-${companyPrefix}-2026-${newFacilityNumber}`
+    const loanId = `LN-FC-2026-${newFacilityNumber}`
 
     const newFacility: LendingFacility = {
       id: `fac-${Date.now()}`,
@@ -710,7 +671,7 @@ export const LendingPage: React.FC = () => {
       amountPaid: 0,
       remainingBalance,
       status: 'Active',
-      lenderCompany: selectedCompany === 'All Lending Companies' ? 'FilCap Prime Holdings Corp.' : selectedCompany,
+      lenderCompany: COMPANY_NAME,
       notes: formData.notes.trim() || 'Everyday micro-credit lending facility.',
       dailyPayments: [],
     }
@@ -750,6 +711,7 @@ export const LendingPage: React.FC = () => {
   // Open Edit Modal for a specific facility
   const handleOpenEditModal = (facility: LendingFacility, e: React.MouseEvent) => {
     e.stopPropagation()
+    if (isAudit) return
     setActiveFacility(facility)
     setEditFormData({
       borrowerName: facility.borrowerName,
@@ -766,7 +728,7 @@ export const LendingPage: React.FC = () => {
   // Save changes from Edit Modal
   const handleSaveEditFacility = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!activeFacility) return
+    if (isAudit || !activeFacility) return
 
     const principalNum = parseFloat(editFormData.loanAmount)
     const rateNum = parseFloat(editFormData.interestRate)
@@ -803,6 +765,7 @@ export const LendingPage: React.FC = () => {
   // Open Everyday Daily Payment Modal ("Update" action button per Requirement 2)
   const handleOpenDailyPaymentModal = (facility: LendingFacility, e: React.MouseEvent) => {
     e.stopPropagation()
+    if (isAudit) return
     setActiveFacility(facility)
     // Suggested daily amount: if total payable is spread across 30 days, or remaining balance
     const estimatedDaily = Math.min(
@@ -824,7 +787,7 @@ export const LendingPage: React.FC = () => {
   // Confirm Everyday Daily Payment or Missed Payment
   const handleRecordDailyPayment = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!activeFacility) return
+    if (isAudit || !activeFacility) return
 
     // 1. Handling when tenant did NOT pay for the day
     if (dailyPaymentForm.paymentStatus === 'Missed') {
@@ -909,13 +872,14 @@ export const LendingPage: React.FC = () => {
   // Open Delete Confirmation
   const handleOpenDeleteModal = (facility: LendingFacility, e: React.MouseEvent) => {
     e.stopPropagation()
+    if (isAudit) return
     setActiveFacility(facility)
     setIsDeleteConfirmOpen(true)
   }
 
   // Confirm Delete
   const handleConfirmDelete = () => {
-    if (!activeFacility) return
+    if (isAudit || !activeFacility) return
     const updatedList = facilities.filter((f) => f.id !== activeFacility.id)
     saveFacilities(updatedList)
     setIsDeleteConfirmOpen(false)
@@ -928,8 +892,7 @@ export const LendingPage: React.FC = () => {
     setIsDetailModalOpen(true)
   }
 
-  const displayedCompanyTitle =
-    selectedCompany === 'All Lending Companies' ? 'All Inter-Company Lending' : selectedCompany
+  const displayedCompanyTitle = COMPANY_NAME
 
   return (
     <div className="space-y-6 pb-12 max-w-[1600px] mx-auto animate-in fade-in duration-300">
@@ -1109,56 +1072,6 @@ export const LendingPage: React.FC = () => {
               onChange={(newRange) => setDateRange(newRange)}
               hidePresets
             />
-
-            {/* Company Scope Dropdown */}
-            <div ref={companyDropdownRef} className="relative inline-block">
-              <button
-                type="button"
-                onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
-                )}
-                aria-label="Filter lending by company"
-              >
-                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90 truncate max-w-[160px]">
-                  {selectedCompany}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-              </button>
-
-              {isCompanyDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  <div className="space-y-1">
-                    {LENDING_COMPANIES.map((comp) => (
-                      <button
-                        key={comp}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCompany(comp)
-                          if (comp !== 'All Lending Companies') {
-                            setActiveCompany(comp)
-                          }
-                          setIsCompanyDropdownOpen(false)
-                        }}
-                        className={cn(
-                          'w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                          selectedCompany === comp
-                            ? 'bg-primary/10 text-primary font-semibold'
-                            : 'text-focus/80 hover:bg-slate-50'
-                        )}
-                      >
-                        <span className="truncate">{comp}</span>
-                        {selectedCompany === comp && (
-                          <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
@@ -1534,7 +1447,7 @@ export const LendingPage: React.FC = () => {
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg">
               Enter the borrower and loan details to disburse a new credit agreement for{' '}
-              <strong className="text-focus">{selectedCompany}</strong>.
+              <strong className="text-focus">{COMPANY_NAME}</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -2390,7 +2303,7 @@ export const LendingPage: React.FC = () => {
                       <span>Everyday Payment History ({activeFacility.dailyPayments?.length || 0})</span>
                     </h4>
 
-                    {activeFacility.remainingBalance > 0 && (
+                    {!isAudit && activeFacility.remainingBalance > 0 && (
                       <Button
                         type="button"
                         size="sm"
@@ -2467,19 +2380,21 @@ export const LendingPage: React.FC = () => {
                 {/* Footer Modal Actions */}
                 <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                   <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        setIsDetailModalOpen(false)
-                        handleOpenEditModal(activeFacility, e)
-                      }}
-                      className="h-9 px-3 rounded-xl text-xs font-semibold cursor-pointer"
-                    >
-                      <Pencil className="h-3.5 w-3.5 mr-1" />
-                      Edit Terms
-                    </Button>
+                    {!isAudit && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          setIsDetailModalOpen(false)
+                          handleOpenEditModal(activeFacility, e)
+                        }}
+                        className="h-9 px-3 rounded-xl text-xs font-semibold cursor-pointer"
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1" />
+                        Edit Terms
+                      </Button>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">

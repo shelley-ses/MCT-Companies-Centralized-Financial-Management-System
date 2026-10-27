@@ -1009,16 +1009,32 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     <div className="max-h-[220px] sm:max-h-[260px] overflow-y-auto divide-y divide-slate-100">
                       <table className="w-full text-left text-xs table-fixed">
                         <colgroup>
-                          <col style={{ width: '8%' }} />
-                          <col style={{ width: '46%' }} />
-                          <col style={{ width: '14%' }} />
-                          <col style={{ width: '16%' }} />
-                          <col style={{ width: '16%' }} />
+                          {parsedParticularItems.some((it) => Boolean(it.status)) ? (
+                            <>
+                              <col style={{ width: '7%' }} />
+                              <col style={{ width: '37%' }} />
+                              <col style={{ width: '16%' }} />
+                              <col style={{ width: '10%' }} />
+                              <col style={{ width: '15%' }} />
+                              <col style={{ width: '15%' }} />
+                            </>
+                          ) : (
+                            <>
+                              <col style={{ width: '8%' }} />
+                              <col style={{ width: '46%' }} />
+                              <col style={{ width: '14%' }} />
+                              <col style={{ width: '16%' }} />
+                              <col style={{ width: '16%' }} />
+                            </>
+                          )}
                         </colgroup>
                         <thead className="bg-slate-100/90 sticky top-0 text-[10px] uppercase font-bold text-muted-fg border-b border-slate-200/80 z-10">
                           <tr>
                             <th className="py-2 px-2 text-center">#</th>
                             <th className="py-2 px-2">Particulars / Item</th>
+                            {parsedParticularItems.some((it) => Boolean(it.status)) && (
+                              <th className="py-2 px-2 text-center">Status</th>
+                            )}
                             <th className="py-2 px-2 text-center">Qty</th>
                             <th className="py-2 px-2 text-right">Price</th>
                             <th className="py-2 px-2 text-right">Total</th>
@@ -1033,6 +1049,26 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                               <td className="py-2 px-2 font-medium text-focus break-words leading-tight" title={item.particulars}>
                                 {item.particulars}
                               </td>
+                              {parsedParticularItems.some((it) => Boolean(it.status)) && (
+                                <td className="py-2 px-2 text-center">
+                                  {item.status ? (
+                                    <span
+                                      className={cn(
+                                        'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border',
+                                        item.status === 'Paid'
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                          : item.status === 'On hold'
+                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                                      )}
+                                    >
+                                      {item.status}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-muted-fg">—</span>
+                                  )}
+                                </td>
+                              )}
                               <td className="py-2 px-2 text-center font-semibold text-focus/80 tabular-nums">
                                 {item.quantity}
                               </td>
