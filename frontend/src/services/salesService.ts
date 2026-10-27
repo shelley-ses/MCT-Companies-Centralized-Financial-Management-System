@@ -16,7 +16,7 @@ export interface SalesItem {
   paymentMethod?: string // payment method: GCash, Cash, Cheque, Bank Transfer, etc.
   company: string
   items?: ParticularItem[]
-  status: 'Paid' | 'Pending' | 'Overdue'
+  status: 'Paid' | 'Pending' | 'Overdue' | 'On hold'
   auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
   auditedBy?: string
   auditNotes?: string
@@ -35,7 +35,7 @@ export interface NewSalesInput {
   category?: string        // optional sales category (e.g. Sales Revenue, Catering)
   paymentMethod?: string  // payment method (GCash, Cash, etc.)
   company: string
-  status: 'Paid' | 'Pending'
+  status: 'Paid' | 'Pending' | 'On hold'
   items?: ParticularItem[]
 }
 

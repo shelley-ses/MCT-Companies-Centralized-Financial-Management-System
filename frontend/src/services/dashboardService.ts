@@ -70,7 +70,7 @@ export interface DashboardTransactionItem {
   deposit: number
   category: TransactionCategory
   paymentMethod?: string
-  status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid'
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid' | 'On hold'
   auditStatus: AuditStatus
   auditedBy?: string
   auditNotes?: string

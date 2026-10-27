@@ -23,6 +23,7 @@ import {
   Eye,
   RotateCcw,
   MoreVertical,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,6 +54,7 @@ import {
   type BillItem,
   type BillReminder,
   type BillStatus,
+  type BillPaymentPeriod,
   BILL_CATEGORIES,
 } from '@/services/billsService'
 import { loanService } from '@/services/loanService'
@@ -60,6 +62,7 @@ import { AddBillModal } from '@/components/dashboard/AddBillModal'
 import { EditBillModal } from '@/components/dashboard/EditBillModal'
 import { RecordBillPaymentModal } from '@/components/dashboard/RecordBillPaymentModal'
 import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
+import { isCompanyMatch } from '@/utils/companyUtils'
 import { cn } from '@/lib/utils'
 
 const COMPANY_LIST = [
@@ -79,15 +82,11 @@ const ITEMS_PER_PAGE = 10
 
 export const BillsPage: React.FC = () => {
   const { user } = useSession()
-  const userRole = user?.role || ''
-  const isSupervisor = userRole.toLowerCase() === 'supervisor'
-  const isAudit =
-    userRole.toLowerCase() === 'audit' ||
-    userRole.toLowerCase() === 'company auditor'
-  const isCompanyScoped =
-    isSupervisor ||
-    userRole.toLowerCase() === 'company' ||
-    userRole.toLowerCase() === 'company auditor'
+  const userRole = (user?.role || '').toLowerCase()
+  const isAudit = userRole === 'audit' || userRole.includes('auditor')
+  const isAdmin = userRole === 'admin' || isAudit
+  const isFinance = userRole === 'finance'
+  const isCompanyScoped = !isAdmin && !isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Data states
@@ -172,6 +171,7 @@ export const BillsPage: React.FC = () => {
 
   // Details pop-up modal state
   const [selectedDetailBill, setSelectedDetailBill] = React.useState<BillItem | null>(null)
+  const [selectedDetailPeriod, setSelectedDetailPeriod] = React.useState<BillPaymentPeriod | null>(null)
   const [detailPayDate, setDetailPayDate] = React.useState<string>(() =>
     new Date().toISOString().slice(0, 10)
   )
@@ -184,6 +184,9 @@ export const BillsPage: React.FC = () => {
       setDetailPayDate(new Date().toISOString().slice(0, 10))
       setDetailPayMethod('Bank Transfer')
       setDetailRefNo('')
+      setSelectedDetailPeriod(getBillPaymentOptions(selectedDetailBill).nextPayable)
+    } else {
+      setSelectedDetailPeriod(null)
     }
   }, [selectedDetailBill])
 
@@ -252,8 +255,7 @@ export const BillsPage: React.FC = () => {
     return bills.filter((bill) => {
       // Company filter
       if (selectedCompany !== 'All Companies') {
-        const matchesCompany =
-          bill.company.toLowerCase().trim() === selectedCompany.toLowerCase().trim()
+        const matchesCompany = isCompanyMatch(bill.company, selectedCompany)
         if (!matchesCompany) return false
       }
 
@@ -287,9 +289,7 @@ export const BillsPage: React.FC = () => {
   // KPI stats for current company scope
   const scopedBills = React.useMemo(() => {
     if (selectedCompany === 'All Companies') return bills
-    return bills.filter(
-      (b) => b.company.toLowerCase().trim() === selectedCompany.toLowerCase().trim()
-    )
+    return bills.filter((b) => isCompanyMatch(b.company, selectedCompany))
   }, [bills, selectedCompany])
 
   const stats = React.useMemo(() => {
@@ -316,9 +316,27 @@ export const BillsPage: React.FC = () => {
 
   // Handlers
   const handleBillCreated = (newBill: BillItem) => {
-    setBills((prev) => [newBill, ...prev])
+    setBills((prev) => {
+      const exists = prev.some((b) => b.id === newBill.id)
+      return exists ? prev.map((b) => (b.id === newBill.id ? newBill : b)) : [newBill, ...prev]
+    })
     setHighlightedBillId(newBill.id)
-    setTimeout(() => setHighlightedBillId(null), 3000)
+    setTimeout(() => setHighlightedBillId(null), 4000)
+
+    // If active company filter doesn't match the new bill, reset to All Companies so it is immediately visible
+    if (selectedCompany !== 'All Companies' && !isCompanyMatch(newBill.company, selectedCompany)) {
+      setSelectedCompany('All Companies')
+      setActiveCompany('All Companies')
+    }
+    // Clear filters that could hide the newly created bill
+    setSelectedCategory('All')
+    setStatusFilter('All')
+    setSearchQuery('')
+    setCurrentPage(1)
+
+    // Re-sync with backend to get latest generated records and relations
+    loadBills()
+
     tableCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
@@ -342,19 +360,6 @@ export const BillsPage: React.FC = () => {
     }
   }
 
-  const handleCheckboxToggle = async (bill: BillItem, checked: boolean) => {
-    try {
-      if (checked) {
-        setPaymentBill(bill)
-      } else {
-        const updated = await billsService.markAsUnpaid(bill.id)
-        handleBillUpdated(updated)
-      }
-    } catch (err: any) {
-      console.error('Failed to toggle bill status:', err)
-    }
-  }
-
   const handleRowClick = (bill: BillItem) => {
     setSelectedDetailBill(bill)
   }
@@ -363,8 +368,9 @@ export const BillsPage: React.FC = () => {
     if (!selectedDetailBill) return
     try {
       setIsDetailPaying(true)
+      const targetPeriod = selectedDetailPeriod || getBillPaymentOptions(selectedDetailBill).nextPayable
       const updated = await billsService.recordPayment(selectedDetailBill.id, {
-        periodKey: getBillPaymentOptions(selectedDetailBill).nextPayable.key,
+        periodKey: targetPeriod.key,
         paymentDate: detailPayDate || new Date().toISOString().slice(0, 10),
         amount: selectedDetailBill.amount,
         paymentMethod: detailPayMethod,
@@ -395,11 +401,90 @@ export const BillsPage: React.FC = () => {
   }
 
   const handleExportCsv = () => {
+    const compName = isCompanyScoped ? assignedCompany : selectedCompany
     billsService.exportCsv(
       filteredBills,
-      `monthly_bills_${selectedCompany.replace(/\s+/g, '_')}_${Date.now()}.csv`
+      `monthly_bills_${compName.replace(/\s+/g, '_')}_${Date.now()}.csv`
     )
     setIsExportDropdownOpen(false)
+  }
+
+  const handleExportPdf = () => {
+    setIsExportDropdownOpen(false)
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+    const companyTitle = isCompanyScoped ? assignedCompany : selectedCompany
+    const rowsHtml =
+      filteredBills.length === 0
+        ? `<tr><td colspan="7" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No monthly bills found matching the selected filters.</td></tr>`
+        : filteredBills
+            .map(
+              (b) => `
+        <tr>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${b.billerName}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${b.company}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${b.category}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${b.accountNo || '—'}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 600;">₱${b.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.dueDate}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.status}</td>
+        </tr>
+      `
+            )
+            .join('')
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Monthly Bills Report - ${companyTitle}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0F172A; padding: 24px; }
+            h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: #960C01; }
+            p { font-size: 12px; color: #64748B; margin: 0 0 16px 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th { background-color: #F8FAFC; text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; border-bottom: 2px solid #CBD5E1; }
+            .summary { margin-top: 20px; padding: 12px 16px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0; display: flex; justify-content: space-between; font-size: 12px; }
+            @media print {
+              body { padding: 10px; }
+              @page { size: landscape; margin: 10mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>MCT Group of Companies</h1>
+          <p>Monthly Bills Report for <strong>${companyTitle}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Biller Name</th>
+                <th>Company</th>
+                <th>Category</th>
+                <th>Account No</th>
+                <th style="text-align: right;">Amount</th>
+                <th style="text-align: center;">Due Date</th>
+                <th style="text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+          <div class="summary">
+            <div><strong>Total Records:</strong> ${filteredBills.length}</div>
+            <div><strong>Total Payable:</strong> ₱${stats.totalMonthlyAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+            <div><strong>Total Paid:</strong> ₱${stats.paidAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+            <div><strong>Overdue / Unpaid:</strong> ₱${(stats.overdueAmount + stats.unpaidAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
   }
 
   const filteredCompanyList = React.useMemo(() => {
@@ -430,15 +515,30 @@ export const BillsPage: React.FC = () => {
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant="outline"
+                variant={!isAudit ? 'default' : 'outline'}
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                className={cn(
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  !isAudit
+                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
+                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
+                )}
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 shrink-0 text-focus/70" />
+                <Download
+                  className={cn(
+                    'h-4 w-4 shrink-0',
+                    !isAudit ? 'text-white' : 'text-focus/70'
+                  )}
+                />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 ml-0.5',
+                    !isAudit ? 'text-white/90' : 'text-muted-fg'
+                  )}
+                />
               </Button>
 
               {isExportDropdownOpen && (
@@ -450,6 +550,14 @@ export const BillsPage: React.FC = () => {
                   >
                     <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>Download as CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportPdf}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-focus/90 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Download as PDF</span>
                   </button>
                 </div>
               )}
@@ -856,58 +964,32 @@ export const BillsPage: React.FC = () => {
         <div className="w-full rounded-xl border border-slate-100 overflow-hidden">
           <Table containerClassName="overflow-hidden" className="w-full table-fixed">
             <colgroup>
-              {!isAudit && <col style={{ width: '4%' }} />}
-              <col style={{ width: isAudit ? '24%' : '21%' }} />
-              <col style={{ width: isAudit ? '18%' : '17%' }} />
-              <col style={{ width: isAudit ? '14%' : '13%' }} />
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '14%' }} />
               <col style={{ width: '15%' }} />
               <col style={{ width: '14%' }} />
-              <col style={{ width: isAudit ? '10%' : '11%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '5%' }} />
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                {!isAudit && (
-                  <TableHead className="w-[4%] px-2 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
-                    <span className="sr-only">Mark as Paid</span>
-                  </TableHead>
-                )}
-                <TableHead
-                  className={cn(
-                    isAudit ? 'w-[24%]' : 'w-[21%]',
-                    'px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left'
-                  )}
-                >
+                <TableHead className="w-[24%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   BILLER / ACCOUNT
                 </TableHead>
-                <TableHead
-                  className={cn(
-                    isAudit ? 'w-[18%]' : 'w-[17%]',
-                    'px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left'
-                  )}
-                >
+                <TableHead className="w-[18%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   COMPANY
                 </TableHead>
-                <TableHead
-                  className={cn(
-                    isAudit ? 'w-[14%]' : 'w-[13%]',
-                    'px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left'
-                  )}
-                >
+                <TableHead className="w-[14%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CATEGORY
                 </TableHead>
-                <TableHead className="w-[15%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                <TableHead className="w-[15%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
                   MONTHLY AMOUNT
                 </TableHead>
-                <TableHead className="w-[14%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[14%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DUE DATE
                 </TableHead>
-                <TableHead
-                  className={cn(
-                    isAudit ? 'w-[10%]' : 'w-[11%]',
-                    'px-2.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left'
-                  )}
-                >
+                <TableHead className="w-[10%] px-2.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   STATUS
                 </TableHead>
                 <TableHead className="w-[5%] px-1 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
@@ -920,11 +1002,6 @@ export const BillsPage: React.FC = () => {
               {loading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <TableRow key={idx} className="border-b border-slate-100">
-                    {!isAudit && (
-                      <TableCell className="px-2 py-4 text-center">
-                        <div className="h-4 w-4 bg-slate-200/70 animate-pulse rounded mx-auto" />
-                      </TableCell>
-                    )}
                     <TableCell className="px-3 py-4">
                       <div className="h-4 w-28 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
@@ -951,7 +1028,7 @@ export const BillsPage: React.FC = () => {
               ) : paginatedBills.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={isAudit ? 7 : 8}
+                    colSpan={7}
                     className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
@@ -986,33 +1063,8 @@ export const BillsPage: React.FC = () => {
                       )}
                       title="Click to view complete bill details"
                     >
-                      {/* Checkbox: Easily check bill to mark as paid (Hidden for Audit) */}
-                      {!isAudit && (
-                        <TableCell
-                          className="w-[4%] px-2 py-3.5 text-center"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isPaid}
-                            onChange={(e) => handleCheckboxToggle(bill, e.target.checked)}
-                            className="w-4 h-4 rounded text-[#960C01] focus:ring-[#960C01] border-slate-300 cursor-pointer accent-[#960C01] mx-auto block"
-                            title={
-                              isPaid
-                                ? 'Paid (Click to revert to Unpaid)'
-                                : `Pay ${getBillPaymentOptions(bill).nextPayable.label}`
-                            }
-                          />
-                        </TableCell>
-                      )}
-
                       {/* Biller & Account No */}
-                      <TableCell
-                        className={cn(
-                          isAudit ? 'w-[24%]' : 'w-[21%]',
-                          'px-3 py-3.5 text-xs text-left truncate'
-                        )}
-                      >
+                      <TableCell className="w-[24%] px-3 py-3.5 text-xs text-left truncate">
                         <div className="flex flex-col min-w-0">
                           <span className="font-semibold text-xs sm:text-sm text-focus truncate" title={bill.billerName}>
                             {bill.billerName}
@@ -1025,10 +1077,7 @@ export const BillsPage: React.FC = () => {
 
                       {/* Company */}
                       <TableCell
-                        className={cn(
-                          isAudit ? 'w-[18%]' : 'w-[17%]',
-                          'px-3 py-3.5 text-xs font-semibold text-focus truncate text-left'
-                        )}
+                        className="w-[18%] px-3 py-3.5 text-xs font-semibold text-focus truncate text-left"
                         title={bill.company}
                       >
                         <div className="flex items-center gap-1.5 min-w-0 truncate">
@@ -1038,12 +1087,7 @@ export const BillsPage: React.FC = () => {
                       </TableCell>
 
                       {/* Category */}
-                      <TableCell
-                        className={cn(
-                          isAudit ? 'w-[14%]' : 'w-[13%]',
-                          'px-3 py-3.5 text-xs text-left truncate'
-                        )}
-                      >
+                      <TableCell className="w-[14%] px-3 py-3.5 text-xs text-left truncate">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 truncate max-w-full" title={bill.category}>
                           {bill.category}
                         </span>
@@ -1069,12 +1113,7 @@ export const BillsPage: React.FC = () => {
                       </TableCell>
 
                       {/* Status */}
-                      <TableCell
-                        className={cn(
-                          isAudit ? 'w-[10%]' : 'w-[11%]',
-                          'px-2.5 py-3.5 text-left truncate'
-                        )}
-                      >
+                      <TableCell className="w-[10%] px-2.5 py-3.5 text-left truncate">
                         {isPaid ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold shadow-2xs">
                             <Check className="w-3 h-3 text-emerald-600 shrink-0" />
@@ -1550,22 +1589,28 @@ export const BillsPage: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
                   {getBillPaymentPeriods(selectedDetailBill).map((period) => {
-                    const isNext = period.key === selectedDetailNextPeriod?.key
+                    const activeKey = selectedDetailPeriod?.key || selectedDetailNextPeriod?.key
+                    const isSelected = period.key === activeKey
                     return (
-                      <div
+                      <button
                         key={period.key}
+                        type="button"
+                        onClick={() => setSelectedDetailPeriod(period)}
                         className={cn(
-                          'p-2.5 rounded-xl border text-[11px] transition-all',
-                          isNext
-                            ? 'bg-amber-50 border-amber-300 text-amber-900 ring-2 ring-amber-300/60 shadow-xs'
+                          'p-2.5 rounded-xl border text-[11px] transition-all text-left cursor-pointer',
+                          isSelected
+                            ? 'bg-amber-50/90 border-[#960C01] text-amber-950 ring-2 ring-[#960C01] shadow-xs'
                             : period.paid
                             ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                             : period.isFuture
-                            ? 'bg-white border-slate-200 text-slate-500'
-                            : 'bg-rose-50 border-rose-200 text-rose-800'
+                            ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                            : 'bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100/60'
                         )}
                       >
-                        <div className="font-semibold truncate text-xs">{period.label}</div>
+                        <div className="font-semibold truncate text-xs flex items-center justify-between">
+                          <span>{period.label}</span>
+                          {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-[#960C01]" />}
+                        </div>
                         <div className="flex items-center gap-1 mt-1">
                           {period.paid ? (
                             <>
@@ -1574,10 +1619,10 @@ export const BillsPage: React.FC = () => {
                                 {period.isFuture ? 'Paid (Advance)' : 'Paid'}
                               </span>
                             </>
-                          ) : isNext ? (
+                          ) : isSelected ? (
                             <>
-                              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span className="font-bold">Next to pay</span>
+                              <Clock className="w-3.5 h-3.5 text-[#960C01] shrink-0" />
+                              <span className="font-bold text-[#960C01]">Selected to Pay</span>
                             </>
                           ) : period.isFuture ? (
                             <>
@@ -1596,7 +1641,7 @@ export const BillsPage: React.FC = () => {
                             Paid {period.paymentDate}
                           </div>
                         )}
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -1638,7 +1683,7 @@ export const BillsPage: React.FC = () => {
                         : 'This payment will settle'}
                     </span>
                     <span className="text-sm font-bold block mt-0.5">
-                      {selectedDetailNextPeriod?.label || selectedDetailBill.dueDate}
+                      {selectedDetailPeriod?.label || selectedDetailNextPeriod?.label || selectedDetailBill.dueDate}
                     </span>
                   </div>
 
@@ -1708,9 +1753,7 @@ export const BillsPage: React.FC = () => {
                       <span>
                         {isDetailPaying
                           ? 'Processing...'
-                          : selectedDetailBill.status === 'Paid'
-                          ? `Pay in Advance (${selectedDetailNextPeriod?.label || 'Next Period'}) • ${formatPHP(selectedDetailBill.amount)}`
-                          : `Pay ${selectedDetailNextPeriod?.label || 'Next Period'} (${formatPHP(selectedDetailBill.amount)})`}
+                          : `Pay ${selectedDetailPeriod?.label || selectedDetailNextPeriod?.label || 'Period'} (${formatPHP(selectedDetailBill.amount)})`}
                       </span>
                     </Button>
 

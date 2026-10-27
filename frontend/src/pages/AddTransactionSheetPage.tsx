@@ -49,6 +49,7 @@ interface ParticularsRow {
   particulars: string
   unitPrice: number | ''
   quantity: number | ''
+  status: 'Pending' | 'On hold' | 'Paid'
 }
 
 const SALES_PAYMENT_METHODS = [
@@ -288,10 +289,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   // Excel-style rows state: initialize with 4 clean rows
   const [rows, setRows] = React.useState<ParticularsRow[]>([
-    { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
-    { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
-    { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
-    { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+    { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+    { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+    { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+    { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
   ])
 
   // Submission state
@@ -311,7 +312,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     const newId = `row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     setRows((prev) => [
       ...prev,
-      { id: newId, pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+      { id: newId, pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
     ])
     setTimeout(() => {
       particularsInputRefs.current[newId]?.focus()
@@ -321,7 +322,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const handleRemoveRow = (id: string) => {
     if (rows.length <= 1) {
       // Don't remove last row, just clear it
-      setRows([{ id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 }])
+      setRows([{ id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' }])
       return
     }
     setRows((prev) => prev.filter((r) => r.id !== id))
@@ -452,11 +453,19 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           quantity: item.numericQty,
           unitPrice: item.numericPrice,
           total: item.rowTotal,
+          status: item.status || 'Paid',
         }
       })
 
       // Combine into formatted particulars text
       const formattedParticulars = formatParticularsString(itemizedParticulars)
+
+      // Calculate batch status based on items: if any on hold -> On hold, else if any pending -> Pending, else Paid
+      const overallStatus: 'Paid' | 'Pending' | 'On hold' = validItems.some((i) => i.status === 'On hold')
+        ? 'On hold'
+        : validItems.some((i) => i.status === 'Pending')
+        ? 'Pending'
+        : 'Paid'
 
       if (transactionType === 'Sales') {
         // Record all particulars consolidated as ONE single entry (category is removed in sales)
@@ -468,7 +477,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           paymentMethod: paymentMethod,
           chequeNo: chequeNo.trim() || undefined,
           category: category || SALES_CATEGORY_LIST[0],
-          status: 'Paid',
+          status: overallStatus,
           items: itemizedParticulars,
         })
       } else {
@@ -481,7 +490,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           category: isPettyCash ? 'Petty Cash' : (category || 'Rendered Fee'),
           paymentMethod: paymentMethod,
           chequeNo: chequeNo.trim() || undefined,
-          status: 'Paid',
+          status: overallStatus,
           items: itemizedParticulars,
         })
       }
@@ -506,10 +515,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   const handleReset = () => {
     setRows([
-      { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
-      { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
-      { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
-      { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1 },
+      { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+      { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+      { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+      { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
     ])
     setErrorMessage(null)
   }
@@ -793,7 +802,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
         {/* Excel Grid Table */}
         <div className="overflow-x-auto">
-          <Table className={cn('w-full border-collapse', isPettyCash ? 'min-w-[920px]' : 'min-w-[760px]')}>
+          <Table className={cn('w-full border-collapse', isPettyCash ? 'min-w-[1020px]' : 'min-w-[880px]')}>
             <TableHeader className="bg-slate-50/90 border-b border-slate-200/80">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-12 text-center text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3">
@@ -811,13 +820,16 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                     PETTY CASH CATEGORY <span className="text-red-500">*</span>
                   </TableHead>
                 )}
-                <TableHead className="w-44 text-right text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
+                <TableHead className="w-40 text-right text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
                   PRICE EACH (₱) <span className="text-red-500">*</span>
                 </TableHead>
-                <TableHead className="w-28 text-center text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-3">
+                <TableHead className="w-24 text-center text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-3">
                   QUANTITY <span className="text-red-500">*</span>
                 </TableHead>
-                <TableHead className="w-44 text-right text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
+                <TableHead className="w-36 text-left text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-3">
+                  STATUS
+                </TableHead>
+                <TableHead className="w-40 text-right text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
                   TOTAL PRICE (₱)
                 </TableHead>
                 <TableHead className="w-14 text-center text-[11px] font-bold uppercase tracking-wider text-muted-fg py-3">
@@ -891,7 +903,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                     )}
 
                     {/* Price Each Cell */}
-                    <TableCell className="w-44 border-r border-slate-200/60 p-1.5 px-3">
+                    <TableCell className="w-40 border-r border-slate-200/60 p-1.5 px-3">
                       <div className="relative">
                         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-fg/70">
                           ₱
@@ -913,7 +925,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                     </TableCell>
 
                     {/* Quantity Cell */}
-                    <TableCell className="w-28 border-r border-slate-200/60 p-1.5 px-2">
+                    <TableCell className="w-24 border-r border-slate-200/60 p-1.5 px-2">
                       <input
                         type="number"
                         min="1"
@@ -929,8 +941,30 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                       />
                     </TableCell>
 
+                    {/* Status Dropdown Cell: Pending, On hold, Paid */}
+                    <TableCell className="w-36 border-r border-slate-200/60 p-1.5 px-2.5">
+                      <select
+                        value={row.status || 'Paid'}
+                        onChange={(e) =>
+                          handleRowChange(row.id, 'status', e.target.value as 'Pending' | 'On hold' | 'Paid')
+                        }
+                        className={cn(
+                          'w-full h-9 px-2.5 text-xs font-semibold rounded-lg border focus:outline-none focus:ring-1 transition-all cursor-pointer truncate',
+                          row.status === 'Paid'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
+                            : row.status === 'On hold'
+                            ? 'bg-amber-50 text-amber-700 border-amber-300 focus:border-amber-500 focus:ring-amber-500'
+                            : 'bg-rose-50 text-rose-700 border-rose-300 focus:border-rose-500 focus:ring-rose-500'
+                        )}
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="On hold">On hold</option>
+                        <option value="Paid">Paid</option>
+                      </select>
+                    </TableCell>
+
                     {/* Total Price (Calculated formula) */}
-                    <TableCell className="w-44 border-r border-slate-200/60 p-1.5 px-4 text-right">
+                    <TableCell className="w-40 border-r border-slate-200/60 p-1.5 px-4 text-right">
                       <span
                         className={cn(
                           'font-mono text-xs sm:text-sm font-bold block py-1.5',

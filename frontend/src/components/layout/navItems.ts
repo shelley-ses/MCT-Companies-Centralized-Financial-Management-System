@@ -11,6 +11,7 @@ import {
   Wallet,
   Landmark,
   Store,
+  Banknote,
 } from 'lucide-react'
 import type * as React from 'react'
 import { isFilCapCompany, isJKPropertyCompany } from '@/config/companyFeatures'
@@ -98,7 +99,7 @@ export const NAV_ITEM_LENDING: NavItem = {
   id: 'lending',
   title: 'Lending',
   href: '/lending',
-  icon: Landmark,
+  icon: Banknote,
 }
 
 export const NAV_ITEM_TENANTS: NavItem = {
@@ -170,6 +171,7 @@ export function getSidebarNavSections(
   const normalizedRole = (role || '').trim().toLowerCase()
   const isAudit = normalizedRole === 'audit' || normalizedRole.includes('auditor')
   const isAdmin = normalizedRole === 'admin'
+  const isFinance = normalizedRole === 'finance'
 
   // Company detection (checks current active dropdown company or user's assigned company)
   const targetCompany = activeCompany || assignedCompany || ''
@@ -187,18 +189,16 @@ export function getSidebarNavSections(
   // Base operations for all roles: Sales, Expense, Loan
   const operationsItems: NavItem[] = [NAV_ITEM_SALES, NAV_ITEM_EXPENSE, NAV_ITEM_LOAN]
 
-  // Admin gets Bank Management in Operations
-  if (isAdmin) {
-    operationsItems.push(NAV_ITEM_BANK_MANAGEMENT)
-  }
+  // Bank Management in Operations for Finance, Audit, Admin, and Company accounts
+  operationsItems.push(NAV_ITEM_BANK_MANAGEMENT)
 
-  // FilCap gets Lending in Operations
-  if (isFilCap) {
+  // FilCap gets Lending in Operations (also accessible to Audit, Finance, and Admin)
+  if (isFilCap || isAudit || isFinance || isAdmin) {
     operationsItems.push(NAV_ITEM_LENDING)
   }
 
-  // JK Property gets Tenants in Operations
-  if (isJK) {
+  // JK Property gets Tenants in Operations (also accessible to Audit, Finance, and Admin)
+  if (isJK || isAudit || isFinance || isAdmin) {
     operationsItems.push(NAV_ITEM_TENANTS)
   }
 

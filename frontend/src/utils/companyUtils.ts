@@ -1,27 +1,52 @@
 /**
- * Company normalization and alias matching utilities for MCT Centralized Financial Management System
+ * Utility functions for matching and normalizing company names across
+ * user-facing display names, shorthand aliases, and database registered entity names.
  */
 
-export const KNOWN_COMPANY_ALIASES: Record<string, string[]> = {
-  'mct kitchen': ['mycity.kitchen', 'mycity kitchen', 'kitchen'],
+export const COMPANY_ALIASES: Record<string, string[]> = {
+  'mct kitchen': ['mycity kitchen', 'mycity.kitchen', 'mycity.kitchen corporation', 'kitchen'],
+  'mycity.kitchen corporation': ['mct kitchen', 'mycity kitchen', 'mycity.kitchen', 'kitchen'],
   'kitchen': ['mycity.kitchen', 'mycity kitchen', 'kitchen'],
-  'mct hotel': ['mctolentino', 'hotel', 'hospitality'],
+  'mct hotel': [
+    'mctolentino',
+    'mctolentino hospitality',
+    'mctolentino hospitality business corporation',
+    'hotel',
+    'hospitality',
+  ],
+  'mctolentino hospitality business corporation': [
+    'mct hotel',
+    'mctolentino',
+    'mctolentino hospitality',
+    'hotel',
+    'hospitality',
+  ],
   'hotel': ['mctolentino', 'hotel', 'hospitality'],
   'speedbox': ['speedfire construction', 'speedfire'],
   'speedfire': ['speedfire construction', 'speedfire', 'speedbox'],
+  'speedfire construction': ['speedbox', 'speedfire'],
   'jk printing': ['jk global printing', 'jk global headways', 'printing'],
-  'jk property': ['jk property and ventures', 'property ventures'],
-  'jk property and ventures': ['jk property and ventures corporation', 'property ventures'],
+  'jk global headways': ['jk printing', 'printing'],
+  'jk property': ['jk property and ventures', 'property ventures', 'jk property & ventures'],
+  'jk property and ventures': [
+    'jk property and ventures corporation',
+    'jk property',
+    'property ventures',
+    'jk property & ventures',
+  ],
   'golden sunburst': ['golden jupiter property ventures', 'golden jupiter', 'golden sunburst'],
   'golden sunburst ventures': ['golden jupiter property ventures', 'golden jupiter', 'golden sunburst'],
-  'filcap': ['filcap prime holdings', 'filcam', 'filcap'],
-  'filcap prime holdings corp.': ['filcap prime holdings', 'filcap', 'filcam'],
+  'golden jupiter property ventures': ['golden sunburst ventures', 'golden jupiter', 'golden sunburst'],
+  'filcap': ['filcap prime', 'filcap prime holdings', 'filcap prime holdings corp.', 'filcam'],
+  'filcap prime holdings corp.': ['filcap', 'filcap prime', 'filcam'],
   'far east asia': ['far east asia trading corporation', 'far east asia'],
   'mc tolentino': ['m.c tolentino', 'tolentino college', 'college foundation'],
   'bagong bansa': ['bagong bansa may pag asa', 'bagong bansa'],
   'bookworld': ['bookworld systems solutions', 'bookworld'],
   'medsys': ['medsys uni horizon', 'medsys'],
 }
+
+export const KNOWN_COMPANY_ALIASES = COMPANY_ALIASES
 
 const COMMON_STOP_WORDS = new Set([
   'corporation',
@@ -59,22 +84,23 @@ export function isCompanyMatch(
   // 1. Direct contains check
   if (a.includes(b) || b.includes(a)) return true
 
-  // 2. Check alias map for A
-  for (const [key, aliases] of Object.entries(KNOWN_COMPANY_ALIASES)) {
-    if (a.includes(key) || key.includes(a)) {
-      if (aliases.some((alias) => b.includes(alias) || alias.includes(b))) {
-        return true
-      }
-    }
+  // 2. Direct alias lookup
+  const aliasesA = COMPANY_ALIASES[a] || []
+  if (aliasesA.some((item) => item === b || b.includes(item) || item.includes(b))) {
+    return true
   }
 
-  // 3. Check alias map for B
-  for (const [key, aliases] of Object.entries(KNOWN_COMPANY_ALIASES)) {
-    if (b.includes(key) || key.includes(b)) {
-      if (aliases.some((alias) => a.includes(alias) || alias.includes(a))) {
-        return true
-      }
-    }
+  const aliasesB = COMPANY_ALIASES[b] || []
+  if (aliasesB.some((item) => item === a || a.includes(item) || item.includes(a))) {
+    return true
+  }
+
+  // 3. Cross-family alias match
+  for (const [key, list] of Object.entries(COMPANY_ALIASES)) {
+    const family = [key, ...list]
+    const aInFamily = family.some((member) => member === a || a.includes(member) || member.includes(a))
+    const bInFamily = family.some((member) => member === b || b.includes(member) || member.includes(b))
+    if (aInFamily && bInFamily) return true
   }
 
   // 4. Token-based matching on significant distinctive words
