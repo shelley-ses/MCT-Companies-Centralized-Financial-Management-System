@@ -49,7 +49,7 @@ interface ParticularsRow {
   particulars: string
   unitPrice: number | ''
   quantity: number | ''
-  status: 'Pending' | 'On hold' | 'Paid'
+  status: 'Paid' | 'Unpaid' | 'Pending'
 }
 
 const SALES_PAYMENT_METHODS = [
@@ -380,6 +380,18 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     return calculatedRows.reduce((sum, r) => sum + r.rowTotal, 0)
   }, [calculatedRows])
 
+  const paidCashTotal = React.useMemo(() => {
+    return calculatedRows
+      .filter((r) => r.isValid && r.status === 'Paid')
+      .reduce((sum, r) => sum + r.rowTotal, 0)
+  }, [calculatedRows])
+
+  const unpaidPendingTotal = React.useMemo(() => {
+    return calculatedRows
+      .filter((r) => r.isValid && r.status !== 'Paid')
+      .reduce((sum, r) => sum + r.rowTotal, 0)
+  }, [calculatedRows])
+
   const validRowsCount = React.useMemo(() => {
     return calculatedRows.filter((r) => r.isValid).length
   }, [calculatedRows])
@@ -460,12 +472,14 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       // Combine into formatted particulars text
       const formattedParticulars = formatParticularsString(itemizedParticulars)
 
-      // Calculate batch status based on items: if any on hold -> On hold, else if any pending -> Pending, else Paid
-      const overallStatus: 'Paid' | 'Pending' | 'On hold' = validItems.some((i) => i.status === 'On hold')
-        ? 'On hold'
-        : validItems.some((i) => i.status === 'Pending')
-        ? 'Pending'
-        : 'Paid'
+      // Calculate batch status: all Paid -> Paid, all Unpaid -> Unpaid, mixed/pending -> Pending
+      const isAllPaid = validItems.every((i) => i.status === 'Paid')
+      const isAllUnpaid = validItems.every((i) => i.status === 'Unpaid')
+      const overallStatus: 'Paid' | 'Unpaid' | 'Pending' = isAllPaid
+        ? 'Paid'
+        : isAllUnpaid
+        ? 'Unpaid'
+        : 'Pending'
 
       if (transactionType === 'Sales') {
         // Record all particulars consolidated as ONE single entry (category is removed in sales)
@@ -941,25 +955,25 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                       />
                     </TableCell>
 
-                    {/* Status Dropdown Cell: Pending, On hold, Paid */}
+                    {/* Status Dropdown Cell: Paid, Unpaid, Pending */}
                     <TableCell className="w-36 border-r border-slate-200/60 p-1.5 px-2.5">
                       <select
                         value={row.status || 'Paid'}
                         onChange={(e) =>
-                          handleRowChange(row.id, 'status', e.target.value as 'Pending' | 'On hold' | 'Paid')
+                          handleRowChange(row.id, 'status', e.target.value as 'Paid' | 'Unpaid' | 'Pending')
                         }
                         className={cn(
                           'w-full h-9 px-2.5 text-xs font-semibold rounded-lg border focus:outline-none focus:ring-1 transition-all cursor-pointer truncate',
                           row.status === 'Paid'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
-                            : row.status === 'On hold'
-                            ? 'bg-amber-50 text-amber-700 border-amber-300 focus:border-amber-500 focus:ring-amber-500'
-                            : 'bg-rose-50 text-rose-700 border-rose-300 focus:border-rose-500 focus:ring-rose-500'
+                            : row.status === 'Unpaid'
+                            ? 'bg-rose-50 text-rose-700 border-rose-300 focus:border-rose-500 focus:ring-rose-500'
+                            : 'bg-amber-50 text-amber-700 border-amber-300 focus:border-amber-500 focus:ring-amber-500'
                         )}
                       >
-                        <option value="Pending">Pending</option>
-                        <option value="On hold">On hold</option>
                         <option value="Paid">Paid</option>
+                        <option value="Unpaid">Unpaid</option>
+                        <option value="Pending">Pending</option>
                       </select>
                     </TableCell>
 
@@ -1055,6 +1069,26 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
               {formatPHP(grandTotal)}
             </span>
           </div>
+
+          <div className="border-l border-slate-200 pl-6 sm:pl-10">
+            <span className="text-xs font-medium text-muted-fg block">
+              Paid in Cash
+            </span>
+            <span className="text-lg sm:text-xl font-bold text-emerald-600 mt-0.5 block tabular-nums">
+              {formatPHP(paidCashTotal)}
+            </span>
+          </div>
+
+          {unpaidPendingTotal > 0 && (
+            <div className="border-l border-slate-200 pl-6 sm:pl-10">
+              <span className="text-xs font-medium text-muted-fg block">
+                Unpaid / Pending
+              </span>
+              <span className="text-lg sm:text-xl font-bold text-amber-600 mt-0.5 block tabular-nums">
+                {formatPHP(unpaidPendingTotal)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Right: Action Buttons */}

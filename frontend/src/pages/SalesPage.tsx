@@ -13,6 +13,7 @@ import {
   FileText,
   Calendar,
   TrendingUp,
+  Wallet,
   AlertCircle,
   Trash2,
   Loader2,
@@ -114,7 +115,7 @@ export const SalesPage: React.FC = () => {
     preset: 'Last 30 Days',
   })
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending'>('All')
+  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Unpaid'>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
 
   // Handle switching period (Daily, Quarterly, Monthly, Annually)
@@ -359,11 +360,26 @@ export const SalesPage: React.FC = () => {
     setCurrentPage(1)
   }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod])
 
-  // KPI Calculation: Total Income only (Total Sales)
+  // KPI Calculation: Total Sales & Total Cash
   const kpis = React.useMemo(() => {
-    const income = filteredSales.reduce((sum, s) => sum + (s.deposit || 0), 0)
+    let salesTotal = 0
+    let cashTotal = 0
+    filteredSales.forEach((s) => {
+      salesTotal += s.deposit || 0
+      if (s.items && s.items.length > 0) {
+        s.items.forEach((item) => {
+          if (item.status === 'Paid') {
+            cashTotal += item.total || 0
+          }
+        })
+      } else if (s.status === 'Paid') {
+        cashTotal += s.deposit || 0
+      }
+    })
     return {
-      totalIncome: income,
+      totalSales: salesTotal,
+      totalCash: cashTotal,
+      totalIncome: salesTotal,
     }
   }, [filteredSales])
 
@@ -598,7 +614,7 @@ export const SalesPage: React.FC = () => {
 
               {isStatusDropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {(['All', 'Paid', 'Pending'] as const).map((st) => (
+                  {(['All', 'Paid', 'Pending', 'Unpaid'] as const).map((st) => (
                     <button
                       key={st}
                       type="button"
@@ -618,7 +634,9 @@ export const SalesPage: React.FC = () => {
                           ? 'All Status'
                           : st === 'Paid'
                           ? 'Received / Paid'
-                          : 'Pending'}
+                          : st === 'Pending'
+                          ? 'Pending'
+                          : 'Unpaid'}
                       </span>
                       {statusFilter === st && (
                         <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
@@ -756,33 +774,64 @@ export const SalesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Total Income KPI Card */}
-      <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
-        <div className="w-full max-w-[calc(100%-60px)]">
-          <span className="text-xs font-medium text-muted-fg block">
-            Total Income
-          </span>
-          {loading ? (
-            <div className="space-y-1.5 mt-2">
-              <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
-              <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
-            </div>
-          ) : (
-            <>
-              <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
-                {formatPHP(kpis.totalIncome)}
-              </h3>
-              <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-                Total sales deposits for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-              </p>
-            </>
-          )}
-        </div>
+      {/* 3. Total Sales & Total Cash KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Total Sales Card */}
+        <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
+          <div className="w-full max-w-[calc(100%-60px)]">
+            <span className="text-xs font-medium text-muted-fg block">
+              Total Sales
+            </span>
+            {loading ? (
+              <div className="space-y-1.5 mt-2">
+                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
+                  {formatPHP(kpis.totalSales)}
+                </h3>
+                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                  Total sales volume for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
+                </p>
+              </>
+            )}
+          </div>
 
-        <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
-          <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />
-        </div>
-      </Card>
+          <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+            <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />
+          </div>
+        </Card>
+
+        {/* Total Cash (Collected) Card */}
+        <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
+          <div className="w-full max-w-[calc(100%-60px)]">
+            <span className="text-xs font-medium text-muted-fg block">
+              Total Cash
+            </span>
+            {loading ? (
+              <div className="space-y-1.5 mt-2">
+                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-xl sm:text-2xl font-bold text-teal-600 mt-1 tabular-nums tracking-tight">
+                  {formatPHP(kpis.totalCash)}
+                </h3>
+                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                  Actual cash collected from paid sales in {displayedCompanyTitle}
+                </p>
+              </>
+            )}
+          </div>
+
+          <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-teal-50 border border-teal-200/60 flex items-center justify-center text-teal-600 shrink-0 shadow-2xs">
+            <Wallet className="h-5 w-5 sm:h-6 sm:w-6" />
+          </div>
+        </Card>
+      </div>
 
       {/* 4. Charts Section: Diagram - Income Summary extended to full width (weekly sales trend removed) */}
       <div className="w-full">

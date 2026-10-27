@@ -16,6 +16,7 @@ import {
   AlertCircle,
   X,
   CheckCircle2,
+  Wallet,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -127,7 +128,7 @@ export const ExpensePage: React.FC = () => {
       setSelectedCompany(activeCompany)
     }
   }, [activeCompany, isCompanyScoped])
-  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Overdue'>('All')
+  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Unpaid' | 'Overdue'>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
     preset: 'this_month',
@@ -332,10 +333,29 @@ export const ExpensePage: React.FC = () => {
     setCurrentPage(1)
   }, [dateRange, searchQuery, selectedCompany, selectedPeriod, statusFilter])
 
-  // Total Expense KPI
+  // KPI Calculation: Total Expense & Total Cash
   const kpis = React.useMemo(() => {
-    const total = filteredExpenses.reduce((sum, e) => sum + (e.withdrawal || 0), 0)
-    return { totalExpense: total }
+    let expenseTotal = 0
+    let cashTotal = 0
+    filteredExpenses.forEach((e) => {
+      expenseTotal += e.withdrawal || 0
+      if (e.items && e.items.length > 0) {
+        e.items.forEach((item) => {
+          if (item.status === 'Paid') {
+            cashTotal += item.total || 0
+          }
+        })
+      } else if (e.status === 'Paid') {
+        cashTotal += e.withdrawal || 0
+      }
+      if (e.totalPaid && e.totalPaid > 0) {
+        cashTotal = Math.max(cashTotal, e.totalPaid)
+      }
+    })
+    return {
+      totalExpense: expenseTotal,
+      totalCash: cashTotal,
+    }
   }, [filteredExpenses])
 
   // Pagination
@@ -609,7 +629,7 @@ export const ExpensePage: React.FC = () => {
 
               {isStatusDropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  {(['All', 'Paid', 'Pending', 'Overdue'] as const).map((st) => (
+                  {(['All', 'Paid', 'Pending', 'Unpaid', 'Overdue'] as const).map((st) => (
                     <button
                       key={st}
                       type="button"
@@ -755,33 +775,64 @@ export const ExpensePage: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Total Expense KPI Card */}
-      <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
-        <div className="w-full max-w-[calc(100%-60px)]">
-          <span className="text-xs font-medium text-muted-fg block">
-            Total Expense
-          </span>
-          {loading ? (
-            <div className="space-y-1.5 mt-2">
-              <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
-              <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
-            </div>
-          ) : (
-            <>
-              <h3 className="text-xl sm:text-2xl font-bold text-red-600 mt-1 tabular-nums tracking-tight">
-                {formatPHP(kpis.totalExpense)}
-              </h3>
-              <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-                Total operational expense withdrawals for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-              </p>
-            </>
-          )}
-        </div>
+      {/* 3. Total Expense & Total Cash KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Total Expense Card */}
+        <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
+          <div className="w-full max-w-[calc(100%-60px)]">
+            <span className="text-xs font-medium text-muted-fg block">
+              Total Expense
+            </span>
+            {loading ? (
+              <div className="space-y-1.5 mt-2">
+                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-xl sm:text-2xl font-bold text-red-600 mt-1 tabular-nums tracking-tight">
+                  {formatPHP(kpis.totalExpense)}
+                </h3>
+                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                  Total operational expense withdrawals for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
+                </p>
+              </>
+            )}
+          </div>
 
-        <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-red-50 border border-red-200/60 flex items-center justify-center text-red-600 shrink-0 shadow-2xs">
-          <TrendingDown className="h-5 w-5 sm:h-6 sm:w-6" />
-        </div>
-      </Card>
+          <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-red-50 border border-red-200/60 flex items-center justify-center text-red-600 shrink-0 shadow-2xs">
+            <TrendingDown className="h-5 w-5 sm:h-6 sm:w-6" />
+          </div>
+        </Card>
+
+        {/* Total Cash (Disbursed) Card */}
+        <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
+          <div className="w-full max-w-[calc(100%-60px)]">
+            <span className="text-xs font-medium text-muted-fg block">
+              Total Cash
+            </span>
+            {loading ? (
+              <div className="space-y-1.5 mt-2">
+                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-xl sm:text-2xl font-bold text-rose-600 mt-1 tabular-nums tracking-tight">
+                  {formatPHP(kpis.totalCash)}
+                </h3>
+                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                  Actual cash disbursed for settled expenses in {displayedCompanyTitle}
+                </p>
+              </>
+            )}
+          </div>
+
+          <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-rose-50 border border-rose-200/60 flex items-center justify-center text-rose-600 shrink-0 shadow-2xs">
+            <Wallet className="h-5 w-5 sm:h-6 sm:w-6" />
+          </div>
+        </Card>
+      </div>
 
       {/* 4. Charts Section: Single Diagram with Dropdown (matching SalesPage) */}
       <div className="w-full">

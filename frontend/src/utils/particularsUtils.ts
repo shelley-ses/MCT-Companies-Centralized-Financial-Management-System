@@ -4,21 +4,22 @@ export interface ParticularItem {
   quantity: number
   unitPrice: number
   total: number
-  status?: 'Pending' | 'On hold' | 'Paid'
+  status?: 'Paid' | 'Unpaid' | 'Pending' | 'On hold'
 }
 
 /**
  * Formats an array of particular items into a structured, readable string.
  * Each item is placed on its own line:
- * e.g. "Office Supplies (2x @ ₱500.00 = ₱1,000.00)"
+ * e.g. "Office Supplies (2x @ ₱500.00 = ₱1,000.00) [Paid]"
  */
 export function formatParticularsString(items: ParticularItem[]): string {
   if (!items || items.length === 0) return ''
   
   if (items.length === 1) {
     const item = items[0]
+    const statusSuffix = item.status ? ` [${item.status}]` : ''
     if (item.quantity === 1 && item.unitPrice === item.total) {
-      return item.particulars.trim()
+      return `${item.particulars.trim()}${statusSuffix}`
     }
   }
 
@@ -36,11 +37,12 @@ export function formatParticularsString(items: ParticularItem[]): string {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })
+      const statusSuffix = item.status ? ` [${item.status}]` : ''
 
       if (price > 0) {
-        return `${name} (${qty}x @ ₱${priceStr} = ₱${totalStr})`
+        return `${name} (${qty}x @ ₱${priceStr} = ₱${totalStr})${statusSuffix}`
       }
-      return `${name} (${qty}x)`
+      return `${name} (${qty}x)${statusSuffix}`
     })
     .join('\n')
 }
@@ -71,7 +73,7 @@ export function parseParticulars(
 
   // Single line: check if it has parentheses with qty / price
   const parsedSingle = parseSingleParticularLine(trimmed, 0)
-  if (parsedSingle.quantity > 1 || parsedSingle.unitPrice > 0) {
+  if (parsedSingle.quantity > 1 || parsedSingle.unitPrice > 0 || parsedSingle.status) {
     return [parsedSingle]
   }
 
@@ -88,9 +90,22 @@ export function parseParticulars(
 }
 
 function parseSingleParticularLine(line: string, index: number): ParticularItem {
+  let cleanedLine = line.trim()
+  let itemStatus: 'Paid' | 'Unpaid' | 'Pending' | 'On hold' | undefined = undefined
+
+  const statusTagMatch = cleanedLine.match(/\[(Paid|Unpaid|Pending|On hold)\]/i)
+  if (statusTagMatch) {
+    const rawTag = statusTagMatch[1].toLowerCase()
+    if (rawTag === 'paid') itemStatus = 'Paid'
+    else if (rawTag === 'unpaid') itemStatus = 'Unpaid'
+    else if (rawTag === 'pending') itemStatus = 'Pending'
+    else if (rawTag === 'on hold') itemStatus = 'On hold'
+    cleanedLine = cleanedLine.replace(statusTagMatch[0], '').trim()
+  }
+
   // Pattern: Item Name (2x @ ₱500.00 = ₱1,000.00) or Item Name (2x @ ₱500.00) or Item Name (2x)
   const regex = /^(.+?)\s*\(\s*(?:(\d+(?:\.\d+)?)\s*x)?\s*(?:@\s*(?:₱|PHP|Php)?\s*([\d,]+(?:\.\d+)?))?(?:\s*=\s*(?:₱|PHP|Php)?\s*([\d,]+(?:\.\d+)?))?\s*\)$/
-  const match = line.match(regex)
+  const match = cleanedLine.match(regex)
 
   if (match) {
     const name = match[1].trim()
@@ -105,15 +120,17 @@ function parseSingleParticularLine(line: string, index: number): ParticularItem 
       quantity: isNaN(qty) ? 1 : qty,
       unitPrice: isNaN(unitPrice) ? 0 : unitPrice,
       total: isNaN(total) ? 0 : total,
+      ...(itemStatus ? { status: itemStatus } : {}),
     }
   }
 
   return {
     id: `item-${index}`,
-    particulars: line,
+    particulars: cleanedLine,
     quantity: 1,
     unitPrice: 0,
     total: 0,
+    ...(itemStatus ? { status: itemStatus } : {}),
   }
 }
 
