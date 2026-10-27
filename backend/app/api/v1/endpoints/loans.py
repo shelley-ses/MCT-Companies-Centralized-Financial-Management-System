@@ -23,6 +23,8 @@ from app.schemas.loan import (
     CompanyLoanListOut,
 )
 from app.core.dependencies import AdminUser, CurrentUser
+from app.core.cache import system_cache
+from app.core.websocket import ws_manager
 from app.services.finance_service import FinanceService, FinanceCalculator
 from app.services.audit_service import AuditAction, log_transaction
 
@@ -347,6 +349,11 @@ def get_loans(
     role = (user_role or (request.headers.get("X-User-Role") if request else None) or "").strip().lower()
     is_auditor = role in {"audit", "auditor"}
 
+    cache_key = f"loans_{borrower_id}_{lender_id}_{company_name}_{scope}_{status}_{start_date}_{end_date}_{role}"
+    cached = system_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         client = get_supabase_admin_client()
         id_to_name, name_to_id = get_supabase_company_mapping(client, db)
@@ -420,6 +427,7 @@ def get_loans(
                     updated_at=r.get("updated_at"),
                 )
             )
+        system_cache.set(cache_key, result, ttl=45, tags=["loans"])
         return result
 
     except Exception as e:
@@ -461,7 +469,7 @@ def get_loans(
         companies = db.query(Company).all()
         comp_map = {c.company_id: c.company_name for c in companies}
 
-        return [
+        fallback_result = [
             LoanOut(
                 loan_id=l.loan_id,
                 borrower=l.borrower,
@@ -489,6 +497,8 @@ def get_loans(
             )
             for l in loans
         ]
+        system_cache.set(cache_key, fallback_result, ttl=45, tags=["loans"])
+        return fallback_result
 
 
 @router.post("", response_model=LoanOut, status_code=status.HTTP_201_CREATED, summary="Create a new loan record")
@@ -583,6 +593,9 @@ def create_loan(loan_in: LoanCreate, request: Request, db: Session = Depends(get
         )
     except Exception:
         pass
+
+    system_cache.invalidate_tag("loans")
+    ws_manager.broadcast_sync({"type": "LOANS_UPDATED"})
 
     return LoanOut(
         loan_id=final_id,
@@ -723,7 +736,59 @@ def update_loan(loan_id: int, loan_update: LoanUpdate, db: Session = Depends(get
             updated_at=final_row.get("updated_at"),
         )
 
+    system_cache.invalidate_tag("loans")
+    ws_manager.broadcast_sync({"type": "LOANS_UPDATED"})
     return LoanOut.model_validate(sql_loan)
+
+
+@router.delete("/{loan_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a pending loan request before finance review")
+def delete_loan(loan_id: int, request: Request, db: Session = Depends(get_db)):
+    client = None
+    try:
+        client = get_supabase_admin_client()
+    except Exception:
+        pass
+
+    existing_row = None
+    existing_status = None
+    if client:
+        try:
+            res = client.table("loan").select("*").eq("loan_id", loan_id).execute()
+            if res.data and len(res.data) > 0:
+                existing_row = res.data[0]
+                existing_status = existing_row.get("status")
+        except Exception:
+            pass
+
+    sql_loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
+    if not existing_status and sql_loan:
+        existing_status = sql_loan.status
+
+    if not existing_row and not sql_loan:
+        raise HTTPException(status_code=404, detail="Loan not found.")
+
+    status_norm = (existing_status or "").strip().lower()
+    if status_norm not in {"pending approval", "pending finance endorsement"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Loan is already {existing_status}. Once reviewed by finance, loans can no longer be deleted."
+        )
+
+    # Delete from Supabase
+    if client and existing_row:
+        try:
+            client.table("loan").delete().eq("loan_id", loan_id).execute()
+        except Exception as e:
+            print(f"Supabase delete loan error: {e}")
+
+    # Delete from SQLite mirror
+    if sql_loan:
+        db.delete(sql_loan)
+        db.commit()
+
+    system_cache.invalidate_tag("loans")
+    ws_manager.broadcast_sync({"type": "LOANS_UPDATED"})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{loan_id}/endorse", response_model=LoanOut, summary="Finance endorses or rejects a pending loan request")
@@ -838,6 +903,9 @@ def endorse_loan(
         )
     except Exception:
         pass
+
+    system_cache.invalidate_tag("loans")
+    ws_manager.broadcast_sync({"type": "LOANS_UPDATED"})
 
     return LoanOut(
         loan_id=loan_id,
@@ -957,6 +1025,9 @@ def audit_review_loan(
         )
     except Exception:
         pass
+
+    system_cache.invalidate_tag("loans")
+    ws_manager.broadcast_sync({"type": "LOANS_UPDATED"})
 
     return LoanOut(
         loan_id=loan_id,

@@ -24,6 +24,11 @@ class PettyCashTopUpCreate(BaseModel):
         return self
 
 
+class PettyCashTopUpUpdate(BaseModel):
+    amount: Optional[Decimal] = Field(None, ge=1, decimal_places=2)
+    description: Optional[str] = None
+
+
 class PettyCashTopUpOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

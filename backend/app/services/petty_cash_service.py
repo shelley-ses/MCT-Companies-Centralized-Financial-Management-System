@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.cache import system_cache
+from app.core.websocket import ws_manager
 from app.db.supabase import get_supabase_admin_client
 from app.models.company import Company
 from app.models.finance import Category, Expense
@@ -235,7 +237,15 @@ class PettyCashService:
     ) -> List[PettyCashLedgerEntry]:
         """Top-ups, requests, and petty cash expenses, newest first, each with the balance after it."""
         company_id = company.company_id if company else None
-        comp_map = {c.company_id: c.company_name for c in self.db.query(Company).all()}
+        cache_key = f"pc_ledger_{company_id}_{start}_{end}_{user_role}"
+        cached = system_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        comp_map = system_cache.get("comp_id_map")
+        if not comp_map:
+            comp_map = {c.company_id: c.company_name for c in self.db.query(Company).all()}
+            system_cache.set("comp_id_map", comp_map, ttl=300, tags=["companies"])
 
         topups = self._topups(company_id)
         # Internal Audit cannot see unendorsed submissions
@@ -308,11 +318,13 @@ class PettyCashService:
             running += entry["amount_in"] - entry["amount_out"]
             entry["running_balance"] = running
 
-        return [
+        result = [
             PettyCashLedgerEntry(**entry)
             for entry in reversed(entries)
             if _in_period(entry["entry_date"], start, end)
         ]
+        system_cache.set(cache_key, result, ttl=60, tags=["petty_cash"])
+        return result
 
     # ── Mutations ────────────────────────────────────────────────────────────
 
@@ -342,6 +354,39 @@ class PettyCashService:
         self.db.add(topup)
         self.db.commit()
         self.db.refresh(topup)
+        system_cache.invalidate_tag("petty_cash")
+        ws_manager.broadcast_sync({"type": "PETTY_CASH_UPDATED"})
+        return self._topup_output(topup)
+
+    def update_topup(
+        self,
+        topup_id: int,
+        amount: Optional[Decimal] = None,
+        description: Optional[str] = None,
+    ) -> PettyCashTopUpOut:
+        topup = self.db.query(PettyCashTopUp).filter(PettyCashTopUp.topup_id == topup_id).first()
+        if not topup:
+            raise HTTPException(status_code=404, detail="Petty cash request not found.")
+
+        current_status = (topup.status or "").lower()
+        if current_status not in ["pending finance endorsement", "pending finance approval"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"This request has already been reviewed by finance ({topup.status}) and cannot be edited."
+            )
+
+        if amount is not None:
+            if amount < Decimal("1.00"):
+                raise HTTPException(status_code=400, detail="Amount must be at least 1.00.")
+            topup.amount = amount
+
+        if description is not None:
+            topup.description = description.strip() or None
+
+        self.db.commit()
+        self.db.refresh(topup)
+        system_cache.invalidate_tag("petty_cash")
+        ws_manager.broadcast_sync({"type": "PETTY_CASH_UPDATED"})
         return self._topup_output(topup)
 
     def endorse_topup(
@@ -370,6 +415,8 @@ class PettyCashService:
 
         self.db.commit()
         self.db.refresh(topup)
+        system_cache.invalidate_tag("petty_cash")
+        ws_manager.broadcast_sync({"type": "PETTY_CASH_UPDATED"})
         return self._topup_output(topup)
 
     def review_topup(
@@ -398,12 +445,22 @@ class PettyCashService:
 
         self.db.commit()
         self.db.refresh(topup)
+        system_cache.invalidate_tag("petty_cash")
+        ws_manager.broadcast_sync({"type": "PETTY_CASH_UPDATED"})
         return self._topup_output(topup)
 
     def delete_topup(self, topup_id: int) -> PettyCashTopUp:
         topup = self.db.query(PettyCashTopUp).filter(PettyCashTopUp.topup_id == topup_id).first()
         if not topup:
             raise HTTPException(status_code=404, detail="Top-up not found.")
+
+        current_status = (topup.status or "").lower()
+        if current_status not in ["pending finance endorsement", "pending finance approval"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"This request has already been reviewed by finance ({topup.status}) and cannot be deleted."
+            )
+
         # Removing the top-up must not leave already-recorded petty cash spending uncovered
         if self.get_balance(topup.company_id) - _to_decimal(topup.amount) < ZERO:
             raise HTTPException(
@@ -412,6 +469,8 @@ class PettyCashService:
             )
         self.db.delete(topup)
         self.db.commit()
+        system_cache.invalidate_tag("petty_cash")
+        ws_manager.broadcast_sync({"type": "PETTY_CASH_UPDATED"})
         return topup
 
     def update_threshold(self, company: Company, threshold: Decimal) -> PettyCashSummaryOut:
@@ -421,6 +480,7 @@ class PettyCashService:
             self.db.add(wallet)
         wallet.low_balance_threshold = threshold
         self.db.commit()
+        system_cache.invalidate_tag("petty_cash")
         return self.get_summary(company)
 
     def topups_total_in_period(self, company_id: int, start: Optional[date], end: Optional[date]) -> Decimal:
@@ -428,3 +488,4 @@ class PettyCashService:
             (_to_decimal(t.amount) for t in self._topups(company_id) if _in_period(t.topup_date, start, end)),
             ZERO,
         )
+

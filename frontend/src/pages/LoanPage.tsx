@@ -56,6 +56,7 @@ import {
   type LoanItem,
   type CompanyOption,
 } from '@/services/loanService'
+import { websocketService } from '@/services/websocketService'
 import { useLocation } from 'react-router-dom'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
@@ -300,6 +301,14 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
   React.useEffect(() => {
     loadLoans()
+  }, [loadLoans])
+
+  // Real-time synchronization across all tabs and clients
+  React.useEffect(() => {
+    const unsubscribe = websocketService.subscribe('LOANS_UPDATED', () => {
+      loadLoans()
+    })
+    return () => unsubscribe()
   }, [loadLoans])
 
 

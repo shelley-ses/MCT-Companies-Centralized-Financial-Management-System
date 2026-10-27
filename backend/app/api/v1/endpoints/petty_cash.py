@@ -12,6 +12,7 @@ from app.schemas.petty_cash import (
     PettyCashSummaryOut,
     PettyCashTopUpCreate,
     PettyCashTopUpOut,
+    PettyCashTopUpUpdate,
     PettyCashWalletUpdate,
 )
 from app.services.audit_service import AuditAction, log_transaction
@@ -74,6 +75,28 @@ def create_topup(topup_in: PettyCashTopUpCreate, request: Request, db: Session =
         ip_address=_client_ip(request),
         record_id=topup.topup_id, record_type="petty_cash_topup",
         extra={"amount": float(topup.amount), "topup_date": topup.topup_date.isoformat()},
+    )
+    return topup
+
+
+@router.put("/topups/{topup_id}", response_model=PettyCashTopUpOut, summary="Update pending petty cash request before finance review")
+def update_topup(
+    topup_id: int,
+    topup_update: PettyCashTopUpUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    topup = PettyCashService(db).update_topup(
+        topup_id=topup_id,
+        amount=topup_update.amount,
+        description=topup_update.description,
+    )
+    log_transaction(
+        db, AuditAction.PETTY_CASH_TOPUP_CREATED,
+        user_id=None, company_id=topup.company_id,
+        ip_address=_client_ip(request),
+        record_id=topup.topup_id, record_type="petty_cash_topup_update",
+        extra={"amount": float(topup.amount)},
     )
     return topup
 

@@ -3,6 +3,8 @@
 // by the backend, so there is no local fallback: when the backend is unreachable
 // the calls throw and callers show the wallet as unavailable.
 
+import { websocketService } from './websocketService'
+
 export const PETTY_CASH_METHOD = 'Petty Cash'
 
 export const isPettyCashMethod = (method?: string | null): boolean =>
@@ -238,6 +240,21 @@ export const pettyCashService = {
     })
     if (!response.ok) throw await getBackendError(response)
     this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
+  },
+
+  async updateTopUp(recordId: number, input: { amount?: number; description?: string }): Promise<void> {
+    const response = await fetch(`/api/v1/petty-cash/topups/${recordId}`, {
+      method: 'PUT',
+      headers: backendHeaders(),
+      body: JSON.stringify({
+        amount: input.amount,
+        description: input.description || null,
+      }),
+    })
+    if (!response.ok) throw await getBackendError(response)
+    this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
   },
 
   async endorseTopUp(recordId: number, action: 'endorse' | 'reject', remark: string): Promise<void> {
@@ -248,6 +265,7 @@ export const pettyCashService = {
     })
     if (!response.ok) throw await getBackendError(response)
     this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
   },
 
   async reviewTopUp(recordId: number, action: 'approve' | 'disapprove', remark: string): Promise<void> {
@@ -258,6 +276,7 @@ export const pettyCashService = {
     })
     if (!response.ok) throw await getBackendError(response)
     this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
   },
 
   async deleteTopUp(topUpId: number): Promise<void> {
@@ -266,6 +285,8 @@ export const pettyCashService = {
       headers: backendHeaders(),
     })
     if (!response.ok) throw await getBackendError(response)
+    this.invalidateCache()
+    websocketService.emitLocal('PETTY_CASH_UPDATED')
   },
 
   async updateThreshold(company: string, threshold: number): Promise<PettyCashSummary> {

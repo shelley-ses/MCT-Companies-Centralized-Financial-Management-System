@@ -1,4 +1,5 @@
 import type { DashboardTransactionItem } from './dashboardService'
+import { websocketService } from './websocketService'
 
 export interface LoanRepaymentRecord {
   id: string
@@ -593,7 +594,35 @@ export const loanService = {
     }
     inMemoryLoans[index] = updated
     saveStoredLoans(inMemoryLoans)
+    websocketService.emitLocal('LOANS_UPDATED')
     return updated
+  },
+
+  async deleteLoan(id: string): Promise<boolean> {
+    const numericId = id.replace(/^loan_/, '')
+    const token =
+      typeof window !== 'undefined'
+        ? sessionStorage.getItem('mct_access_token')
+        : null
+
+    if (/^\d+$/.test(numericId)) {
+      const res = await fetch(`/api/v1/loans/${numericId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.detail || 'Failed to delete loan request.')
+      }
+    }
+
+    inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id && l.id !== `loan_${numericId}`)
+    saveStoredLoans(inMemoryLoans)
+    websocketService.emitLocal('LOANS_UPDATED')
+    return true
   },
 
   async recordRepayment(
