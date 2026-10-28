@@ -306,6 +306,8 @@ def _send_login_otp(email: str, otp: str) -> None:
 
 
 def _record_failed_login(db: Session, ip_address: str, email: str = "") -> None:
+    if ip_address in ("127.0.0.1", "::1", "localhost", "unknown"):
+        return
     now = datetime.now(timezone.utc)
     state = _rate_limits.setdefault(ip_address, {"attempts": 0, "locked_until": None})
     locked_until = state["locked_until"]

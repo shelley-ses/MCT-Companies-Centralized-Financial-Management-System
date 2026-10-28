@@ -1,0 +1,168 @@
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header, status
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.schemas.bank import (
+    BankAccountCreate,
+    BankAccountUpdate,
+    BankAccountOut,
+    BankTransactionOut,
+    BankDepositWithdrawRequest,
+)
+from app.services.bank_service import BankService
+
+router = APIRouter()
+
+
+def check_finance_or_admin(
+    user_role: Optional[str] = None,
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    request: Request = None,
+):
+    # 1. First verify cryptographic Bearer token if present
+    if request:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+            if token and token != "null" and token != "undefined":
+                try:
+                    from app.core.security import verify_token
+                    claims = verify_token(token)
+                    metadata = claims.get("app_metadata", {})
+                    if isinstance(metadata, dict):
+                        if metadata.get("is_admin") is True:
+                            return
+                        token_role = str(metadata.get("role") or "").strip().lower()
+                        if token_role in ["admin", "finance"]:
+                            return
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only Finance and Administrator accounts can perform this bank action.",
+                        )
+                except HTTPException:
+                    raise
+                except Exception:
+                    pass
+
+    # 2. Strict allowlist check on user_role or X-User-Role header
+    role = (user_role or x_user_role or "").strip().lower()
+    if role not in ["admin", "finance"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Finance and Administrator accounts can perform this bank action.",
+        )
+
+
+@router.get("", response_model=List[BankAccountOut], summary="List all corporate bank accounts")
+def list_bank_accounts(
+    company_name: Optional[str] = Query(None, description="Filter by company name"),
+    db: Session = Depends(get_db),
+):
+    service = BankService(db)
+    return service.list_accounts(company_name=company_name)
+
+
+@router.get("/{account_id}", response_model=BankAccountOut, summary="Get single bank account with transactions")
+def get_bank_account(
+    account_id: str,
+    db: Session = Depends(get_db),
+):
+    service = BankService(db)
+    account = service.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Bank account not found.")
+    return account
+
+
+@router.post("", response_model=BankAccountOut, status_code=status.HTTP_201_CREATED, summary="Create a new bank account")
+def create_bank_account(
+    data: BankAccountCreate,
+    user_role: Optional[str] = Query(None),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    check_finance_or_admin(user_role, x_user_role, request)
+    service = BankService(db)
+    account = service.create_account(data)
+    from app.core.websocket import ws_manager
+    ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": account.id}})
+    return account
+
+
+@router.put("/{account_id}", response_model=BankAccountOut, summary="Update bank account details")
+def update_bank_account(
+    account_id: str,
+    data: BankAccountUpdate,
+    user_role: Optional[str] = Query(None),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    check_finance_or_admin(user_role, x_user_role, request)
+    service = BankService(db)
+    account = service.update_account(account_id, data)
+    if not account:
+        raise HTTPException(status_code=404, detail="Bank account not found.")
+    from app.core.websocket import ws_manager
+    ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": account_id}})
+    return account
+
+
+@router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a bank account")
+def delete_bank_account(
+    account_id: str,
+    user_role: Optional[str] = Query(None),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    check_finance_or_admin(user_role, x_user_role, request)
+    service = BankService(db)
+    success = service.delete_account(account_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Bank account not found.")
+    from app.core.websocket import ws_manager
+    ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": account_id}})
+    return None
+
+
+@router.post("/{account_id}/deposit", response_model=BankAccountOut, summary="Record a deposit to bank account")
+def deposit_to_bank_account(
+    account_id: str,
+    req: BankDepositWithdrawRequest,
+    user_role: Optional[str] = Query(None),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    check_finance_or_admin(user_role, x_user_role, request)
+    service = BankService(db)
+    try:
+        account, _ = service.deposit(account_id, req)
+        from app.core.websocket import ws_manager
+        ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": account_id}})
+        return account
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{account_id}/withdraw", response_model=BankAccountOut, summary="Record a withdrawal from bank account")
+def withdraw_from_bank_account(
+    account_id: str,
+    req: BankDepositWithdrawRequest,
+    user_role: Optional[str] = Query(None),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    check_finance_or_admin(user_role, x_user_role, request)
+    service = BankService(db)
+    try:
+        account, _ = service.withdraw(account_id, req)
+        from app.core.websocket import ws_manager
+        ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": account_id}})
+        return account
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

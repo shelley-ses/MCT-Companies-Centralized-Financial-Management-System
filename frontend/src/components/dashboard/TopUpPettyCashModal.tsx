@@ -19,7 +19,6 @@ import {
 import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
 import { useSession } from '@/hooks/useSession'
-import { cn } from '@/lib/utils'
 
 import { pettyCashService } from '@/services/pettyCashService'
 
@@ -64,7 +63,6 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
 }) => {
   const { user } = useSession()
   const userRole = (user?.role || '').toLowerCase()
-  const isFinanceOrAdmin = userRole === 'finance' || userRole === 'admin'
   const isSupervisor = userRole === 'supervisor'
   const isCompanyScoped = isSupervisor || userRole === 'company' || userRole === 'company auditor'
 

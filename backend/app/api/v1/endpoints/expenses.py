@@ -303,6 +303,32 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
         except Exception:
             db.rollback()
 
+        # Auto-withdrawal from company bank account for settled expenses (unless Petty Cash)
+        if (payment_method_str or "").lower() != "petty cash":
+            try:
+                from app.services.bank_service import BankService
+                from app.core.websocket import ws_manager
+                bank_svc = BankService(db)
+                if expense_in.bank_account_id:
+                    bank_svc.record_withdrawal_by_account_id(
+                        account_id=expense_in.bank_account_id,
+                        amount=expense_in.amount,
+                        particulars=f"Expense Disbursement: {parts}",
+                        cheque_no=cheque or ref,
+                        tx_date=expense_in.expense_date.strftime("%m/%d/%y") if hasattr(expense_in.expense_date, "strftime") else str(expense_in.expense_date),
+                    )
+                else:
+                    bank_svc.record_expense_cash_withdrawal(
+                        company_name=target_company_name,
+                        amount=expense_in.amount,
+                        particulars=f"Expense Disbursement: {parts}",
+                        cheque_no=cheque or ref,
+                        tx_date=expense_in.expense_date.strftime("%m/%d/%y") if hasattr(expense_in.expense_date, "strftime") else str(expense_in.expense_date),
+                    )
+                ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company_name}})
+            except Exception:
+                pass
+
         log_transaction(
             db, AuditAction.EXPENSE_CREATED,
             user_id=None, company_id=target_company_id,
@@ -372,6 +398,32 @@ def create_expense(expense_in: ExpenseCreate, request: Request, db: Session = De
         db.add(expense)
         db.commit()
         db.refresh(expense)
+
+        # Auto-withdrawal from company bank account for settled expenses (unless Petty Cash)
+        if (expense_in.payment_method or "").lower() != "petty cash":
+            try:
+                from app.services.bank_service import BankService
+                from app.core.websocket import ws_manager
+                bank_svc = BankService(db)
+                if expense_in.bank_account_id:
+                    bank_svc.record_withdrawal_by_account_id(
+                        account_id=expense_in.bank_account_id,
+                        amount=expense.amount,
+                        particulars=f"Expense Disbursement: {parts}",
+                        cheque_no=cheque or ref,
+                        tx_date=expense.expense_date.strftime("%m/%d/%y") if hasattr(expense.expense_date, "strftime") else str(expense.expense_date),
+                    )
+                else:
+                    bank_svc.record_expense_cash_withdrawal(
+                        company_name=target_company.company_name,
+                        amount=expense.amount,
+                        particulars=f"Expense Disbursement: {parts}",
+                        cheque_no=cheque or ref,
+                        tx_date=expense.expense_date.strftime("%m/%d/%y") if hasattr(expense.expense_date, "strftime") else str(expense.expense_date),
+                    )
+                ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company.company_name}})
+            except Exception:
+                pass
 
         cat = db.query(Category).filter(Category.category_id == expense.category_id).first() if expense.category_id else None
 

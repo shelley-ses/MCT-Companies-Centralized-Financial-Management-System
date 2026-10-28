@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     notifications,
     bills,
     petty_cash,
+    bank_accounts,
 )
 
 api_router = APIRouter()
@@ -34,3 +35,4 @@ api_router.include_router(audit_logs.router, tags=["Audit Logs"])
 api_router.include_router(notifications.router, tags=["Notifications"])
 api_router.include_router(bills.router, prefix="/bills", tags=["Bills"])
 api_router.include_router(petty_cash.router, prefix="/petty-cash", tags=["Petty Cash"])
+api_router.include_router(bank_accounts.router, prefix="/bank-accounts", tags=["Bank Accounts"])

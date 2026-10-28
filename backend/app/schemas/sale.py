@@ -18,6 +18,7 @@ class SaleCreate(SaleBase):
     reference_no: Optional[str] = None
     description: Optional[str] = None
     payment_method: Optional[str] = None
+    bank_account_id: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_required_fields(self):

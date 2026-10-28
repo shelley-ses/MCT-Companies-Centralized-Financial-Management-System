@@ -20,6 +20,7 @@ class ExpenseCreate(ExpenseBase):
     category: Optional[str] = None
     chequeNo: Optional[str] = None
     payment_method: Optional[str] = None
+    bank_account_id: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_required_fields(self):

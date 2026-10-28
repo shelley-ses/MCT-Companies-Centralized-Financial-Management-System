@@ -2,7 +2,7 @@
  * WebSocket Real-Time Sync Service with Multi-Tab BroadcastChannel support.
  */
 
-type SyncEventType = 'LOANS_UPDATED' | 'PETTY_CASH_UPDATED' | 'TRANSACTION_UPDATED' | 'ALL'
+type SyncEventType = 'LOANS_UPDATED' | 'PETTY_CASH_UPDATED' | 'TRANSACTION_UPDATED' | 'BANK_UPDATED' | 'ALL'
 type Listener = (payload?: any) => void
 
 class WebSocketService {

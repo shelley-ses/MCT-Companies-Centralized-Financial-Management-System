@@ -37,6 +37,7 @@ export interface NewSalesInput {
   company: string
   status: 'Paid' | 'Pending' | 'On hold' | 'Unpaid'
   items?: ParticularItem[]
+  bankAccountId?: string
 }
 
 export const INITIAL_SALES: SalesItem[] = [
@@ -802,6 +803,7 @@ export const salesService = {
       category: input.category && input.category !== 'None' ? input.category : null,
       payment_method: input.paymentMethod || null,
       chequeNo: input.chequeNo || undefined,
+      bank_account_id: input.bankAccountId || undefined,
     }
 
     try {

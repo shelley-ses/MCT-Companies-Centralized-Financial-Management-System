@@ -262,6 +262,31 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
         except Exception:
             db.rollback()
 
+        # Credit to bank account if specified or company account exists
+        try:
+            from app.services.bank_service import BankService
+            from app.core.websocket import ws_manager
+            bank_svc = BankService(db)
+            if sale_in.bank_account_id:
+                bank_svc.record_deposit_by_account_id(
+                    account_id=sale_in.bank_account_id,
+                    amount=sale_in.amount,
+                    particulars=f"Sales Collection: {parts}",
+                    reference_no=cheque,
+                    tx_date=sale_in.transaction_date.strftime("%m/%d/%y") if hasattr(sale_in.transaction_date, "strftime") else str(sale_in.transaction_date),
+                )
+            elif target_company_name:
+                bank_svc.record_sale_cash_deposit(
+                    company_name=target_company_name,
+                    amount=sale_in.amount,
+                    particulars=f"Sales Collection: {parts}",
+                    reference_no=cheque,
+                    tx_date=sale_in.transaction_date.strftime("%m/%d/%y") if hasattr(sale_in.transaction_date, "strftime") else str(sale_in.transaction_date),
+                )
+            ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company_name}})
+        except Exception:
+            pass
+
         log_transaction(
             db, AuditAction.SALE_CREATED,
             user_id=None, company_id=target_company_id,
@@ -322,6 +347,31 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
         db.add(sale)
         db.commit()
         db.refresh(sale)
+
+        # Auto-credit to company bank account for settled sales
+        try:
+            from app.services.bank_service import BankService
+            from app.core.websocket import ws_manager
+            bank_svc = BankService(db)
+            if sale_in.bank_account_id:
+                bank_svc.record_deposit_by_account_id(
+                    account_id=sale_in.bank_account_id,
+                    amount=sale.amount,
+                    particulars=f"Sales Collection: {sale.particulars}",
+                    reference_no=cheque,
+                    tx_date=sale.transaction_date.strftime("%m/%d/%y") if hasattr(sale.transaction_date, "strftime") else str(sale.transaction_date),
+                )
+            else:
+                bank_svc.record_sale_cash_deposit(
+                    company_name=target_company.company_name,
+                    amount=sale.amount,
+                    particulars=f"Sales Collection: {sale.particulars}",
+                    reference_no=cheque,
+                    tx_date=sale.transaction_date.strftime("%m/%d/%y") if hasattr(sale.transaction_date, "strftime") else str(sale.transaction_date),
+                )
+            ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company.company_name}})
+        except Exception:
+            pass
 
         log_transaction(
             db, AuditAction.SALE_CREATED,
@@ -450,6 +500,21 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
             db.commit()
         except Exception:
             db.rollback()
+
+        # Auto-credit to company bank account for settled sales
+        try:
+            from app.services.bank_service import BankService
+            BankService(db).record_sale_cash_deposit(
+                company_name=target_company_name,
+                amount=sale_in.amount,
+                particulars=f"Sales Collection: {parts}",
+                reference_no=cheque,
+                tx_date=sale_in.transaction_date.strftime("%m/%d/%y") if hasattr(sale_in.transaction_date, "strftime") else str(sale_in.transaction_date),
+            )
+            from app.core.websocket import ws_manager
+            ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company_name}})
+        except Exception:
+            pass
 
         return SaleOut(
             sales_id=created_row["sales_id"],
