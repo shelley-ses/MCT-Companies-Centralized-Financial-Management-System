@@ -19,6 +19,7 @@ import {
   Coins,
   MoreVertical,
   Eye,
+  Lock,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -47,198 +48,16 @@ import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
-
-// Data model for daily payment transactions
-export interface DailyPaymentRecord {
-  id: string
-  date: string // YYYY-MM-DD
-  amount: number
-  method: string // Cash | GCash | Bank Transfer | Cheque | N/A
-  referenceNo?: string
-  notes?: string
-  status?: 'Paid' | 'Missed'
-  missedReason?: string
-  timestamp: string
-}
-
-// Data model for lending facilities matching required columns & fields
-export interface LendingFacility {
-  id: string
-  loanId: string // "Loan ID"
-  borrowerName: string // "Borrower's Name"
-  loanAmount: number // "Loan Amount"
-  interestRate: number // "Interest Rate" (%)
-  dateBorrowed: string // "Date Borrowed" (YYYY-MM-DD)
-  dueDate: string // "Due Date" (YYYY-MM-DD)
-  totalAmountPayable: number // "Total Amount Payable"
-  amountPaid: number // "Amount Paid"
-  remainingBalance: number // "Remaining Balance"
-  status: 'Active' | 'Completed' | 'Overdue' | 'Pending' // "Status"
-  lenderCompany: string
-  notes?: string
-  dailyPayments: DailyPaymentRecord[]
-  auditStatus?: 'Verified' | 'Flagged'
-  auditDate?: string
-  auditedBy?: string
-}
-
-const STORAGE_KEY = 'mct_filcap_lending_facilities_v2'
-
-// Initial seed data for FilCap Prime Holdings Corp. (and JK Property) with rich everyday payment records
-const INITIAL_FACILITIES: LendingFacility[] = [
-  {
-    id: 'fac-fc-001',
-    loanId: 'LN-FC-2026-001',
-    borrowerName: 'Elena Morales (Morales Grocery Store)',
-    loanAmount: 100000,
-    interestRate: 5.0,
-    dateBorrowed: '2026-10-01',
-    dueDate: '2026-11-15',
-    totalAmountPayable: 105000,
-    amountPaid: 42000,
-    remainingBalance: 63000,
-    status: 'Active',
-    lenderCompany: 'FilCap Prime Holdings Corp.',
-    notes: 'Micro-retail everyday working capital facility. Daily installment rate: ₱2,100.',
-    dailyPayments: [
-      { id: 'dp-1', date: '2026-10-02', amount: 2100, method: 'Cash', referenceNo: 'OR-88201', notes: 'Daily remittance', timestamp: '2026-10-02T10:00:00Z' },
-      { id: 'dp-2', date: '2026-10-03', amount: 2100, method: 'Cash', referenceNo: 'OR-88220', notes: 'Daily remittance', timestamp: '2026-10-03T10:15:00Z' },
-      { id: 'dp-3', date: '2026-10-04', amount: 2100, method: 'GCash', referenceNo: 'GC-99210', notes: 'E-wallet transfer', timestamp: '2026-10-04T11:00:00Z' },
-      { id: 'dp-4', date: '2026-10-05', amount: 2100, method: 'Cash', referenceNo: 'OR-88255', notes: 'Daily remittance', timestamp: '2026-10-05T09:45:00Z' },
-      { id: 'dp-5', date: '2026-10-06', amount: 2100, method: 'Cash', referenceNo: 'OR-88280', notes: 'Daily remittance', timestamp: '2026-10-06T10:30:00Z' },
-      { id: 'dp-6', date: '2026-10-07', amount: 2100, method: 'Cash', referenceNo: 'OR-88301', notes: 'Daily remittance', timestamp: '2026-10-07T10:00:00Z' },
-      { id: 'dp-7', date: '2026-10-08', amount: 2100, method: 'Cash', referenceNo: 'OR-88320', notes: 'Daily remittance', timestamp: '2026-10-08T10:15:00Z' },
-      { id: 'dp-8', date: '2026-10-09', amount: 2100, method: 'GCash', referenceNo: 'GC-99340', notes: 'E-wallet transfer', timestamp: '2026-10-09T14:00:00Z' },
-      { id: 'dp-9', date: '2026-10-10', amount: 2100, method: 'Cash', referenceNo: 'OR-88350', notes: 'Daily remittance', timestamp: '2026-10-10T10:00:00Z' },
-      { id: 'dp-10', date: '2026-10-11', amount: 2100, method: 'Cash', referenceNo: 'OR-88370', notes: 'Daily remittance', timestamp: '2026-10-11T10:30:00Z' },
-      { id: 'dp-11', date: '2026-10-12', amount: 2100, method: 'Cash', referenceNo: 'OR-88390', notes: 'Daily remittance', timestamp: '2026-10-12T09:30:00Z' },
-      { id: 'dp-12', date: '2026-10-13', amount: 2100, method: 'GCash', referenceNo: 'GC-99410', notes: 'E-wallet transfer', timestamp: '2026-10-13T10:45:00Z' },
-      { id: 'dp-13', date: '2026-10-14', amount: 0, method: 'N/A', referenceNo: 'MISSED', notes: 'Shop closed due to storm / flood (Unpaid)', status: 'Missed', missedReason: 'Shop closed due to storm', timestamp: '2026-10-14T10:00:00Z' },
-      { id: 'dp-14', date: '2026-10-15', amount: 2100, method: 'Cash', referenceNo: 'OR-88440', notes: 'Daily remittance', timestamp: '2026-10-15T11:20:00Z' },
-      { id: 'dp-15', date: '2026-10-16', amount: 2100, method: 'Cash', referenceNo: 'OR-88460', notes: 'Daily remittance', timestamp: '2026-10-16T10:10:00Z' },
-      { id: 'dp-16', date: '2026-10-17', amount: 2100, method: 'Cash', referenceNo: 'OR-88480', notes: 'Daily remittance', timestamp: '2026-10-17T09:50:00Z' },
-      { id: 'dp-17', date: '2026-10-18', amount: 2100, method: 'GCash', referenceNo: 'GC-99520', notes: 'E-wallet transfer', timestamp: '2026-10-18T10:00:00Z' },
-      { id: 'dp-18', date: '2026-10-19', amount: 2100, method: 'Cash', referenceNo: 'OR-88510', notes: 'Daily remittance', timestamp: '2026-10-19T10:15:00Z' },
-      { id: 'dp-19', date: '2026-10-20', amount: 2100, method: 'Cash', referenceNo: 'OR-88530', notes: 'Daily remittance', timestamp: '2026-10-20T10:00:00Z' },
-      { id: 'dp-20', date: '2026-10-21', amount: 2100, method: 'Cash', referenceNo: 'OR-88550', notes: 'Today payment collected', timestamp: '2026-10-21T09:30:00Z' },
-    ],
-  },
-  {
-    id: 'fac-fc-002',
-    loanId: 'LN-FC-2026-002',
-    borrowerName: 'Roberto Sanchez (Sanchez Hardware Supplies)',
-    loanAmount: 250000,
-    interestRate: 4.0,
-    dateBorrowed: '2026-09-15',
-    dueDate: '2026-12-15',
-    totalAmountPayable: 260000,
-    amountPaid: 130000,
-    remainingBalance: 130000,
-    status: 'Active',
-    lenderCompany: 'FilCap Prime Holdings Corp.',
-    notes: 'Warehouse construction inventory expansion. Everyday collection of ₱3,000.',
-    dailyPayments: [
-      { id: 'dp-s1', date: '2026-10-18', amount: 3000, method: 'Cash', referenceNo: 'OR-88102', notes: 'Daily remittance', timestamp: '2026-10-18T14:20:00Z' },
-      { id: 'dp-s2', date: '2026-10-19', amount: 3000, method: 'Cash', referenceNo: 'OR-88125', notes: 'Daily remittance', timestamp: '2026-10-19T14:00:00Z' },
-      { id: 'dp-s3', date: '2026-10-20', amount: 3000, method: 'Bank Transfer', referenceNo: 'BT-30911', notes: 'Online collection', timestamp: '2026-10-20T15:30:00Z' },
-      { id: 'dp-s4', date: '2026-10-21', amount: 3000, method: 'Cash', referenceNo: 'OR-88160', notes: 'Today payment collected', timestamp: '2026-10-21T11:00:00Z' },
-    ],
-  },
-  {
-    id: 'fac-fc-003',
-    loanId: 'LN-FC-2026-003',
-    borrowerName: 'Maria Corazon Santos (Corazon Enterprises)',
-    loanAmount: 80000,
-    interestRate: 5.0,
-    dateBorrowed: '2026-09-01',
-    dueDate: '2026-10-15',
-    totalAmountPayable: 84000,
-    amountPaid: 84000,
-    remainingBalance: 0,
-    status: 'Completed',
-    lenderCompany: 'FilCap Prime Holdings Corp.',
-    notes: 'Seasonal agricultural goods trade. Completed fully via everyday daily payments.',
-    dailyPayments: [
-      { id: 'dp-c1', date: '2026-10-14', amount: 2000, method: 'Cash', referenceNo: 'OR-87990', notes: 'Daily collection', timestamp: '2026-10-14T10:00:00Z' },
-      { id: 'dp-c2', date: '2026-10-15', amount: 2000, method: 'Cash', referenceNo: 'OR-88001', notes: 'Final payment - Loan completed', timestamp: '2026-10-15T10:30:00Z' },
-    ],
-  },
-  {
-    id: 'fac-fc-004',
-    loanId: 'LN-FC-2026-004',
-    borrowerName: 'Dionisio Bautista (DB Auto Repair & Parts)',
-    loanAmount: 150000,
-    interestRate: 6.0,
-    dateBorrowed: '2026-08-20',
-    dueDate: '2026-10-10',
-    totalAmountPayable: 159000,
-    amountPaid: 95000,
-    remainingBalance: 64000,
-    status: 'Overdue',
-    lenderCompany: 'FilCap Prime Holdings Corp.',
-    notes: 'Diagnostic machine tooling loan. Maturity passed on Oct 10; everyday collection ongoing.',
-    dailyPayments: [
-      { id: 'dp-d1', date: '2026-10-18', amount: 1500, method: 'Cash', referenceNo: 'OR-88090', notes: 'Partial catch-up payment', timestamp: '2026-10-18T16:00:00Z' },
-      { id: 'dp-d2', date: '2026-10-20', amount: 1500, method: 'Cash', referenceNo: 'OR-88145', notes: 'Partial payment', timestamp: '2026-10-20T16:15:00Z' },
-    ],
-  },
-  {
-    id: 'fac-fc-005',
-    loanId: 'LN-FC-2026-005',
-    borrowerName: 'Carmelo Cruz (Cruz Agrivet Supply)',
-    loanAmount: 300000,
-    interestRate: 3.5,
-    dateBorrowed: '2026-10-10',
-    dueDate: '2027-01-10',
-    totalAmountPayable: 310500,
-    amountPaid: 31050,
-    remainingBalance: 279450,
-    status: 'Active',
-    lenderCompany: 'FilCap Prime Holdings Corp.',
-    notes: 'Poultry feeds and veterinary supply line. Daily collection rate: ₱3,450.',
-    dailyPayments: [
-      { id: 'dp-cr1', date: '2026-10-19', amount: 3450, method: 'Bank Transfer', referenceNo: 'BT-9901', notes: 'Daily installment', timestamp: '2026-10-19T09:00:00Z' },
-      { id: 'dp-cr2', date: '2026-10-20', amount: 3450, method: 'Bank Transfer', referenceNo: 'BT-9922', notes: 'Daily installment', timestamp: '2026-10-20T09:15:00Z' },
-      { id: 'dp-cr3', date: '2026-10-21', amount: 3450, method: 'Cash', referenceNo: 'OR-88188', notes: 'Today payment collected', timestamp: '2026-10-21T09:30:00Z' },
-    ],
-  },
-  {
-    id: 'fac-fc-006',
-    loanId: 'LN-FC-2026-006',
-    borrowerName: 'Teresa Mendoza (Mendoza Meat & Poultry)',
-    loanAmount: 60000,
-    interestRate: 5.0,
-    dateBorrowed: '2026-10-05',
-    dueDate: '2026-11-20',
-    totalAmountPayable: 63000,
-    amountPaid: 21000,
-    remainingBalance: 42000,
-    status: 'Active',
-    lenderCompany: 'FilCap Prime Holdings Corp.',
-    notes: 'Market stall refrigeration setup. Everyday cash collection ₱1,400.',
-    dailyPayments: [
-      { id: 'dp-m1', date: '2026-10-19', amount: 1400, method: 'Cash', referenceNo: 'OR-88095', notes: 'Market collection', timestamp: '2026-10-19T07:30:00Z' },
-      { id: 'dp-m2', date: '2026-10-20', amount: 1400, method: 'Cash', referenceNo: 'OR-88118', notes: 'Market collection', timestamp: '2026-10-20T07:15:00Z' },
-      { id: 'dp-m3', date: '2026-10-21', amount: 1400, method: 'Cash', referenceNo: 'OR-88150', notes: 'Today collection', timestamp: '2026-10-21T07:00:00Z' },
-    ],
-  },
-  {
-    id: 'fac-jk-001',
-    loanId: 'LN-JK-2026-001',
-    borrowerName: 'MCT Hotel Corp.',
-    loanAmount: 500000,
-    interestRate: 3.0,
-    dateBorrowed: '2026-08-01',
-    dueDate: '2026-12-31',
-    totalAmountPayable: 515000,
-    amountPaid: 250000,
-    remainingBalance: 265000,
-    status: 'Active',
-    lenderCompany: 'JK Property and Ventures',
-    notes: 'Guest room refurbishment bridging credit facility.',
-    dailyPayments: [],
-  },
-]
+import {
+  type DailyPaymentRecord,
+  type LendingFacility,
+  lendingService,
+  INITIAL_FACILITIES,
+  LENDING_STORAGE_KEY as STORAGE_KEY,
+  getMonthlyProgress,
+  getNextInstallmentInfo,
+  buildDailyLedger,
+} from '@/services/lendingService'
 
 // Period options matching Sales Page
 const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
@@ -275,6 +94,20 @@ export const LendingPage: React.FC = () => {
     }
     return INITIAL_FACILITIES
   })
+
+  // Sync with backend lending service on mount
+  React.useEffect(() => {
+    lendingService
+      .getFacilities()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setFacilities(data)
+        }
+      })
+      .catch((err) => {
+        console.warn('Lending backend sync notice:', err)
+      })
+  }, [])
 
   // Save to localStorage whenever facilities update
   const saveFacilities = React.useCallback((newFacilities: LendingFacility[]) => {
@@ -331,44 +164,62 @@ export const LendingPage: React.FC = () => {
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 
   // Form state for New Lending Facility Modal
-  // Requirement 2 fields: Name, Due Date, Loan Amount, Interest Rate, Date Borrowed, Due Date
-  const [formData, setFormData] = React.useState({
+  // Requirement 2 fields: Name, Due Date, Loan Amount, Interest Rate, Date Borrowed, Due Date, Payment Frequency
+  const [formData, setFormData] = React.useState<{
+    borrowerName: string
+    loanAmount: string
+    interestRate: string
+    dateBorrowed: string
+    dueDate: string
+    paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+    notes: string
+  }>({
     borrowerName: '',
     loanAmount: '',
     interestRate: '5.0',
     dateBorrowed: '2026-10-21',
     dueDate: '2026-11-21',
+    paymentFrequency: 'Daily',
     notes: '',
   })
 
   // Form state for Edit Lending Facility Modal
-  const [editFormData, setEditFormData] = React.useState({
+  const [editFormData, setEditFormData] = React.useState<{
+    borrowerName: string
+    loanAmount: string
+    interestRate: string
+    dateBorrowed: string
+    dueDate: string
+    status: LendingFacility['status']
+    paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+    notes: string
+  }>({
     borrowerName: '',
     loanAmount: '',
     interestRate: '',
     dateBorrowed: '',
     dueDate: '',
-    status: 'Active' as LendingFacility['status'],
+    status: 'Active',
+    paymentFrequency: 'Daily',
     notes: '',
   })
 
-  // Form state for Everyday Daily Payment Modal ("Update" button)
-  const [dailyPaymentForm, setDailyPaymentForm] = React.useState<{
+  // Search query for Payment History in Lending Information Modal
+  const [historySearchQuery, setHistorySearchQuery] = React.useState('')
+
+  // Form state for Update Payment Modal
+  const [paymentForm, setPaymentForm] = React.useState<{
     paymentAmount: string
     paymentDate: string
     method: string
     referenceNo: string
     notes: string
-    paymentStatus: 'Paid' | 'Missed'
-    missedReason: string
   }>({
     paymentAmount: '',
-    paymentDate: '2026-10-21',
+    paymentDate: formatToYYYYMMDD(new Date()),
     method: 'Cash',
     referenceNo: '',
     notes: '',
-    paymentStatus: 'Paid',
-    missedReason: '',
   })
 
   // Pagination state
@@ -631,7 +482,7 @@ export const LendingPage: React.FC = () => {
   }
 
   // Create new Lending Facility handler (Requirement 2)
-  const handleCreateFacility = (e: React.FormEvent) => {
+  const handleCreateFacility = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isAudit) return
     const principalNum = parseFloat(formData.loanAmount)
@@ -654,32 +505,17 @@ export const LendingPage: React.FC = () => {
       return
     }
 
-    const totalInterest = principalNum * (rateNum / 100)
-    const totalAmountPayable = principalNum + totalInterest
-    const remainingBalance = totalAmountPayable
-
-    // Generate unique Loan ID (e.g. LN-FC-2026-007)
-    const newFacilityNumber = String(facilities.length + 1).padStart(3, '0')
-    const loanId = `LN-FC-2026-${newFacilityNumber}`
-
-    const newFacility: LendingFacility = {
-      id: `fac-${Date.now()}`,
-      loanId,
+    const newFacility = await lendingService.createFacility({
       borrowerName: formData.borrowerName.trim(),
       loanAmount: principalNum,
       interestRate: rateNum,
+      paymentFrequency: formData.paymentFrequency,
       dateBorrowed: formData.dateBorrowed,
       dueDate: formData.dueDate,
-      totalAmountPayable,
-      amountPaid: 0,
-      remainingBalance,
-      status: 'Active',
-      lenderCompany: COMPANY_NAME,
       notes: formData.notes.trim() || 'Everyday micro-credit lending facility.',
-      dailyPayments: [],
-    }
+    })
 
-    const updatedList = [newFacility, ...facilities]
+    const updatedList = [newFacility, ...facilities.filter((f) => f.id !== newFacility.id)]
     saveFacilities(updatedList)
     setIsAddModalOpen(false)
 
@@ -690,6 +526,7 @@ export const LendingPage: React.FC = () => {
       interestRate: '5.0',
       dateBorrowed: '2026-10-21',
       dueDate: '2026-11-21',
+      paymentFrequency: 'Daily',
       notes: '',
     })
 
@@ -723,6 +560,7 @@ export const LendingPage: React.FC = () => {
       dateBorrowed: facility.dateBorrowed,
       dueDate: facility.dueDate,
       status: facility.status,
+      paymentFrequency: facility.paymentFrequency || 'Daily',
       notes: facility.notes || '',
     })
     setIsEditModalOpen(true)
@@ -753,9 +591,10 @@ export const LendingPage: React.FC = () => {
       interestRate: rateNum,
       dateBorrowed: editFormData.dateBorrowed,
       dueDate: editFormData.dueDate,
+      status: resolvedStatus,
+      paymentFrequency: editFormData.paymentFrequency,
       totalAmountPayable: newTotalPayable,
       remainingBalance: newRemaining,
-      status: resolvedStatus,
       notes: editFormData.notes.trim(),
     }
 
@@ -765,71 +604,76 @@ export const LendingPage: React.FC = () => {
     setActiveFacility(null)
   }
 
-  // Open Everyday Daily Payment Modal ("Update" action button per Requirement 2)
-  const handleOpenDailyPaymentModal = (facility: LendingFacility, e: React.MouseEvent) => {
-    e.stopPropagation()
+  // Open Update Payment Modal ("Update" action button)
+  const handleOpenPaymentModal = (facility: LendingFacility, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
     if (isAudit) return
     setActiveFacility(facility)
-    // Suggested daily amount: if total payable is spread across 30 days, or remaining balance
-    const estimatedDaily = Math.min(
-      facility.remainingBalance,
-      Math.max(500, Math.round(facility.totalAmountPayable / 30))
-    )
-    setDailyPaymentForm({
-      paymentAmount: String(estimatedDaily),
-      paymentDate: formatToYYYYMMDD(new Date()),
+
+    // Compute smart initial date: for Daily, pick the first unpaid date (or today if unpaid)
+    let initialDate = formatToYYYYMMDD(new Date())
+    if ((!facility.paymentFrequency || facility.paymentFrequency === 'Daily') && facility.dailyPayments) {
+      const paidDates = new Set(
+        facility.dailyPayments.filter((p) => p.status === 'Paid').map((p) => p.date)
+      )
+      if (paidDates.has(initialDate)) {
+        const start = new Date(facility.dateBorrowed)
+        const today = new Date(initialDate)
+        let foundUnpaid: string | null = null
+        if (!isNaN(start.getTime())) {
+          const cur = new Date(start)
+          while (cur <= today) {
+            const d = formatToYYYYMMDD(cur)
+            if (!paidDates.has(d)) {
+              foundUnpaid = d
+              break
+            }
+            cur.setDate(cur.getDate() + 1)
+          }
+        }
+        if (foundUnpaid) {
+          initialDate = foundUnpaid
+        } else {
+          const tomorrow = new Date(today)
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          initialDate = formatToYYYYMMDD(tomorrow)
+        }
+      }
+    }
+
+    setPaymentForm({
+      paymentAmount: '',
+      paymentDate: initialDate,
       method: 'Cash',
-      referenceNo: `OR-${Math.floor(88000 + Math.random() * 999)}`,
-      notes: 'Everyday daily remittance collection',
-      paymentStatus: 'Paid',
-      missedReason: '',
+      referenceNo: '',
+      notes: '',
     })
     setIsDailyPaymentModalOpen(true)
   }
+  const handleOpenDailyPaymentModal = handleOpenPaymentModal
 
-  // Confirm Everyday Daily Payment or Missed Payment
-  const handleRecordDailyPayment = (e: React.FormEvent) => {
+  // Confirm Payment
+  const handleRecordDailyPayment = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isAudit || !activeFacility) return
 
-    // 1. Handling when tenant did NOT pay for the day
-    if (dailyPaymentForm.paymentStatus === 'Missed') {
-      const reasonText =
-        dailyPaymentForm.missedReason.trim() ||
-        dailyPaymentForm.notes.trim() ||
-        'Tenant did not pay for this day (Unpaid)'
-
-      const newPaymentRecord: DailyPaymentRecord = {
-        id: `dp-${Date.now()}`,
-        date: dailyPaymentForm.paymentDate,
-        amount: 0,
-        method: 'N/A',
-        referenceNo: dailyPaymentForm.referenceNo.trim() || 'MISSED',
-        notes: reasonText,
-        status: 'Missed',
-        missedReason: reasonText,
-        timestamp: new Date().toISOString(),
+    // Period immutability: check if daily date is already fully paid
+    const isDaily = !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
+    if (isDaily) {
+      const alreadyPaid = (activeFacility.dailyPayments || []).some(
+        (p) => p.date === paymentForm.paymentDate && p.status === 'Paid'
+      )
+      if (alreadyPaid) {
+        alert(
+          `Date ${paymentForm.paymentDate} is already fully paid and locked. You cannot add or duplicate payments for a settled date.`
+        )
+        return
       }
-
-      const updatedFacility: LendingFacility = {
-        ...activeFacility,
-        dailyPayments: [newPaymentRecord, ...(activeFacility.dailyPayments || [])],
-      }
-
-      const updatedList = facilities.map((f) => (f.id === activeFacility.id ? updatedFacility : f))
-      saveFacilities(updatedList)
-
-      setActiveFacility(updatedFacility)
-      setIsDailyPaymentModalOpen(false)
-      return
     }
 
-    // 2. Handling when tenant PAID today
-    const paymentNum = parseFloat(dailyPaymentForm.paymentAmount)
-    if (isNaN(paymentNum) || paymentNum <= 0) {
-      alert(
-        'Please enter a valid everyday payment amount greater than ₱0, or select "Missed / Did Not Pay" if the tenant did not pay today.'
-      )
+    const paymentNum = parseFloat(paymentForm.paymentAmount)
+    if (isNaN(paymentNum) || paymentNum < 1) {
+      alert('Payment Amount cannot be lower than ₱1.00.')
       return
     }
 
@@ -840,6 +684,48 @@ export const LendingPage: React.FC = () => {
       return
     }
 
+    // Call backend lending service with authoritative settlement locking
+    const backendRes = await lendingService.recordPayment({
+      facilityId: activeFacility.id,
+      paymentDate: paymentForm.paymentDate,
+      amount: paymentNum,
+      method: paymentForm.method,
+      referenceNo: paymentForm.referenceNo,
+      notes: paymentForm.notes,
+    })
+    if (!backendRes.success) {
+      alert(backendRes.message || 'Payment could not be recorded.')
+      return
+    }
+
+    // Monthly schedule: partial / full tracking
+    const isMonthly = activeFacility.paymentFrequency === 'Monthly'
+    let resolvedMonthIndex: number | undefined = undefined
+    let resolvedPeriodLabel: string | undefined = undefined
+    let paymentStatus: 'Paid' | 'Partial' = 'Paid'
+
+    if (isMonthly) {
+      const progress = getMonthlyProgress(activeFacility)
+      const currentMonth = progress.activeMonth
+      resolvedMonthIndex = currentMonth.monthIndex
+      resolvedPeriodLabel = `Month ${currentMonth.monthIndex}`
+
+      if (paymentNum > currentMonth.remaining) {
+        alert(
+          `For Month ${currentMonth.monthIndex}, the maximum due is ${formatPHP(currentMonth.remaining)}. Please settle this month first before paying for subsequent months.`
+        )
+        return
+      }
+
+      // If partial, the borrower has to settle the partial before paying another month.
+      // Partial payment is not considered "Paid" for that month.
+      if (paymentNum < currentMonth.remaining) {
+        paymentStatus = 'Partial'
+      } else {
+        paymentStatus = 'Paid'
+      }
+    }
+
     const updatedAmountPaid = activeFacility.amountPaid + paymentNum
     const updatedRemainingBalance = Math.max(0, activeFacility.totalAmountPayable - updatedAmountPaid)
     const updatedStatus: LendingFacility['status'] =
@@ -847,13 +733,16 @@ export const LendingPage: React.FC = () => {
 
     const newPaymentRecord: DailyPaymentRecord = {
       id: `dp-${Date.now()}`,
-      date: dailyPaymentForm.paymentDate,
+      date: paymentForm.paymentDate,
       amount: paymentNum,
-      method: dailyPaymentForm.method,
-      referenceNo: dailyPaymentForm.referenceNo.trim(),
-      notes: dailyPaymentForm.notes.trim() || 'Daily payment remittance',
-      status: 'Paid',
+      method: paymentForm.method,
+      referenceNo: paymentForm.referenceNo.trim(),
+      notes: paymentForm.notes.trim(),
+      status: paymentStatus,
+      monthIndex: resolvedMonthIndex,
+      periodLabel: resolvedPeriodLabel,
       timestamp: new Date().toISOString(),
+      isLocked: paymentStatus === 'Paid',
     }
 
     const updatedFacility: LendingFacility = {
@@ -892,8 +781,30 @@ export const LendingPage: React.FC = () => {
   // Open Complete Information Modal on row click (Requirement 3)
   const handleRowClick = (facility: LendingFacility) => {
     setActiveFacility(facility)
+    setHistorySearchQuery('')
     setIsDetailModalOpen(true)
   }
+
+  // Filtered payment records for Lending Information Modal
+  const filteredHistoryPayments = React.useMemo(() => {
+    if (!activeFacility) return []
+    const baseList =
+      !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
+        ? buildDailyLedger(activeFacility)
+        : activeFacility.dailyPayments || []
+
+    if (!historySearchQuery.trim()) return baseList
+    const q = historySearchQuery.toLowerCase().trim()
+    return baseList.filter((p) => {
+      const matchStatus = p.status ? p.status.toLowerCase().includes(q) : false
+      const matchDate = p.date.toLowerCase().includes(q)
+      const matchNotes = p.notes && p.notes !== '-' ? p.notes.toLowerCase().includes(q) : false
+      const matchRef = p.referenceNo && p.referenceNo !== '-' ? p.referenceNo.toLowerCase().includes(q) : false
+      const matchMethod = p.method && p.method !== '-' ? p.method.toLowerCase().includes(q) : false
+      const matchPeriod = p.periodLabel ? p.periodLabel.toLowerCase().includes(q) : false
+      return matchStatus || matchDate || matchNotes || matchRef || matchMethod || matchPeriod
+    })
+  }, [activeFacility, historySearchQuery])
 
   const displayedCompanyTitle = COMPANY_NAME
 
@@ -1079,25 +990,7 @@ export const LendingPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Total Capital Lent KPI Card (Single card matching Sales, Expense, and Loan pages) */}
-      <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
-        <div className="w-full max-w-[calc(100%-60px)]">
-          <span className="text-xs font-semibold text-muted-fg block">
-            Total Capital Lent
-          </span>
-          <h3 className="text-xl sm:text-2xl font-bold text-focus mt-1 tabular-nums tracking-tight">
-            {formatPHP(metrics.totalLoanAmount)}
-          </h3>
-          <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-            Total capital disbursed across {filteredFacilities.length} facilities in {displayedCompanyTitle}
-          </p>
-        </div>
-        <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600 shrink-0 shadow-2xs">
-          <CreditCard className="h-5 w-5 sm:h-6 sm:w-6" />
-        </div>
-      </Card>
-
-      {/* 3. Main Table Card matching Sales Page */}
+      {/* Main Table Card matching Sales Page */}
       <Card
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
@@ -1130,23 +1023,19 @@ export const LendingPage: React.FC = () => {
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table className="w-full table-fixed min-w-[1100px]">
             <colgroup>
-              <col style={{ width: '11%' }} /> {/* Loan ID */}
-              <col style={{ width: '17%' }} /> {/* Borrower's Name */}
+              <col style={{ width: '22%' }} /> {/* Borrower's Name */}
               <col style={{ width: '11%' }} /> {/* Loan Amount */}
               <col style={{ width: '10%' }} /> {/* Date Borrowed */}
               <col style={{ width: '10%' }} /> {/* Due Date */}
               <col style={{ width: '12%' }} /> {/* Total Amount Payable */}
               <col style={{ width: '11%' }} /> {/* Amount Paid */}
               <col style={{ width: '11%' }} /> {/* Remaining Balance */}
-              <col style={{ width: '9%' }} />  {/* Status */}
-              <col style={{ width: '8%' }} />  {/* Actions */}
+              <col style={{ width: '8%' }} />  {/* Status */}
+              <col style={{ width: '5%' }} />  {/* Actions */}
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-stroke/30 hover:bg-transparent">
-                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  LOAN ID
-                </TableHead>
-                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
+                <TableHead className="w-[22%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   BORROWER'S NAME
                 </TableHead>
                 <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
@@ -1167,10 +1056,10 @@ export const LendingPage: React.FC = () => {
                 <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   REMAINING BALANCE
                 </TableHead>
-                <TableHead className="w-[9%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
+                <TableHead className="w-[8%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
                   STATUS
                 </TableHead>
-                <TableHead className="w-[8%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
+                <TableHead className="w-[5%] px-2 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -1178,7 +1067,7 @@ export const LendingPage: React.FC = () => {
             <TableBody>
               {paginatedFacilities.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-44 text-center py-8">
+                  <TableCell colSpan={9} className="h-44 text-center py-8">
                     <div className="flex flex-col items-center justify-center text-muted-fg">
                       <CreditCard className="h-8 w-8 text-muted-fg/40 mb-2" />
                       <p className="text-sm font-semibold">No lending facilities found</p>
@@ -1209,53 +1098,58 @@ export const LendingPage: React.FC = () => {
                       )}
                       title="Click row to view complete lending and borrower details"
                     >
-                      {/* 1. Loan ID */}
-                      <TableCell className="w-[11%] px-3.5 py-3.5 font-mono text-xs font-bold text-focus text-left whitespace-nowrap">
-                        {facility.loanId}
-                      </TableCell>
-
-                      {/* 2. Borrower's Name */}
-                      <TableCell className="w-[17%] px-3.5 py-3.5 text-left">
-                        <div className="font-semibold text-xs text-focus truncate max-w-[220px]" title={facility.borrowerName}>
+                      {/* 1. Borrower's Name */}
+                      <TableCell className="w-[22%] px-3.5 py-3.5 text-left">
+                        <div className="font-semibold text-xs text-focus truncate max-w-[280px]" title={facility.borrowerName}>
                           {facility.borrowerName}
                         </div>
-                        <div className="text-[10.5px] text-muted-fg truncate max-w-[220px]">
+                        <div className="text-[10.5px] text-muted-fg truncate max-w-[280px]">
                           {facility.lenderCompany}
                         </div>
                       </TableCell>
 
-                      {/* 3. Loan Amount */}
+                      {/* 2. Loan Amount */}
                       <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-semibold text-xs text-focus tabular-nums whitespace-nowrap">
                         {formatPHP(facility.loanAmount)}
                       </TableCell>
 
-                      {/* 4. Date Borrowed */}
+                      {/* 3. Date Borrowed */}
                       <TableCell className="w-[10%] px-3.5 py-3.5 text-left font-mono text-xs text-muted-fg whitespace-nowrap">
                         {facility.dateBorrowed}
                       </TableCell>
 
-                      {/* 5. Due Date */}
-                      <TableCell className="w-[10%] px-3.5 py-3.5 text-left font-mono text-xs text-muted-fg whitespace-nowrap">
-                        {facility.dueDate}
+                      {/* 4. Due Date */}
+                      <TableCell className="w-[10%] px-3.5 py-3.5 text-left text-xs whitespace-nowrap">
+                        <div className="font-mono text-muted-fg font-medium">{facility.dueDate}</div>
+                        {facility.paymentFrequency && facility.paymentFrequency !== 'Daily' && facility.remainingBalance > 0 && (() => {
+                          const cycle = getNextInstallmentInfo(facility)
+                          if (!cycle) return null
+                          return (
+                            <div className={cn('text-[10px] font-sans mt-0.5 font-medium', cycle.isOverdue ? 'text-rose-600 font-semibold' : 'text-slate-500')}>
+                              {cycle.periodLabel}: <span className="font-mono">{cycle.dueDate}</span>
+                              {cycle.isOverdue && ' (Late)'}
+                            </div>
+                          )
+                        })()}
                       </TableCell>
 
-                      {/* 6. Total Amount Payable */}
+                      {/* 5. Total Amount Payable */}
                       <TableCell className="w-[12%] px-3.5 py-3.5 text-left font-bold text-xs text-focus tabular-nums whitespace-nowrap">
                         {formatPHP(facility.totalAmountPayable)}
                       </TableCell>
 
-                      {/* 7. Amount Paid */}
+                      {/* 6. Amount Paid */}
                       <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-semibold text-xs text-emerald-600 tabular-nums whitespace-nowrap">
                         {formatPHP(facility.amountPaid)}
                       </TableCell>
 
-                      {/* 8. Remaining Balance */}
+                      {/* 7. Remaining Balance */}
                       <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-bold text-xs text-amber-600 tabular-nums whitespace-nowrap">
                         {formatPHP(facility.remainingBalance)}
                       </TableCell>
 
-                      {/* 9. Status */}
-                      <TableCell className="w-[9%] px-3.5 py-3.5 text-center whitespace-nowrap">
+                      {/* 8. Status */}
+                      <TableCell className="w-[8%] px-3 py-3.5 text-center whitespace-nowrap">
                         <span
                           className={cn(
                             'inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold border uppercase tracking-wider',
@@ -1285,8 +1179,8 @@ export const LendingPage: React.FC = () => {
                         )}
                       </TableCell>
 
-                      {/* 10. Actions: 3 dots dropdown (Edit, Delete, Update) */}
-                      <TableCell className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {/* 9. Actions: 3 dots dropdown (Edit, Delete, Update) */}
+                      <TableCell className="w-[5%] px-2 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1593,7 +1487,29 @@ export const LendingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Field 4 & 5: Date Borrowed & Due Date */}
+            {/* Field 4: Payment Schedule */}
+            <div>
+              <label className="text-xs font-semibold text-focus block mb-1">
+                Payment Schedule <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.paymentFrequency}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    paymentFrequency: e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually',
+                  })
+                }
+                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+              >
+                <option value="Daily">Daily</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Quarterly">Quarterly</option>
+                <option value="Annually">Annually</option>
+              </select>
+            </div>
+
+            {/* Field 5 & 6: Date Borrowed & Due Date */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
@@ -1641,14 +1557,20 @@ export const LendingPage: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex justify-between text-muted-fg text-[11px] pt-0.5">
-                  <span>Estimated Daily Installment (30 days):</span>
+                  <span>
+                    Estimated {formData.paymentFrequency} Installment
+                    {formData.paymentFrequency === 'Daily' ? ' (30 days)' : ''}:
+                  </span>
                   <span className="font-medium text-focus">
                     {formatPHP(
-                      (parseFloat(formData.loanAmount) +
-                        parseFloat(formData.loanAmount) * (parseFloat(formData.interestRate || '0') / 100)) /
-                        30
+                      formData.paymentFrequency === 'Daily'
+                        ? (parseFloat(formData.loanAmount) +
+                            parseFloat(formData.loanAmount) * (parseFloat(formData.interestRate || '0') / 100)) /
+                          30
+                        : (parseFloat(formData.loanAmount) +
+                            parseFloat(formData.loanAmount) * (parseFloat(formData.interestRate || '0') / 100))
                     )}{' '}
-                    / day
+                    / {formData.paymentFrequency === 'Daily' ? 'day' : formData.paymentFrequency === 'Monthly' ? 'month' : formData.paymentFrequency === 'Quarterly' ? 'quarter' : 'year'}
                   </span>
                 </div>
               </div>
@@ -1688,352 +1610,198 @@ export const LendingPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* 5. Modal: Everyday Daily Payment ("Update" Action Button per Requirement 2) */}
+      {/* 5. Modal: Update Payment ("Update" Action Button) */}
       <Dialog open={isDailyPaymentModalOpen} onOpenChange={setIsDailyPaymentModalOpen}>
         <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
               <Coins className="h-5 w-5 text-emerald-600" />
-              <span>Update Daily Payment</span>
+              <span>Update Payment</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg">
-              Record everyday remittance or missed payment for{' '}
-              <strong className="text-focus">{activeFacility?.borrowerName}</strong> ({activeFacility?.loanId}).
+              Record payment remittance for{' '}
+              <strong className="text-focus">{activeFacility?.borrowerName}</strong> ({activeFacility?.paymentFrequency || 'Daily'} Schedule).
             </DialogDescription>
           </DialogHeader>
 
-          {activeFacility && (
-            <form onSubmit={handleRecordDailyPayment} className="space-y-4 mt-2">
-              {/* Financial Balance Summary Card */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-fg">Remaining Balance:</span>
-                  <span className="font-bold text-amber-600 text-sm">
-                    {formatPHP(activeFacility.remainingBalance)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-fg">Total Amount Paid so far:</span>
-                  <span className="font-semibold text-emerald-600">
-                    {formatPHP(activeFacility.amountPaid)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-[11px] border-t border-slate-200/60 pt-1">
-                  <span className="text-muted-fg">Total Amount Payable:</span>
-                  <span className="font-medium text-focus">
-                    {formatPHP(activeFacility.totalAmountPayable)}
-                  </span>
-                </div>
-              </div>
+          {activeFacility && (() => {
+            const isDaily = !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
+            const maxAllowed = activeFacility.remainingBalance
+            const currentPaymentNum = parseFloat(paymentForm.paymentAmount)
+            const isAmountValid =
+              !isNaN(currentPaymentNum) &&
+              currentPaymentNum >= 1 &&
+              currentPaymentNum <= maxAllowed
+            const isDateAlreadySettled =
+              isDaily &&
+              (activeFacility.dailyPayments || []).some(
+                (p) => p.date === paymentForm.paymentDate && p.status === 'Paid'
+              )
 
-              {/* Payment Status Segmented Control: Paid Today vs Missed / Did Not Pay */}
-              <div>
-                <label className="text-xs font-semibold text-focus block mb-1.5">
-                  Collection Status for Today <span className="text-red-500">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDailyPaymentForm((prev) => ({
-                        ...prev,
-                        paymentStatus: 'Paid',
-                        paymentAmount:
-                          prev.paymentAmount && prev.paymentAmount !== '0'
-                            ? prev.paymentAmount
-                            : String(
-                                Math.min(
-                                  activeFacility.remainingBalance,
-                                  Math.max(500, Math.round(activeFacility.totalAmountPayable / 30))
-                                )
-                              ),
-                      }))
-                    }
-                    className={cn(
-                      'flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer',
-                      dailyPaymentForm.paymentStatus === 'Paid'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-focus hover:bg-slate-200/60'
-                    )}
-                  >
-                    <Check className="w-3.5 h-3.5 shrink-0" />
-                    <span>Paid Today</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDailyPaymentForm((prev) => ({
-                        ...prev,
-                        paymentStatus: 'Missed',
-                        paymentAmount: '0',
-                        method: 'N/A',
-                        referenceNo: prev.referenceNo || 'MISSED',
-                        missedReason: prev.missedReason || 'Shop / Stall Closed',
-                      }))
-                    }
-                    className={cn(
-                      'flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer',
-                      dailyPaymentForm.paymentStatus === 'Missed'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-focus hover:bg-slate-200/60'
-                    )}
-                  >
-                    <X className="w-3.5 h-3.5 shrink-0" />
-                    <span>Missed / Did Not Pay</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Conditional Content based on Payment Status */}
-              {dailyPaymentForm.paymentStatus === 'Paid' ? (
-                <>
-                  {/* Payment Amount Input */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-focus">
-                        Everyday Payment Amount (₱) <span className="text-red-500">*</span>
-                      </label>
-                      <span className="text-[11px] text-muted-fg">
-                        Max: {formatPHP(activeFacility.remainingBalance)}
-                      </span>
-                    </div>
-                    <Input
-                      required
-                      type="number"
-                      min="0.01"
-                      step="any"
-                      value={dailyPaymentForm.paymentAmount}
-                      onChange={(e) =>
-                        setDailyPaymentForm({ ...dailyPaymentForm, paymentAmount: e.target.value })
-                      }
-                      placeholder="e.g. 2100"
-                      className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
-                    />
-
-                    {/* Preset Quick Buttons */}
-                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                      {[
-                        Math.round(activeFacility.totalAmountPayable / 30),
-                        1000,
-                        2000,
-                        activeFacility.remainingBalance,
-                      ]
-                        .filter(
-                          (amt, idx, arr) =>
-                            amt > 0 &&
-                            amt <= activeFacility.remainingBalance &&
-                            arr.indexOf(amt) === idx
-                        )
-                        .map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() =>
-                              setDailyPaymentForm({
-                                ...dailyPaymentForm,
-                                paymentAmount: String(preset),
-                              })
-                            }
-                            className="px-2 py-1 rounded-lg text-[10.5px] font-semibold bg-slate-100 hover:bg-slate-200 text-focus transition-colors cursor-pointer"
-                          >
-                            {preset === activeFacility.remainingBalance
-                              ? 'Full Balance'
-                              : formatPHP(preset)}
-                          </button>
-                        ))}
-                    </div>
+            return (
+              <form onSubmit={handleRecordDailyPayment} className="space-y-4 mt-2">
+                {/* Financial Balance Summary Card */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-fg">Payment Schedule:</span>
+                    <span className="font-semibold text-focus">
+                      {activeFacility.paymentFrequency || 'Daily'}
+                    </span>
                   </div>
-
-                  {/* Payment Date & Method */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-focus block mb-1">
-                        Payment Date <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        required
-                        type="date"
-                        value={dailyPaymentForm.paymentDate}
-                        onChange={(e) =>
-                          setDailyPaymentForm({ ...dailyPaymentForm, paymentDate: e.target.value })
-                        }
-                        className="h-10 text-xs sm:text-sm rounded-xl"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-focus block mb-1">
-                        Payment Method
-                      </label>
-                      <select
-                        value={dailyPaymentForm.method}
-                        onChange={(e) =>
-                          setDailyPaymentForm({ ...dailyPaymentForm, method: e.target.value })
-                        }
-                        className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
-                      >
-                        <option value="Cash">Cash</option>
-                        <option value="GCash">GCash</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                        <option value="Cheque">Cheque</option>
-                      </select>
-                    </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-fg">Remaining Balance:</span>
+                    <span className="font-bold text-amber-600 text-sm">
+                      {formatPHP(activeFacility.remainingBalance)}
+                    </span>
                   </div>
-
-                  {/* Reference No & Notes */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-focus block mb-1">
-                        Receipt / Ref No.
-                      </label>
-                      <Input
-                        value={dailyPaymentForm.referenceNo}
-                        onChange={(e) =>
-                          setDailyPaymentForm({ ...dailyPaymentForm, referenceNo: e.target.value })
-                        }
-                        placeholder="OR-88201"
-                        className="h-10 text-xs sm:text-sm rounded-xl font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-focus block mb-1">
-                        Remarks / Notes
-                      </label>
-                      <Input
-                        value={dailyPaymentForm.notes}
-                        onChange={(e) =>
-                          setDailyPaymentForm({ ...dailyPaymentForm, notes: e.target.value })
-                        }
-                        placeholder="Daily collection"
-                        className="h-10 text-xs sm:text-sm rounded-xl"
-                      />
-                    </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-fg">Total Amount Paid so far:</span>
+                    <span className="font-semibold text-emerald-600">
+                      {formatPHP(activeFacility.amountPaid)}
+                    </span>
                   </div>
-                </>
-              ) : (
-                <>
-                  {/* Missed / Did Not Pay State */}
-                  <div className="p-3 bg-rose-50/80 border border-rose-200/80 rounded-xl space-y-1.5 text-xs text-rose-900">
-                    <div className="flex items-center gap-1.5 font-bold text-rose-800">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                      <span>Tenant Did Not Pay Today (₱0.00 Collection)</span>
+                  <div className="flex justify-between items-center text-[11px] border-t border-slate-200/60 pt-1">
+                    <span className="text-muted-fg">Total Amount Payable:</span>
+                    <span className="font-medium text-focus">
+                      {formatPHP(activeFacility.totalAmountPayable)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Date Settlement Alert if already paid */}
+                {isDateAlreadySettled && (
+                  <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl space-y-1 text-xs text-amber-900">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                      <Lock className="w-4 h-4 shrink-0 text-amber-600" />
+                      <span>Date Already Settled ({paymentForm.paymentDate})</span>
                     </div>
-                    <p className="text-[11.5px] text-rose-700 leading-relaxed">
-                      Logging a missed payment records an audit trail for this date without deducting the remaining balance.
+                    <p className="text-[11px] text-amber-700 leading-relaxed">
+                      Payment for this calendar date has already been recorded and locked. You cannot add or remove payments for a settled date. Please choose an unpaid date to record collection.
                     </p>
                   </div>
+                )}
 
-                  {/* Missed Date & Reference */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-focus block mb-1">
-                        Missed Date <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        required
-                        type="date"
-                        value={dailyPaymentForm.paymentDate}
-                        onChange={(e) =>
-                          setDailyPaymentForm({ ...dailyPaymentForm, paymentDate: e.target.value })
-                        }
-                        className="h-10 text-xs sm:text-sm rounded-xl"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-focus block mb-1">
-                        Audit Tracking No.
-                      </label>
-                      <Input
-                        value={dailyPaymentForm.referenceNo}
-                        onChange={(e) =>
-                          setDailyPaymentForm({ ...dailyPaymentForm, referenceNo: e.target.value })
-                        }
-                        placeholder="MISSED"
-                        className="h-10 text-xs sm:text-sm rounded-xl font-mono"
-                      />
-                    </div>
+                {/* Payment Amount Input */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-focus">
+                      Payment Amount (₱) <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[11px] text-muted-fg font-medium">
+                      Min: ₱1.00 • Max: {formatPHP(maxAllowed)}
+                    </span>
                   </div>
+                  <Input
+                    required
+                    type="number"
+                    min="1"
+                    max={maxAllowed}
+                    step="any"
+                    value={paymentForm.paymentAmount}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onChange={(e) =>
+                      setPaymentForm({ ...paymentForm, paymentAmount: e.target.value })
+                    }
+                    placeholder="Enter payment amount"
+                    className="h-10 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  {paymentForm.paymentAmount && !isAmountValid && (
+                    <p className="text-[11px] text-rose-600 mt-1">
+                      {currentPaymentNum < 1
+                        ? 'Payment amount cannot be lower than ₱1.00.'
+                        : `Payment amount cannot exceed ${formatPHP(maxAllowed)}.`}
+                    </p>
+                  )}
+                </div>
 
-                  {/* Preset Reasons for Missed Payment */}
+                {/* Payment Date & Method */}
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold text-focus block mb-1">
-                      Reason for Missed Payment <span className="text-red-500">*</span>
+                      Payment Date <span className="text-red-500">*</span>
                     </label>
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {[
-                        'Shop / Stall Closed',
-                        'Requested Extension',
-                        'Delayed Remittance',
-                        'Tenant Out of Town',
-                        'Emergency / Weather',
-                      ].map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() =>
-                            setDailyPaymentForm((prev) => ({
-                              ...prev,
-                              missedReason: preset,
-                              notes: preset,
-                            }))
-                          }
-                          className={cn(
-                            'px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-colors cursor-pointer border',
-                            dailyPaymentForm.missedReason === preset
-                              ? 'bg-rose-100 text-rose-800 border-rose-300'
-                              : 'bg-slate-100 hover:bg-slate-200 text-focus border-transparent'
-                          )}
-                        >
-                          {preset}
-                        </button>
-                      ))}
-                    </div>
                     <Input
                       required
-                      value={dailyPaymentForm.missedReason}
+                      type="date"
+                      value={paymentForm.paymentDate}
                       onChange={(e) =>
-                        setDailyPaymentForm({
-                          ...dailyPaymentForm,
-                          missedReason: e.target.value,
-                          notes: e.target.value,
-                        })
+                        setPaymentForm({ ...paymentForm, paymentDate: e.target.value })
                       }
-                      placeholder="e.g. Shop closed due to heavy rain / store maintenance"
                       className="h-10 text-xs sm:text-sm rounded-xl"
                     />
                   </div>
-                </>
-              )}
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsDailyPaymentModalOpen(false)}
-                  className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className={cn(
-                    'h-10 px-5 rounded-xl text-xs font-semibold text-white cursor-pointer transition-colors',
-                    dailyPaymentForm.paymentStatus === 'Missed'
-                      ? 'bg-rose-600 hover:bg-rose-700'
-                      : 'bg-emerald-600 hover:bg-emerald-700'
-                  )}
-                >
-                  {dailyPaymentForm.paymentStatus === 'Missed'
-                    ? 'Log Missed Payment (₱0)'
-                    : 'Confirm Daily Payment'}
-                </Button>
-              </div>
-            </form>
-          )}
+                  <div>
+                    <label className="text-xs font-semibold text-focus block mb-1">
+                      Payment Method
+                    </label>
+                    <select
+                      value={paymentForm.method}
+                      onChange={(e) =>
+                        setPaymentForm({ ...paymentForm, method: e.target.value })
+                      }
+                      className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="GCash">GCash</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="Cheque">Cheque</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Receipt / Ref No. (no default value) */}
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Receipt / Ref No.
+                  </label>
+                  <Input
+                    value={paymentForm.referenceNo}
+                    onChange={(e) =>
+                      setPaymentForm({ ...paymentForm, referenceNo: e.target.value })
+                    }
+                    placeholder="e.g. OR-88201"
+                    className="h-10 text-xs sm:text-sm rounded-xl font-mono"
+                  />
+                </div>
+
+                {/* Remarks / Notes (Longer text field without default value) */}
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Remarks / Notes
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={paymentForm.notes}
+                    onChange={(e) =>
+                      setPaymentForm({ ...paymentForm, notes: e.target.value })
+                    }
+                    placeholder="Enter payment remarks or notes..."
+                    className="w-full p-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20 resize-none transition-all placeholder:text-muted-fg/60"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDailyPaymentModalOpen(false)}
+                    className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={!isAmountValid || isDateAlreadySettled}
+                    className="h-10 px-5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Confirm Payment
+                  </Button>
+                </div>
+              </form>
+            )
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -2134,25 +1902,48 @@ export const LendingPage: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-focus block mb-1">
-                  Status
-                </label>
-                <select
-                  value={editFormData.status}
-                  onChange={(e) =>
-                    setEditFormData({
-                      ...editFormData,
-                      status: e.target.value as LendingFacility['status'],
-                    })
-                  }
-                  className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Overdue">Overdue</option>
-                  <option value="Pending">Pending</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={editFormData.status}
+                    onChange={(e) =>
+                      setEditFormData({
+                        ...editFormData,
+                        status: e.target.value as LendingFacility['status'],
+                      })
+                    }
+                    className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Overdue">Overdue</option>
+                    <option value="Pending">Pending</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Payment Schedule
+                  </label>
+                  <select
+                    value={editFormData.paymentFrequency}
+                    onChange={(e) =>
+                      setEditFormData({
+                        ...editFormData,
+                        paymentFrequency: e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually',
+                      })
+                    }
+                    className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+                  >
+                    <option value="Daily">Daily</option>
+                    <option value="Monthly">Monthly</option>
+                    <option value="Quarterly">Quarterly</option>
+                    <option value="Annually">Annually</option>
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -2226,7 +2017,7 @@ export const LendingPage: React.FC = () => {
 
       {/* 8. Modal: Complete Facility Information on Row Click (Requirement 3) */}
       <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl lg:max-w-5xl w-full bg-white rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
           {activeFacility && (
             <div>
               <DialogHeader>
@@ -2256,92 +2047,129 @@ export const LendingPage: React.FC = () => {
                 </DialogDescription>
               </DialogHeader>
 
-              {/* Requirement 3: Complete Information Grid */}
-              <div className="mt-5 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
-                  {/* Loan ID */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Loan ID
-                    </span>
-                    <span className="font-mono text-sm font-bold text-focus">
-                      {activeFacility.loanId}
-                    </span>
-                  </div>
-
-                  {/* Borrower's Name */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Borrower's Name
-                    </span>
-                    <span className="text-sm font-bold text-focus">
-                      {activeFacility.borrowerName}
-                    </span>
-                  </div>
-
-                  {/* Loan Amount */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Loan Amount
-                    </span>
-                    <span className="text-sm font-bold text-focus">
-                      {formatPHP(activeFacility.loanAmount)}
-                    </span>
-                  </div>
-
-                  {/* Interest Rate */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Interest Rate
-                    </span>
-                    <span className="text-sm font-bold text-focus">
-                      {activeFacility.interestRate}% ({formatPHP(activeFacility.totalAmountPayable - activeFacility.loanAmount)})
-                    </span>
-                  </div>
-
-                  {/* Date Borrowed */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Date Borrowed
-                    </span>
-                    <span className="font-mono text-xs font-semibold text-focus">
-                      {activeFacility.dateBorrowed}
-                    </span>
-                  </div>
-
-                  {/* Due Date */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Due Date
-                    </span>
-                    <span className="font-mono text-xs font-semibold text-focus">
-                      {activeFacility.dueDate}
-                    </span>
-                  </div>
-
-                  {/* Total Amount Payable */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Total Amount Payable
-                    </span>
-                    <span className="text-base font-extrabold text-focus">
-                      {formatPHP(activeFacility.totalAmountPayable)}
-                    </span>
-                  </div>
-
-                  {/* Amount Paid */}
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Amount Paid
-                    </span>
-                    <span className="text-base font-extrabold text-emerald-600">
-                      {formatPHP(activeFacility.amountPaid)}
-                    </span>
-                  </div>
-
-                  {/* Remaining Balance */}
-                  <div className="sm:col-span-2 pt-2 border-t border-slate-200/60 flex items-center justify-between">
+              {/* Two Column Layout: Left = Lend Details & Progress, Right = Searchable Payment History */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-5 items-start">
+                {/* Left Column: Details of the lend */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                    {/* Loan ID */}
                     <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Loan ID
+                      </span>
+                      <span className="font-mono text-sm font-bold text-focus">
+                        {activeFacility.loanId}
+                      </span>
+                    </div>
+
+                    {/* Borrower's Name */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Borrower's Name
+                      </span>
+                      <span className="text-sm font-bold text-focus">
+                        {activeFacility.borrowerName}
+                      </span>
+                    </div>
+
+                    {/* Payment Schedule */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Payment Schedule
+                      </span>
+                      <span className="text-sm font-semibold text-focus">
+                        {activeFacility.paymentFrequency || 'Daily'}
+                      </span>
+                    </div>
+
+                    {/* Loan Amount */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Loan Amount
+                      </span>
+                      <span className="text-sm font-bold text-focus">
+                        {formatPHP(activeFacility.loanAmount)}
+                      </span>
+                    </div>
+
+                    {/* Interest Rate */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Interest Rate
+                      </span>
+                      <span className="text-sm font-bold text-focus">
+                        {activeFacility.interestRate}% ({formatPHP(activeFacility.totalAmountPayable - activeFacility.loanAmount)})
+                      </span>
+                    </div>
+
+                    {/* Date Borrowed */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Date Borrowed
+                      </span>
+                      <span className="font-mono text-xs font-semibold text-focus">
+                        {activeFacility.dateBorrowed}
+                      </span>
+                    </div>
+
+                    {/* Due Date & Active Installment Due Date */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Maturity Due Date
+                      </span>
+                      <span className="font-mono text-xs font-semibold text-focus">
+                        {activeFacility.dueDate}
+                      </span>
+                    </div>
+
+                    {activeFacility.paymentFrequency && activeFacility.paymentFrequency !== 'Daily' && (() => {
+                      const cycle = getNextInstallmentInfo(activeFacility)
+                      if (!cycle) return null
+                      return (
+                        <div>
+                          <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                            Active {cycle.periodLabel} Due Date
+                          </span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="font-mono text-xs font-bold text-focus">
+                              {cycle.dueDate}
+                            </span>
+                            {cycle.isOverdue ? (
+                              <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                Overdue
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Total Amount Payable */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Total Amount Payable
+                      </span>
+                      <span className="text-base font-extrabold text-focus">
+                        {formatPHP(activeFacility.totalAmountPayable)}
+                      </span>
+                    </div>
+
+                    {/* Amount Paid */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Amount Paid
+                      </span>
+                      <span className="text-base font-extrabold text-emerald-600">
+                        {formatPHP(activeFacility.amountPaid)}
+                      </span>
+                    </div>
+
+                    {/* Remaining Balance */}
+                    <div className="sm:col-span-2 pt-2 border-t border-slate-200/60">
                       <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
                         Remaining Balance
                       </span>
@@ -2349,9 +2177,12 @@ export const LendingPage: React.FC = () => {
                         {formatPHP(activeFacility.remainingBalance)}
                       </span>
                     </div>
+                  </div>
 
-                    <div className="text-right">
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                  {/* Collection Progress placed right above the progress bar */}
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted-fg uppercase tracking-wider">
                         Collection Progress
                       </span>
                       <span className="text-sm font-bold text-focus">
@@ -2361,38 +2192,38 @@ export const LendingPage: React.FC = () => {
                         %
                       </span>
                     </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full bg-slate-200/70 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            activeFacility.totalAmountPayable > 0
+                              ? (activeFacility.amountPaid / activeFacility.totalAmountPayable) * 100
+                              : 0
+                          )}%`,
+                        }}
+                      />
+                    </div>
                   </div>
+
+                  {/* Notes & Purpose */}
+                  {activeFacility.notes && (
+                    <div className="p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-muted-fg">
+                      <strong className="text-focus font-semibold block mb-0.5">Facility Notes:</strong>
+                      {activeFacility.notes}
+                    </div>
+                  )}
                 </div>
 
-                {/* Progress Bar */}
-                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                  <div
-                    className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        activeFacility.totalAmountPayable > 0
-                          ? (activeFacility.amountPaid / activeFacility.totalAmountPayable) * 100
-                          : 0
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                {/* Notes & Purpose */}
-                {activeFacility.notes && (
-                  <div className="p-3 bg-white border border-slate-200 rounded-xl text-xs text-muted-fg">
-                    <strong className="text-focus font-semibold block mb-0.5">Facility Notes:</strong>
-                    {activeFacility.notes}
-                  </div>
-                )}
-
-                {/* Everyday Daily Payment History Log */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                {/* Right Column: Everyday Payment History with Search Bar */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-focus flex items-center gap-1.5">
                       <Coins className="h-4 w-4 text-emerald-600" />
-                      <span>Everyday Payment History ({activeFacility.dailyPayments?.length || 0})</span>
+                      <span>Payment History ({activeFacility.dailyPayments?.length || 0})</span>
                     </h4>
 
                     {!isAudit && activeFacility.remainingBalance > 0 && (
@@ -2401,64 +2232,99 @@ export const LendingPage: React.FC = () => {
                         size="sm"
                         onClick={(e) => {
                           setIsDetailModalOpen(false)
-                          handleOpenDailyPaymentModal(activeFacility, e)
+                          handleOpenPaymentModal(activeFacility, e)
                         }}
-                        className="h-7 px-2.5 text-[11px] font-semibold bg-[#960C01] hover:bg-[#800a01] text-white rounded-lg cursor-pointer"
+                        className="h-8 px-3 text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white rounded-lg cursor-pointer"
                       >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Record Daily Payment
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Record Payment
                       </Button>
                     )}
                   </div>
 
-                  <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200">
+                  {/* Search bar in the payment history */}
+                  <div className="relative w-full">
+                    <Search className="w-4 h-4 text-muted-fg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={historySearchQuery}
+                      onChange={(e) => setHistorySearchQuery(e.target.value)}
+                      placeholder="Search payments by date or remarks..."
+                      className="w-full h-9 pl-9 pr-8 rounded-xl border border-stroke/60 bg-white text-xs text-focus placeholder:text-muted-fg/70 shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
+                    />
+                    {historySearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setHistorySearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
+                        aria-label="Clear payment search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Payment history table */}
+                  <div className="max-h-[380px] overflow-y-auto rounded-xl border border-slate-200">
                     <table className="w-full text-xs">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold sticky top-0 z-10">
                         <tr>
-                          <th className="py-2 px-3 text-left">Date</th>
-                          <th className="py-2 px-3 text-left">Status</th>
-                          <th className="py-2 px-3 text-left">Amount</th>
-                          <th className="py-2 px-3 text-left">Method</th>
-                          <th className="py-2 px-3 text-left">Reference</th>
-                          <th className="py-2 px-3 text-left">Remarks</th>
+                          <th className="py-2.5 px-3 text-left">Date</th>
+                          <th className="py-2.5 px-3 text-left">Status</th>
+                          <th className="py-2.5 px-3 text-left">Amount</th>
+                          <th className="py-2.5 px-3 text-left">Method</th>
+                          <th className="py-2.5 px-3 text-left">Reference</th>
+                          <th className="py-2.5 px-3 text-left">Remarks</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {!activeFacility.dailyPayments || activeFacility.dailyPayments.length === 0 ? (
+                        {filteredHistoryPayments.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="py-6 text-center text-muted-fg text-xs">
-                              No daily payments recorded yet. Click "Record Daily Payment" to collect.
+                            <td colSpan={6} className="py-8 text-center text-muted-fg text-xs">
+                              {historySearchQuery
+                                ? `No payments matching "${historySearchQuery}".`
+                                : 'No payments recorded yet. Click "Record Payment" to collect.'}
                             </td>
                           </tr>
                         ) : (
-                          activeFacility.dailyPayments.map((p) => {
-                            const isMissed = p.status === 'Missed' || p.amount === 0
+                          filteredHistoryPayments.map((p) => {
+                            const isMissed = p.status === 'Missed' || (p.amount === 0 && p.status !== 'Paid')
+                            const isPartial = p.status === 'Partial'
                             return (
-                              <tr key={p.id} className={cn('hover:bg-slate-50/60', isMissed && 'bg-rose-50/30')}>
-                                <td className="py-2 px-3 font-mono text-muted-fg whitespace-nowrap">{p.date}</td>
-                                <td className="py-2 px-3 whitespace-nowrap">
+                              <tr key={p.id} className={cn('hover:bg-slate-50/60', isMissed && 'bg-rose-50/30', isPartial && 'bg-amber-50/30')}>
+                                <td className="py-2.5 px-3 font-mono text-muted-fg whitespace-nowrap">{p.date}</td>
+                                <td className="py-2.5 px-3 whitespace-nowrap">
                                   {isMissed ? (
                                     <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                                       Missed
                                     </span>
+                                  ) : isPartial ? (
+                                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                      {p.periodLabel ? `${p.periodLabel} (Partial)` : 'Partial'}
+                                    </span>
                                   ) : (
-                                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                      Paid
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      <Lock className="w-2.5 h-2.5 text-emerald-600" />
+                                      <span>{p.periodLabel ? `${p.periodLabel} (Paid)` : 'Paid'}</span>
                                     </span>
                                   )}
                                 </td>
                                 <td
                                   className={cn(
-                                    'py-2 px-3 font-bold whitespace-nowrap',
-                                    isMissed ? 'text-rose-500 font-medium' : 'text-emerald-600'
+                                    'py-2.5 px-3 font-bold whitespace-nowrap',
+                                    isMissed ? 'text-muted-fg font-normal' : isPartial ? 'text-amber-700' : 'text-emerald-600'
                                   )}
                                 >
-                                  {formatPHP(p.amount)}
+                                  {isMissed ? '-' : formatPHP(p.amount)}
                                 </td>
-                                <td className="py-2 px-3 text-focus whitespace-nowrap">{p.method}</td>
-                                <td className="py-2 px-3 font-mono text-muted-fg whitespace-nowrap">{p.referenceNo || '-'}</td>
-                                <td className="py-2 px-3 text-muted-fg truncate max-w-[180px]" title={p.notes || '-'}>
-                                  {p.notes || '-'}
+                                <td className="py-2.5 px-3 text-focus whitespace-nowrap">
+                                  {isMissed ? '-' : p.method || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-muted-fg whitespace-nowrap">
+                                  {isMissed ? '-' : p.referenceNo || '-'}
+                                </td>
+                                <td className="py-2.5 px-3 text-muted-fg truncate max-w-[150px]" title={isMissed ? '-' : p.notes || '-'}>
+                                  {isMissed ? '-' : p.notes || '-'}
                                 </td>
                               </tr>
                             )
@@ -2468,40 +2334,24 @@ export const LendingPage: React.FC = () => {
                     </table>
                   </div>
                 </div>
+              </div>
 
-                {/* Footer Modal Actions */}
-                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                  <div className="flex items-center gap-2">
-                    {!isAudit && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          setIsDetailModalOpen(false)
-                          handleOpenEditModal(activeFacility, e)
-                        }}
-                        className="h-9 px-3 rounded-xl text-xs font-semibold cursor-pointer"
-                      >
-                        <Pencil className="h-3.5 w-3.5 mr-1" />
-                        Edit Terms
-                      </Button>
-                    )}
-                  </div>
-
-                  {!isAudit && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setIsDetailModalOpen(false)}
-                        className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer"
-                      >
-                        Close
-                      </Button>
-                    </div>
-                  )}
-                </div>
+              {/* Footer Modal Actions: Close button removed, Edit Terms moved to bottom right */}
+              <div className="flex items-center justify-end pt-4 border-t border-slate-100 mt-5">
+                {!isAudit && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={(e) => {
+                      setIsDetailModalOpen(false)
+                      handleOpenEditModal(activeFacility, e)
+                    }}
+                    className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    <span>Edit Terms</span>
+                  </Button>
+                )}
               </div>
             </div>
           )}
