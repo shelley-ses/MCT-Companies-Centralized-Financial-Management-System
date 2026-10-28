@@ -175,7 +175,6 @@ def create_transaction(
         method=payload.payment_method,
         reference_no=payload.reference_no,
         notes=payload.notes,
-        recorded_by=payload.recorded_by,
         transaction_type=payload.transaction_type,
     )
 

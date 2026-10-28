@@ -234,32 +234,17 @@ class LendingService:
                 status_str = "Paid" if direct_paid > 0 else "Advance Paid"
                 is_settled = True
                 is_overdue = False
-                month_penalty = 0.0
             elif available_funds > 0:
                 rem = expected - available_funds
                 available_credit = Decimal("0.00")
                 is_settled = False
                 is_overdue = today_iso > cycle_due
-                if is_overdue:
-                    missed_count += 1
-                    total_penalties += penalty_per_month
-                    month_penalty = float(penalty_per_month)
-                    status_str = "Partial"
-                else:
-                    month_penalty = 0.0
-                    status_str = "Partial"
+                status_str = "Partial"
             else:
                 rem = expected
                 is_settled = False
                 is_overdue = today_iso > cycle_due
-                if is_overdue:
-                    missed_count += 1
-                    total_penalties += penalty_per_month
-                    month_penalty = float(penalty_per_month)
-                    status_str = "Missed"
-                else:
-                    month_penalty = 0.0
-                    status_str = "Unpaid"
+                status_str = "Missed" if is_overdue else "Unpaid"
 
             info = {
                 "month_index": m,
@@ -270,7 +255,7 @@ class LendingService:
                 "dueDate": cycle_due,
                 "isOverdue": is_overdue,
                 "isLocked": is_settled,
-                "penalty": month_penalty,
+                "penalty": 0.0,
             }
             month_details.append(info)
 
@@ -290,22 +275,15 @@ class LendingService:
                 "penalty": 0.0,
             }
 
-        if missed_count == 0:
-            compliance_status = "Compliant"
-        elif missed_count == 1:
-            compliance_status = "Delayed"
-        else:
-            compliance_status = "Delinquent"
-
         return {
             "totalMonths": total_months,
             "targetPerMonth": float(target_per_month),
             "monthDetails": month_details,
             "activeMonth": active_month,
-            "totalPenalties": float(total_penalties),
+            "totalPenalties": 0.0,
             "advanceAmount": float(available_credit),
-            "complianceStatus": compliance_status,
-            "missedCyclesCount": missed_count,
+            "complianceStatus": "Active",
+            "missedCyclesCount": 0,
         }
 
     @classmethod
@@ -427,14 +405,8 @@ class LendingService:
                 })
             elif available_funds > Decimal("0.00"):
                 available_credit = Decimal("0.00")
-                if cur < today:
-                    missed_count += 1
-                    total_penalties += penalty_dec
-                    item_penalty = float(penalty_dec)
-                    status_str = "Partial"
-                else:
-                    item_penalty = 0.0
-                    status_str = "Partial"
+                item_penalty = 0.0
+                status_str = "Partial"
 
                 method_str = payments_today[0].get("method", "Cash") if payments_today else "Cash"
                 ref_str = payments_today[0].get("referenceNo", "-") if payments_today else "-"
@@ -449,21 +421,16 @@ class LendingService:
                     "referenceNo": ref_str,
                     "notes": notes_str,
                     "status": status_str,
-                    "penalty": item_penalty,
+                    "penalty": 0.0,
                     "timestamp": iso,
                     "isLocked": False,
                 })
             else:
                 if cur < today:
-                    missed_count += 1
-                    total_penalties += penalty_dec
-                    item_penalty = float(penalty_dec)
                     status_str = "Missed"
                 elif cur == today:
-                    item_penalty = 0.0
                     status_str = "Pending"
                 else:
-                    item_penalty = 0.0
                     status_str = "Scheduled"
 
                 ledger_rows.append({
@@ -475,26 +442,19 @@ class LendingService:
                     "referenceNo": "-",
                     "notes": "-",
                     "status": status_str,
-                    "penalty": item_penalty,
+                    "penalty": 0.0,
                     "timestamp": iso,
                     "isLocked": False,
                 })
 
             cur += timedelta(days=1)
 
-        if missed_count == 0:
-            compliance_status = "Compliant"
-        elif missed_count == 1:
-            compliance_status = "Delayed"
-        else:
-            compliance_status = "Delinquent"
-
         ledger_rows.sort(key=lambda x: x["date"], reverse=True)
 
         meta = {
-            "total_penalties": float(total_penalties),
+            "total_penalties": 0.0,
             "advance_amount": float(available_credit),
-            "compliance_status": compliance_status,
+            "compliance_status": "Active",
             "missed_cycles_count": missed_count,
         }
         return ledger_rows, meta
@@ -679,8 +639,8 @@ class LendingService:
                     "loanId": fac.facility_id,
                     "loanRefNo": fac.facility_ref_no or f"FAC-{fac.facility_id}",
                     "borrowerName": borrower_name,
-                    "borrowerContact": fac.borrower_contact or "",
-                    "borrowerAddress": fac.borrower_address or "",
+                    "borrowerContact": "",
+                    "borrowerAddress": "",
                     "loanAmount": float(fac.principal_amount),
                     "interestRate": float(terms["interest_rate"]),
                     "interestAmount": terms["interest"],
@@ -913,8 +873,8 @@ class LendingService:
                 "facility_id": str(fac.facility_id),
                 "loan_ref_no": fac.facility_ref_no or f"FAC-{fac.facility_id}",
                 "borrower_name": fac.borrower_name,
-                "borrower_contact": fac.borrower_contact or "",
-                "borrower_address": fac.borrower_address or "",
+                "borrower_contact": "",
+                "borrower_address": "",
                 "payment_frequency": freq,
                 "principal": float(fac.principal_amount),
                 "interest_rate": float(terms["interest_rate"]),
@@ -1073,16 +1033,11 @@ class LendingService:
         new_facility = LendingFacility(
             facility_ref_no=ref_no,
             borrower_name=borrower_name.strip(),
-            borrower_contact=(borrower_contact or "").strip() or None,
-            borrower_address=(borrower_address or "").strip() or None,
             principal_amount=p,
             interest_rate=Decimal(str(terms["interest_rate"])),
-            interest_amount=Decimal(str(terms["interest"])),
             total_payable=Decimal(str(terms["total_payable"])),
             payment_frequency=freq,
             term_days=term_days,
-            installment_target=Decimal(str(terms["installment_target"])),
-            penalty_rate=Decimal(str(terms["penalty_rate"])),
             date_borrowed=start,
             due_date=due,
             status="Active",
@@ -1097,8 +1052,8 @@ class LendingService:
             "loanId": new_facility.facility_id,
             "loanRefNo": new_facility.facility_ref_no,
             "borrowerName": new_facility.borrower_name,
-            "borrowerContact": new_facility.borrower_contact or "",
-            "borrowerAddress": new_facility.borrower_address or "",
+            "borrowerContact": "",
+            "borrowerAddress": "",
             "loanAmount": float(p),
             "interestRate": float(terms["interest_rate"]),
             "interestAmount": terms["interest"],
@@ -1209,6 +1164,19 @@ class LendingService:
             ref_clean = reference_no.strip() if reference_no and reference_no.strip() else f"TX-{int(datetime.now().timestamp() % 100000):05d}"
             tx_ref = f"TX-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() % 10000):04d}"
 
+            # Calculate principal and interest portion breakdown
+            total_pay = Decimal(str(fac.total_payable)) if fac.total_payable else Decimal("0.00")
+            princ_amt = Decimal(str(fac.principal_amount)) if fac.principal_amount else Decimal("0.00")
+            if total_pay > Decimal("0.00"):
+                principal_ratio = princ_amt / total_pay
+                p_portion = quantize(payment_amount * principal_ratio)
+                i_portion = quantize(payment_amount - p_portion)
+            else:
+                p_portion = payment_amount
+                i_portion = Decimal("0.00")
+
+            rem_bal = max(Decimal("0.00"), remaining_before - payment_amount)
+
             new_tx = LendingTransaction(
                 facility_id=fac.facility_id,
                 transaction_ref_no=tx_ref,
@@ -1216,12 +1184,14 @@ class LendingService:
                 payment_date=pay_date,
                 due_date=fac.due_date,
                 amount=payment_amount,
-                remaining_balance=max(Decimal("0.00"), remaining_before - payment_amount),
+                principal_portion=p_portion,
+                interest_portion=i_portion,
+                penalty_portion=Decimal("0.00"),
+                remaining_balance=rem_bal,
                 payment_method=method.strip() if method else "Cash",
                 reference_no=ref_clean,
                 status="Completed",
                 notes=(notes or "").strip(),
-                recorded_by=recorded_by,
             )
             db.add(new_tx)
 
@@ -1396,7 +1366,6 @@ class LendingService:
                 "reference_no": t.reference_no or "-",
                 "status": t.status or "Completed",
                 "notes": t.notes or "-",
-                "recorded_by": t.recorded_by,
                 "created_at": t.created_at.isoformat() if t.created_at else "",
                 "updated_at": t.updated_at.isoformat() if t.updated_at else "",
             }
@@ -1425,7 +1394,6 @@ class LendingService:
             "reference_no": t.reference_no or "-",
             "status": t.status or "Completed",
             "notes": t.notes or "-",
-            "recorded_by": t.recorded_by,
             "created_at": t.created_at.isoformat() if t.created_at else "",
             "updated_at": t.updated_at.isoformat() if t.updated_at else "",
         }

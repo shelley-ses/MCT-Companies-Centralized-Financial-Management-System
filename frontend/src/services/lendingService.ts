@@ -38,7 +38,7 @@ export interface LendingFacility {
   installmentTarget?: number
   complianceStatus?: 'Compliant' | 'Delayed' | 'Delinquent'
   missedCyclesCount?: number
-  lenderCompany: string
+  lenderCompany?: string
   notes?: string
   dailyPayments: DailyPaymentRecord[]
   auditStatus?: 'Verified' | 'Flagged'
@@ -108,7 +108,6 @@ export interface LendingTransactionRecord {
   reference_no?: string
   status: string
   notes?: string
-  recorded_by?: string
   created_at?: string
   updated_at?: string
 }
@@ -664,24 +663,10 @@ export function getMonthlyProgress(facility: LendingFacility) {
       remaining = target - availableFunds
       availableCredit = 0
       isOverdue = todayStr > cycleDueDate
-      if (isOverdue) {
-        missedCount += 1
-        totalPenalties += penaltyPerMonth
-        monthPenalty = penaltyPerMonth
-        status = 'Partial'
-      } else {
-        status = 'Partial'
-      }
+      status = 'Partial'
     } else {
       isOverdue = todayStr > cycleDueDate
-      if (isOverdue) {
-        missedCount += 1
-        totalPenalties += penaltyPerMonth
-        monthPenalty = penaltyPerMonth
-        status = 'Missed'
-      } else {
-        status = 'Unpaid'
-      }
+      status = isOverdue ? 'Missed' : 'Unpaid'
     }
 
     months.push({
@@ -693,23 +678,21 @@ export function getMonthlyProgress(facility: LendingFacility) {
       dueDate: cycleDueDate,
       isOverdue,
       isLocked,
-      penalty: monthPenalty,
+      penalty: 0,
     })
   }
 
   const activeMonth = months.find((m) => m.remaining > 0) || months[months.length - 1]
-  const complianceStatus: 'Compliant' | 'Delayed' | 'Delinquent' =
-    missedCount === 0 ? 'Compliant' : (missedCount === 1 ? 'Delayed' : 'Delinquent')
 
   return {
     totalMonths,
     monthTarget,
     months,
     activeMonth,
-    totalPenalties,
+    totalPenalties: 0,
     advanceAmount: availableCredit,
-    complianceStatus,
-    missedCyclesCount: missedCount,
+    complianceStatus: 'Compliant' as const,
+    missedCyclesCount: 0,
   }
 }
 
@@ -848,7 +831,7 @@ export function buildDailyLedger(facility: LendingFacility): DailyPaymentRecord[
         referenceNo: first?.referenceNo || '-',
         notes: first?.notes || '-',
         status: 'Partial',
-        penalty: isPast ? penaltyPerCycle : 0,
+        penalty: 0,
         timestamp: first?.timestamp || `${dateStr}T10:00:00Z`,
         isLocked: false,
       })
@@ -864,7 +847,7 @@ export function buildDailyLedger(facility: LendingFacility): DailyPaymentRecord[
         referenceNo: '-',
         notes: '-',
         status: isPast ? 'Missed' : (isToday ? 'Pending' : 'Scheduled'),
-        penalty: isPast ? penaltyPerCycle : 0,
+        penalty: 0,
         timestamp: `${dateStr}T23:59:59Z`,
         isLocked: false,
       })

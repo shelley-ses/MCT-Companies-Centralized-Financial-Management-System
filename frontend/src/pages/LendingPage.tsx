@@ -63,8 +63,6 @@ import {
 const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
 type PeriodType = (typeof PERIOD_OPTIONS)[number]
 
-const COMPANY_NAME = 'FilCap Prime Holdings Corp.'
-
 const ITEMS_PER_PAGE = 10
 
 export const LendingPage: React.FC = () => {
@@ -74,7 +72,7 @@ export const LendingPage: React.FC = () => {
 
   // Set document title
   React.useEffect(() => {
-    document.title = `Lending - ${COMPANY_NAME}`
+    document.title = 'Lending - MCT Centralized Financial Management'
   }, [])
 
   // Persistent storage for facilities so updates remain live across interactions
@@ -142,12 +140,13 @@ export const LendingPage: React.FC = () => {
   const statusDropdownRef = React.useRef<HTMLDivElement>(null)
   const tableCardRef = React.useRef<HTMLDivElement>(null)
 
-  // Modals state
+  // View mode and modals state
+  const [viewMode, setViewMode] = React.useState<'list' | 'details'>('list')
+  const [paymentCalendarMonth, setPaymentCalendarMonth] = React.useState<Date>(() => new Date())
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = React.useState(false)
   const [isDailyPaymentModalOpen, setIsDailyPaymentModalOpen] = React.useState(false)
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false)
-  const [isDetailModalOpen, setIsDetailModalOpen] = React.useState(false)
 
   // 3-dots actions menu state
   const [openMenuFacilityId, setOpenMenuFacilityId] = React.useState<string | null>(null)
@@ -382,7 +381,6 @@ export const LendingPage: React.FC = () => {
     const headers = [
       'Loan ID',
       "Borrower's Name",
-      'Lender Company',
       'Loan Amount',
       'Interest Rate (%)',
       'Date Borrowed',
@@ -396,7 +394,6 @@ export const LendingPage: React.FC = () => {
     const rows = filteredFacilities.map((f) => [
       f.loanId,
       `"${f.borrowerName.replace(/"/g, '""')}"`,
-      `"${f.lenderCompany.replace(/"/g, '""')}"`,
       f.loanAmount,
       `${f.interestRate}%`,
       f.dateBorrowed,
@@ -412,7 +409,7 @@ export const LendingPage: React.FC = () => {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', `lending_portfolio_FilCap_Prime_Holdings_Corp_${Date.now()}.csv`)
+    link.setAttribute('download', `lending_portfolio_${Date.now()}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -446,7 +443,7 @@ export const LendingPage: React.FC = () => {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Lending Portfolio - ${COMPANY_NAME}</title>
+          <title>Lending Portfolio Summary</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 24px; color: #1e293b; }
             h1 { font-size: 20px; margin: 0 0 4px; font-weight: 700; color: #0f172a; }
@@ -459,7 +456,7 @@ export const LendingPage: React.FC = () => {
         </head>
         <body>
           <h1>MCT Financial Management - Lending Module</h1>
-          <p>Portfolio Summary for <strong>${COMPANY_NAME}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
+          <p>Portfolio Summary for Lending Accounts · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
           <table>
             <thead>
               <tr>
@@ -668,6 +665,7 @@ export const LendingPage: React.FC = () => {
       referenceNo: '',
       notes: '',
     })
+    setPaymentCalendarMonth(new Date(initialDate || new Date()))
     setIsDailyPaymentModalOpen(true)
   }
   const handleOpenDailyPaymentModal = handleOpenPaymentModal
@@ -798,14 +796,14 @@ export const LendingPage: React.FC = () => {
     setActiveFacility(null)
   }
 
-  // Open Complete Information Modal on row click (Requirement 3)
+  // Open Complete Information page on row click
   const handleRowClick = (facility: LendingFacility) => {
     setActiveFacility(facility)
     setHistorySearchQuery('')
-    setIsDetailModalOpen(true)
+    setViewMode('details')
   }
 
-  // Filtered payment records for Lending Information Modal
+  // Filtered payment records for Lending Information View
   const filteredHistoryPayments = React.useMemo(() => {
     if (!activeFacility) return []
     const baseList =
@@ -826,12 +824,387 @@ export const LendingPage: React.FC = () => {
     })
   }, [activeFacility, historySearchQuery])
 
-  const displayedCompanyTitle = COMPANY_NAME
+  // Dedicated Full Screen Details Page View
+  const renderDetailsPage = () => {
+    if (!activeFacility) return null
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-200">
+        {/* Top navigation row */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setViewMode('list')}
+            className="h-10 px-4 rounded-xl font-semibold text-xs sm:text-sm border border-stroke/60 bg-white text-focus hover:bg-surface flex items-center gap-2 cursor-pointer shadow-2xs self-start"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            <span>Back to Lending Facilities</span>
+          </Button>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
+            <LiveDateTimeBadge />
+            <span
+              className={cn(
+                'inline-block px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider',
+                {
+                  Active: 'bg-blue-50 text-blue-700 border-blue-200',
+                  Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                  Pending: 'bg-amber-50 text-amber-700 border-amber-200',
+                  Overdue: 'bg-rose-50 text-rose-700 border-rose-200',
+                }[activeFacility.status]
+              )}
+            >
+              {activeFacility.status}
+            </span>
+
+            {!isAudit && activeFacility.remainingBalance > 0 && (
+              <Button
+                type="button"
+                onClick={(e) => handleOpenPaymentModal(activeFacility, e)}
+                className="h-10 px-4 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Coins className="h-4 w-4" />
+                <span>Record Payment</span>
+              </Button>
+            )}
+
+            {!isAudit && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={(e) => handleOpenEditModal(activeFacility, e)}
+                className="h-10 px-3.5 rounded-xl border border-stroke/60 font-semibold text-xs flex items-center gap-1.5 cursor-pointer hover:bg-surface text-focus"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                <span>Edit Terms</span>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Borrower & Facility Header Card */}
+        <div className="bg-white border border-stroke/60 rounded-2xl p-6 shadow-2xs">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <span className="font-mono text-xs px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                  {activeFacility.loanId}
+                </span>
+                <span className="text-xs text-muted-fg font-medium">
+                  Schedule: <strong className="text-focus">{activeFacility.paymentFrequency || 'Daily'}</strong>
+                </span>
+                <span className="text-xs text-muted-fg font-medium">
+                  Term: <strong className="text-focus">{activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)} Days</strong>
+                </span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-focus tracking-tight">
+                {activeFacility.borrowerName}
+              </h1>
+              {(activeFacility.borrowerContact || activeFacility.borrowerAddress) && (
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-fg mt-2">
+                  {activeFacility.borrowerContact && (
+                    <span className="flex items-center gap-1">
+                      <strong className="text-focus">Contact:</strong> {activeFacility.borrowerContact}
+                    </span>
+                  )}
+                  {activeFacility.borrowerAddress && (
+                    <span className="flex items-center gap-1">
+                      <strong className="text-focus">Address:</strong> {activeFacility.borrowerAddress}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Collection Progress Card */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 sm:min-w-[280px]">
+              <div className="flex justify-between items-center text-xs font-semibold text-muted-fg mb-1.5">
+                <span>Collection Progress</span>
+                <span className="font-bold text-focus">
+                  {activeFacility.totalAmountPayable > 0
+                    ? ((activeFacility.amountPaid / activeFacility.totalAmountPayable) * 100).toFixed(1)
+                    : 0}
+                  %
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      activeFacility.totalAmountPayable > 0
+                        ? (activeFacility.amountPaid / activeFacility.totalAmountPayable) * 100
+                        : 0
+                    )}%`,
+                  }}
+                />
+              </div>
+              <div className="flex justify-between items-center text-[11px] text-muted-fg mt-1.5">
+                <span>Paid: <strong className="text-emerald-600">{formatPHP(activeFacility.amountPaid)}</strong></span>
+                <span>Total: <strong className="text-focus">{formatPHP(activeFacility.totalAmountPayable)}</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 6 Spacious Financial Overview Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+              Principal Amount
+            </span>
+            <span className="text-base sm:text-xl font-bold text-focus block mt-1">
+              {formatPHP(activeFacility.loanAmount)}
+            </span>
+            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
+              Disbursed capital
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+              Interest Rate
+            </span>
+            <span className="text-base sm:text-xl font-bold text-focus block mt-1">
+              {activeFacility.interestRate}%
+            </span>
+            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
+              +{formatPHP(Math.max(0, activeFacility.totalAmountPayable - activeFacility.loanAmount))} interest
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+              Total Payable
+            </span>
+            <span className="text-base sm:text-xl font-extrabold text-focus block mt-1">
+              {formatPHP(activeFacility.totalAmountPayable)}
+            </span>
+            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
+              Principal + interest
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+              Amount Paid
+            </span>
+            <span className="text-base sm:text-xl font-extrabold text-emerald-600 block mt-1">
+              {formatPHP(activeFacility.amountPaid)}
+            </span>
+            <span className="text-[10.5px] text-emerald-700/80 mt-0.5 block">
+              Total collections
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+              Remaining Balance
+            </span>
+            <span className="text-base sm:text-xl font-extrabold text-amber-600 block mt-1">
+              {formatPHP(activeFacility.remainingBalance)}
+            </span>
+            <span className="text-[10.5px] text-amber-700/80 mt-0.5 block">
+              Balance to complete
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+              Installment Target
+            </span>
+            <span className="text-base sm:text-xl font-bold text-focus block mt-1">
+              {formatPHP(
+                activeFacility.installmentTarget ||
+                  Math.round(
+                    (activeFacility.totalAmountPayable /
+                      (activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60))) *
+                      100
+                  ) / 100
+              )}
+            </span>
+            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
+              Per {activeFacility.paymentFrequency === 'Daily' ? 'day' : 'month'}
+            </span>
+          </div>
+        </div>
+
+        {/* Two Section Layout: Terms Summary (Left) & Complete Schedule Ledger (Right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Left 1 Column: Agreement Terms & Dates */}
+          <div className="bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-focus">
+              Loan Agreement & Terms
+            </h3>
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Payment Frequency:</span>
+                <span className="font-semibold text-focus">{activeFacility.paymentFrequency || 'Daily'}</span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Loan Term Duration:</span>
+                <span className="font-semibold text-focus">
+                  {activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)} Days
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Date Borrowed:</span>
+                <span className="font-mono text-focus">{activeFacility.dateBorrowed}</span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Maturity Due Date:</span>
+                <span className="font-mono text-focus">{activeFacility.dueDate}</span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Advance Credit:</span>
+                <span className="font-bold text-sky-600">{formatPHP(activeFacility.advanceAmount || 0)}</span>
+              </div>
+            </div>
+
+            {activeFacility.notes && (
+              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-muted-fg mt-3">
+                <strong className="text-focus font-semibold block mb-0.5">Agreement Notes:</strong>
+                {activeFacility.notes}
+              </div>
+            )}
+          </div>
+
+          {/* Right 3 Columns: Full Width Payment History & Schedule Table */}
+          <div className="lg:col-span-3 bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Coins className="h-4 w-4 text-emerald-600" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-focus">
+                  Payment Schedule & History ({filteredHistoryPayments.length})
+                </h3>
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-3.5 h-3.5 text-muted-fg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  placeholder="Search payments by date, ref, remarks..."
+                  className="w-full h-8.5 pl-8 pr-7 rounded-xl border border-stroke/60 bg-white text-xs text-focus placeholder:text-muted-fg/70 focus:outline-none focus:ring-2 focus:ring-focus/20 transition-all"
+                />
+                {historySearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setHistorySearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Ledger Table */}
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
+                  <tr>
+                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Date</th>
+                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Status</th>
+                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Target Due</th>
+                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Amount Paid</th>
+                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Method</th>
+                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Reference No.</th>
+                    <th className="py-2.5 px-3.5 text-left">Remarks</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredHistoryPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-10 text-center text-muted-fg text-xs">
+                        {historySearchQuery
+                          ? `No payment records matching "${historySearchQuery}".`
+                          : 'No payments recorded yet.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredHistoryPayments.map((p) => {
+                      const isAdvancePaid = p.status === 'Advance Paid'
+                      const isMissed = p.status === 'Missed' || (p.amount === 0 && p.status !== 'Paid' && !isAdvancePaid)
+                      const isPartial = p.status === 'Partial'
+                      return (
+                        <tr
+                          key={p.id}
+                          className={cn(
+                            'hover:bg-slate-50/70 transition-colors',
+                            isAdvancePaid && 'bg-sky-50/20',
+                            isMissed && 'bg-rose-50/20',
+                            isPartial && 'bg-amber-50/20'
+                          )}
+                        >
+                          <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap font-medium">
+                            {p.date}
+                          </td>
+                          <td className="py-2.5 px-3.5 whitespace-nowrap">
+                            {isAdvancePaid ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                                <Lock className="w-2.5 h-2.5 text-sky-600" />
+                                <span>Advance Paid</span>
+                              </span>
+                            ) : isMissed ? (
+                              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                Missed
+                              </span>
+                            ) : isPartial ? (
+                              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                {p.periodLabel ? `${p.periodLabel} (Partial)` : 'Partial'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <Lock className="w-2.5 h-2.5 text-emerald-600" />
+                                <span>{p.periodLabel ? `${p.periodLabel} (Paid)` : 'Paid'}</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-muted-fg whitespace-nowrap">
+                            {p.target ? formatPHP(p.target) : '-'}
+                          </td>
+                          <td
+                            className={cn(
+                              'py-2.5 px-3.5 font-bold whitespace-nowrap',
+                              isAdvancePaid ? 'text-sky-600' : isMissed ? 'text-muted-fg font-normal' : isPartial ? 'text-amber-700' : 'text-emerald-600'
+                            )}
+                          >
+                            {isAdvancePaid ? 'Covered' : isMissed ? '-' : formatPHP(p.amount)}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-focus whitespace-nowrap">
+                            {isAdvancePaid ? 'Advance Credit' : isMissed ? '-' : p.method || '-'}
+                          </td>
+                          <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap">
+                            {isAdvancePaid ? 'ADVANCE' : isMissed ? '-' : p.referenceNo || '-'}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-muted-fg truncate max-w-[200px]" title={isMissed ? '-' : p.notes || '-'}>
+                            {isAdvancePaid ? 'Covered by advance payment' : isMissed ? '-' : p.notes || '-'}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 pb-12 max-w-[1600px] mx-auto animate-in fade-in duration-300">
-      {/* 1. Header & Controls matching Sales Page */}
-      <div className="space-y-3">
+      {viewMode === 'details' && activeFacility ? (
+        renderDetailsPage()
+      ) : (
+        <>
+          {/* 1. Header & Controls matching Sales Page */}
+          <div className="space-y-3">
         {/* Top Row: Action Buttons (Live Date/Time, Export & New Lending Facility) sitting on the right */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
@@ -894,7 +1267,7 @@ export const LendingPage: React.FC = () => {
               Lending
             </h1>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Here's the summary of lending facilities in {displayedCompanyTitle}
+              Here's the summary of all lending accounts and borrower facilities.
             </p>
           </div>
 
@@ -1123,9 +1496,15 @@ export const LendingPage: React.FC = () => {
                         <div className="font-semibold text-xs text-focus truncate max-w-[280px]" title={facility.borrowerName}>
                           {facility.borrowerName}
                         </div>
-                        <div className="text-[10.5px] text-muted-fg truncate max-w-[280px]">
-                          {facility.lenderCompany}
-                        </div>
+                        {facility.borrowerContact ? (
+                          <div className="text-[10.5px] text-muted-fg truncate max-w-[280px]">
+                            {facility.borrowerContact}
+                          </div>
+                        ) : (
+                          <div className="text-[10.5px] text-slate-400 font-mono truncate max-w-[280px]">
+                            {facility.loanId}
+                          </div>
+                        )}
                       </TableCell>
 
                       {/* 2. Loan Amount */}
@@ -1144,16 +1523,6 @@ export const LendingPage: React.FC = () => {
                         <div className="text-[10px] text-slate-400 font-sans mt-0.5">
                           {facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 60)} days term
                         </div>
-                        {facility.paymentFrequency && facility.paymentFrequency !== 'Daily' && facility.remainingBalance > 0 && (() => {
-                          const cycle = getNextInstallmentInfo(facility)
-                          if (!cycle) return null
-                          return (
-                            <div className={cn('text-[10px] font-sans mt-0.5 font-medium', cycle.isOverdue ? 'text-rose-600 font-semibold' : 'text-slate-500')}>
-                              {cycle.periodLabel}: <span className="font-mono">{cycle.dueDate}</span>
-                              {cycle.isOverdue && ' (Late)'}
-                            </div>
-                          )
-                        })()}
                       </TableCell>
 
                       {/* 5. Total Amount Payable */}
@@ -1169,14 +1538,9 @@ export const LendingPage: React.FC = () => {
                       {/* 7. Remaining Balance */}
                       <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-bold text-xs text-amber-600 tabular-nums whitespace-nowrap">
                         <div>{formatPHP(facility.remainingBalance)}</div>
-                        {facility.totalPenalties && facility.totalPenalties > 0 ? (
-                          <div className="text-[10px] text-rose-600 font-medium font-sans">
-                            +{formatPHP(facility.totalPenalties)} penalty
-                          </div>
-                        ) : null}
                       </TableCell>
 
-                      {/* 8. Status & Compliance */}
+                      {/* 8. Status */}
                       <TableCell className="w-[8%] px-3 py-3.5 text-center whitespace-nowrap">
                         <span
                           className={cn(
@@ -1186,35 +1550,6 @@ export const LendingPage: React.FC = () => {
                         >
                           {facility.status}
                         </span>
-
-                        {/* Compliance Status Badge */}
-                        {(() => {
-                          const compliance = facility.complianceStatus || 'Compliant'
-                          const complianceStyles = {
-                            Compliant: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                            Delayed: 'bg-amber-50 text-amber-700 border-amber-200',
-                            Delinquent: 'bg-rose-50 text-rose-700 border-rose-200',
-                          }[compliance]
-                          return (
-                            <div className="mt-1">
-                              <span
-                                className={cn(
-                                  'inline-block px-2 py-0.5 rounded text-[9.5px] font-bold border',
-                                  complianceStyles
-                                )}
-                                title={
-                                  compliance === 'Compliant'
-                                    ? 'Zero unpaid cycles up to date'
-                                    : compliance === 'Delayed'
-                                    ? 'One unpaid installment pending settlement'
-                                    : 'Two or more missed cycles past due'
-                                }
-                              >
-                                {compliance}
-                              </span>
-                            </div>
-                          )
-                        })()}
 
                         {facility.auditStatus && (
                           <div className="mt-1 flex items-center justify-center gap-1">
@@ -1316,6 +1651,8 @@ export const LendingPage: React.FC = () => {
           </div>
         </div>
       </Card>
+      </>
+      )}
 
       {/* Floating 3-dots Action Menu Portal (rendered directly to body to prevent table overflow clipping) */}
       {openMenuFacilityId && activeMenuFacility && menuPosition && typeof document !== 'undefined' &&
@@ -1490,8 +1827,7 @@ export const LendingPage: React.FC = () => {
               New Lending Facility
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg">
-              Enter the borrower and loan details to disburse a new credit agreement for{' '}
-              <strong className="text-focus">{COMPANY_NAME}</strong>.
+              Enter the borrower and loan details to disburse a new credit agreement.
             </DialogDescription>
           </DialogHeader>
 
@@ -1716,11 +2052,11 @@ export const LendingPage: React.FC = () => {
 
       {/* 5. Modal: Update Payment ("Update" Action Button) */}
       <Dialog open={isDailyPaymentModalOpen} onOpenChange={setIsDailyPaymentModalOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6">
+        <DialogContent className="sm:max-w-lg bg-white rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
               <Coins className="h-5 w-5 text-emerald-600" />
-              <span>Update Payment</span>
+              <span>Record Payment</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg">
               Record payment remittance for{' '}
@@ -1739,7 +2075,7 @@ export const LendingPage: React.FC = () => {
             const isDateAlreadySettled =
               isDaily &&
               (activeFacility.dailyPayments || []).some(
-                (p) => p.date === paymentForm.paymentDate && p.status === 'Paid'
+                (p) => p.date === paymentForm.paymentDate && (p.status === 'Paid' || p.status === 'Advance Paid' || !!p.isLocked)
               )
 
             return (
@@ -1780,7 +2116,7 @@ export const LendingPage: React.FC = () => {
                       <span>Date Already Settled ({paymentForm.paymentDate})</span>
                     </div>
                     <p className="text-[11px] text-amber-700 leading-relaxed">
-                      Payment for this calendar date has already been recorded and locked. You cannot add or remove payments for a settled date. Please choose an unpaid date to record collection.
+                      Payment for this calendar date has already been recorded and locked. Please select an unpaid date from the calendar below.
                     </p>
                   </div>
                 )}
@@ -1818,40 +2154,178 @@ export const LendingPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Payment Date & Method */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-focus block mb-1">
+                {/* Interactive Calendar Date Picker */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-focus">
                       Payment Date <span className="text-red-500">*</span>
                     </label>
-                    <Input
-                      required
-                      type="date"
-                      value={paymentForm.paymentDate}
-                      onChange={(e) =>
-                        setPaymentForm({ ...paymentForm, paymentDate: e.target.value })
-                      }
-                      className="h-10 text-xs sm:text-sm rounded-xl"
-                    />
+                    <span className="text-[11px] font-mono font-bold text-focus">
+                      {paymentForm.paymentDate ? `Selected: ${paymentForm.paymentDate}` : 'Please select date'}
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="text-xs font-semibold text-focus block mb-1">
-                      Payment Method
-                    </label>
-                    <select
-                      value={paymentForm.method}
-                      onChange={(e) =>
-                        setPaymentForm({ ...paymentForm, method: e.target.value })
-                      }
-                      className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
-                    >
-                      <option value="Cash">Cash</option>
-                      <option value="GCash">GCash</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
-                      <option value="Cheque">Cheque</option>
-                    </select>
+                  <div className="border border-stroke/60 rounded-xl p-3 bg-white space-y-2.5">
+                    {/* Month Header & Controls */}
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-xs font-bold text-focus">
+                        {paymentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const prev = new Date(paymentCalendarMonth)
+                            prev.setMonth(prev.getMonth() - 1)
+                            setPaymentCalendarMonth(prev)
+                          }}
+                          className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
+                          aria-label="Previous month"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = new Date(paymentCalendarMonth)
+                            next.setMonth(next.getMonth() + 1)
+                            setPaymentCalendarMonth(next)
+                          }}
+                          className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
+                          aria-label="Next month"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Weekday labels */}
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10.5px] font-bold text-muted-fg uppercase py-1 border-b border-slate-100">
+                      <span>Su</span>
+                      <span>Mo</span>
+                      <span>Tu</span>
+                      <span>We</span>
+                      <span>Th</span>
+                      <span>Fr</span>
+                      <span>Sa</span>
+                    </div>
+
+                    {/* Days Grid */}
+                    {(() => {
+                      const calYear = paymentCalendarMonth.getFullYear()
+                      const calMonth = paymentCalendarMonth.getMonth()
+                      const firstDay = new Date(calYear, calMonth, 1).getDay()
+                      const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
+
+                      const existingMap = new Map<string, DailyPaymentRecord>()
+                      ;(activeFacility.dailyPayments || []).forEach((p) => {
+                        if (p.date) existingMap.set(p.date, p)
+                      })
+
+                      const startBorrowed = activeFacility.dateBorrowed || ''
+
+                      return (
+                        <div className="grid grid-cols-7 gap-1 text-center">
+                          {Array.from({ length: firstDay }).map((_, i) => (
+                            <div key={`cal-empty-${i}`} className="h-8" />
+                          ))}
+
+                          {Array.from({ length: totalDays }).map((_, i) => {
+                            const d = i + 1
+                            const dStr = String(d).padStart(2, '0')
+                            const mStr = String(calMonth + 1).padStart(2, '0')
+                            const dateStr = `${calYear}-${mStr}-${dStr}`
+
+                            const isBefore = startBorrowed ? dateStr < startBorrowed : false
+                            const paymentRecord = existingMap.get(dateStr)
+                            const isPaid = paymentRecord
+                              ? (paymentRecord.status === 'Paid' || paymentRecord.status === 'Advance Paid' || !!paymentRecord.isLocked)
+                              : false
+                            const isPartial = paymentRecord ? paymentRecord.status === 'Partial' : false
+                            const isSelected = paymentForm.paymentDate === dateStr
+                            const isDisabled = isBefore || isPaid
+
+                            return (
+                              <button
+                                key={dateStr}
+                                type="button"
+                                disabled={isDisabled}
+                                onClick={() => {
+                                  if (!isDisabled) {
+                                    setPaymentForm({ ...paymentForm, paymentDate: dateStr })
+                                  }
+                                }}
+                                className={cn(
+                                  'h-8 rounded-lg text-xs font-medium flex flex-col items-center justify-center relative transition-all',
+                                  isSelected &&
+                                    'bg-[#960C01] text-white font-bold shadow-xs ring-2 ring-[#960C01]/30 z-10',
+                                  !isSelected &&
+                                    isPaid &&
+                                    'bg-emerald-50 text-emerald-700 border border-emerald-200/80 cursor-not-allowed opacity-90',
+                                  !isSelected &&
+                                    isBefore &&
+                                    'text-slate-300 cursor-not-allowed bg-slate-50/50',
+                                  !isSelected &&
+                                    !isPaid &&
+                                    !isBefore &&
+                                    'hover:bg-slate-100 text-focus cursor-pointer hover:font-bold border border-transparent'
+                                )}
+                                title={
+                                  isPaid
+                                    ? `${dateStr}: Fully Paid & Locked (Cannot select)`
+                                    : isBefore
+                                    ? `${dateStr}: Prior to loan date`
+                                    : isPartial
+                                    ? `${dateStr}: Partial payment recorded (Select to settle)`
+                                    : `Select ${dateStr}`
+                                }
+                              >
+                                <span>{d}</span>
+                                {isPaid && <Check className="h-2.5 w-2.5 text-emerald-600 -mt-0.5" />}
+                                {isPartial && !isSelected && (
+                                  <span className="w-1 h-1 rounded-full bg-amber-500 absolute bottom-1" />
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+
+                    {/* Calendar Legend */}
+                    <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-fg pt-2 border-t border-slate-100 gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Paid (Locked)
+                        </span>
+                        <span className="flex items-center gap-1 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Selected
+                        </span>
+                        <span className="flex items-center gap-1 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Partial
+                        </span>
+                      </div>
+                    </div>
                   </div>
+                </div>
+
+                {/* Payment Method */}
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Payment Method
+                  </label>
+                  <select
+                    value={paymentForm.method}
+                    onChange={(e) =>
+                      setPaymentForm({ ...paymentForm, method: e.target.value })
+                    }
+                    className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="GCash">GCash</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="Cheque">Cheque</option>
+                  </select>
                 </div>
 
                 {/* Receipt / Ref No. (no default value) */}
@@ -1897,8 +2371,8 @@ export const LendingPage: React.FC = () => {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={!isAmountValid || isDateAlreadySettled}
-                    className="h-10 px-5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!isAmountValid || isDateAlreadySettled || !paymentForm.paymentDate}
+                    className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
                   >
                     Confirm Payment
                   </Button>
@@ -2116,403 +2590,6 @@ export const LendingPage: React.FC = () => {
               Delete Facility
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 8. Modal: Complete Facility Information on Row Click (Requirement 3) */}
-      <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-        <DialogContent className="sm:max-w-4xl lg:max-w-5xl w-full bg-white rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
-          {activeFacility && (
-            <div>
-              <DialogHeader>
-                <div className="flex items-center justify-between pr-4">
-                  <div className="flex items-center gap-2.5">
-                    <DialogTitle className="text-xl font-bold text-focus">
-                      {activeFacility.loanId}
-                    </DialogTitle>
-                    <span
-                      className={cn(
-                        'inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold border uppercase tracking-wider',
-                        {
-                          Active: 'bg-blue-50 text-blue-700 border-blue-200',
-                          Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                          Pending: 'bg-amber-50 text-amber-700 border-amber-200',
-                          Overdue: 'bg-rose-50 text-rose-700 border-rose-200',
-                        }[activeFacility.status]
-                      )}
-                    >
-                      {activeFacility.status}
-                    </span>
-                  </div>
-                </div>
-                <DialogDescription className="text-xs text-muted-fg mt-1">
-                  Complete lending agreement & everyday payment information for{' '}
-                  <strong className="text-focus">{activeFacility.borrowerName}</strong>
-                </DialogDescription>
-              </DialogHeader>
-
-              {/* Two Column Layout: Left = Lend Details & Progress, Right = Searchable Payment History */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-5 items-start">
-                {/* Left Column: Details of the lend */}
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
-                    {/* Loan ID */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Loan ID
-                      </span>
-                      <span className="font-mono text-sm font-bold text-focus">
-                        {activeFacility.loanId}
-                      </span>
-                    </div>
-
-                    {/* Borrower's Name */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Borrower's Name
-                      </span>
-                      <span className="text-sm font-bold text-focus">
-                        {activeFacility.borrowerName}
-                      </span>
-                    </div>
-
-                    {/* Payment Schedule & Term Days */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Schedule & Term
-                      </span>
-                      <span className="text-sm font-semibold text-focus">
-                        {activeFacility.paymentFrequency || 'Daily'} ({activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)} Days)
-                      </span>
-                    </div>
-
-                    {/* Compliance Status */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Compliance Tier
-                      </span>
-                      {(() => {
-                        const compliance = activeFacility.complianceStatus || 'Compliant'
-                        const complianceColors = {
-                          Compliant: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                          Delayed: 'bg-amber-50 text-amber-700 border-amber-200',
-                          Delinquent: 'bg-rose-50 text-rose-700 border-rose-200',
-                        }[compliance]
-                        return (
-                          <div className="mt-0.5">
-                            <span className={cn('inline-block px-2.5 py-0.5 rounded text-xs font-bold border', complianceColors)}>
-                              {compliance}
-                            </span>
-                          </div>
-                        )
-                      })()}
-                    </div>
-
-                    {/* Loan Amount */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Loan Amount
-                      </span>
-                      <span className="text-sm font-bold text-focus">
-                        {formatPHP(activeFacility.loanAmount)}
-                      </span>
-                    </div>
-
-                    {/* Interest Rate */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Interest Rate
-                      </span>
-                      <span className="text-sm font-bold text-focus">
-                        {activeFacility.interestRate}% ({formatPHP(activeFacility.totalAmountPayable - (activeFacility.totalPenalties || 0) - activeFacility.loanAmount)})
-                      </span>
-                    </div>
-
-                    {/* Installment Target */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Installment Target
-                      </span>
-                      <span className="text-sm font-bold text-focus">
-                        {formatPHP(
-                          activeFacility.installmentTarget ||
-                            Math.round(
-                              ((activeFacility.totalAmountPayable - (activeFacility.totalPenalties || 0)) /
-                                (activeFacility.termDays || 40)) *
-                                100
-                            ) / 100
-                        )}{' '}
-                        / {activeFacility.paymentFrequency === 'Daily' ? 'day' : 'month'}
-                      </span>
-                    </div>
-
-                    {/* Accrued Penalties */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Accrued Penalties (5%)
-                      </span>
-                      <span className={cn('text-sm font-bold', activeFacility.totalPenalties && activeFacility.totalPenalties > 0 ? 'text-rose-600' : 'text-focus')}>
-                        {formatPHP(activeFacility.totalPenalties || 0)}
-                      </span>
-                    </div>
-
-                    {/* Date Borrowed */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Date Borrowed
-                      </span>
-                      <span className="font-mono text-xs font-semibold text-focus">
-                        {activeFacility.dateBorrowed}
-                      </span>
-                    </div>
-
-                    {/* Maturity Due Date */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Maturity Due Date
-                      </span>
-                      <span className="font-mono text-xs font-semibold text-focus">
-                        {activeFacility.dueDate}
-                      </span>
-                    </div>
-
-                    {/* Advance Credit */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Advance Payment Credit
-                      </span>
-                      <span className="text-sm font-bold text-sky-600">
-                        {formatPHP(activeFacility.advanceAmount || 0)}
-                      </span>
-                    </div>
-
-                    {/* Amount Paid */}
-                    <div>
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Amount Paid
-                      </span>
-                      <span className="text-base font-extrabold text-emerald-600">
-                        {formatPHP(activeFacility.amountPaid)}
-                      </span>
-                    </div>
-
-                    {/* Total Amount Payable */}
-                    <div className="pt-2 border-t border-slate-200/60">
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Total Amount Payable
-                      </span>
-                      <span className="text-base font-extrabold text-focus">
-                        {formatPHP(activeFacility.totalAmountPayable)}
-                      </span>
-                    </div>
-
-                    {/* Remaining Balance */}
-                    <div className="pt-2 border-t border-slate-200/60">
-                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Remaining Balance
-                      </span>
-                      <span className="text-lg font-black text-amber-600">
-                        {formatPHP(activeFacility.remainingBalance)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Collection Progress placed right above the progress bar */}
-                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-muted-fg uppercase tracking-wider">
-                        Collection Progress
-                      </span>
-                      <span className="text-sm font-bold text-focus">
-                        {activeFacility.totalAmountPayable > 0
-                          ? ((activeFacility.amountPaid / activeFacility.totalAmountPayable) * 100).toFixed(1)
-                          : 0}
-                        %
-                      </span>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="w-full bg-slate-200/70 rounded-full h-2.5 overflow-hidden">
-                      <div
-                        className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            activeFacility.totalAmountPayable > 0
-                              ? (activeFacility.amountPaid / activeFacility.totalAmountPayable) * 100
-                              : 0
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Notes & Purpose */}
-                  {activeFacility.notes && (
-                    <div className="p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-muted-fg">
-                      <strong className="text-focus font-semibold block mb-0.5">Facility Notes:</strong>
-                      {activeFacility.notes}
-                    </div>
-                  )}
-                </div>
-
-                {/* Right Column: Everyday Payment History with Search Bar */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-focus flex items-center gap-1.5">
-                      <Coins className="h-4 w-4 text-emerald-600" />
-                      <span>Payment History ({activeFacility.dailyPayments?.length || 0})</span>
-                    </h4>
-
-                    {!isAudit && activeFacility.remainingBalance > 0 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={(e) => {
-                          setIsDetailModalOpen(false)
-                          handleOpenPaymentModal(activeFacility, e)
-                        }}
-                        className="h-8 px-3 text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white rounded-lg cursor-pointer"
-                      >
-                        <Plus className="h-3.5 w-3.5 mr-1" />
-                        Record Payment
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Search bar in the payment history */}
-                  <div className="relative w-full">
-                    <Search className="w-4 h-4 text-muted-fg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={historySearchQuery}
-                      onChange={(e) => setHistorySearchQuery(e.target.value)}
-                      placeholder="Search payments by date or remarks..."
-                      className="w-full h-9 pl-9 pr-8 rounded-xl border border-stroke/60 bg-white text-xs text-focus placeholder:text-muted-fg/70 shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
-                    />
-                    {historySearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setHistorySearchQuery('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
-                        aria-label="Clear payment search"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Payment history table */}
-                  <div className="max-h-[380px] overflow-y-auto rounded-xl border border-slate-200">
-                    <table className="w-full text-xs">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold sticky top-0 z-10">
-                        <tr>
-                          <th className="py-2.5 px-3 text-left">Date</th>
-                          <th className="py-2.5 px-3 text-left">Status</th>
-                          <th className="py-2.5 px-3 text-left">Amount</th>
-                          <th className="py-2.5 px-3 text-left">Method</th>
-                          <th className="py-2.5 px-3 text-left">Reference</th>
-                          <th className="py-2.5 px-3 text-left">Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredHistoryPayments.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-8 text-center text-muted-fg text-xs">
-                              {historySearchQuery
-                                ? `No payments matching "${historySearchQuery}".`
-                                : 'No payments recorded yet. Click "Record Payment" to collect.'}
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredHistoryPayments.map((p) => {
-                            const isAdvancePaid = p.status === 'Advance Paid'
-                            const isMissed = p.status === 'Missed' || (p.amount === 0 && p.status !== 'Paid' && !isAdvancePaid)
-                            const isPartial = p.status === 'Partial'
-                            return (
-                              <tr key={p.id} className={cn('hover:bg-slate-50/60', isAdvancePaid && 'bg-sky-50/20', isMissed && 'bg-rose-50/30', isPartial && 'bg-amber-50/30')}>
-                                <td className="py-2.5 px-3 font-mono text-muted-fg whitespace-nowrap">{p.date}</td>
-                                <td className="py-2.5 px-3 whitespace-nowrap">
-                                  {isAdvancePaid ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
-                                      <Lock className="w-2.5 h-2.5 text-sky-600" />
-                                      <span>Advance Paid</span>
-                                    </span>
-                                  ) : isMissed ? (
-                                    <div>
-                                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                        Missed
-                                      </span>
-                                      {p.penalty && p.penalty > 0 ? (
-                                        <div className="text-[9.5px] text-rose-600 font-sans font-medium mt-0.5">
-                                          +{formatPHP(p.penalty)} fee
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ) : isPartial ? (
-                                    <div>
-                                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                        {p.periodLabel ? `${p.periodLabel} (Partial)` : 'Partial'}
-                                      </span>
-                                      {p.penalty && p.penalty > 0 ? (
-                                        <div className="text-[9.5px] text-rose-600 font-sans font-medium mt-0.5">
-                                          +{formatPHP(p.penalty)} fee
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                      <Lock className="w-2.5 h-2.5 text-emerald-600" />
-                                      <span>{p.periodLabel ? `${p.periodLabel} (Paid)` : 'Paid'}</span>
-                                    </span>
-                                  )}
-                                </td>
-                                <td
-                                  className={cn(
-                                    'py-2.5 px-3 font-bold whitespace-nowrap',
-                                    isAdvancePaid ? 'text-sky-600' : isMissed ? 'text-muted-fg font-normal' : isPartial ? 'text-amber-700' : 'text-emerald-600'
-                                  )}
-                                >
-                                  {isAdvancePaid ? 'Covered' : isMissed ? '-' : formatPHP(p.amount)}
-                                </td>
-                                <td className="py-2.5 px-3 text-focus whitespace-nowrap">
-                                  {isAdvancePaid ? 'Advance Credit' : isMissed ? '-' : p.method || '-'}
-                                </td>
-                                <td className="py-2.5 px-3 font-mono text-muted-fg whitespace-nowrap">
-                                  {isAdvancePaid ? 'ADVANCE' : isMissed ? '-' : p.referenceNo || '-'}
-                                </td>
-                                <td className="py-2.5 px-3 text-muted-fg truncate max-w-[150px]" title={isMissed ? '-' : p.notes || '-'}>
-                                  {isAdvancePaid ? 'Covered by advance payment' : isMissed ? '-' : p.notes || '-'}
-                                </td>
-                              </tr>
-                            )
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer Modal Actions: Close button removed, Edit Terms moved to bottom right */}
-              <div className="flex items-center justify-end pt-4 border-t border-slate-100 mt-5">
-                {!isAudit && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={(e) => {
-                      setIsDetailModalOpen(false)
-                      handleOpenEditModal(activeFacility, e)
-                    }}
-                    className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    <span>Edit Terms</span>
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </div>

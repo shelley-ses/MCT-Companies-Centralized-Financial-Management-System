@@ -57,7 +57,6 @@ class LendingTransactionCreateRequest(BaseModel):
     transaction_type: str = Field(default="Repayment")
     reference_no: Optional[str] = ""
     notes: Optional[str] = ""
-    recorded_by: Optional[str] = None
 
 
 class LendingTransactionOut(BaseModel):
@@ -76,7 +75,6 @@ class LendingTransactionOut(BaseModel):
     reference_no: Optional[str] = "-"
     status: str = "Completed"
     notes: Optional[str] = "-"
-    recorded_by: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
