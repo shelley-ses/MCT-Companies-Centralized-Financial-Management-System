@@ -59,19 +59,9 @@ import { getParticularsSummary } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '@/context/CompanyContext'
+import { loanService } from '@/services/loanService'
 
-const DEFAULT_COMPANIES = [
-  'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
+const DEFAULT_COMPANY_LIST = ['All Companies']
 
 // Period options: Daily, Quarterly, Monthly, Annually (added per user request)
 const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
@@ -92,6 +82,23 @@ export const SalesPage: React.FC = () => {
   const isAuditor = isAudit
   const canAdd = !isAudit && (isCompanyUser || isFinance)
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
+
+  // Dynamic company list loaded strictly from the database
+  const [companyList, setCompanyList] = React.useState<string[]>(DEFAULT_COMPANY_LIST)
+
+  React.useEffect(() => {
+    let mounted = true
+    loanService.getCompanies().then((companies) => {
+      if (mounted && companies.length > 0) {
+        const names = companies.map((c) => c.company_name).filter(Boolean)
+        const combined = Array.from(new Set(['All Companies', ...names]))
+        setCompanyList(combined)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   // Filter state
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
@@ -174,9 +181,9 @@ export const SalesPage: React.FC = () => {
 
   const filteredCompanyList = React.useMemo(() => {
     const q = companySearch.toLowerCase().trim()
-    if (!q) return DEFAULT_COMPANIES
-    return DEFAULT_COMPANIES.filter((c) => c.toLowerCase().includes(q))
-  }, [companySearch])
+    if (!q) return companyList
+    return companyList.filter((c) => c.toLowerCase().includes(q))
+  }, [companySearch, companyList])
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)

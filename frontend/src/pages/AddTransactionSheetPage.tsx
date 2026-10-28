@@ -99,17 +99,6 @@ export const PREDEFINED_PETTY_CASH_CATEGORIES = [
 
 export const PREDEFINED_PETTY_CASH_PARTICULARS = PREDEFINED_PETTY_CASH_CATEGORIES
 
-const DEFAULT_COMPANIES = [
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
 
 export const DEFAULT_EXPENSE_CATEGORIES = [
   'Petty Cash',
@@ -252,16 +241,18 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const isPettyCash =
     transactionType === 'Expense' && paymentMethod.trim().toLowerCase() === 'petty cash'
 
-  // Dynamic companies list
-  const [dbCompanies, setDbCompanies] = React.useState<string[]>(DEFAULT_COMPANIES)
+  // Dynamic companies list loaded strictly from database
+  const [dbCompanies, setDbCompanies] = React.useState<string[]>([])
 
   React.useEffect(() => {
     let mounted = true
     loanService.getCompanies().then((companies: CompanyOption[]) => {
       if (mounted && companies.length > 0) {
         const names = companies.map((c) => c.company_name).filter(Boolean)
-        const combined = Array.from(new Set([...names, ...DEFAULT_COMPANIES]))
-        setDbCompanies(combined)
+        setDbCompanies(names)
+        if (!selectedCompany && names.length > 0) {
+          setSelectedCompany(names[0])
+        }
       }
     })
     return () => {
@@ -561,6 +552,13 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     }
 
     const companyToUse = isAuditor ? assignedCompany : selectedCompany
+
+    if (!isPettyCash && availableBankAccounts.length === 0) {
+      setErrorMessage(
+        `Ensure that you have a bank account associated with ${companyToUse} before adding ${transactionType.toLowerCase()} transactions.`
+      )
+      return
+    }
 
     if (exceedsPettyCash) {
       setErrorMessage(
@@ -898,6 +896,12 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   </>
                 )}
               </select>
+              {availableBankAccounts.length === 0 && (
+                <p className="text-[11px] font-medium text-amber-700 flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                  <span>Ensure that you have a bank account associated with this company.</span>
+                </p>
+              )}
             </div>
           )}
 

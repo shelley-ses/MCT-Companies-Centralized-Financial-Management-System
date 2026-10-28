@@ -57,6 +57,40 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [user?.assignedCompany])
 
+  const [dynamicCompanies, setDynamicCompanies] = React.useState<string[]>([])
+
+  // Dynamically load all registered companies from backend database
+  React.useEffect(() => {
+    let mounted = true
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('mct_access_token') : null
+    fetch('/api/v1/companies', {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (mounted && Array.isArray(data) && data.length > 0) {
+          const names = data
+            .map((c: any) => c.company_name || c.name)
+            .filter(Boolean)
+          setDynamicCompanies(Array.from(new Set(['All Companies', ...names])))
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to fetch dynamic companies in CompanyContext:', err)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const allCompanies = React.useMemo(() => {
+    if (dynamicCompanies.length > 0) return dynamicCompanies
+    return ALL_COMPANIES_LIST
+  }, [dynamicCompanies])
+
   const setActiveCompany = React.useCallback((company: string) => {
     setActiveCompanyState(company)
     if (typeof window !== 'undefined') {
@@ -74,9 +108,9 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setActiveCompany,
       isLendingEnabled,
       isCompanyScoped,
-      allCompanies: ALL_COMPANIES_LIST,
+      allCompanies,
     }),
-    [activeCompany, setActiveCompany, isLendingEnabled, isCompanyScoped]
+    [activeCompany, setActiveCompany, isLendingEnabled, isCompanyScoped, allCompanies]
   )
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>

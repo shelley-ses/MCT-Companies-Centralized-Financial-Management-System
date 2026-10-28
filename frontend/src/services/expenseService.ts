@@ -44,6 +44,7 @@ export interface ExpenseItem {
   createdAt?: string
   updatedAt?: string
   type: 'Expense'
+  bankAccountId?: string
 }
 
 export interface NewExpenseInput {

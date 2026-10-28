@@ -64,18 +64,7 @@ import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
 import { isCompanyMatch } from '@/utils/companyUtils'
 import { cn } from '@/lib/utils'
 
-const COMPANY_LIST = [
-  'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
+const DEFAULT_COMPANY_LIST = ['All Companies']
 
 const ITEMS_PER_PAGE = 10
 
@@ -91,7 +80,7 @@ export const BillsPage: React.FC = () => {
   // Data states
   const [bills, setBills] = React.useState<BillItem[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [companyList, setCompanyList] = React.useState<string[]>(COMPANY_LIST)
+  const [companyList, setCompanyList] = React.useState<string[]>(DEFAULT_COMPANY_LIST)
 
   const { activeCompany, setActiveCompany } = useCompany()
 
@@ -191,7 +180,7 @@ export const BillsPage: React.FC = () => {
     loanService.getCompanies().then((companies) => {
       if (mounted && companies.length > 0) {
         const names = companies.map((c) => c.company_name).filter(Boolean)
-        const combined = Array.from(new Set(['All Companies', ...names, ...COMPANY_LIST]))
+        const combined = Array.from(new Set(['All Companies', ...names]))
         setCompanyList(combined)
       }
     })
@@ -236,7 +225,7 @@ export const BillsPage: React.FC = () => {
       ...bill,
       auditStatus: status,
       auditDate: timestamp,
-      auditedBy: user?.fullName || 'Audit',
+      auditedBy: user?.fullName,
     }
     setBills((prev) => prev.map((item) => (item.id === bill.id ? updated : item)))
     try {

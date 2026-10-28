@@ -131,7 +131,7 @@ export const BankManagementPage: React.FC = () => {
   const fetchAccounts = React.useCallback(async () => {
     try {
       // For company-scoped users, request their company accounts.
-      // For admin and finance, fetch all accounts so company filtering in memory is instantaneous and never fails on aliases.
+      // Company filtering in memory is instantaneous and never fails on aliases.
       const targetComp = isCompanyScoped ? assignedCompany : undefined
       const data = await bankService.getAccounts(targetComp)
       setAccounts(data || [])

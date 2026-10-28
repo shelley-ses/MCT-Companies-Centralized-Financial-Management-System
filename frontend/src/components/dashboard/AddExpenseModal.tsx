@@ -24,6 +24,7 @@ import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
 import { pettyCashService } from '@/services/pettyCashService'
+import { bankService } from '@/services/bankService'
 
 import { PREDEFINED_PETTY_CASH_CATEGORIES } from '@/pages/AddTransactionSheetPage'
 
@@ -126,6 +127,26 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const parsedAmountValue = parseFloat(amount.replace(/,/g, '')) || 0
   const exceedsPettyCash = isPettyCash && pettyBalance !== null && parsedAmountValue > pettyBalance
 
+  // Check if assigned company has any registered bank accounts
+  const [hasBankAccounts, setHasBankAccounts] = React.useState<boolean | null>(null)
+  React.useEffect(() => {
+    if (!open) return
+    let mounted = true
+    bankService
+      .getAccounts(assignedCompany)
+      .then((accs) => {
+        if (mounted) {
+          setHasBankAccounts(Boolean(accs && accs.length > 0))
+        }
+      })
+      .catch(() => {
+        if (mounted) setHasBankAccounts(true)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [open, assignedCompany])
+
   // Confirmation dialogue state
   const [isConfirmOpen, setIsConfirmOpen] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
@@ -212,6 +233,12 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (!isPettyCash && hasBankAccounts === false) {
+      setError(`Ensure that you have a bank account associated with ${assignedCompany || 'this company'} before recording expenses.`)
+      return
+    }
+
     const errors: {
       date?: string
       particulars?: string
@@ -330,6 +357,13 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
               <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {!isPettyCash && hasBankAccounts === false && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Ensure that you have a bank account associated with this company before recording expenses.</span>
               </div>
             )}
 

@@ -793,63 +793,20 @@ def update_loan(
     return LoanOut.model_validate(sql_loan)
 
 
-@router.delete("/{loan_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a pending loan request before finance review")
-def delete_loan(loan_id: int, request: Request, db: Session = Depends(get_db)):
-    client = None
-    try:
-        client = get_supabase_admin_client()
-    except Exception:
-        pass
-
-    existing_row = None
-    existing_status = None
-    if client:
-        try:
-            res = client.table("loan").select("*").eq("loan_id", loan_id).execute()
-            if res.data and len(res.data) > 0:
-                existing_row = res.data[0]
-                existing_status = existing_row.get("status")
-        except Exception:
-            pass
-
-    sql_loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
-    if not existing_status and sql_loan:
-        existing_status = sql_loan.status
-
-    if not existing_row and not sql_loan:
-        raise HTTPException(status_code=404, detail="Loan not found.")
-
-    status_norm = (existing_status or "").strip().lower()
-    if status_norm not in {"pending approval", "pending finance endorsement"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Loan is already {existing_status}. Once reviewed by finance, loans can no longer be deleted."
-        )
-
-    # Delete from Supabase
-    if client and existing_row:
-        try:
-            client.table("loan").delete().eq("loan_id", loan_id).execute()
-        except Exception as e:
-            print(f"Supabase delete loan error: {e}")
-
-    # Delete from SQLite mirror
-    if sql_loan:
-        db.delete(sql_loan)
-        db.commit()
-
-    system_cache.invalidate_tag("loans")
-    ws_manager.broadcast_sync({"type": "LOANS_UPDATED"})
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @router.post("/{loan_id}/endorse", response_model=LoanOut, summary="Finance endorses or rejects a pending loan request")
 def endorse_loan(
     loan_id: int,
     endorse_in: LoanEndorseRequest,
     request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    role = (current_user.get("role") or "").lower()
+    if not current_user.get("is_admin") and role not in ("finance", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Finance and Administrator accounts can endorse loans."
+        )
     client = None
     name_to_id = {}
     id_to_name = {}
@@ -991,8 +948,15 @@ def audit_review_loan(
     loan_id: int,
     review_in: LoanAuditReviewRequest,
     request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    role = (current_user.get("role") or "").lower()
+    if not current_user.get("is_admin") and role not in ("audit", "auditor", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Audit and Administrator accounts can review loans."
+        )
     client = None
     name_to_id = {}
     id_to_name = {}
@@ -1113,8 +1077,15 @@ def audit_review_loan(
 def approve_loan(
     loan_id: int,
     approval_in: Optional[LoanApproveRequest] = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    role = (current_user.get("role") or "").lower()
+    if not current_user.get("is_admin") and role not in ("finance", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Finance and Administrator accounts can approve loans."
+        )
     client = None
     name_to_id = {}
     id_to_name = {}
@@ -1321,7 +1292,13 @@ def get_loan_statement(loan_id: int, current_user: AuthenticatedUser = Depends(g
 
 
 @router.post("/{loan_id}/repayments", response_model=LoanRepaymentOut, status_code=status.HTTP_201_CREATED, summary="Record a loan repayment")
-def create_loan_repayment(loan_id: int, repayment_in: LoanRepaymentCreate, request: Request, db: Session = Depends(get_db)):
+def create_loan_repayment(
+    loan_id: int,
+    repayment_in: LoanRepaymentCreate,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")
