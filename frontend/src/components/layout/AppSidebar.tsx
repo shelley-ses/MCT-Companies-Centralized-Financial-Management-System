@@ -57,8 +57,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       ? 'Supervisor'
       : user?.role === 'Audit'
       ? 'Audit'
-      : user?.role === 'Company' || user?.role === 'Company Auditor'
-      ? 'Company'
       : 'Admin'
 
   // Dynamic role-based & company-specific sections: Main, Operations, Administration
@@ -251,30 +249,33 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             {mainItems.map(renderNavItem)}
           </div>
 
-          {/* Line separator */}
-          <div className="px-4 my-3">
-            <Separator className="bg-stroke/30" />
-          </div>
-
           {/* OPERATIONS Section Header */}
-          <div className="px-4 pb-2">
-            <div
-              className={cn(
-                'overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out',
-                isExpanded ? 'max-w-[160px] opacity-100' : 'max-w-0 opacity-0'
-              )}
-            >
-              <span className="text-[10px] font-bold tracking-wider text-muted-fg/80 uppercase">
-                OPERATIONS
-              </span>
-            </div>
-            {!isExpanded && <div className="w-8 h-px bg-stroke/30 mx-auto" />}
-          </div>
+          {operationsItems.length > 0 && (
+            <>
+              <div className="px-4 my-3">
+                <Separator className="bg-stroke/30" />
+              </div>
 
-          {/* Operations items */}
-          <div className="px-3 space-y-1">
-            {operationsItems.map(renderNavItem)}
-          </div>
+              <div className="px-4 pb-2">
+                <div
+                  className={cn(
+                    'overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out',
+                    isExpanded ? 'max-w-[160px] opacity-100' : 'max-w-0 opacity-0'
+                  )}
+                >
+                  <span className="text-[10px] font-bold tracking-wider text-muted-fg/80 uppercase">
+                    OPERATIONS
+                  </span>
+                </div>
+                {!isExpanded && <div className="w-8 h-px bg-stroke/30 mx-auto" />}
+              </div>
+
+              {/* Operations items */}
+              <div className="px-3 space-y-1">
+                {operationsItems.map(renderNavItem)}
+              </div>
+            </>
+          )}
 
           {/* ADMINISTRATION Section Header (Admin only) */}
           {adminItems && adminItems.length > 0 && (

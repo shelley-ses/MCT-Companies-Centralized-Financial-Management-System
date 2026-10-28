@@ -27,6 +27,7 @@ CANONICAL_COMPANY_MAP = {
     14: "FILCAP Prime Holdings Corp.",
 }
 
+from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access
 from app.core.cache import get_cached, set_cached
 
 def get_supabase_mappings(client):
@@ -59,27 +60,46 @@ def get_sales(
     category_id: Optional[int] = Query(None, description="Filter by Category ID"),
     start_date: Optional[date] = Query(None, description="Filter from date"),
     end_date: Optional[date] = Query(None, description="Filter to date"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    user_company_ids = current_user.get("company_ids") or []
+    if not is_admin and not user_company_ids and current_user.get("company_id"):
+        user_company_ids = [current_user["company_id"]]
+
     try:
         client = get_supabase_admin_client()
         company_map, cat_map = get_supabase_mappings(client)
 
         sb_query = client.table("sales").select("*")
 
-        # Company filter
+        # Company filter & access check
         resolved_company_id = company_id
-        if not resolved_company_id and company_name and company_name.lower() != "all companies":
+        if resolved_company_id:
+            check_company_access(current_user, resolved_company_id)
+            sb_query = sb_query.eq("company_id", resolved_company_id)
+        elif company_name and company_name.lower() != "all companies":
             target_norm = company_name.strip().lower()
             matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() == target_norm]
             if not matching_cids and target_norm in ("speedbox", "speedfire"):
                 matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() in ("speedbox", "speedfire")]
+            
+            if not is_admin:
+                matching_cids = [cid for cid in matching_cids if cid in user_company_ids]
+                if not matching_cids:
+                    return []
             if len(matching_cids) == 1:
                 sb_query = sb_query.eq("company_id", matching_cids[0])
             elif len(matching_cids) > 1:
                 sb_query = sb_query.in_("company_id", matching_cids)
-        elif resolved_company_id:
-            sb_query = sb_query.eq("company_id", resolved_company_id)
+        elif not is_admin:
+            if not user_company_ids:
+                return []
+            if len(user_company_ids) == 1:
+                sb_query = sb_query.eq("company_id", user_company_ids[0])
+            else:
+                sb_query = sb_query.in_("company_id", user_company_ids)
         if category_id:
             sb_query = sb_query.eq("category_id", category_id)
         if start_date:
@@ -151,7 +171,13 @@ def get_sales(
         ]
 
 @router.post("", response_model=SaleOut, status_code=status.HTTP_201_CREATED, summary="Record a new sale")
-def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get_db)):
+def create_sale(
+    sale_in: SaleCreate,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     if sale_in.amount < 1.00:
         raise HTTPException(status_code=400, detail="Amount must be at least 1.00 (cannot be 0 or less than 1).")
 
@@ -193,6 +219,8 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
                     target_company_id = ins_comp.data[0]["company_id"]
             else:
                 raise HTTPException(status_code=400, detail="Invalid company specified.")
+
+        check_company_access(current_user, target_company_id)
 
         # 2. Resolve Category in Supabase
         resolved_category_id = sale_in.category_id
@@ -289,7 +317,7 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
 
         log_transaction(
             db, AuditAction.SALE_CREATED,
-            user_id=None, company_id=target_company_id,
+            user_id=current_user.get("user_id"), company_id=target_company_id,
             ip_address=request.client.host if request.client else "unknown",
             record_id=sb_sales_id, record_type="sale",
             extra={"amount": float(sale_in.amount), "transaction_date": sale_in.transaction_date.isoformat()},
@@ -335,6 +363,8 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
             else:
                 raise HTTPException(status_code=400, detail="Invalid company specified.")
 
+        check_company_access(current_user, target_company.company_id)
+
         sale = Sale(
             company_id=target_company.company_id,
             category_id=sale_in.category_id,
@@ -375,10 +405,10 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
 
         log_transaction(
             db, AuditAction.SALE_CREATED,
-            user_id=None, company_id=target_company.company_id,
+            user_id=current_user.get("user_id"), company_id=target_company.company_id,
             ip_address=request.client.host if request.client else "unknown",
             record_id=sale.sales_id, record_type="sale",
-            extra={"amount": float(sale.amount), "transaction_date": sale.transaction_date.isoformat()},
+            extra={"amount": float(sale.amount), "transaction_date": sale_in.transaction_date.isoformat()},
         )
 
         return SaleOut(
@@ -394,207 +424,29 @@ def create_sale(sale_in: SaleCreate, request: Request, db: Session = Depends(get
             created_at=sale.created_at,
             updated_at=sale.updated_at
         )
-    if sale_in.amount < 1.00:
-        raise HTTPException(status_code=400, detail="Amount must be at least 1.00 (cannot be 0 or less than 1).")
 
-    if sale_in.transaction_date > date.today():
-        raise HTTPException(status_code=400, detail="Transaction date cannot be in the future (maximum date is today).")
-
-    parts = (sale_in.particulars or sale_in.description or "").strip()
-    if not parts:
-        raise HTTPException(status_code=400, detail="Particulars is required.")
-
-    cheque = (sale_in.cheque_no or sale_in.chequeNo or "").strip() or None
-
-    try:
-        client = get_supabase_admin_client()
-        company_map, cat_map = get_supabase_mappings(client)
-
-        # 1. Resolve Company in Supabase
-        target_company_id = sale_in.company_id
-        target_company_name = sale_in.company or ""
-
-        if target_company_id and target_company_id in company_map:
-            target_company_name = company_map[target_company_id]
-        elif target_company_name:
-            for cid, cname in company_map.items():
-                if cname.strip().lower() == target_company_name.strip().lower():
-                    target_company_id = cid
-                    target_company_name = cname
-                    break
-
-        if not target_company_id:
-            # Create company in Supabase
-            if target_company_name:
-                ins_comp = client.table("company").insert({
-                    "company_name": target_company_name.strip(),
-                    "starting_balance": 0.00,
-                    "current_balance": 0.00
-                }).execute()
-                if ins_comp.data:
-                    target_company_id = ins_comp.data[0]["company_id"]
-            else:
-                raise HTTPException(status_code=400, detail="Invalid company specified.")
-
-        # 2. Resolve Category in Supabase
-        resolved_category_id = sale_in.category_id
-        category_name = "None"
-        category_str = (sale_in.category or "").strip()
-
-        if category_str and category_str.lower() != "none":
-            for cid, cname in cat_map.items():
-                if cname.strip().lower() == category_str.lower():
-                    resolved_category_id = cid
-                    category_name = cname
-                    break
-            if not resolved_category_id:
-                ins_cat = client.table("category").insert({"name": category_str}).execute()
-                if ins_cat.data:
-                    resolved_category_id = ins_cat.data[0]["category_id"]
-                    category_name = category_str
-        elif resolved_category_id and resolved_category_id in cat_map:
-            category_name = cat_map[resolved_category_id]
-        else:
-            resolved_category_id = None
-            category_name = "None"
-
-        # 3. Insert into Supabase
-        sb_insert = client.table("sales").insert({
-            "company_id": target_company_id,
-            "category_id": resolved_category_id,
-            "transaction_date": sale_in.transaction_date.isoformat(),
-            "cheque_number": cheque,
-            "amount": float(sale_in.amount),
-            "particulars": parts,
-        }).execute()
-
-        if not sb_insert.data:
-            raise HTTPException(status_code=500, detail="Failed to insert sale into Supabase.")
-
-        created_row = sb_insert.data[0]
-        sb_sales_id = created_row["sales_id"]
-
-        # Also backup to local SQLite
-        try:
-            local_comp = db.query(Company).filter(Company.company_id == target_company_id).first()
-            if not local_comp:
-                local_comp = Company(
-                    company_id=target_company_id,
-                    company_name=target_company_name,
-                    starting_balance=0.00,
-                    current_balance=0.00
-                )
-                db.add(local_comp)
-                db.commit()
-
-            local_sale = Sale(
-                sales_id=sb_sales_id,
-                company_id=target_company_id,
-                category_id=resolved_category_id,
-                transaction_date=sale_in.transaction_date,
-                cheque_no=cheque,
-                amount=sale_in.amount,
-                particulars=parts
-            )
-            db.merge(local_sale)
-            db.commit()
-        except Exception:
-            db.rollback()
-
-        # Auto-credit to company bank account for settled sales
-        try:
-            from app.services.bank_service import BankService
-            BankService(db).record_sale_cash_deposit(
-                company_name=target_company_name,
-                amount=sale_in.amount,
-                particulars=f"Sales Collection: {parts}",
-                reference_no=cheque,
-                tx_date=sale_in.transaction_date.strftime("%m/%d/%y") if hasattr(sale_in.transaction_date, "strftime") else str(sale_in.transaction_date),
-            )
-            from app.core.websocket import ws_manager
-            ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company_name}})
-        except Exception:
-            pass
-
-        return SaleOut(
-            sales_id=created_row["sales_id"],
-            company_id=created_row.get("company_id"),
-            company_name=target_company_name,
-            category_id=created_row.get("category_id"),
-            category_name=category_name,
-            transaction_date=created_row.get("transaction_date"),
-            cheque_no=created_row.get("cheque_number"),
-            amount=created_row.get("amount"),
-            particulars=created_row.get("particulars"),
-            created_at=created_row.get("created_at"),
-            updated_at=created_row.get("updated_at")
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Fallback to local SQLite only if Supabase error occurs
-        target_company = None
-        if sale_in.company_id:
-            target_company = db.query(Company).filter(Company.company_id == sale_in.company_id).first()
-        elif sale_in.company:
-            target_company = db.query(Company).filter(
-                func.lower(Company.company_name) == func.lower(sale_in.company.strip())
-            ).first()
-
-        if not target_company:
-            if sale_in.company and sale_in.company.strip():
-                target_company = Company(
-                    company_name=sale_in.company.strip(),
-                    starting_balance=0.00,
-                    current_balance=0.00
-                )
-                db.add(target_company)
-                db.commit()
-                db.refresh(target_company)
-            else:
-                raise HTTPException(status_code=400, detail="Invalid company specified.")
-
-        sale = Sale(
-            company_id=target_company.company_id,
-            category_id=sale_in.category_id,
-            transaction_date=sale_in.transaction_date,
-            cheque_no=cheque,
-            amount=sale_in.amount,
-            particulars=parts,
-        )
-        db.add(sale)
-        db.commit()
-        db.refresh(sale)
-
-        return SaleOut(
-            sales_id=sale.sales_id,
-            company_id=sale.company_id,
-            company_name=target_company.company_name,
-            category_id=sale.category_id,
-            category_name="None",
-            transaction_date=sale.transaction_date,
-            cheque_no=sale.cheque_no,
-            amount=sale.amount,
-            particulars=sale.particulars,
-            created_at=sale.created_at,
-            updated_at=sale.updated_at
-        )
 
 @router.get("/{sales_id}", response_model=SaleOut, summary="Get sale details")
-def get_sale(sales_id: int, db: Session = Depends(get_db)):
+def get_sale(
+    sales_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     try:
         client = get_supabase_admin_client()
         company_map, cat_map = get_supabase_mappings(client)
         res = client.table("sales").select("*").eq("sales_id", sales_id).execute()
         if res.data:
             row = res.data[0]
+            check_company_access(current_user, row.get("company_id"))
             return SaleOut(
                 sales_id=row["sales_id"],
                 company_id=row.get("company_id"),
                 company_name=company_map.get(row.get("company_id")) or "Unknown",
                 category_id=row.get("category_id"),
                 category_name=cat_map.get(row.get("category_id")) or "None",
+                payment_method=row.get("payment_method"),
                 transaction_date=row.get("transaction_date"),
                 cheque_no=row.get("cheque_number") or row.get("cheque_no"),
                 amount=row.get("amount") or 0.0,
@@ -602,6 +454,8 @@ def get_sale(sales_id: int, db: Session = Depends(get_db)):
                 created_at=row.get("created_at"),
                 updated_at=row.get("updated_at")
             )
+    except HTTPException:
+        raise
     except Exception:
         pass
 
@@ -619,6 +473,7 @@ def get_sale(sales_id: int, db: Session = Depends(get_db)):
     if not result:
         raise HTTPException(status_code=404, detail="Sale not found")
     sale, c_name, cat_name = result
+    check_company_access(current_user, sale.company_id)
     return SaleOut(
         sales_id=sale.sales_id,
         company_id=sale.company_id,
@@ -636,12 +491,36 @@ def get_sale(sales_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{sales_id}", response_model=SaleOut, summary="Update an existing sale")
 @router.patch("/{sales_id}", response_model=SaleOut, summary="Update an existing sale")
-def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Session = Depends(get_db)):
+def update_sale(
+    sales_id: int,
+    sale_in: SaleUpdate,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     if sale_in.amount is not None and sale_in.amount < 1.00:
         raise HTTPException(status_code=400, detail="Amount must be at least 1.00 (cannot be 0 or less than 1).")
 
     if sale_in.transaction_date is not None and sale_in.transaction_date > date.today():
         raise HTTPException(status_code=400, detail="Transaction date cannot be in the future (maximum date is today).")
+
+    # Fetch existing sale to verify company access
+    existing_company_id = None
+    try:
+        client = get_supabase_admin_client()
+        res = client.table("sales").select("company_id").eq("sales_id", sales_id).limit(1).execute()
+        if res.data:
+            existing_company_id = res.data[0].get("company_id")
+    except Exception:
+        pass
+    if not existing_company_id:
+        existing_local = db.query(Sale).filter(Sale.sales_id == sales_id).first()
+        if existing_local:
+            existing_company_id = existing_local.company_id
+
+    if existing_company_id:
+        check_company_access(current_user, existing_company_id)
 
     update_payload = {}
     if sale_in.transaction_date:
@@ -712,7 +591,7 @@ def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Sessio
         company_map, cat_map = get_supabase_mappings(client)
         log_transaction(
             db, AuditAction.SALE_UPDATED,
-            user_id=None, company_id=updated_row.get("company_id"),
+            user_id=current_user.get("user_id"), company_id=updated_row.get("company_id"),
             ip_address=request.client.host if request.client else "unknown",
             record_id=sales_id, record_type="sale",
         )
@@ -739,7 +618,7 @@ def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Sessio
 
     log_transaction(
         db, AuditAction.SALE_UPDATED,
-        user_id=None, company_id=sale.company_id,
+        user_id=current_user.get("user_id"), company_id=sale.company_id,
         ip_address=request.client.host if request.client else "unknown",
         record_id=sales_id, record_type="sale",
     )
@@ -749,6 +628,7 @@ def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Sessio
         company_name=company.company_name if company else None,
         category_id=sale.category_id,
         category_name=category.name if category else "None",
+        payment_method=sale.payment_method,
         transaction_date=sale.transaction_date,
         cheque_no=sale.cheque_no,
         amount=sale.amount,
@@ -758,31 +638,49 @@ def update_sale(sales_id: int, sale_in: SaleUpdate, request: Request, db: Sessio
     )
 
 @router.delete("/{sales_id}", status_code=status.HTTP_200_OK, summary="Delete a sale")
-def delete_sale(sales_id: int, request: Request, db: Session = Depends(get_db)):
+def delete_sale(
+    sales_id: int,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
     deleted_from_supabase = False
     deleted_company_id = None
     try:
         client = get_supabase_admin_client()
-        # Fetch company_id before deleting for the audit log
+        # Fetch company_id before deleting for access check & audit log
         existing = client.table("sales").select("company_id").eq("sales_id", sales_id).limit(1).execute()
         if existing.data:
             deleted_company_id = existing.data[0].get("company_id")
-        sb_res = client.table("sales").delete().eq("sales_id", sales_id).execute()
-        if sb_res.data and len(sb_res.data) > 0:
-            deleted_from_supabase = True
     except Exception as e:
-        print(f"Supabase delete error: {e}")
+        print(f"Supabase fetch before delete error: {e}")
 
     sale = db.query(Sale).filter(Sale.sales_id == sales_id).first()
     if sale:
         deleted_company_id = deleted_company_id or sale.company_id
+
+    if not deleted_company_id and not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+
+    check_company_access(current_user, deleted_company_id)
+
+    if client:
+        try:
+            sb_res = client.table("sales").delete().eq("sales_id", sales_id).execute()
+            if sb_res.data and len(sb_res.data) > 0:
+                deleted_from_supabase = True
+        except Exception as e:
+            print(f"Supabase delete error: {e}")
+
+    if sale:
         db.delete(sale)
         db.commit()
 
     try:
         log_transaction(
             db, AuditAction.SALE_DELETED,
-            user_id=None, company_id=deleted_company_id,
+            user_id=current_user.get("user_id"), company_id=deleted_company_id,
             ip_address=request.client.host if request.client else "unknown",
             record_id=sales_id, record_type="sale",
         )

@@ -19,6 +19,7 @@ import {
   History,
   Landmark,
   Loader2,
+  Plus,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -209,9 +210,11 @@ export const BankManagementPage: React.FC = () => {
   const [isSubmittingEdit, setIsSubmittingEdit] = React.useState(false)
 
   // Modal form states
+  const [addBankSuccessMessage, setAddBankSuccessMessage] = React.useState<string | null>(null)
   const [addBankForm, setAddBankForm] = React.useState({
     bankName: 'CHINABANK',
     accountName: '',
+    accountNumber: '',
     cardLabel: '',
     companyName: isCompanyScoped ? assignedCompany : '',
     accountType: 'Checking' as BankAccount['accountType'],
@@ -346,6 +349,13 @@ export const BankManagementPage: React.FC = () => {
   // Single-account mode: only when exactly 1 account exists for the current scope
   const isSingleAccount = roleScopedAccounts.length === 1
 
+  // Accounts belonging to the active company (supports multi-bank up to 3 banks per company)
+  const activeCompanyAccounts = React.useMemo(() => {
+    if (!activeAccount) return []
+    const targetComp = activeAccount.companyName.toLowerCase().trim()
+    return accounts.filter((a) => a.companyName.toLowerCase().trim() === targetComp)
+  }, [accounts, activeAccount])
+
   // Double-click and tap listeners for ATM Card
   const clickCountRef = React.useRef(0)
   const clickTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -460,7 +470,7 @@ export const BankManagementPage: React.FC = () => {
     setIsAddBankModalOpen(true)
   }, [isCompanyScoped, assignedCompany, selectedCompany])
 
-  const handleCreateBank = async (e: React.FormEvent) => {
+  const handleCreateBank = async (e: React.FormEvent, keepOpen: boolean = false) => {
     e.preventDefault()
     if (!canManageBank || isSubmittingBank) return
 
@@ -483,6 +493,7 @@ export const BankManagementPage: React.FC = () => {
       const newAccount = await bankService.createAccount({
         bankName: chosenBankName.toUpperCase(),
         accountName: addBankForm.accountName.trim(),
+        accountNumber: addBankForm.accountNumber.trim() || undefined,
         companyName: companyAssigned,
         cardLabel: computedCardLabel,
         accountType: addBankForm.accountType,
@@ -496,7 +507,6 @@ export const BankManagementPage: React.FC = () => {
       saveAccounts(updated)
       setSelectedAccountId(newAccount.id)
 
-      // Ensure the newly created bank is not hidden by an active company filter
       if (
         selectedCompany !== 'All Companies' &&
         !isCompanyMatch(newAccount.companyName, selectedCompany)
@@ -504,24 +514,52 @@ export const BankManagementPage: React.FC = () => {
         setSelectedCompany(newAccount.companyName)
       }
 
-      setIsAddBankModalOpen(false)
-      setCustomBankName('')
-      setAddBankForm({
-        bankName: 'CHINABANK',
-        accountName: '',
-        cardLabel: '',
-        companyName: isCompanyScoped ? assignedCompany : (selectedCompany !== 'All Companies' ? selectedCompany : ''),
-        accountType: 'Checking',
-        branch: '',
-        startingBalance: '',
-        colorTheme: 'red',
-        notes: '',
-      })
+      if (keepOpen) {
+        setAddBankSuccessMessage(
+          `✓ ${newAccount.bankName} (${newAccount.accountType}) created for ${companyAssigned}! You can now register another bank facility.`
+        )
+        setAddBankForm((prev) => ({
+          ...prev,
+          bankName:
+            prev.bankName === 'CHINABANK'
+              ? 'BDO UNIBANK'
+              : prev.bankName === 'BDO UNIBANK'
+              ? 'BPI'
+              : 'METROBANK',
+          accountName: '',
+          accountNumber: '',
+          cardLabel: '',
+          startingBalance: '',
+          branch: prev.branch,
+          notes: '',
+        }))
+      } else {
+        setIsAddBankModalOpen(false)
+        setAddBankSuccessMessage(null)
+        setCustomBankName('')
+        setAddBankForm({
+          bankName: 'CHINABANK',
+          accountName: '',
+          accountNumber: '',
+          cardLabel: '',
+          companyName: isCompanyScoped ? assignedCompany : (selectedCompany !== 'All Companies' ? selectedCompany : ''),
+          accountType: 'Checking',
+          branch: '',
+          startingBalance: '',
+          colorTheme: 'red',
+          notes: '',
+        })
+      }
     } catch (err: any) {
       alert(err.message || 'Failed to create bank account.')
     } finally {
       setIsSubmittingBank(false)
     }
+  }
+
+  const handleCreateBankAndAddAnother = (e: React.MouseEvent) => {
+    e.preventDefault()
+    handleCreateBank(e, true)
   }
 
   const handleDeposit = async (e: React.FormEvent) => {
@@ -781,7 +819,7 @@ export const BankManagementPage: React.FC = () => {
                   onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
                   className={cn(
                     'inline-flex items-center gap-2 h-9 sm:h-9.5 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                    isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                    isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                 >
                   <span className="font-semibold text-focus/90 truncate max-w-[140px]">
@@ -831,7 +869,7 @@ export const BankManagementPage: React.FC = () => {
                 }}
                 className={cn(
                   'inline-flex items-center gap-2 h-9 sm:h-9.5 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isTxTypeDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isTxTypeDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-semibold text-focus/90 truncate max-w-[150px]">
@@ -902,7 +940,62 @@ export const BankManagementPage: React.FC = () => {
         </Card>
       ) : isSingleAccount ? (
         /* SINGLE ACCOUNT FULL-WIDTH HERO CARD (Matching User's Reference Screenshot) */
-        <div className="w-full">
+        <div className="w-full space-y-3">
+          {/* Multi-Bank Switcher Pill Bar (When company has 1, 2, or 3 banks) */}
+          {activeCompanyAccounts.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2.5 px-1 py-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-muted-fg uppercase tracking-wider mr-1">
+                  Banks ({activeCompanyAccounts.length}/3):
+                </span>
+                {activeCompanyAccounts.map((acc) => {
+                  const isActive = acc.id === activeAccount?.id
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => setSelectedAccountId(acc.id)}
+                      className={cn(
+                        'px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs',
+                        isActive
+                          ? 'bg-[#960C01] text-white ring-2 ring-[#960C01]/30 shadow-sm'
+                          : 'bg-white hover:bg-slate-50 text-focus/80 border border-stroke/50'
+                      )}
+                    >
+                      <CreditCard className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                      <span>
+                        {acc.bankName}
+                        <span className="ml-1 text-[11px] font-normal opacity-80">
+                          ({acc.accountType})
+                        </span>
+                      </span>
+                      {isActive && <Check className="h-3 w-3 text-white ml-0.5" />}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Finance option to add another bank for this company */}
+              {!isAudit && !isCompanyScoped && activeCompanyAccounts.length < 3 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setAddBankForm((prev) => ({
+                      ...prev,
+                      companyName: activeAccount?.companyName || '',
+                    }))
+                    setIsAddBankModalOpen(true)
+                  }}
+                  className="h-8 px-3 rounded-full border border-dashed border-[#960C01]/50 text-[#960C01] hover:bg-red-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Another Bank for this Company</span>
+                </Button>
+              )}
+            </div>
+          )}
           <div
             onClick={handleCardClick}
             onDoubleClick={() => setIsCardDetailsModalOpen(true)}
@@ -1447,6 +1540,13 @@ export const BankManagementPage: React.FC = () => {
             </div>
           </DialogHeader>
 
+          {addBankSuccessMessage && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center gap-2 animate-in fade-in">
+              <Check className="h-4 w-4 text-emerald-600 shrink-0" />
+              <span>{addBankSuccessMessage}</span>
+            </div>
+          )}
+
           <form onSubmit={handleCreateBank} className="space-y-3.5 mt-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1508,17 +1608,31 @@ export const BankManagementPage: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-focus block mb-1">
-                Account Name <span className="text-red-500">*</span>
-              </label>
-              <Input
-                required
-                value={addBankForm.accountName}
-                onChange={(e) => setAddBankForm({ ...addBankForm, accountName: e.target.value })}
-                placeholder="e.g. Bagong Bansa May Pagasa Movement"
-                className="h-10 text-xs sm:text-sm rounded-xl"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-focus block mb-1">
+                  Account Name <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  required
+                  value={addBankForm.accountName}
+                  onChange={(e) => setAddBankForm({ ...addBankForm, accountName: e.target.value })}
+                  placeholder="e.g. Bagong Bansa May Pagasa Movement"
+                  className="h-10 text-xs sm:text-sm rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-focus block mb-1">
+                  Account Number <span className="text-xs text-muted-fg font-normal">(Optional)</span>
+                </label>
+                <Input
+                  value={addBankForm.accountNumber}
+                  onChange={(e) => setAddBankForm({ ...addBankForm, accountNumber: e.target.value })}
+                  placeholder="e.g. 0042-8819-2041"
+                  className="h-10 text-xs sm:text-sm rounded-xl font-mono"
+                />
+              </div>
             </div>
 
             <div>
@@ -1598,15 +1712,27 @@ export const BankManagementPage: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
               <Button
                 type="button"
                 variant="outline"
                 disabled={isSubmittingBank}
-                onClick={() => setIsAddBankModalOpen(false)}
+                onClick={() => {
+                  setIsAddBankModalOpen(false)
+                  setAddBankSuccessMessage(null)
+                }}
                 className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
               >
                 Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSubmittingBank}
+                onClick={handleCreateBankAndAddAnother}
+                className="h-10 px-4 rounded-xl text-xs font-semibold border-primary/60 text-primary hover:bg-primary/10 disabled:opacity-60 cursor-pointer"
+              >
+                + Save & Add Another Bank
               </Button>
               <Button
                 type="submit"
@@ -1614,7 +1740,7 @@ export const BankManagementPage: React.FC = () => {
                 className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] disabled:opacity-60 text-white cursor-pointer flex items-center gap-2"
               >
                 {isSubmittingBank && <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />}
-                <span>{isSubmittingBank ? 'Saving...' : 'Add Bank Account'}</span>
+                <span>{isSubmittingBank ? 'Saving...' : 'Save Bank Account'}</span>
               </Button>
             </div>
           </form>
@@ -2046,7 +2172,7 @@ export const BankManagementPage: React.FC = () => {
 
       {/* Modal F: Full Pop-up ATM Card Details (Triggered on Double Click / Double Tap) */}
       <Dialog open={isCardDetailsModalOpen} onOpenChange={setIsCardDetailsModalOpen}>
-        <DialogContent className="sm:max-w-xl bg-white rounded-[28px] p-6 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl bg-white rounded-[28px] p-6 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto [&>button.absolute]:hidden [&>button:has(svg.lucide-x)]:hidden [&>button[aria-label=Close]]:hidden">
           <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-[#0B0F2B] text-white flex items-center justify-center">

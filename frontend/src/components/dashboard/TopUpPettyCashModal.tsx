@@ -64,7 +64,7 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
   const { user } = useSession()
   const userRole = (user?.role || '').toLowerCase()
   const isSupervisor = userRole === 'supervisor'
-  const isCompanyScoped = isSupervisor || userRole === 'company' || userRole === 'company auditor'
+  const isCompanyScoped = isSupervisor
 
   const [requestingCompany, setRequestingCompany] = React.useState(company)
   const [amountInput, setAmountInput] = React.useState('')

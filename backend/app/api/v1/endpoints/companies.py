@@ -67,12 +67,9 @@ async def create_company_with_picture(
     request: Request,
     name: str = Form(...),
     location: str = Form(...),
-    contact_person: str = Form(...),
     contact_number: str | None = Form(None),
     phone: str | None = Form(None),
-    email: str = Form(""),
     starting_balance: Decimal = Form(...),
-    current_balance: Decimal = Form(...),
     petty_cash: Decimal = Form(Decimal("0.00")),
     picture: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -93,12 +90,9 @@ async def create_company_with_picture(
     company = CompanyCreate(
         name=name,
         location=location,
-        contact_person=contact_person,
         contact_number=contact_number,
         phone=phone,
-        email=email,
         starting_balance=starting_balance,
-        current_balance=current_balance,
         petty_cash=petty_cash,
     )
     try:
@@ -157,6 +151,56 @@ def update_company(
     )
     return result
 
+@router.post(
+    "/{company_id}/picture",
+    response_model=CompanyOut,
+    summary="Upload or update profile picture for an existing company",
+)
+async def upload_company_picture(
+    company_id: int,
+    request: Request,
+    picture: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    if not picture.content_type or not picture.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Company picture must be an image.",
+        )
+
+    picture_data = await picture.read()
+    if len(picture_data) > MAX_COMPANY_PICTURE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Company picture must be 5 MB or smaller.",
+        )
+
+    try:
+        result = CompanyService(db).upload_company_picture(
+            company_id,
+            picture_data,
+            picture.content_type,
+            picture.filename or "company-picture",
+        )
+    except CompanyServiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+
+    log_company_management(
+        db,
+        AuditAction.COMPANY_UPDATED,
+        user_id=None,
+        company_id=result.id,
+        ip_address=request.client.host if request.client else "unknown",
+        extra={"company_name": result.name, "action": "update_picture"},
+    )
+    return result
+
 # delete a company
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a company")
 def delete_company(company_id: int, request: Request, db: Session = Depends(get_db)):
@@ -173,6 +217,7 @@ def delete_company(company_id: int, request: Request, db: Session = Depends(get_
     log_company_management(
         db, AuditAction.COMPANY_DELETED,
         user_id=None,
-        company_id=company_id,
+        company_id=None,
         ip_address=request.client.host if request.client else "unknown",
+        extra={"deleted_company_id": company_id},
     )

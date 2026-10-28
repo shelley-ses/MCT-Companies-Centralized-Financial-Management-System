@@ -39,8 +39,7 @@ interface NotificationSettings {
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
-  const isAuditor = isCompanyUser
+  const isAuditor = user?.role === 'Supervisor'
   const isRestrictedRole = user?.role === 'Admin' || user?.role === 'Finance' || user?.role === 'Audit'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
@@ -71,6 +70,7 @@ export const SettingsPage: React.FC = () => {
   const [startingBalance, setStartingBalance] = React.useState<number>(0)
   const [currentBalance, setCurrentBalance] = React.useState<number>(0)
   const [logoUrl, setLogoUrl] = React.useState<string>(logo2Url)
+  const [logoFile, setLogoFile] = React.useState<File | null>(null)
 
   // Toggle Switches: Notifications
   const [notificationSettings, setNotificationSettings] =
@@ -115,12 +115,12 @@ export const SettingsPage: React.FC = () => {
   const populateCompanyData = (target: Company) => {
     setSelectedCompanyId(target.id)
     setCompanyName(target.name)
-    setContactPerson(target.contactPerson)
-    setTelephoneNumber(target.telephoneNumber || target.contactNumber)
-    setEmail(target.email)
+    setContactPerson(target.contactPerson || '')
+    setTelephoneNumber(target.telephoneNumber || target.contactNumber || '')
+    setEmail(target.email || '')
     setAddress(target.address)
     setStartingBalance(target.startingBalance)
-    setCurrentBalance(target.currentBalance)
+    setCurrentBalance(target.currentBalance || 0)
     setLogoUrl(target.logoUrl || logo2Url)
   }
 
@@ -163,6 +163,7 @@ export const SettingsPage: React.FC = () => {
       return
     }
 
+    setLogoFile(file)
     const reader = new FileReader()
     reader.onload = (e) => {
       if (e.target?.result) {
@@ -175,6 +176,7 @@ export const SettingsPage: React.FC = () => {
   // Reset image to default
   const handleRemoveImage = () => {
     setLogoUrl(logo2Url)
+    setLogoFile(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -187,15 +189,21 @@ export const SettingsPage: React.FC = () => {
 
     try {
       setSaving(true)
-      await employeeService.updateCompany(selectedCompanyId, {
+      const updated = await employeeService.updateCompany(selectedCompanyId, {
         name: companyName,
         contactPerson,
         telephoneNumber,
         contactNumber: telephoneNumber,
         email,
         address,
-        logoUrl,
+        logoUrl: logoFile ? undefined : logoUrl,
+        logoFile: logoFile || undefined,
       })
+
+      setLogoFile(null)
+      if (updated.logoUrl) {
+        setLogoUrl(updated.logoUrl)
+      }
 
       // Update local company list copy
       setCompanies((prev) =>
@@ -203,12 +211,12 @@ export const SettingsPage: React.FC = () => {
           c.id === selectedCompanyId
             ? {
                 ...c,
-                name: companyName,
+                name: updated.name || companyName,
                 contactPerson,
                 telephoneNumber,
                 email,
                 address,
-                logoUrl,
+                logoUrl: updated.logoUrl || logoUrl,
               }
             : c
         )
@@ -265,7 +273,7 @@ export const SettingsPage: React.FC = () => {
                 onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-10 sm:h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
                 aria-label="Select company to configure"
               >

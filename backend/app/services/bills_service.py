@@ -2,7 +2,9 @@ from calendar import monthrange
 from datetime import date
 from typing import Optional
 
+from decimal import Decimal
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.bills import Bill, BillPayment
@@ -132,19 +134,30 @@ class BillsService:
     def _periods(self, bill: Bill, as_of: date = date.today(), include_future: int = 12):
         recurring = _normalize_recurring(bill.recurring)
         period_date = bill.due_date
+        # Clamp start year to 2025 onwards
+        if period_date.year < 2025:
+            period_date = date(2025, 1, min(period_date.day, monthrange(2025, 1)[1]))
         periods = []
         max_periods = 366 if recurring == "daily" else (15 if recurring == "yearly" else 60)
 
         for _ in range(max_periods):
             key = _period_key(period_date, recurring)
-            payment = next((item for item in bill.payments if item.period_key == key), None)
+            period_payments = [item for item in bill.payments if item.period_key == key]
+            paid_amount = sum((item.amount for item in period_payments), Decimal(0))
+            is_paid = paid_amount >= bill.amount
+            is_partially_paid = not is_paid and paid_amount > 0
+            remaining_amount = Decimal(0) if is_paid else max(Decimal(0), bill.amount - paid_amount)
+            latest_payment = max(period_payments, key=lambda p: p.payment_date, default=None)
             is_future = period_date > as_of
             periods.append({
                 "period_key": key,
                 "period_label": _period_label(period_date, recurring),
                 "period_date": period_date,
-                "paid": payment is not None,
-                "payment_date": payment.payment_date if payment else None,
+                "paid": is_paid,
+                "partially_paid": is_partially_paid,
+                "paid_amount": paid_amount,
+                "remaining_amount": remaining_amount,
+                "payment_date": latest_payment.payment_date if latest_payment else None,
                 "is_future": is_future,
             })
             if period_date >= as_of and sum(1 for item in periods if item["is_future"]) >= include_future:
@@ -168,6 +181,8 @@ class BillsService:
         )
         if not unpaid_past_or_current:
             return "paid"
+        if unpaid_past_or_current.get("partially_paid"):
+            return "partially paid"
         if unpaid_past_or_current["period_date"] < as_of:
             return "overdue"
         if (unpaid_past_or_current["period_date"] - as_of).days <= bill.due_date_reminder:
@@ -181,8 +196,6 @@ class BillsService:
             company_id=bill.company_id,
             company=bill.company.company_name if bill.company else None,
             bill_name=bill.bill_name,
-            category=bill.category,
-            account_no=bill.account_no,
             amount=bill.amount,
             recurring=_normalize_recurring(bill.recurring),
             due_date=bill.due_date,
@@ -218,6 +231,20 @@ class BillsService:
 
     def create_bill(self, data: BillCreate) -> BillOut:
         company = _resolve_company(self.db, data.company_id, data.company)
+        clean_name = data.bill_name.strip()
+        existing = (
+            self.db.query(Bill)
+            .filter(
+                Bill.company_id == company.company_id,
+                func.lower(Bill.bill_name) == clean_name.lower(),
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A bill with provider name '{clean_name}' already exists for {company.company_name}."
+            )
         values = data.model_dump(exclude={"company", "company_id", "status"})
         values.update(company_id=company.company_id, recurring=_normalize_recurring(data.recurring), status="unpaid")
         bill = Bill(**values)
@@ -228,6 +255,26 @@ class BillsService:
     def update_bill(self, bill_id: int, data: BillUpdate) -> BillOut:
         bill = self.get_bill(bill_id)
         values = data.model_dump(exclude_unset=True, exclude_none=True)
+        if "bill_name" in values and values["bill_name"].strip():
+            clean_name = values["bill_name"].strip()
+            target_company_id = bill.company_id
+            if "company_id" in values or "company" in values:
+                comp = _resolve_company(self.db, values.get("company_id"), values.get("company"))
+                target_company_id = comp.company_id
+            existing = (
+                self.db.query(Bill)
+                .filter(
+                    Bill.bill_id != bill_id,
+                    Bill.company_id == target_company_id,
+                    func.lower(Bill.bill_name) == clean_name.lower(),
+                )
+                .first()
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"A bill with provider name '{clean_name}' already exists."
+                )
         if "company_id" in values or "company" in values:
             company = _resolve_company(self.db, values.pop("company_id", None), values.pop("company", None))
             bill.company_id = company.company_id
@@ -268,21 +315,57 @@ class BillsService:
         period_key = data.period_key or next_period["period_key"]
         if period_key != next_period["period_key"]:
             raise HTTPException(status_code=409, detail=f"Settle {next_period['period_label']} before paying another period.")
-        payment = BillPayment(
-            bill_id=bill_id,
-            period_key=period_key,
-            payment_date=data.payment_date,
-            amount=data.amount,
-            payment_method=data.payment_method.strip(),
-            reference_no=data.reference_no,
-            notes=data.notes,
+
+        existing_payment = (
+            self.db.query(BillPayment)
+            .filter(
+                BillPayment.bill_id == bill_id,
+                BillPayment.period_key == period_key,
+            )
+            .first()
         )
-        self.db.add(payment)
+
+        current_paid = existing_payment.amount if existing_payment else 0.0
+        remaining = max(0.0, bill.amount - current_paid)
+        if data.amount > (remaining + 0.01):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Amount paid cannot be greater than the Monthly Bill Amount or remaining balance (₱{remaining:,.2f})."
+            )
+
+        if existing_payment:
+            existing_payment.amount += data.amount
+            existing_payment.payment_date = data.payment_date
+            existing_payment.payment_method = data.payment_method.strip()
+            if data.reference_no:
+                existing_payment.reference_no = (
+                    f"{existing_payment.reference_no}, {data.reference_no}"
+                    if existing_payment.reference_no
+                    else data.reference_no
+                )
+            if data.notes:
+                existing_payment.notes = (
+                    f"{existing_payment.notes}; {data.notes}"
+                    if existing_payment.notes
+                    else data.notes
+                )
+        else:
+            payment = BillPayment(
+                bill_id=bill_id,
+                period_key=period_key,
+                payment_date=data.payment_date,
+                amount=data.amount,
+                payment_method=data.payment_method.strip(),
+                reference_no=data.reference_no,
+                notes=data.notes,
+            )
+            self.db.add(payment)
+
         try:
             self.db.commit()
         except Exception:
             self.db.rollback()
-            raise HTTPException(status_code=409, detail="That billing period has already been paid.")
+            raise HTTPException(status_code=409, detail="Failed to record bill payment.")
         return self._to_output(self.get_bill(bill_id))
 
     def delete_payment(self, bill_id: int, payment_id: int) -> BillOut:

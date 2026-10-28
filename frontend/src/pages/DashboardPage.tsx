@@ -34,10 +34,7 @@ import { useCompany } from '@/context/CompanyContext'
 export const DashboardPage: React.FC = () => {
   const { user } = useSession()
   const { activeCompany, setActiveCompany } = useCompany()
-  const isCompanyScoped =
-    user?.role === 'Company' ||
-    user?.role === 'Company Auditor' ||
-    user?.role === 'Supervisor'
+  const isCompanyScoped = user?.role === 'Supervisor'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   const [filters, setFilters] = React.useState<DashboardFilterState>(() => ({

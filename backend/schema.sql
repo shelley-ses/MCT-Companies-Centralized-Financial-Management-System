@@ -6,12 +6,9 @@ CREATE TABLE IF NOT EXISTS company (
     company_id BIGSERIAL PRIMARY KEY,
     company_name VARCHAR(100) NOT NULL,
     location VARCHAR(100) NOT NULL,
-    contact_person VARCHAR(100) NOT NULL,
     contact_number VARCHAR(11),
     phone VARCHAR(8),
-    email VARCHAR(100) NOT NULL,
     starting_balance NUMERIC(15, 2) NOT NULL,
-    current_balance NUMERIC(15, 2) NOT NULL,
     petty_cash NUMERIC(15, 2) DEFAULT 0.00,
     logo_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -24,19 +21,23 @@ CREATE TABLE IF NOT EXISTS users (
     company_id BIGINT REFERENCES company(company_id) ON DELETE SET NULL,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'company',
+    photo_url TEXT,
     last_login_at TIMESTAMPTZ,
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. Permissions Table
-CREATE TABLE IF NOT EXISTS permissions (
-    permission_id BIGSERIAL PRIMARY KEY,
-    permission_name VARCHAR(100) UNIQUE NOT NULL,
+-- 2.1 User Companies (Many-to-Many Assignment)
+CREATE TABLE IF NOT EXISTS user_companies (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    company_id BIGINT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    CONSTRAINT uq_user_company UNIQUE (user_id, company_id)
 );
+
 
 -- 4. Audit Logs Table
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -181,8 +182,6 @@ CREATE TABLE IF NOT EXISTS bills (
     bill_id BIGSERIAL PRIMARY KEY,
     company_id BIGINT NOT NULL REFERENCES company(company_id) ON DELETE CASCADE,
     bill_name VARCHAR(255) NOT NULL,
-    category VARCHAR(100) NOT NULL,
-    account_no VARCHAR(100),
     amount NUMERIC(15, 2) NOT NULL,
     recurring VARCHAR(50) NOT NULL DEFAULT 'monthly',
     due_date DATE NOT NULL,

@@ -16,14 +16,12 @@ import {
   Calendar,
   Bell,
   Check,
-  Tag,
-  Hash,
 } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import {
   billsService,
-  BILL_CATEGORIES,
   type BillItem,
+  type BillStatus,
   type UpdateBillInput,
 } from '@/services/billsService'
 import { loanService } from '@/services/loanService'
@@ -81,14 +79,12 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
 
   // Form states
   const [billerName, setBillerName] = React.useState('')
-  const [category, setCategory] = React.useState<string>(BILL_CATEGORIES[0])
-  const [accountNo, setAccountNo] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
   const [company, setCompany] = React.useState('')
   const [billingCycle, setBillingCycle] = React.useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly')
   const [reminderDaysBefore, setReminderDaysBefore] = React.useState<number>(5)
-  const [status, setStatus] = React.useState<'Unpaid' | 'Paid' | 'Overdue' | 'Due Soon'>('Unpaid')
+  const [status, setStatus] = React.useState<BillStatus>('Unpaid')
   const [notes, setNotes] = React.useState('')
 
   const [isSubmitting, setIsSubmitting] = React.useState(false)
@@ -103,8 +99,6 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   React.useEffect(() => {
     if (bill && open) {
       setBillerName(bill.billerName || '')
-      setCategory(bill.category || BILL_CATEGORIES[0])
-      setAccountNo(bill.accountNo || '')
       setAmount(bill.amount?.toString() || '')
       setDueDate(bill.dueDate || '')
       setCompany(bill.company || 'MCT Kitchen')
@@ -152,8 +146,6 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
     try {
       const input: UpdateBillInput = {
         billerName: billerName.trim(),
-        category,
-        accountNo: accountNo.trim(),
         amount: numAmount,
         dueDate,
         company: canChooseCompany ? company : bill.company,
@@ -227,27 +219,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 2. Category */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>Category</span>
-                <span className="text-red-500">*</span>
-              </Label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-              >
-                {BILL_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 3. Company */}
+            {/* 2. Company */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -271,43 +243,8 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                 </div>
               )}
             </div>
-          </div>
 
-          {/* 4. Recurring Schedule */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-              <span>Recurring</span>
-              <span className="text-red-500">*</span>
-            </Label>
-            <select
-              value={billingCycle}
-              onChange={(e) => setBillingCycle(e.target.value as 'Daily' | 'Monthly' | 'Yearly')}
-              className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-            >
-              <option value="Daily">Daily</option>
-              <option value="Monthly">Monthly</option>
-              <option value="Yearly">Yearly</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 5. Account No */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <Hash className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>Account / Ref No.</span>
-              </Label>
-              <Input
-                type="text"
-                placeholder="e.g. 0192-8837-192"
-                value={accountNo}
-                onChange={(e) => setAccountNo(e.target.value)}
-                className="h-10 rounded-xl border-stroke/50 text-xs font-mono"
-              />
-            </div>
-
-            {/* 6. Amount */}
+            {/* 3. Amount */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <span>Amount (₱)</span>
@@ -344,7 +281,25 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 7. Due Date */}
+            {/* 4. Recurring Schedule */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                <span>Recurring</span>
+                <span className="text-red-500">*</span>
+              </Label>
+              <select
+                value={billingCycle}
+                onChange={(e) => setBillingCycle(e.target.value as 'Daily' | 'Monthly' | 'Yearly')}
+                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+              >
+                <option value="Daily">Daily</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Yearly">Yearly</option>
+              </select>
+            </div>
+
+            {/* 5. Due Date */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -369,8 +324,10 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                 <p className="text-[11px] text-red-600 font-medium">{fieldErrors.dueDate}</p>
               )}
             </div>
+          </div>
 
-            {/* 8. Reminder Notification */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {/* 6. Reminder Notification */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -388,10 +345,8 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                 <option value={10}>10 days before due date</option>
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 9. Status */}
+            {/* 7. Status */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus block">Payment Status</Label>
               <select
@@ -403,20 +358,21 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                 <option value="Paid">Paid</option>
                 <option value="Due Soon">Due Soon</option>
                 <option value="Overdue">Overdue</option>
+                <option value="Partially Paid">Partially Paid</option>
               </select>
             </div>
+          </div>
 
-            {/* 10. Notes */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus block">Notes</Label>
-              <Input
-                type="text"
-                placeholder="Optional notes..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="h-10 rounded-xl border-stroke/50 text-xs"
-              />
-            </div>
+          {/* 8. Notes */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-focus block">Notes</Label>
+            <Input
+              type="text"
+              placeholder="Optional notes..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="h-10 rounded-xl border-stroke/50 text-xs"
+            />
           </div>
 
           {/* Action Buttons */}

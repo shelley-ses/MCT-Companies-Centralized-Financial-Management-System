@@ -17,13 +17,13 @@ import {
   CheckCircle2,
   XCircle,
   Download,
-  MoreVertical,
-  Eye,
   AlertCircle,
   ArrowUpRight,
   MessageSquare,
   Pencil,
   Trash2,
+  MoreVertical,
+  Eye,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -50,7 +50,6 @@ import {
 } from '@/components/ui/DateRangePicker'
 import {
   TopUpPettyCashModal,
-  type PettyCashTopUpRecord,
 } from '@/components/dashboard/TopUpPettyCashModal'
 import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { useSession } from '@/hooks/useSession'
@@ -95,7 +94,7 @@ export const PettyCashPage: React.FC = () => {
   const isSupervisor = userRole === 'supervisor'
   const isAdmin = userRole === 'admin'
   const isFinanceOrAdmin = isFinance || isAdmin
-  const isCompanyScoped = isSupervisor || userRole === 'company'
+  const isCompanyScoped = isSupervisor
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Selected company filter
@@ -175,10 +174,47 @@ export const PettyCashPage: React.FC = () => {
   const [isSubmittingReview, setIsSubmittingReview] = React.useState(false)
   const [approvalFeedback, setApprovalFeedback] = React.useState<string | null>(null)
 
-  // 3-dots floating menu state
-  const [menuOpenEntryId, setMenuOpenEntryId] = React.useState<string | null>(null)
+  // Audit Actions Menu State
+  const [openMenuPettyId, setOpenMenuPettyId] = React.useState<string | null>(null)
   const [menuPosition, setMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
-  const menuRef = React.useRef<HTMLDivElement>(null)
+  const [activeMenuPetty, setActiveMenuPetty] = React.useState<PettyCashTransaction | null>(null)
+
+  React.useEffect(() => {
+    const handleCloseMenu = () => setOpenMenuPettyId(null)
+    window.addEventListener('click', handleCloseMenu)
+    window.addEventListener('scroll', handleCloseMenu, true)
+    return () => {
+      window.removeEventListener('click', handleCloseMenu)
+      window.removeEventListener('scroll', handleCloseMenu, true)
+    }
+  }, [])
+
+  const handleMarkPettyAudit = (entry: PettyCashTransaction, status: 'Verified' | 'Flagged') => {
+    const timestamp = new Date().toLocaleString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    const updatedEntry: PettyCashTransaction = {
+      ...entry,
+      auditStatus: status,
+      auditDate: timestamp,
+      auditedBy: user?.fullName || 'Audit',
+      status: status === 'Verified' && entry.status === 'Pending Audit Approval' ? 'Approved' : entry.status,
+    }
+    setLedger((prev) => prev.map((e) => (e.id === entry.id ? updatedEntry : e)))
+    try {
+      const stored = localStorage.getItem('petty_cash_audit_records')
+      const records = stored ? JSON.parse(stored) : {}
+      records[entry.id] = { auditStatus: status, auditDate: timestamp, auditedBy: user?.fullName || 'Audit' }
+      localStorage.setItem('petty_cash_audit_records', JSON.stringify(records))
+    } catch {
+      // ignore
+    }
+    setOpenMenuPettyId(null)
+  }
 
   // Load live data from backend database
   const loadData = React.useCallback(async () => {
@@ -302,9 +338,6 @@ export const PettyCashPage: React.FC = () => {
       if (companyDropdownRef.current && !companyDropdownRef.current.contains(target)) {
         setIsCompanyDropdownOpen(false)
       }
-      if (menuRef.current && !menuRef.current.contains(target)) {
-        setMenuOpenEntryId(null)
-      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -398,7 +431,6 @@ export const PettyCashPage: React.FC = () => {
   const handleOpenSummary = (entry: PettyCashTransaction) => {
     setTargetEntry(entry)
     setIsSummaryModalOpen(true)
-    setMenuOpenEntryId(null)
   }
 
   // Open Confirmation Modal for Endorse, Reject, Approve or Disapprove
@@ -614,7 +646,7 @@ export const PettyCashPage: React.FC = () => {
                 onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isPeriodDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
@@ -661,7 +693,7 @@ export const PettyCashPage: React.FC = () => {
                 onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-medium text-focus/90">
@@ -737,7 +769,7 @@ export const PettyCashPage: React.FC = () => {
                   onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
                   className={cn(
                     'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                    isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                    isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                 >
                   <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
@@ -910,7 +942,23 @@ export const PettyCashPage: React.FC = () => {
                     >
                       {/* 1. Date */}
                       <TableCell className="px-3 py-3.5 text-xs text-muted-fg tabular-nums font-medium">
-                        {entry.date}
+                        <div className="flex flex-col gap-0.5">
+                          <span>{entry.date}</span>
+                          {entry.auditDate && (
+                            <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1" title={`Audited at: ${entry.auditDate}`}>
+                              <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[120px]">{entry.auditDate}</span>
+                            </span>
+                          )}
+                          {entry.auditStatus && (
+                            <span className={cn(
+                              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold w-fit",
+                              entry.auditStatus === 'Verified' ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80" : "bg-amber-50 text-amber-700 border border-amber-200/80"
+                            )}>
+                              {entry.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
 
                       {/* 2. Company */}
@@ -1002,7 +1050,27 @@ export const PettyCashPage: React.FC = () => {
 
                       {/* 9. Actions */}
                       <TableCell className="px-3 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        {isPendingFinance && entry.type === 'topup' && !isAudit ? (
+                        {isAudit ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              setMenuPosition({
+                                top: rect.bottom + window.scrollY + 4,
+                                left: Math.min(window.innerWidth - 180, Math.max(10, rect.right + window.scrollX - 160)),
+                              })
+                              setActiveMenuPetty(entry)
+                              setOpenMenuPettyId(openMenuPettyId === entry.id ? null : entry.id)
+                            }}
+                            className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
+                            title="Audit Actions"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        ) : isPendingFinance && entry.type === 'topup' ? (
                           <div className="flex items-center justify-center gap-1">
                             <Button
                               type="button"
@@ -1599,6 +1667,50 @@ export const PettyCashPage: React.FC = () => {
         companies={companyList}
         onSuccess={handleTopUpSuccess}
       />
+
+      {/* Audit Action Portal Menu */}
+      {openMenuPettyId && menuPosition && activeMenuPetty && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            style={{
+              position: 'absolute',
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+            }}
+            className="z-50 w-48 rounded-xl bg-white border border-slate-200 shadow-xl py-1 animate-in fade-in zoom-in-95 duration-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => handleMarkPettyAudit(activeMenuPetty, 'Verified')}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Mark as Audit</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMarkPettyAudit(activeMenuPetty, 'Flagged')}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors text-left cursor-pointer"
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Mark as Discrepancy</span>
+            </button>
+            <div className="h-px bg-slate-100 my-1" />
+            <button
+              type="button"
+              onClick={() => {
+                handleOpenSummary(activeMenuPetty)
+                setOpenMenuPettyId(null)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-500" />
+              <span>View Details</span>
+            </button>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

@@ -55,7 +55,7 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   companies: propsCompanies,
 }) => {
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Company' || user?.role === 'Company Auditor'
+  const isCompanyUser = user?.role === 'Supervisor'
 
   const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
 

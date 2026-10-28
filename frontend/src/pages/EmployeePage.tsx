@@ -60,9 +60,9 @@ export const EmployeePage: React.FC = () => {
     document.title = 'Company Management - MCT Centralized Financial System'
   }, [])
 
-  // Filtered companies based on search
+  // Filtered companies based on search, sorted alphabetically by default
   const filteredCompanies = React.useMemo(() => {
-    let result = companies
+    let result = [...companies]
 
     const q = searchQuery.toLowerCase().trim()
     if (q) {
@@ -75,7 +75,9 @@ export const EmployeePage: React.FC = () => {
       )
     }
 
-    return result
+    return result.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+    )
   }, [companies, searchQuery])
 
   const handleCardClickCompany = (comp: Company) => {

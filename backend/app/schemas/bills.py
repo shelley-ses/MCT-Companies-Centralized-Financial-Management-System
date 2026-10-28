@@ -9,8 +9,6 @@ class BillBase(BaseModel):
     company_id: Optional[int] = None
     company: Optional[str] = Field(None, min_length=1, max_length=100)
     bill_name: str = Field(..., min_length=1, max_length=255)
-    category: str = Field(..., min_length=1, max_length=100)
-    account_no: Optional[str] = Field(None, max_length=100)
     amount: Decimal = Field(..., gt=0, decimal_places=2)
     recurring: Literal["daily", "monthly", "yearly"] = Field(
         default="monthly",
@@ -23,9 +21,9 @@ class BillBase(BaseModel):
         description="Number of days before the due date to send a reminder",
     )
     notes: Optional[str] = None
-    status: Literal["unpaid", "paid", "overdue", "due soon"] = Field(
+    status: Literal["unpaid", "paid", "overdue", "due soon", "partially paid"] = Field(
         default="unpaid",
-        description="unpaid, paid, overdue, or due soon",
+        description="unpaid, paid, overdue, due soon, or partially paid",
     )
 
 
@@ -37,8 +35,6 @@ class BillUpdate(BaseModel):
     company_id: Optional[int] = None
     company: Optional[str] = Field(None, min_length=1, max_length=100)
     bill_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    category: Optional[str] = Field(None, min_length=1, max_length=100)
-    account_no: Optional[str] = Field(None, max_length=100)
     amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
     recurring: Optional[Literal["daily", "monthly", "yearly"]] = None
     due_date: Optional[date] = None
@@ -81,6 +77,9 @@ class BillPeriodOut(BaseModel):
     period_label: str
     period_date: date
     paid: bool
+    partially_paid: bool = False
+    paid_amount: Optional[Decimal] = Decimal("0.00")
+    remaining_amount: Optional[Decimal] = None
     payment_date: Optional[date] = None
     is_future: bool
     is_next_payable: bool

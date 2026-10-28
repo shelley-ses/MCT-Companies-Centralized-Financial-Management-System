@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   FileText,
   Pencil,
@@ -9,6 +10,7 @@ import {
   CheckCircle2,
   Receipt,
   RotateCcw,
+  Lock,
 } from 'lucide-react'
 import { UpdateLoanStatusModal } from './UpdateLoanStatusModal'
 import { parseParticulars } from '@/utils/particularsUtils'
@@ -111,15 +113,15 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   editable = false,
   initialIsEditing = false,
 }) => {
+  const navigate = useNavigate()
   const { user } = useSession()
   const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
-  const isEditable = Boolean(editable && !isAdmin)
 
   const [currentTx, setCurrentTx] = React.useState<DashboardTransactionItem | null>(transaction)
   const [currentSale, setCurrentSale] = React.useState<SalesItem | null>(sale || null)
   const [currentExpense, setCurrentExpense] = React.useState<ExpenseItem | null>(expense || null)
   const [currentLoan, setCurrentLoan] = React.useState<LoanItem | null>(loan || null)
-  const [isEditing, setIsEditing] = React.useState(Boolean(initialIsEditing && isEditable))
+  const [isEditing, setIsEditing] = React.useState(false)
   const [isUpdateLoanStatusOpen, setIsUpdateLoanStatusOpen] = React.useState(false)
 
   // Form states for editing
@@ -319,6 +321,27 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     activeLoan?.auditStatus ||
     activeTx?.auditStatus ||
     'Pending Audit'
+
+  const isAudited = currentAuditStatus === 'Verified'
+  const isEditable = Boolean(editable && !isAdmin && !isAudited)
+
+  const handleEditInSheet = () => {
+    if (isAudited) return
+    onOpenChange(false)
+    if (isExpense) {
+      navigate('/expense/add', {
+        state: {
+          editExpense: activeExpense || (activeTx?.type === 'Expense' ? activeTx : null),
+        },
+      })
+    } else {
+      navigate('/sales/add', {
+        state: {
+          editSale: activeSale || (activeTx?.type === 'Sales' ? activeTx : null),
+        },
+      })
+    }
+  }
 
   const displayAuditedBy =
     activeSale?.auditedBy ||
@@ -1278,14 +1301,36 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     <span>{displayStatus === 'Paid' ? 'Update Status' : 'Update (Mark as Paid)'}</span>
                   </Button>
                 )}
-                <Button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                  className="h-9 px-5 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5 text-white" />
-                  <span>Edit Details</span>
-                </Button>
+                {isLoan ? (
+                  <Button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="h-9 px-5 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-white" />
+                    <span>Edit Details</span>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={handleEditInSheet}
+                    className="h-9 px-5 text-xs font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    title="Edit transaction in Excel Sheet"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-white" />
+                    <span>Edit Particulars in Sheet</span>
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* If transaction has already been audited, operational user can no longer edit */}
+            {isAudited && !isAdmin && (
+              <div className="flex items-center justify-end gap-2 pt-3 mt-2 border-t border-stroke/20">
+                <span className="text-xs font-medium text-muted-fg bg-slate-100/90 px-3.5 py-2 rounded-xl flex items-center gap-2 border border-stroke/30">
+                  <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>This transaction has already been audited and can no longer be edited.</span>
+                </span>
               </div>
             )}
           </div>

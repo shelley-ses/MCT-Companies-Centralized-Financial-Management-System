@@ -207,11 +207,11 @@ export const ResetStep: React.FC<ResetStepProps> = ({
             </ul>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 flex justify-center w-full">
             <Button
               type="submit"
               disabled={isDoneDisabled}
-              className="w-full h-12 text-base font-semibold"
+              className="w-full max-w-sm h-12 text-base font-semibold"
             >
               {isLoading ? (
                 <>

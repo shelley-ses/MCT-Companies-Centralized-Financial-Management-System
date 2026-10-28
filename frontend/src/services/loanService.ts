@@ -349,7 +349,6 @@ export const loanService = {
         typeof window !== 'undefined'
           ? sessionStorage.getItem('mct_access_token')
           : null
-
       const res = await fetch('/api/v1/companies', {
         headers: {
           'Content-Type': 'application/json',
@@ -358,30 +357,19 @@ export const loanService = {
       })
       if (res.ok) {
         const data = await res.json()
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           return data.map((c: any) => ({
             company_id: c.company_id ?? c.id,
             company_name: c.company_name || c.name,
           }))
         }
+      } else {
+        console.warn('GET /api/v1/companies failed with status', res.status)
       }
     } catch (err) {
       console.warn('Failed to fetch companies from backend:', err)
     }
-
-    // Default fallback if endpoint fails
-    return [
-      { company_id: 2, company_name: 'MCT Kitchen' },
-      { company_id: 3, company_name: 'MCT Hotel' },
-      { company_id: 5, company_name: 'JK Cafe' },
-      { company_id: 6, company_name: 'Annex Nine' },
-      { company_id: 7, company_name: 'Merillon' },
-      { company_id: 8, company_name: 'JK Printing' },
-      { company_id: 9, company_name: 'Speedbox' },
-      { company_id: 10, company_name: 'JK Property and Ventures' },
-      { company_id: 11, company_name: 'Golden Sunburst Ventures' },
-      { company_id: 12, company_name: 'Southern Brew' },
-    ]
+    return []
   },
 
   async getLoans(params?: {
@@ -870,41 +858,6 @@ export const loanService = {
       return inMemoryLoans[index]
     }
     throw new Error('Loan record not found')
-  },
-
-  async deleteLoan(id: string): Promise<boolean> {
-    const numericId = id.replace(/^loan_/, '')
-    try {
-      const token =
-        typeof window !== 'undefined'
-          ? sessionStorage.getItem('mct_access_token')
-          : null
-
-      const res = await fetch(`/api/v1/loans/${numericId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      })
-      if (res.ok) {
-        inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id && l.id !== `loan_${numericId}`)
-        saveStoredLoans(inMemoryLoans)
-        return true
-      } else {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.detail || 'Failed to delete loan.')
-      }
-    } catch (err: any) {
-      if (err.message && !err.message.includes('fetch')) {
-        throw err
-      }
-      console.warn('Backend DELETE /loans failed, deleting locally:', err)
-    }
-
-    inMemoryLoans = inMemoryLoans.filter((l) => l.id !== id && l.id !== `loan_${numericId}`)
-    saveStoredLoans(inMemoryLoans)
-    return true
   },
 
   exportCsv(items: LoanItem[], scope: 'Borrower' | 'Lender', filename = 'loan_report.csv') {

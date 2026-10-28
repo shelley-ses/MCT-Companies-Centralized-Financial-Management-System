@@ -4,8 +4,8 @@ import {
   Trash2,
   Loader2,
   Check,
-  Camera,
   Upload,
+  Crop,
 } from 'lucide-react'
 import {
   Dialog,
@@ -23,6 +23,7 @@ import {
 } from '@/services/employeeService'
 import { formatPHP } from '@/lib/format'
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog'
+import { ImageCropperModal } from '@/components/common/ImageCropperModal'
 
 interface ViewCompanyModalProps {
   open: boolean
@@ -46,19 +47,18 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
 
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [profilePreview, setProfilePreview] = React.useState<string | null>(null)
+  const [profileFile, setProfileFile] = React.useState<File | null>(null)
+  const [rawImageForCrop, setRawImageForCrop] = React.useState<string | null>(null)
+  const [isCropperOpen, setIsCropperOpen] = React.useState(false)
   const [formErrors, setFormErrors] = React.useState<Record<string, string>>({})
 
   // Edit form state
   const [formData, setFormData] = React.useState<CreateCompanyPayload>({
     name: '',
-    email: '',
     address: '',
-    contactPerson: '',
-    contactPersonEmail: '',
     contactNumber: '',
     telephoneNumber: '',
     startingBalance: 0,
-    currentBalance: 0,
     pettyCash: 0,
     logoUrl: undefined,
   })
@@ -67,18 +67,17 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
     if (company) {
       setFormData({
         name: company.name,
-        email: company.email,
         address: company.address,
-        contactPerson: company.contactPerson,
-        contactPersonEmail: company.contactPersonEmail || '',
         contactNumber: company.contactNumber,
         telephoneNumber: company.telephoneNumber || '',
         startingBalance: company.startingBalance,
-        currentBalance: company.currentBalance,
         pettyCash: company.pettyCash || 0,
         logoUrl: company.logoUrl,
       })
       setProfilePreview(company.logoUrl || null)
+      setProfileFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
       setFormErrors({})
       setIsEditing(true)
     }
@@ -87,13 +86,39 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      setProfileFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         const result = reader.result as string
-        setProfilePreview(result)
-        setFormData((prev) => ({ ...prev, logoUrl: result }))
+        setRawImageForCrop(result)
+        setIsCropperOpen(true)
       }
       reader.readAsDataURL(file)
+    }
+    e.target.value = ''
+  }
+
+  const handleCropComplete = (croppedDataUrl: string) => {
+    setProfilePreview(croppedDataUrl)
+    setFormData((prev) => ({ ...prev, logoUrl: croppedDataUrl }))
+    try {
+      const arr = croppedDataUrl.split(',')
+      const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png'
+      const bstr = atob(arr[1])
+      let n = bstr.length
+      const u8arr = new Uint8Array(n)
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n)
+      }
+      setProfileFile(new File([u8arr], 'company-logo.png', { type: mime }))
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleOpenCropper = () => {
+    if (rawImageForCrop || profilePreview) {
+      setIsCropperOpen(true)
     }
   }
 
@@ -103,6 +128,9 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
       setIsConfirmEditOpen(false)
       setIsConfirmDeleteOpen(false)
       setProfilePreview(null)
+      setProfileFile(null)
+      setRawImageForCrop(null)
+      setIsCropperOpen(false)
       setFormErrors({})
     }
     onOpenChange(nextOpen)
@@ -134,10 +162,12 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
         ...formData,
         startingBalance: Number(formData.startingBalance) || 0,
         pettyCash: Number(formData.pettyCash) || 0,
+        logoFile: profileFile || undefined,
       })
       onUpdate?.(updated)
       setIsConfirmEditOpen(false)
       setIsEditing(false)
+      setProfileFile(null)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to update company.')
     } finally {
@@ -178,9 +208,15 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
               {/* Editable Company Profile Picture / Logo */}
               <div className="flex flex-col items-center justify-center py-2">
                 <div
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    if (profilePreview) {
+                      handleOpenCropper()
+                    } else {
+                      fileInputRef.current?.click()
+                    }
+                  }}
                   className="relative group h-24 w-24 sm:h-28 sm:w-28 rounded-full border-2 border-dashed border-primary/50 hover:border-primary flex items-center justify-center p-3 bg-white shadow-xs cursor-pointer transition-all overflow-hidden"
-                  title="Click to upload company logo"
+                  title={profilePreview ? 'Click to crop / adjust logo' : 'Click to upload company logo'}
                 >
                   <img
                     src={profilePreview || logo2Url}
@@ -188,8 +224,8 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                     className="h-14 w-14 sm:h-16 sm:w-16 object-contain"
                   />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white rounded-full">
-                    <Camera className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold mt-1">Change</span>
+                    <Crop className="h-5 w-5" />
+                    <span className="text-[10px] font-semibold mt-1">Crop</span>
                   </div>
                 </div>
 
@@ -212,6 +248,18 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                     <Upload className="h-3 w-3 mr-1" />
                     Upload Logo
                   </Button>
+                  {profilePreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleOpenCropper}
+                      className="h-7 px-2.5 text-xs text-primary hover:text-primary hover:bg-primary/10 font-semibold flex items-center gap-1"
+                    >
+                      <Crop className="h-3 w-3 mr-1" />
+                      Crop / Adjust
+                    </Button>
+                  )}
                   {profilePreview && profilePreview !== company.logoUrl && (
                     <Button
                       type="button"
@@ -219,6 +267,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
                       size="sm"
                       onClick={() => {
                         setProfilePreview(company.logoUrl || null)
+                        setRawImageForCrop(null)
                         setFormData((prev) => ({ ...prev, logoUrl: company.logoUrl }))
                       }}
                       className="h-7 px-2 text-xs text-muted-fg hover:text-focus"
@@ -502,6 +551,15 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
         variant="destructive"
         isLoading={isSubmitting}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* Image Cropper Modal */}
+      <ImageCropperModal
+        open={isCropperOpen}
+        onOpenChange={setIsCropperOpen}
+        imageSrc={rawImageForCrop || profilePreview}
+        onCropComplete={handleCropComplete}
+        title="Crop Company Logo"
       />
     </>
   )

@@ -38,7 +38,6 @@ def init_db():
     import app.models.user
     import app.models.audit_log
     import app.models.loan
-    import app.models.permission
     import app.models.staff_credit
     import app.models.bills
     import app.models.petty_cash
