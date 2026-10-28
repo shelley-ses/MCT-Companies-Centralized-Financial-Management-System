@@ -5,7 +5,7 @@ export interface DailyPaymentRecord {
   method: string
   referenceNo?: string
   notes?: string
-  status?: 'Paid' | 'Missed' | 'Partial' | 'Advance Paid' | 'Pending' | 'Scheduled'
+  status?: 'Paid' | 'Missed' | 'Partial' | 'Partially Paid' | 'Advance Paid' | 'Pending' | 'Scheduled'
   missedReason?: string
   timestamp: string
   monthIndex?: number
@@ -189,6 +189,8 @@ export const INITIAL_FACILITIES: LendingFacility[] = [
     remainingBalance: 63000,
     status: 'Active',
     paymentFrequency: 'Daily',
+    termDays: 50,
+    installmentTarget: 2100,
     lenderCompany: 'FilCap Prime Holdings Corp.',
     notes: 'Micro-retail everyday working capital facility. Daily installment rate: ₱2,100.',
     dailyPayments: [
@@ -227,6 +229,8 @@ export const INITIAL_FACILITIES: LendingFacility[] = [
     remainingBalance: 85000,
     status: 'Active',
     paymentFrequency: 'Daily',
+    termDays: 75,
+    installmentTarget: 3500,
     lenderCompany: 'FilCap Prime Holdings Corp.',
     notes: 'Equipment financing facility for hydraulic hoist & diagnostic scanners.',
     dailyPayments: [
@@ -249,10 +253,12 @@ export const INITIAL_FACILITIES: LendingFacility[] = [
     remainingBalance: 0,
     status: 'Completed',
     paymentFrequency: 'Daily',
+    termDays: 20,
+    installmentTarget: 2612.5,
     lenderCompany: 'FilCap Prime Holdings Corp.',
     notes: 'Flour and baking supplies inventory loan. Fully settled on schedule.',
     dailyPayments: [
-      { id: 'dp-31', date: '2026-10-20', amount: 2612.5, method: 'Cash', referenceNo: 'OR-88515', notes: 'Final settlement payment', timestamp: '2026-10-20T11:00:00Z', isLocked: true },
+      { id: 'dp-31', date: '2026-10-20', amount: 2612.5, method: 'Cash', referenceNo: 'OR-88515', notes: 'Final settlement payment', status: 'Paid', timestamp: '2026-10-20T11:00:00Z', isLocked: true },
     ],
   },
   {
@@ -268,10 +274,12 @@ export const INITIAL_FACILITIES: LendingFacility[] = [
     remainingBalance: 40600,
     status: 'Overdue',
     paymentFrequency: 'Daily',
+    termDays: 40,
+    installmentTarget: 2140,
     lenderCompany: 'FilCap Prime Holdings Corp.',
     notes: 'Fertilizer bulk advance. Account overdue since Oct 15. Active collection follow up.',
     dailyPayments: [
-      { id: 'dp-41', date: '2026-10-12', amount: 1500, method: 'Cash', referenceNo: 'OR-88388', notes: 'Partial catch up payment', timestamp: '2026-10-12T14:30:00Z', isLocked: true },
+      { id: 'dp-41', date: '2026-10-12', amount: 1500, method: 'Cash', referenceNo: 'OR-88388', notes: 'Partial catch up payment', status: 'Partially Paid', timestamp: '2026-10-12T14:30:00Z', isLocked: false },
     ],
   },
   {
@@ -287,10 +295,12 @@ export const INITIAL_FACILITIES: LendingFacility[] = [
     remainingBalance: 105500,
     status: 'Active',
     paymentFrequency: 'Monthly',
+    termDays: 180,
+    installmentTarget: 21100,
     lenderCompany: 'FilCap Prime Holdings Corp.',
     notes: 'Holiday season inventory replenishment loan.',
     dailyPayments: [
-      { id: 'dp-51', date: '2026-10-15', amount: 21100, method: 'Cheque', referenceNo: 'CHQ-10029', notes: 'Cheque cleared BDO', timestamp: '2026-10-15T12:00:00Z', monthIndex: 1, periodLabel: 'Month 1', isLocked: true },
+      { id: 'dp-51', date: '2026-10-15', amount: 21100, method: 'Cheque', referenceNo: 'CHQ-10029', notes: 'Cheque cleared BDO', status: 'Paid', timestamp: '2026-10-15T12:00:00Z', monthIndex: 1, periodLabel: 'Month 1', isLocked: true },
     ],
   },
 ]
@@ -621,7 +631,7 @@ export function getMonthlyProgress(facility: LendingFacility) {
     target: number
     paid: number
     remaining: number
-    status: 'Paid' | 'Partial' | 'Unpaid' | 'Advance Paid' | 'Missed'
+    status: 'Paid' | 'Partial' | 'Partially Paid' | 'Unpaid' | 'Advance Paid' | 'Missed'
     dueDate: string
     isOverdue: boolean
     isLocked: boolean
@@ -648,7 +658,7 @@ export function getMonthlyProgress(facility: LendingFacility) {
       totalMonths
     )
 
-    let status: 'Paid' | 'Partial' | 'Unpaid' | 'Advance Paid' | 'Missed' = 'Unpaid'
+    let status: 'Paid' | 'Partial' | 'Partially Paid' | 'Unpaid' | 'Advance Paid' | 'Missed' = 'Unpaid'
     let remaining = target
     let isLocked = false
     let isOverdue = false
@@ -663,7 +673,7 @@ export function getMonthlyProgress(facility: LendingFacility) {
       remaining = target - availableFunds
       availableCredit = 0
       isOverdue = todayStr > cycleDueDate
-      status = 'Partial'
+      status = 'Partially Paid'
     } else {
       isOverdue = todayStr > cycleDueDate
       status = isOverdue ? 'Missed' : 'Unpaid'
@@ -818,9 +828,8 @@ export function buildDailyLedger(facility: LendingFacility): DailyPaymentRecord[
         timestamp: first?.timestamp || `${dateStr}T10:00:00Z`,
         isLocked: true,
       })
-    } else if (availableFunds > 0) {
+    } else if (paidToday > 0 && availableFunds > 0) {
       availableCredit = 0
-      const isPast = cur < today
       const first = list[0]
       rows.push({
         id: first?.id || `day-${dateStr}`,
@@ -830,7 +839,7 @@ export function buildDailyLedger(facility: LendingFacility): DailyPaymentRecord[
         method: first?.method || 'Cash',
         referenceNo: first?.referenceNo || '-',
         notes: first?.notes || '-',
-        status: 'Partial',
+        status: 'Partially Paid',
         penalty: 0,
         timestamp: first?.timestamp || `${dateStr}T10:00:00Z`,
         isLocked: false,

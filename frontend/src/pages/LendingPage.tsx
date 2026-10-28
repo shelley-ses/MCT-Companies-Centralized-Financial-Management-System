@@ -64,6 +64,31 @@ const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
 type PeriodType = (typeof PERIOD_OPTIONS)[number]
 
 const ITEMS_PER_PAGE = 10
+const HISTORY_ITEMS_PER_PAGE = 5
+
+interface PendingPaymentData {
+  facilityId: string
+  borrowerName: string
+  loanId: string
+  paymentDate: string
+  amount: number
+  method: string
+  referenceNo: string
+  notes: string
+  paymentStatus: 'Paid' | 'Partially Paid'
+  monthIndex?: number
+  periodLabel?: string
+  targetDue: number
+  alreadyPaidForPeriod: number
+  periodRemainingAfter: number
+  remainingBalanceBefore: number
+  remainingBalanceAfter: number
+}
+
+interface CompletedPaymentReceipt extends PendingPaymentData {
+  transactionId: string
+  timestamp: string
+}
 
 export const LendingPage: React.FC = () => {
   const { user } = useSession()
@@ -147,6 +172,12 @@ export const LendingPage: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = React.useState(false)
   const [isDailyPaymentModalOpen, setIsDailyPaymentModalOpen] = React.useState(false)
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false)
+  const [isPaymentConfirmModalOpen, setIsPaymentConfirmModalOpen] = React.useState(false)
+  const [isPaymentSuccessModalOpen, setIsPaymentSuccessModalOpen] = React.useState(false)
+  const [pendingPayment, setPendingPayment] = React.useState<PendingPaymentData | null>(null)
+  const [completedReceipt, setCompletedReceipt] = React.useState<CompletedPaymentReceipt | null>(null)
+  const [paymentError, setPaymentError] = React.useState<string | null>(null)
+  const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false)
 
   // 3-dots actions menu state
   const [openMenuFacilityId, setOpenMenuFacilityId] = React.useState<string | null>(null)
@@ -217,8 +248,9 @@ export const LendingPage: React.FC = () => {
     notes: '',
   })
 
-  // Search query for Payment History in Lending Information Modal
+  // Search query and pagination for Payment History in Lending Information View
   const [historySearchQuery, setHistorySearchQuery] = React.useState('')
+  const [historyCurrentPage, setHistoryCurrentPage] = React.useState(1)
 
   // Form state for Update Payment Modal
   const [paymentForm, setPaymentForm] = React.useState<{
@@ -590,6 +622,7 @@ export const LendingPage: React.FC = () => {
 
     const principalNum = parseFloat(editFormData.loanAmount)
     const rateNum = parseFloat(editFormData.interestRate)
+    const termDaysNum = parseInt(editFormData.termDays || (editFormData.paymentFrequency === 'Daily' ? '40' : '60'), 10) || 40
 
     if (!editFormData.borrowerName.trim() || isNaN(principalNum) || principalNum <= 0) {
       alert('Please fill out all required fields with valid values.')
@@ -600,12 +633,16 @@ export const LendingPage: React.FC = () => {
     const newTotalPayable = principalNum + totalInterest
     const newRemaining = Math.max(0, newTotalPayable - activeFacility.amountPaid)
     const resolvedStatus = newRemaining <= 0 ? 'Completed' : editFormData.status
+    const cycleCount = editFormData.paymentFrequency === 'Daily' ? termDaysNum : Math.max(1, Math.round(termDaysNum / 30))
+    const newInstallmentTarget = Math.round((newTotalPayable / cycleCount) * 100) / 100
 
     const updated: LendingFacility = {
       ...activeFacility,
       borrowerName: editFormData.borrowerName.trim(),
       loanAmount: principalNum,
       interestRate: rateNum,
+      termDays: termDaysNum,
+      installmentTarget: newInstallmentTarget,
       dateBorrowed: editFormData.dateBorrowed,
       dueDate: editFormData.dueDate,
       status: resolvedStatus,
@@ -618,22 +655,45 @@ export const LendingPage: React.FC = () => {
     const updatedList = facilities.map((f) => (f.id === activeFacility.id ? updated : f))
     saveFacilities(updatedList)
     setIsEditModalOpen(false)
-    setActiveFacility(null)
+    setActiveFacility(updated)
   }
+
+  // Helper to get daily target for a facility
+  const getFacilityDailyTarget = React.useCallback((facility: LendingFacility): number => {
+    const termDays = facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 60)
+    return (
+      facility.installmentTarget ||
+      Math.round((facility.totalAmountPayable / Math.max(1, termDays)) * 100) / 100
+    )
+  }, [])
 
   // Open Update Payment Modal ("Update" action button)
   const handleOpenPaymentModal = (facility: LendingFacility, e?: React.MouseEvent) => {
     if (e) e.stopPropagation()
     if (isAudit) return
     setActiveFacility(facility)
+    setPaymentError(null)
 
-    // Compute smart initial date: for Daily, pick the first unpaid date (or today if unpaid)
+    // Compute smart initial date: for Daily, pick the first date not yet fully paid (or today if not fully paid)
     let initialDate = formatToYYYYMMDD(new Date())
     if ((!facility.paymentFrequency || facility.paymentFrequency === 'Daily') && facility.dailyPayments) {
-      const paidDates = new Set(
-        facility.dailyPayments.filter((p) => p.status === 'Paid').map((p) => p.date)
-      )
-      if (paidDates.has(initialDate)) {
+      const dailyTarget = getFacilityDailyTarget(facility)
+      const paidByDate = new Map<string, number>()
+      const lockedDates = new Set<string>()
+      facility.dailyPayments.forEach((p) => {
+        if (!p.date) return
+        paidByDate.set(p.date, (paidByDate.get(p.date) || 0) + (p.amount || 0))
+        if (p.status === 'Advance Paid') {
+          lockedDates.add(p.date)
+        }
+      })
+      paidByDate.forEach((amt, dt) => {
+        if (amt >= dailyTarget - 0.005) {
+          lockedDates.add(dt)
+        }
+      })
+
+      if (lockedDates.has(initialDate)) {
         const start = new Date(facility.dateBorrowed)
         const today = new Date(initialDate)
         let foundUnpaid: string | null = null
@@ -641,7 +701,7 @@ export const LendingPage: React.FC = () => {
           const cur = new Date(start)
           while (cur <= today) {
             const d = formatToYYYYMMDD(cur)
-            if (!paidDates.has(d)) {
+            if (!lockedDates.has(d)) {
               foundUnpaid = d
               break
             }
@@ -670,113 +730,202 @@ export const LendingPage: React.FC = () => {
   }
   const handleOpenDailyPaymentModal = handleOpenPaymentModal
 
-  // Confirm Payment
-  const handleRecordDailyPayment = async (e: React.FormEvent) => {
+  // Validate payment form and open Confirmation Modal
+  const handleRecordDailyPayment = (e: React.FormEvent) => {
     e.preventDefault()
     if (isAudit || !activeFacility) return
+    setPaymentError(null)
 
-    // Period immutability: check if daily date is already fully paid
-    const isDaily = !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
-    if (isDaily) {
-      const alreadyPaid = (activeFacility.dailyPayments || []).some(
-        (p) => p.date === paymentForm.paymentDate && p.status === 'Paid'
+    const freq = activeFacility.paymentFrequency || 'Daily'
+    const isDaily = freq === 'Daily'
+    const isMonthly = freq === 'Monthly'
+    const dailyTarget = getFacilityDailyTarget(activeFacility)
+
+    const alreadyPaidOnDate = (activeFacility.dailyPayments || [])
+      .filter((p) => p.date === paymentForm.paymentDate)
+      .reduce((sum, p) => sum + (p.amount || 0), 0)
+
+    const isAdvancePaidDate = (activeFacility.dailyPayments || []).some(
+      (p) => p.date === paymentForm.paymentDate && p.status === 'Advance Paid'
+    )
+
+    if (isDaily && (alreadyPaidOnDate >= dailyTarget - 0.005 || isAdvancePaidDate)) {
+      setPaymentError(
+        `Date ${paymentForm.paymentDate} is already fully paid and locked. You cannot add or duplicate payments for a settled date.`
       )
-      if (alreadyPaid) {
-        alert(
-          `Date ${paymentForm.paymentDate} is already fully paid and locked. You cannot add or duplicate payments for a settled date.`
-        )
-        return
-      }
+      return
     }
 
     const paymentNum = parseFloat(paymentForm.paymentAmount)
     if (isNaN(paymentNum) || paymentNum < 1) {
-      alert('Payment Amount cannot be lower than ₱1.00.')
+      setPaymentError('Payment Amount cannot be lower than ₱1.00.')
       return
     }
 
     if (paymentNum > activeFacility.remainingBalance) {
-      alert(
+      setPaymentError(
         `Payment amount (${formatPHP(paymentNum)}) cannot exceed the remaining balance of ${formatPHP(activeFacility.remainingBalance)}.`
       )
       return
     }
 
-    // Call backend lending service with authoritative settlement locking
-    const backendRes = await lendingService.recordPayment({
-      facilityId: activeFacility.id,
-      paymentDate: paymentForm.paymentDate,
-      amount: paymentNum,
-      method: paymentForm.method,
-      referenceNo: paymentForm.referenceNo,
-      notes: paymentForm.notes,
-    })
-    if (!backendRes.success) {
-      alert(backendRes.message || 'Payment could not be recorded.')
-      return
-    }
-
-    // Monthly schedule: partial / full tracking
-    const isMonthly = activeFacility.paymentFrequency === 'Monthly'
     let resolvedMonthIndex: number | undefined = undefined
     let resolvedPeriodLabel: string | undefined = undefined
-    let paymentStatus: 'Paid' | 'Partial' = 'Paid'
+    let targetDue = dailyTarget
+    let alreadyPaidForPeriod = alreadyPaidOnDate
+    let periodRemainingBefore = Math.min(
+      activeFacility.remainingBalance,
+      Math.max(0, Math.round((dailyTarget - alreadyPaidOnDate) * 100) / 100)
+    )
 
     if (isMonthly) {
       const progress = getMonthlyProgress(activeFacility)
       const currentMonth = progress.activeMonth
       resolvedMonthIndex = currentMonth.monthIndex
       resolvedPeriodLabel = `Month ${currentMonth.monthIndex}`
+      targetDue = currentMonth.target
+      alreadyPaidForPeriod = currentMonth.paid
+      periodRemainingBefore = Math.min(activeFacility.remainingBalance, currentMonth.remaining)
 
-      if (paymentNum > currentMonth.remaining) {
-        alert(
+      if (paymentNum > currentMonth.remaining + 0.005) {
+        setPaymentError(
           `For Month ${currentMonth.monthIndex}, the maximum due is ${formatPHP(currentMonth.remaining)}. Please settle this month first before paying for subsequent months.`
         )
         return
       }
-
-      // If partial, the borrower has to settle the partial before paying another month.
-      // Partial payment is not considered "Paid" for that month.
-      if (paymentNum < currentMonth.remaining) {
-        paymentStatus = 'Partial'
-      } else {
-        paymentStatus = 'Paid'
+    } else if (!isDaily) {
+      const nextInst = getNextInstallmentInfo(activeFacility)
+      if (nextInst) {
+        resolvedPeriodLabel = nextInst.periodLabel
+        targetDue = nextInst.target
+        periodRemainingBefore = Math.min(activeFacility.remainingBalance, nextInst.remaining)
       }
     }
 
-    const updatedAmountPaid = activeFacility.amountPaid + paymentNum
-    const updatedRemainingBalance = Math.max(0, activeFacility.totalAmountPayable - updatedAmountPaid)
-    const updatedStatus: LendingFacility['status'] =
-      updatedRemainingBalance <= 0 ? 'Completed' : activeFacility.status === 'Completed' ? 'Active' : activeFacility.status
+    const remainingBalanceAfter = Math.max(
+      0,
+      Math.round((activeFacility.remainingBalance - paymentNum) * 100) / 100
+    )
+    const periodRemainingAfter = Math.max(
+      0,
+      Math.round((periodRemainingBefore - paymentNum) * 100) / 100
+    )
 
-    const newPaymentRecord: DailyPaymentRecord = {
-      id: `dp-${Date.now()}`,
-      date: paymentForm.paymentDate,
+    // Determine whether this payment settles the installment period or is Partially Paid
+    const isPartiallyPaid = periodRemainingAfter > 0.005 && remainingBalanceAfter > 0.005
+    const paymentStatus: 'Paid' | 'Partially Paid' = isPartiallyPaid ? 'Partially Paid' : 'Paid'
+
+    setPendingPayment({
+      facilityId: activeFacility.id,
+      borrowerName: activeFacility.borrowerName,
+      loanId: activeFacility.loanId,
+      paymentDate: paymentForm.paymentDate,
       amount: paymentNum,
       method: paymentForm.method,
       referenceNo: paymentForm.referenceNo.trim(),
       notes: paymentForm.notes.trim(),
-      status: paymentStatus,
+      paymentStatus,
       monthIndex: resolvedMonthIndex,
       periodLabel: resolvedPeriodLabel,
-      timestamp: new Date().toISOString(),
-      isLocked: paymentStatus === 'Paid',
+      targetDue,
+      alreadyPaidForPeriod,
+      periodRemainingAfter,
+      remainingBalanceBefore: activeFacility.remainingBalance,
+      remainingBalanceAfter,
+    })
+    setIsPaymentConfirmModalOpen(true)
+  }
+
+  // Execute confirmed payment transaction and open Success Modal
+  const handleConfirmRecordPayment = async () => {
+    if (isAudit || !activeFacility || !pendingPayment) return
+    setIsSubmittingPayment(true)
+    setPaymentError(null)
+
+    try {
+      const backendRes = await lendingService.recordPayment({
+        facilityId: activeFacility.id,
+        paymentDate: pendingPayment.paymentDate,
+        amount: pendingPayment.amount,
+        method: pendingPayment.method,
+        referenceNo: pendingPayment.referenceNo,
+        notes: pendingPayment.notes,
+      })
+      if (!backendRes.success) {
+        setPaymentError(backendRes.message || 'Payment could not be recorded.')
+        setIsPaymentConfirmModalOpen(false)
+        setIsSubmittingPayment(false)
+        return
+      }
+
+      const updatedAmountPaid = Math.round((activeFacility.amountPaid + pendingPayment.amount) * 100) / 100
+      const updatedRemainingBalance = Math.max(
+        0,
+        Math.round((activeFacility.totalAmountPayable - updatedAmountPaid) * 100) / 100
+      )
+      const updatedStatus: LendingFacility['status'] =
+        updatedRemainingBalance <= 0
+          ? 'Completed'
+          : activeFacility.status === 'Completed'
+          ? 'Active'
+          : activeFacility.status
+
+      const timestampIso = new Date().toISOString()
+      const txId = `dp-${Date.now()}`
+      const isDaily = !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
+
+      const newPaymentRecord: DailyPaymentRecord = {
+        id: txId,
+        date: pendingPayment.paymentDate,
+        amount: pendingPayment.amount,
+        target: pendingPayment.targetDue,
+        method: pendingPayment.method,
+        referenceNo: pendingPayment.referenceNo,
+        notes: pendingPayment.notes,
+        status: pendingPayment.paymentStatus,
+        monthIndex: pendingPayment.monthIndex,
+        periodLabel: pendingPayment.periodLabel,
+        timestamp: timestampIso,
+        isLocked: pendingPayment.paymentStatus === 'Paid',
+      }
+
+      // If this payment completes a previously partially-paid date/period, update prior partial records on that date/period to Paid & locked
+      const existingUpdated = (activeFacility.dailyPayments || []).map((prev) => {
+        if (pendingPayment.paymentStatus === 'Paid') {
+          if (isDaily && prev.date === pendingPayment.paymentDate && (prev.status === 'Partial' || prev.status === 'Partially Paid')) {
+            return { ...prev, status: 'Paid' as const, isLocked: true }
+          }
+          if (!isDaily && pendingPayment.monthIndex && prev.monthIndex === pendingPayment.monthIndex && (prev.status === 'Partial' || prev.status === 'Partially Paid')) {
+            return { ...prev, status: 'Paid' as const, isLocked: true }
+          }
+        }
+        return prev
+      })
+
+      const updatedFacility: LendingFacility = {
+        ...activeFacility,
+        amountPaid: updatedAmountPaid,
+        remainingBalance: updatedRemainingBalance,
+        status: updatedStatus,
+        dailyPayments: [newPaymentRecord, ...existingUpdated],
+      }
+
+      const updatedList = facilities.map((f) => (f.id === activeFacility.id ? updatedFacility : f))
+      saveFacilities(updatedList)
+      setActiveFacility(updatedFacility)
+
+      setCompletedReceipt({
+        ...pendingPayment,
+        transactionId: txId,
+        timestamp: timestampIso,
+      })
+      setIsPaymentConfirmModalOpen(false)
+      setIsDailyPaymentModalOpen(false)
+      setPendingPayment(null)
+      setIsPaymentSuccessModalOpen(true)
+    } finally {
+      setIsSubmittingPayment(false)
     }
-
-    const updatedFacility: LendingFacility = {
-      ...activeFacility,
-      amountPaid: updatedAmountPaid,
-      remainingBalance: updatedRemainingBalance,
-      status: updatedStatus,
-      dailyPayments: [newPaymentRecord, ...(activeFacility.dailyPayments || [])],
-    }
-
-    const updatedList = facilities.map((f) => (f.id === activeFacility.id ? updatedFacility : f))
-    saveFacilities(updatedList)
-
-    // Keep active facility updated if complete detail modal is also open
-    setActiveFacility(updatedFacility)
-    setIsDailyPaymentModalOpen(false)
   }
 
   // Open Delete Confirmation
@@ -800,6 +949,7 @@ export const LendingPage: React.FC = () => {
   const handleRowClick = (facility: LendingFacility) => {
     setActiveFacility(facility)
     setHistorySearchQuery('')
+    setHistoryCurrentPage(1)
     setViewMode('details')
   }
 
@@ -814,7 +964,13 @@ export const LendingPage: React.FC = () => {
     if (!historySearchQuery.trim()) return baseList
     const q = historySearchQuery.toLowerCase().trim()
     return baseList.filter((p) => {
-      const matchStatus = p.status ? p.status.toLowerCase().includes(q) : false
+      const statusDisplay =
+        p.status === 'Partial' || p.status === 'Partially Paid'
+          ? 'partially paid'
+          : p.status
+          ? p.status.toLowerCase()
+          : ''
+      const matchStatus = statusDisplay.includes(q)
       const matchDate = p.date.toLowerCase().includes(q)
       const matchNotes = p.notes && p.notes !== '-' ? p.notes.toLowerCase().includes(q) : false
       const matchRef = p.referenceNo && p.referenceNo !== '-' ? p.referenceNo.toLowerCase().includes(q) : false
@@ -824,9 +980,20 @@ export const LendingPage: React.FC = () => {
     })
   }, [activeFacility, historySearchQuery])
 
+  // Reset history page when search query or active facility changes
+  React.useEffect(() => {
+    setHistoryCurrentPage(1)
+  }, [historySearchQuery, activeFacility?.id])
+
   // Dedicated Full Screen Details Page View
   const renderDetailsPage = () => {
     if (!activeFacility) return null
+
+    const historyTotalPages = Math.ceil(filteredHistoryPayments.length / HISTORY_ITEMS_PER_PAGE) || 1
+    const safeHistoryPage = Math.min(historyCurrentPage, historyTotalPages)
+    const historyStartIndex = (safeHistoryPage - 1) * HISTORY_ITEMS_PER_PAGE
+    const historyEndIndex = Math.min(historyStartIndex + HISTORY_ITEMS_PER_PAGE, filteredHistoryPayments.length)
+    const paginatedHistoryPayments = filteredHistoryPayments.slice(historyStartIndex, historyEndIndex)
 
     return (
       <div className="space-y-6 animate-in fade-in duration-200">
@@ -844,19 +1011,6 @@ export const LendingPage: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
             <LiveDateTimeBadge />
-            <span
-              className={cn(
-                'inline-block px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider',
-                {
-                  Active: 'bg-blue-50 text-blue-700 border-blue-200',
-                  Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                  Pending: 'bg-amber-50 text-amber-700 border-amber-200',
-                  Overdue: 'bg-rose-50 text-rose-700 border-rose-200',
-                }[activeFacility.status]
-              )}
-            >
-              {activeFacility.status}
-            </span>
 
             {!isAudit && activeFacility.remainingBalance > 0 && (
               <Button
@@ -887,9 +1041,19 @@ export const LendingPage: React.FC = () => {
         <div className="bg-white border border-stroke/60 rounded-2xl p-6 shadow-2xs">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                <span className="font-mono text-xs px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold border border-slate-200">
-                  {activeFacility.loanId}
+              <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+                <span
+                  className={cn(
+                    'inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider',
+                    {
+                      Active: 'bg-blue-50 text-blue-700 border-blue-200',
+                      Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      Pending: 'bg-amber-50 text-amber-700 border-amber-200',
+                      Overdue: 'bg-rose-50 text-rose-700 border-rose-200',
+                    }[activeFacility.status]
+                  )}
+                >
+                  {activeFacility.status}
                 </span>
                 <span className="text-xs text-muted-fg font-medium">
                   Schedule: <strong className="text-focus">{activeFacility.paymentFrequency || 'Daily'}</strong>
@@ -898,9 +1062,11 @@ export const LendingPage: React.FC = () => {
                   Term: <strong className="text-focus">{activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)} Days</strong>
                 </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-focus tracking-tight">
-                {activeFacility.borrowerName}
-              </h1>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-focus tracking-tight">
+                  {activeFacility.borrowerName}
+                </h1>
+              </div>
               {(activeFacility.borrowerContact || activeFacility.borrowerAddress) && (
                 <div className="flex flex-wrap items-center gap-3 text-xs text-muted-fg mt-2">
                   {activeFacility.borrowerContact && (
@@ -1081,28 +1247,29 @@ export const LendingPage: React.FC = () => {
                 </h3>
               </div>
 
-              <div className="relative w-full sm:w-72">
-                <Search className="w-3.5 h-3.5 text-muted-fg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <div className="relative w-full sm:w-96 md:w-[420px]">
+                <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={historySearchQuery}
                   onChange={(e) => setHistorySearchQuery(e.target.value)}
-                  placeholder="Search payments by date, ref, remarks..."
-                  className="w-full h-8.5 pl-8 pr-7 rounded-xl border border-stroke/60 bg-white text-xs text-focus placeholder:text-muted-fg/70 focus:outline-none focus:ring-2 focus:ring-focus/20 transition-all"
+                  placeholder="Search payments by date, status, ref, remarks..."
+                  className="w-full h-10.5 py-2.5 pl-10 pr-9 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
                 />
                 {historySearchQuery && (
                   <button
                     type="button"
                     onClick={() => setHistorySearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer p-0.5"
+                    aria-label="Clear payment search"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Ledger Table */}
+            {/* Ledger Table (Paginated to up to 5 rows) */}
             <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
@@ -1117,7 +1284,7 @@ export const LendingPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredHistoryPayments.length === 0 ? (
+                  {paginatedHistoryPayments.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-10 text-center text-muted-fg text-xs">
                         {historySearchQuery
@@ -1126,10 +1293,15 @@ export const LendingPage: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredHistoryPayments.map((p) => {
+                    paginatedHistoryPayments.map((p) => {
                       const isAdvancePaid = p.status === 'Advance Paid'
-                      const isMissed = p.status === 'Missed' || (p.amount === 0 && p.status !== 'Paid' && !isAdvancePaid)
-                      const isPartial = p.status === 'Partial'
+                      const isPartial =
+                        p.status === 'Partial' ||
+                        p.status === 'Partially Paid' ||
+                        (p.amount > 0 && p.target !== undefined && p.amount < p.target - 0.005 && p.status !== 'Paid' && !isAdvancePaid)
+                      const isMissed =
+                        p.status === 'Missed' ||
+                        (p.amount === 0 && p.status !== 'Paid' && !isAdvancePaid && !isPartial)
                       return (
                         <tr
                           key={p.id}
@@ -1155,7 +1327,7 @@ export const LendingPage: React.FC = () => {
                               </span>
                             ) : isPartial ? (
                               <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                {p.periodLabel ? `${p.periodLabel} (Partial)` : 'Partial'}
+                                {p.periodLabel ? `${p.periodLabel} (Partially Paid)` : 'Partially Paid'}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -1190,6 +1362,45 @@ export const LendingPage: React.FC = () => {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Payment Schedule & History Pagination Footer (up to 5 rows per page) */}
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
+              <span className="font-medium text-focus/80">
+                {filteredHistoryPayments.length === 0
+                  ? 'Showing 0 of 0 records'
+                  : `Showing ${historyStartIndex + 1}-${historyEndIndex} of ${filteredHistoryPayments.length} records`}
+              </span>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <span className="text-xs text-muted-fg italic">
+                  Page {safeHistoryPage} out of {historyTotalPages}
+                </span>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeHistoryPage <= 1}
+                  onClick={() => setHistoryCurrentPage((p) => Math.max(1, p - 1))}
+                  className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  aria-label="Previous history page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeHistoryPage >= historyTotalPages}
+                  onClick={() => setHistoryCurrentPage((p) => Math.min(historyTotalPages, p + 1))}
+                  className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  aria-label="Next history page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -1250,7 +1461,13 @@ export const LendingPage: React.FC = () => {
             {!isAudit && (
               <Button
                 type="button"
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => {
+                  const projected = calculateProjectedDueDate(formData.dateBorrowed, formData.termDays || '40')
+                  if (projected && projected !== formData.dueDate) {
+                    setFormData((prev) => ({ ...prev, dueDate: projected }))
+                  }
+                  setIsAddModalOpen(true)
+                }}
                 className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
               >
                 <Plus className="h-4 w-4 shrink-0" />
@@ -1389,24 +1606,24 @@ export const LendingPage: React.FC = () => {
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
         {/* Table Search Bar Toolbar */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
           <div className="relative w-full">
-            <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4.5 h-4.5 text-muted-fg absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by Loan ID, Borrower's Name, or Notes…"
-              className="w-full h-10 pl-9 pr-8 rounded-full border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-xs box-border focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
+              className="w-full h-11 pl-11 pr-9 rounded-full border border-stroke/60 bg-white text-sm text-focus placeholder:text-muted-fg/70 shadow-xs box-border focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
                 aria-label="Clear search"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -1957,15 +2174,20 @@ export const LendingPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-focus block mb-1">
-                  Due Date (Auto projected) <span className="text-red-500">*</span>
+                <label className="text-xs font-semibold text-focus flex items-center justify-between mb-1">
+                  <span>Due Date (Read-only)</span>
+                  <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-muted-fg">
+                    <Lock className="w-3 h-3" /> Auto-calculated
+                  </span>
                 </label>
                 <Input
                   required
                   type="date"
+                  readOnly
+                  tabIndex={-1}
                   value={formData.dueDate}
-                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  className="h-10 text-xs sm:text-sm rounded-xl font-mono"
+                  title="Due Date is automatically calculated from Date Borrowed and Term (Days)"
+                  className="h-10 text-xs sm:text-sm rounded-xl font-mono bg-slate-100 text-muted-fg cursor-not-allowed select-none pointer-events-none border-slate-200"
                 />
               </div>
             </div>
@@ -2065,18 +2287,53 @@ export const LendingPage: React.FC = () => {
           </DialogHeader>
 
           {activeFacility && (() => {
-            const isDaily = !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
+            const freq = activeFacility.paymentFrequency || 'Daily'
+            const isDaily = freq === 'Daily'
+            const isMonthly = freq === 'Monthly'
+            const dailyTarget = getFacilityDailyTarget(activeFacility)
             const maxAllowed = activeFacility.remainingBalance
             const currentPaymentNum = parseFloat(paymentForm.paymentAmount)
             const isAmountValid =
               !isNaN(currentPaymentNum) &&
               currentPaymentNum >= 1 &&
               currentPaymentNum <= maxAllowed
+
+            const alreadyPaidOnSelectedDate = (activeFacility.dailyPayments || [])
+              .filter((p) => p.date === paymentForm.paymentDate)
+              .reduce((sum, p) => sum + (p.amount || 0), 0)
+
+            const isAdvancePaidDate = (activeFacility.dailyPayments || []).some(
+              (p) => p.date === paymentForm.paymentDate && p.status === 'Advance Paid'
+            )
+
             const isDateAlreadySettled =
-              isDaily &&
-              (activeFacility.dailyPayments || []).some(
-                (p) => p.date === paymentForm.paymentDate && (p.status === 'Paid' || p.status === 'Advance Paid' || !!p.isLocked)
-              )
+              isDaily && (alreadyPaidOnSelectedDate >= dailyTarget - 0.005 || isAdvancePaidDate)
+
+            let periodTargetDue = dailyTarget
+            let periodRemainingDue = Math.min(
+              maxAllowed,
+              Math.max(0, Math.round((dailyTarget - alreadyPaidOnSelectedDate) * 100) / 100)
+            )
+            let activePeriodLabel = paymentForm.paymentDate || 'Selected Date'
+
+            if (isMonthly) {
+              const progress = getMonthlyProgress(activeFacility)
+              periodTargetDue = progress.activeMonth.target
+              periodRemainingDue = Math.min(maxAllowed, progress.activeMonth.remaining)
+              activePeriodLabel = `Month ${progress.activeMonth.monthIndex}`
+            } else if (!isDaily) {
+              const nextInst = getNextInstallmentInfo(activeFacility)
+              if (nextInst) {
+                periodTargetDue = nextInst.target
+                periodRemainingDue = Math.min(maxAllowed, nextInst.remaining)
+                activePeriodLabel = nextInst.periodLabel
+              }
+            }
+
+            const willBePartiallyPaid =
+              isAmountValid &&
+              currentPaymentNum < periodRemainingDue - 0.005 &&
+              maxAllowed - currentPaymentNum > 0.005
 
             return (
               <form onSubmit={handleRecordDailyPayment} className="space-y-4 mt-2">
@@ -2089,7 +2346,21 @@ export const LendingPage: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-fg">Remaining Balance:</span>
+                    <span className="text-muted-fg">Installment Target ({activePeriodLabel}):</span>
+                    <span className="font-bold text-focus">
+                      {formatPHP(periodTargetDue)}
+                    </span>
+                  </div>
+                  {isDaily && alreadyPaidOnSelectedDate > 0 && !isDateAlreadySettled && (
+                    <div className="flex justify-between items-center text-amber-700">
+                      <span className="font-medium">Remaining Due for {paymentForm.paymentDate}:</span>
+                      <span className="font-bold">
+                        {formatPHP(periodRemainingDue)} (Paid: {formatPHP(alreadyPaidOnSelectedDate)})
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-fg">Remaining Loan Balance:</span>
                     <span className="font-bold text-amber-600 text-sm">
                       {formatPHP(activeFacility.remainingBalance)}
                     </span>
@@ -2108,6 +2379,14 @@ export const LendingPage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Inline Error Banner */}
+                {paymentError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-xs text-rose-700">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <span>{paymentError}</span>
+                  </div>
+                )}
+
                 {/* Date Settlement Alert if already paid */}
                 {isDateAlreadySettled && (
                   <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl space-y-1 text-xs text-amber-900">
@@ -2116,7 +2395,7 @@ export const LendingPage: React.FC = () => {
                       <span>Date Already Settled ({paymentForm.paymentDate})</span>
                     </div>
                     <p className="text-[11px] text-amber-700 leading-relaxed">
-                      Payment for this calendar date has already been recorded and locked. Please select an unpaid date from the calendar below.
+                      Full installment payment for this calendar date has already been recorded and locked. Please select an unpaid or partially paid date from the calendar below.
                     </p>
                   </div>
                 )}
@@ -2128,7 +2407,7 @@ export const LendingPage: React.FC = () => {
                       Payment Amount (₱) <span className="text-red-500">*</span>
                     </label>
                     <span className="text-[11px] text-muted-fg font-medium">
-                      Min: ₱1.00 • Max: {formatPHP(maxAllowed)}
+                      Target: {formatPHP(periodRemainingDue)} • Max: {formatPHP(maxAllowed)}
                     </span>
                   </div>
                   <Input
@@ -2139,9 +2418,10 @@ export const LendingPage: React.FC = () => {
                     step="any"
                     value={paymentForm.paymentAmount}
                     onWheel={(e) => e.currentTarget.blur()}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      setPaymentError(null)
                       setPaymentForm({ ...paymentForm, paymentAmount: e.target.value })
-                    }
+                    }}
                     placeholder="Enter payment amount"
                     className="h-10 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
@@ -2151,6 +2431,21 @@ export const LendingPage: React.FC = () => {
                         ? 'Payment amount cannot be lower than ₱1.00.'
                         : `Payment amount cannot exceed ${formatPHP(maxAllowed)}.`}
                     </p>
+                  )}
+                  {isAmountValid && (
+                    <div className="mt-2 flex items-center justify-between px-3 py-2 rounded-xl border text-xs bg-slate-50/80 border-slate-200/80">
+                      <span className="text-muted-fg font-medium">Transaction Status Tag:</span>
+                      {willBePartiallyPaid ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          Partially Paid ({formatPHP(Math.max(0, periodRemainingDue - currentPaymentNum))} short of target)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>Paid</span>
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -2217,9 +2512,14 @@ export const LendingPage: React.FC = () => {
                       const firstDay = new Date(calYear, calMonth, 1).getDay()
                       const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
 
-                      const existingMap = new Map<string, DailyPaymentRecord>()
+                      const paidByDateMap = new Map<string, number>()
+                      const advanceDates = new Set<string>()
                       ;(activeFacility.dailyPayments || []).forEach((p) => {
-                        if (p.date) existingMap.set(p.date, p)
+                        if (!p.date) return
+                        paidByDateMap.set(p.date, (paidByDateMap.get(p.date) || 0) + (p.amount || 0))
+                        if (p.status === 'Advance Paid') {
+                          advanceDates.add(p.date)
+                        }
                       })
 
                       const startBorrowed = activeFacility.dateBorrowed || ''
@@ -2237,11 +2537,11 @@ export const LendingPage: React.FC = () => {
                             const dateStr = `${calYear}-${mStr}-${dStr}`
 
                             const isBefore = startBorrowed ? dateStr < startBorrowed : false
-                            const paymentRecord = existingMap.get(dateStr)
-                            const isPaid = paymentRecord
-                              ? (paymentRecord.status === 'Paid' || paymentRecord.status === 'Advance Paid' || !!paymentRecord.isLocked)
-                              : false
-                            const isPartial = paymentRecord ? paymentRecord.status === 'Partial' : false
+                            const paidOnDate = paidByDateMap.get(dateStr) || 0
+                            const isPaid =
+                              advanceDates.has(dateStr) ||
+                              (paidOnDate >= dailyTarget - 0.005 && dailyTarget > 0)
+                            const isPartial = !isPaid && paidOnDate > 0
                             const isSelected = paymentForm.paymentDate === dateStr
                             const isDisabled = isBefore || isPaid
 
@@ -2252,6 +2552,7 @@ export const LendingPage: React.FC = () => {
                                 disabled={isDisabled}
                                 onClick={() => {
                                   if (!isDisabled) {
+                                    setPaymentError(null)
                                     setPaymentForm({ ...paymentForm, paymentDate: dateStr })
                                   }
                                 }}
@@ -2263,10 +2564,14 @@ export const LendingPage: React.FC = () => {
                                     isPaid &&
                                     'bg-emerald-50 text-emerald-700 border border-emerald-200/80 cursor-not-allowed opacity-90',
                                   !isSelected &&
+                                    isPartial &&
+                                    'bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer font-semibold',
+                                  !isSelected &&
                                     isBefore &&
                                     'text-slate-300 cursor-not-allowed bg-slate-50/50',
                                   !isSelected &&
                                     !isPaid &&
+                                    !isPartial &&
                                     !isBefore &&
                                     'hover:bg-slate-100 text-focus cursor-pointer hover:font-bold border border-transparent'
                                 )}
@@ -2276,14 +2581,14 @@ export const LendingPage: React.FC = () => {
                                     : isBefore
                                     ? `${dateStr}: Prior to loan date`
                                     : isPartial
-                                    ? `${dateStr}: Partial payment recorded (Select to settle)`
+                                    ? `${dateStr}: Partially Paid (${formatPHP(paidOnDate)} of ${formatPHP(dailyTarget)}) — Select to pay remaining ${formatPHP(Math.max(0, dailyTarget - paidOnDate))}`
                                     : `Select ${dateStr}`
                                 }
                               >
                                 <span>{d}</span>
                                 {isPaid && <Check className="h-2.5 w-2.5 text-emerald-600 -mt-0.5" />}
                                 {isPartial && !isSelected && (
-                                  <span className="w-1 h-1 rounded-full bg-amber-500 absolute bottom-1" />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 absolute bottom-1" />
                                 )}
                               </button>
                             )
@@ -2294,7 +2599,7 @@ export const LendingPage: React.FC = () => {
 
                     {/* Calendar Legend */}
                     <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-fg pt-2 border-t border-slate-100 gap-1.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
                         <span className="flex items-center gap-1 font-medium">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Paid (Locked)
                         </span>
@@ -2302,7 +2607,7 @@ export const LendingPage: React.FC = () => {
                           <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Selected
                         </span>
                         <span className="flex items-center gap-1 font-medium">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Partial
+                          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Partially Paid
                         </span>
                       </div>
                     </div>
@@ -2374,12 +2679,212 @@ export const LendingPage: React.FC = () => {
                     disabled={!isAmountValid || isDateAlreadySettled || !paymentForm.paymentDate}
                     className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
                   >
-                    Confirm Payment
+                    Review & Confirm Payment
                   </Button>
                 </div>
               </form>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* 5B. Modal: Payment Confirmation Modal */}
+      <Dialog open={isPaymentConfirmModalOpen} onOpenChange={setIsPaymentConfirmModalOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
+              <Coins className="h-5 w-5 text-[#960C01]" />
+              <span>Confirm Payment Transaction</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-fg mt-1">
+              Please review the payment details below before recording this transaction.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pendingPayment && (
+            <div className="space-y-4 mt-2">
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Borrower:</span>
+                  <span className="font-bold text-focus text-right">{pendingPayment.borrowerName}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Payment Date:</span>
+                  <span className="font-mono font-semibold text-focus">
+                    {pendingPayment.paymentDate}
+                    {pendingPayment.periodLabel ? ` (${pendingPayment.periodLabel})` : ''}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Installment Target Due:</span>
+                  <span className="font-semibold text-focus">{formatPHP(pendingPayment.targetDue)}</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-slate-200/70 pt-2">
+                  <span className="font-semibold text-focus">Payment Amount:</span>
+                  <span className="font-extrabold text-emerald-600 text-sm">
+                    {formatPHP(pendingPayment.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Payment Status Tag:</span>
+                  {pendingPayment.paymentStatus === 'Partially Paid' ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                      Partially Paid
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span>Paid</span>
+                    </span>
+                  )}
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Payment Method:</span>
+                  <span className="font-semibold text-focus">{pendingPayment.method}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Receipt / Ref No.:</span>
+                  <span className="font-mono text-focus">{pendingPayment.referenceNo || '—'}</span>
+                </div>
+                {pendingPayment.notes && (
+                  <div className="flex justify-between items-start gap-3">
+                    <span className="text-muted-fg shrink-0">Remarks:</span>
+                    <span className="text-focus text-right">{pendingPayment.notes}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center border-t border-slate-200/70 pt-2">
+                  <span className="text-muted-fg">Remaining Loan Balance After:</span>
+                  <span className="font-bold text-amber-600">
+                    {formatPHP(pendingPayment.remainingBalanceAfter)}
+                  </span>
+                </div>
+              </div>
+
+              {pendingPayment.paymentStatus === 'Partially Paid' && (
+                <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 space-y-1">
+                  <div className="font-bold text-amber-800 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Partial Payment Notice</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700 leading-relaxed">
+                    This payment is less than the installment due. It will be tagged as{' '}
+                    <strong>Partially Paid</strong> (not Paid), and the remaining{' '}
+                    <strong>{formatPHP(pendingPayment.periodRemainingAfter)}</strong> for this period will remain open for settlement.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSubmittingPayment}
+                  onClick={() => setIsPaymentConfirmModalOpen(false)}
+                  className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Back to Edit
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isSubmittingPayment}
+                  onClick={handleConfirmRecordPayment}
+                  className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer"
+                >
+                  {isSubmittingPayment ? 'Recording...' : 'Confirm & Record Payment'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 5C. Modal: Payment Success Modal */}
+      <Dialog open={isPaymentSuccessModalOpen} onOpenChange={setIsPaymentSuccessModalOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6">
+          {completedReceipt && (
+            <div className="space-y-4">
+              <div className="flex flex-col items-center text-center pt-1">
+                <div
+                  className={cn(
+                    'w-12 h-12 rounded-full flex items-center justify-center mb-3 border',
+                    completedReceipt.paymentStatus === 'Partially Paid'
+                      ? 'bg-amber-50 border-amber-200 text-amber-600'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                  )}
+                >
+                  <Check className="w-6 h-6" />
+                </div>
+                <DialogTitle className="text-lg font-bold text-focus">
+                  Payment Recorded Successfully
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-fg mt-1">
+                  Payment transaction for <strong className="text-focus">{completedReceipt.borrowerName}</strong> has been saved to the ledger.
+                </DialogDescription>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Transaction Status:</span>
+                  {completedReceipt.paymentStatus === 'Partially Paid' ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                      Partially Paid
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <Lock className="w-2.5 h-2.5 text-emerald-600" />
+                      <span>Paid</span>
+                    </span>
+                  )}
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Amount Paid:</span>
+                  <span className="font-extrabold text-emerald-600 text-sm">
+                    {formatPHP(completedReceipt.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Payment Date:</span>
+                  <span className="font-mono font-semibold text-focus">
+                    {completedReceipt.paymentDate}
+                    {completedReceipt.periodLabel ? ` (${completedReceipt.periodLabel})` : ''}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Payment Method:</span>
+                  <span className="font-semibold text-focus">{completedReceipt.method}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-fg">Receipt / Ref No.:</span>
+                  <span className="font-mono text-focus">{completedReceipt.referenceNo || '—'}</span>
+                </div>
+                {completedReceipt.paymentStatus === 'Partially Paid' && (
+                  <div className="flex justify-between items-center text-amber-700 border-t border-slate-200/70 pt-2">
+                    <span className="font-medium">Remaining Installment Due:</span>
+                    <span className="font-bold">{formatPHP(completedReceipt.periodRemainingAfter)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center border-t border-slate-200/70 pt-2">
+                  <span className="text-muted-fg">Updated Loan Balance:</span>
+                  <span className="font-bold text-amber-600">
+                    {formatPHP(completedReceipt.remainingBalanceAfter)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setIsPaymentSuccessModalOpen(false)
+                    setCompletedReceipt(null)
+                  }}
+                  className="w-full h-10 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -2451,69 +2956,21 @@ export const LendingPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-focus block mb-1">
-                    Date Borrowed <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    required
-                    type="date"
-                    value={editFormData.dateBorrowed}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, dateBorrowed: e.target.value })
-                    }
-                    className="h-10 text-xs sm:text-sm rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-focus block mb-1">
-                    Due Date <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    required
-                    type="date"
-                    value={editFormData.dueDate}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, dueDate: e.target.value })
-                    }
-                    className="h-10 text-xs sm:text-sm rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-focus block mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={editFormData.status}
-                    onChange={(e) =>
-                      setEditFormData({
-                        ...editFormData,
-                        status: e.target.value as LendingFacility['status'],
-                      })
-                    }
-                    className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Overdue">Overdue</option>
-                    <option value="Pending">Pending</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-focus block mb-1">
                     Payment Schedule
                   </label>
                   <select
                     value={editFormData.paymentFrequency}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const freq = e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+                      const newTerm = freq === 'Daily' ? '40' : freq === 'Monthly' ? '60' : editFormData.termDays
+                      const newDue = calculateProjectedDueDate(editFormData.dateBorrowed, newTerm)
                       setEditFormData({
                         ...editFormData,
-                        paymentFrequency: e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually',
+                        paymentFrequency: freq,
+                        termDays: newTerm,
+                        dueDate: newDue || editFormData.dueDate,
                       })
-                    }
+                    }}
                     className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
                   >
                     <option value="Daily">Daily</option>
@@ -2522,6 +2979,87 @@ export const LendingPage: React.FC = () => {
                     <option value="Annually">Annually</option>
                   </select>
                 </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Term (Days) <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    required
+                    type="number"
+                    min="1"
+                    value={editFormData.termDays}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      const newDue = calculateProjectedDueDate(editFormData.dateBorrowed, val)
+                      setEditFormData({
+                        ...editFormData,
+                        termDays: val,
+                        dueDate: newDue || editFormData.dueDate,
+                      })
+                    }}
+                    className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Date Borrowed <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    required
+                    type="date"
+                    value={editFormData.dateBorrowed}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      const newDue = calculateProjectedDueDate(val, editFormData.termDays)
+                      setEditFormData({
+                        ...editFormData,
+                        dateBorrowed: val,
+                        dueDate: newDue || editFormData.dueDate,
+                      })
+                    }}
+                    className="h-10 text-xs sm:text-sm rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-focus flex items-center justify-between mb-1">
+                    <span>Due Date (Read-only)</span>
+                    <Lock className="w-3 h-3 text-muted-fg" />
+                  </label>
+                  <Input
+                    required
+                    type="date"
+                    readOnly
+                    tabIndex={-1}
+                    value={editFormData.dueDate}
+                    className="h-10 text-xs sm:text-sm rounded-xl font-mono bg-slate-100 text-muted-fg cursor-not-allowed select-none pointer-events-none border-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-focus block mb-1">
+                  Status
+                </label>
+                <select
+                  value={editFormData.status}
+                  onChange={(e) =>
+                    setEditFormData({
+                      ...editFormData,
+                      status: e.target.value as LendingFacility['status'],
+                    })
+                  }
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Overdue">Overdue</option>
+                  <option value="Pending">Pending</option>
+                </select>
               </div>
 
               <div>

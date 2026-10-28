@@ -239,7 +239,7 @@ class LendingService:
                 available_credit = Decimal("0.00")
                 is_settled = False
                 is_overdue = today_iso > cycle_due
-                status_str = "Partial"
+                status_str = "Partially Paid"
             else:
                 rem = expected
                 is_settled = False
@@ -403,10 +403,9 @@ class LendingService:
                     "timestamp": iso,
                     "isLocked": True,
                 })
-            elif available_funds > Decimal("0.00"):
+            elif paid_today > Decimal("0.00") and available_funds > Decimal("0.00"):
                 available_credit = Decimal("0.00")
-                item_penalty = 0.0
-                status_str = "Partial"
+                status_str = "Partially Paid"
 
                 method_str = payments_today[0].get("method", "Cash") if payments_today else "Cash"
                 ref_str = payments_today[0].get("referenceNo", "-") if payments_today else "-"
@@ -469,6 +468,7 @@ class LendingService:
         frequency: str,
         payment_date_val: Any,
         repayments: List[Dict[str, Any]],
+        installment_target: Optional[Decimal | float] = None,
     ) -> Tuple[bool, Optional[str]]:
         """
         Checks whether the specified period or date is already settled and locked.
@@ -482,11 +482,20 @@ class LendingService:
         iso_date = p_date.isoformat()
 
         if freq == "Daily":
-            for r in repayments:
-                r_date = str(r.get("date") or r.get("payment_date") or "").split("T")[0]
-                status_val = str(r.get("status") or "").capitalize()
-                if r_date == iso_date and (status_val in {"Paid", "Completed"} or r.get("amount", 0) > 0):
+            paid_on_date = sum(
+                (Decimal(str(r.get("amount", 0))) for r in repayments if str(r.get("date") or r.get("payment_date") or "").split("T")[0] == iso_date),
+                Decimal("0.00"),
+            )
+            if installment_target is not None and Decimal(str(installment_target)) > Decimal("0.00"):
+                target_dec = quantize(installment_target)
+                if paid_on_date >= target_dec:
                     return True, f"Date {iso_date} is already fully paid and locked. You cannot record another payment for this date."
+            else:
+                for r in repayments:
+                    r_date = str(r.get("date") or r.get("payment_date") or "").split("T")[0]
+                    status_val = str(r.get("status") or "").strip().lower()
+                    if r_date == iso_date and status_val in {"paid", "completed"}:
+                        return True, f"Date {iso_date} is already fully paid and locked. You cannot record another payment for this date."
 
         return False, None
 
@@ -1108,20 +1117,12 @@ class LendingService:
                 {
                     "date": t.payment_date.isoformat() if t.payment_date else "",
                     "amount": float(t.amount or 0),
-                    "status": "Paid" if (t.status or "").lower() == "completed" else "Paid",
+                    "status": "Paid" if (t.status or "").lower() == "completed" else (t.status or "Paid"),
                 }
                 for t in existing_txs
             ]
 
-            # 1. Period settlement locking check
-            is_locked, lock_reason = cls.check_period_settlement(freq, payment_date_val, repayment_dicts)
-            if is_locked:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=lock_reason or "Period or date is already fully settled and locked.",
-                )
-
-            # 2. Terms & current balances
+            # 1. Terms & current balances
             terms = cls.calculate_facility(
                 fac.principal_amount,
                 fac.interest_rate or Decimal("20.00"),
@@ -1130,6 +1131,19 @@ class LendingService:
                 fac.due_date,
                 term_days,
             )
+
+            # 2. Period settlement locking check
+            is_locked, lock_reason = cls.check_period_settlement(
+                freq,
+                payment_date_val,
+                repayment_dicts,
+                installment_target=terms["installment_target"],
+            )
+            if is_locked:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=lock_reason or "Period or date is already fully settled and locked.",
+                )
 
             total_paid_before = sum((Decimal(str(r["amount"])) for r in repayment_dicts), Decimal("0.00"))
 
@@ -1177,6 +1191,23 @@ class LendingService:
 
             rem_bal = max(Decimal("0.00"), remaining_before - payment_amount)
 
+            # Determine if this payment fully settles the period/date target or is Partially Paid
+            target_dec = quantize(terms["installment_target"])
+            if freq == "Daily":
+                paid_on_date_before = sum(
+                    (Decimal(str(r["amount"])) for r in repayment_dicts if r["date"] == pay_date.isoformat()),
+                    Decimal("0.00"),
+                )
+                is_period_settled = (paid_on_date_before + payment_amount) >= target_dec or rem_bal <= Decimal("0.00")
+            elif freq == "Monthly":
+                active_rem = quantize(progress["activeMonth"]["remaining"])
+                is_period_settled = payment_amount >= active_rem or rem_bal <= Decimal("0.00")
+            else:
+                is_period_settled = payment_amount >= target_dec or rem_bal <= Decimal("0.00")
+
+            tx_db_status = "Completed" if is_period_settled else "Partially Paid"
+            tx_out_status = "Paid" if is_period_settled else "Partially Paid"
+
             new_tx = LendingTransaction(
                 facility_id=fac.facility_id,
                 transaction_ref_no=tx_ref,
@@ -1190,10 +1221,16 @@ class LendingService:
                 remaining_balance=rem_bal,
                 payment_method=method.strip() if method else "Cash",
                 reference_no=ref_clean,
-                status="Completed",
+                status=tx_db_status,
                 notes=(notes or "").strip(),
             )
             db.add(new_tx)
+
+            # If now settled on this date, mark any earlier partial transactions on this date as Completed
+            if freq == "Daily" and is_period_settled:
+                for prev_tx in existing_txs:
+                    if prev_tx.payment_date == pay_date and prev_tx.status == "Partially Paid":
+                        prev_tx.status = "Completed"
 
             # 4. Update facility status if fully paid
             updated_remaining = remaining_before - payment_amount
@@ -1211,7 +1248,7 @@ class LendingService:
                 "payment_date": pay_date.isoformat(),
                 "amount": float(payment_amount),
                 "remaining_balance": float(updated_remaining),
-                "status": "Paid",
+                "status": tx_out_status,
                 "payment_method": new_tx.payment_method,
                 "reference_no": ref_clean,
                 "notes": notes or "",
