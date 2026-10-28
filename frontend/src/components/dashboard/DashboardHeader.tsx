@@ -142,7 +142,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               onClick={() => setIsOpen((prev) => !prev)}
               className={cn(
                 'inline-flex items-center gap-2 h-10 sm:h-11 px-3.5 sm:px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 whitespace-nowrap',
-                isOpen && 'ring-2 ring-focus/20 border-focus'
+                isOpen && 'ring-2 ring-slate-100 border-slate-300'
               )}
               aria-expanded={isOpen}
               aria-haspopup="listbox"

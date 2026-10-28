@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import {
   Landmark,
   Building2,
@@ -19,6 +20,8 @@ import {
   CheckCircle2,
   HandCoins,
   Clock,
+  MoreVertical,
+  Eye,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -184,6 +187,48 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = React.useState(false)
 
   const [highlightedLoanId, setHighlightedLoanId] = React.useState<string | null>(null)
+
+  // Audit Actions Menu State
+  const [openMenuLoanId, setOpenMenuLoanId] = React.useState<string | null>(null)
+  const [menuPosition, setMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
+  const [activeMenuLoan, setActiveMenuLoan] = React.useState<LoanItem | null>(null)
+
+  React.useEffect(() => {
+    const handleCloseMenu = () => setOpenMenuLoanId(null)
+    window.addEventListener('click', handleCloseMenu)
+    window.addEventListener('scroll', handleCloseMenu, true)
+    return () => {
+      window.removeEventListener('click', handleCloseMenu)
+      window.removeEventListener('scroll', handleCloseMenu, true)
+    }
+  }, [])
+
+  const handleMarkLoanAudit = async (loan: LoanItem, status: 'Verified' | 'Flagged') => {
+    const timestamp = new Date().toLocaleString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    const updatedLoan: LoanItem = {
+      ...loan,
+      auditStatus: status,
+      auditDate: timestamp,
+      auditedBy: user?.fullName || 'Audit',
+      status: status === 'Verified' ? (loan.status === 'Pending Audit' ? 'Approved' : loan.status) : loan.status,
+    }
+    setLoans((prev) => prev.map((l) => (l.id === loan.id ? updatedLoan : l)))
+    try {
+      await loanService.auditReviewLoan(loan.id, {
+        action: status === 'Verified' ? 'approve' : 'disapprove',
+        remark: status === 'Verified' ? 'Audited & Verified' : 'Discrepancy flagged by audit',
+      })
+    } catch {
+      // Fallback if endpoint is unavailable
+    }
+    setOpenMenuLoanId(null)
+  }
 
   // Fetch Companies from Database
   React.useEffect(() => {
@@ -693,7 +738,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                 }}
                 className={cn(
                   'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                  isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isPeriodDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <Calendar className="h-3.5 w-3.5 text-muted-fg shrink-0" />
@@ -741,7 +786,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                 }}
                 className={cn(
                   'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus whitespace-nowrap shrink-0',
-                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-medium text-focus/90">
@@ -809,7 +854,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                   }}
                   className={cn(
                     'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                    isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                    isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                 >
                   <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
@@ -1153,11 +1198,27 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                     >
                       {/* 1. Date */}
                       <TableCell className="px-2 py-3 text-xs font-medium text-focus whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          <span>{loan.date}</span>
-                          {highlightedLoanId === loan.id && (
-                            <span className="inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold bg-[#960C01] text-white animate-bounce">
-                              NEW
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <span>{loan.date}</span>
+                            {highlightedLoanId === loan.id && (
+                              <span className="inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold bg-[#960C01] text-white animate-bounce">
+                                NEW
+                              </span>
+                            )}
+                          </div>
+                          {loan.auditDate && (
+                            <span className="text-[10px] text-muted-fg font-normal flex items-center gap-1" title={`Audited at: ${loan.auditDate}`}>
+                              <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[120px]">{loan.auditDate}</span>
+                            </span>
+                          )}
+                          {loan.auditStatus && loan.auditStatus !== 'Pending Audit' && (
+                            <span className={cn(
+                              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold w-fit",
+                              loan.auditStatus === 'Verified' ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80" : "bg-amber-50 text-amber-700 border border-amber-200/80"
+                            )}>
+                              {loan.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
                             </span>
                           )}
                         </div>
@@ -1215,157 +1276,166 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       {/* 8. Actions / Status */}
                       <TableCell className="px-2 py-3 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* 1. Pending Finance Endorsement */}
-                          {isPendingFinance && (
+                          {isAuditor ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                setMenuPosition({
+                                  top: rect.bottom + window.scrollY + 4,
+                                  left: Math.min(window.innerWidth - 180, Math.max(10, rect.right + window.scrollX - 160)),
+                                })
+                                setActiveMenuLoan(loan)
+                                setOpenMenuLoanId(openMenuLoanId === loan.id ? null : loan.id)
+                              }}
+                              className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
+                              title="Audit Actions"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          ) : (
                             <>
-                              {canApprove ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={() => setApproveLoanItem(loan)}
-                                  className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
-                                  title="Review and endorse loan to internal audit"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Endorse</span>
-                                </Button>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-xs font-semibold shadow-2xs">
-                                  <Clock className="w-3 h-3 text-amber-600" />
-                                  <span>Pending Finance</span>
-                                </span>
-                              )}
-
-                              {/* Edit / Delete actions for borrower or finance */}
-                              {(canApprove || (!isAuditor && loanType === 'Borrower')) && (
+                              {/* 1. Pending Finance Endorsement */}
+                              {isPendingFinance && (
                                 <>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setEditLoan(loan)}
-                                    className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
-                                    title="Edit Loan Request"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setDeleteConfirmLoan(loan)}
-                                    className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                                    title="Cancel / Delete Loan Request"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </Button>
+                                  {canApprove ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => setApproveLoanItem(loan)}
+                                      className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Review and endorse loan to internal audit"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span>Endorse</span>
+                                    </Button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-xs font-semibold shadow-2xs">
+                                      <Clock className="w-3 h-3 text-amber-600" />
+                                      <span>Pending Finance</span>
+                                    </span>
+                                  )}
+
+                                  {/* Edit / Delete actions for borrower or finance */}
+                                  {(canApprove || (!isAuditor && loanType === 'Borrower')) && (
+                                    <>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setEditLoan(loan)}
+                                        className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
+                                        title="Edit Loan Request"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setDeleteConfirmLoan(loan)}
+                                        className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                                        title="Cancel / Delete Loan Request"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </>
+                                  )}
                                 </>
                               )}
-                            </>
-                          )}
 
-                          {/* 2. Pending Audit Approval */}
-                          {isPendingAudit && (
-                            <>
-                              {isAuditor ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={() => setAuditReviewLoanItem(loan)}
-                                  className="h-7 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
-                                  title="Perform audit review to approve or disapprove this loan"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Audit Review</span>
-                                </Button>
-                              ) : (
+                              {/* 2. Pending Audit Approval */}
+                              {isPendingAudit && (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-xs font-semibold shadow-2xs">
                                   <Clock className="w-3 h-3 text-indigo-600" />
                                   <span>Pending Audit</span>
                                 </span>
                               )}
-                            </>
-                          )}
 
-                          {/* 3. Rejected by Finance */}
-                          {isRejectedFinance && (
-                            <span
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
-                              title={loan.financeRemark || 'Rejected by finance'}
-                            >
-                              <X className="w-3 h-3 text-rose-600" />
-                              <span>Rejected (Finance)</span>
-                            </span>
-                          )}
-
-                          {/* 4. Disapproved by Audit */}
-                          {isDisapprovedAudit && (
-                            <span
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
-                              title={loan.auditRemark || 'Disapproved by audit'}
-                            >
-                              <X className="w-3 h-3 text-rose-600" />
-                              <span>Disapproved (Audit)</span>
-                            </span>
-                          )}
-
-                          {/* 5. Approved / Active / Partially Paid / Paid */}
-                          {!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit && (
-                            <div className="flex items-center gap-1.5">
-                              {loanType === 'Lender' ? (
-                                loan.status === 'Paid' ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>Paid</span>
-                                  </span>
-                                ) : loan.status === 'Partially Paid' ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-xs font-semibold shadow-2xs">
-                                    <Clock className="w-3.5 h-3.5 text-blue-600" />
-                                    <span>Partially Paid</span>
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>Approved</span>
-                                  </span>
-                                )
-                              ) : loan.status === 'Paid' ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span>Paid</span>
+                              {/* 3. Rejected by Finance */}
+                              {isRejectedFinance && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
+                                  title={loan.financeRemark || 'Rejected by finance'}
+                                >
+                                  <X className="w-3 h-3 text-rose-600" />
+                                  <span>Rejected (Finance)</span>
                                 </span>
-                              ) : loan.status === 'Partially Paid' ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setPaymentLoan(loan)
-                                    setIsPaymentModalOpen(true)
-                                  }}
-                                  className="h-7 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 text-xs font-semibold cursor-pointer shadow-2xs"
-                                  title="Record partial or full payment on this loan"
-                                >
-                                  <HandCoins className="w-3.5 h-3.5 mr-1 text-blue-600" />
-                                  <span>Partially Paid</span>
-                                </Button>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setPaymentLoan(loan)
-                                    setIsPaymentModalOpen(true)
-                                  }}
-                                  className="h-7 px-2.5 rounded-lg bg-[#960C01]/10 hover:bg-[#960C01] hover:text-white text-[#960C01] border border-[#960C01]/20 text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
-                                  title="Record partial or full payment on this loan"
-                                >
-                                  <HandCoins className="w-3.5 h-3.5 mr-1" />
-                                  <span>Pay / Update</span>
-                                </Button>
                               )}
-                            </div>
+
+                              {/* 4. Disapproved by Audit */}
+                              {isDisapprovedAudit && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
+                                  title={loan.auditRemark || 'Disapproved by audit'}
+                                >
+                                  <X className="w-3 h-3 text-rose-600" />
+                                  <span>Disapproved (Audit)</span>
+                                </span>
+                              )}
+
+                              {/* 5. Approved / Active / Partially Paid / Paid */}
+                              {!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit && (
+                                <div className="flex items-center gap-1.5">
+                                  {loanType === 'Lender' ? (
+                                    loan.status === 'Paid' ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Paid</span>
+                                      </span>
+                                    ) : loan.status === 'Partially Paid' ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-xs font-semibold shadow-2xs">
+                                        <Clock className="w-3.5 h-3.5 text-blue-600" />
+                                        <span>Partially Paid</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Approved</span>
+                                      </span>
+                                    )
+                                  ) : loan.status === 'Paid' ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Paid</span>
+                                    </span>
+                                  ) : loan.status === 'Partially Paid' ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setPaymentLoan(loan)
+                                        setIsPaymentModalOpen(true)
+                                      }}
+                                      className="h-7 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 text-xs font-semibold cursor-pointer shadow-2xs"
+                                      title="Record partial or full payment on this loan"
+                                    >
+                                      <HandCoins className="w-3.5 h-3.5 mr-1 text-blue-600" />
+                                      <span>Partially Paid</span>
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setPaymentLoan(loan)
+                                        setIsPaymentModalOpen(true)
+                                      }}
+                                      className="h-7 px-2.5 rounded-lg bg-[#960C01]/10 hover:bg-[#960C01] hover:text-white text-[#960C01] border border-[#960C01]/20 text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
+                                      title="Record partial or full payment on this loan"
+                                    >
+                                      <HandCoins className="w-3.5 h-3.5 mr-1" />
+                                      <span>Pay / Update</span>
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -1519,6 +1589,50 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         loan={paymentLoan}
         onLoanPaid={handleLoanPaid}
       />
+
+      {/* Audit Action Portal Menu */}
+      {openMenuLoanId && menuPosition && activeMenuLoan && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            style={{
+              position: 'absolute',
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+            }}
+            className="z-50 w-48 rounded-xl bg-white border border-slate-200 shadow-xl py-1 animate-in fade-in zoom-in-95 duration-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => handleMarkLoanAudit(activeMenuLoan, 'Verified')}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Mark as Audit</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMarkLoanAudit(activeMenuLoan, 'Flagged')}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors text-left cursor-pointer"
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Mark as Discrepancy</span>
+            </button>
+            <div className="h-px bg-slate-100 my-1" />
+            <button
+              type="button"
+              onClick={() => {
+                setAuditReviewLoanItem(activeMenuLoan)
+                setOpenMenuLoanId(null)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-500" />
+              <span>Audit Review / View</span>
+            </button>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

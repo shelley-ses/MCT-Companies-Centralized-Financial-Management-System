@@ -100,20 +100,22 @@ export const RequestStep: React.FC<RequestStepProps> = ({ onCodeSent }) => {
             )}
           />
 
-          <Button
-            type="submit"
-            disabled={isSubmitDisabled}
-            className="w-full h-12 text-base font-semibold"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Sending code…
-              </>
-            ) : (
-              'Send Code'
-            )}
-          </Button>
+          <div className="flex justify-center w-full">
+            <Button
+              type="submit"
+              disabled={isSubmitDisabled}
+              className="w-full max-w-sm h-12 text-base font-semibold"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Sending code…
+                </>
+              ) : (
+                'Send Code'
+              )}
+            </Button>
+          </div>
         </form>
       </Form>
     </div>

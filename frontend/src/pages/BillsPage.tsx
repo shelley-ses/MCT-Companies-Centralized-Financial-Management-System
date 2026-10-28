@@ -206,13 +206,52 @@ export const BillsPage: React.FC = () => {
     setLoading(true)
     try {
       const data = await billsService.getBills()
-      setBills(data)
+      let auditRecords: Record<string, any> = {}
+      try {
+        const stored = localStorage.getItem('bills_audit_records')
+        if (stored) auditRecords = JSON.parse(stored)
+      } catch {}
+      const merged = data.map((b) => {
+        if (auditRecords[b.id]) {
+          return { ...b, ...auditRecords[b.id] }
+        }
+        return b
+      })
+      setBills(merged)
     } catch (err) {
       console.error('Failed to load bills:', err)
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const handleMarkBillAudit = (bill: BillItem, status: 'Verified' | 'Flagged') => {
+    const timestamp = new Date().toLocaleString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    const updated: BillItem = {
+      ...bill,
+      auditStatus: status,
+      auditDate: timestamp,
+      auditedBy: user?.fullName || 'Audit',
+    }
+    setBills((prev) => prev.map((item) => (item.id === bill.id ? updated : item)))
+    try {
+      const stored = localStorage.getItem('bills_audit_records')
+      const records = stored ? JSON.parse(stored) : {}
+      records[bill.id] = { auditStatus: status, auditDate: timestamp, auditedBy: user?.fullName || 'Audit' }
+      localStorage.setItem('bills_audit_records', JSON.stringify(records))
+    } catch {
+      // ignore
+    }
+    setOpenMenuBillId(null)
+    setMenuPosition(null)
+    setActiveMenuBill(null)
+  }
 
   React.useEffect(() => {
     loadBills()
@@ -546,7 +585,7 @@ export const BillsPage: React.FC = () => {
                 }}
                 className={cn(
                   'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-medium text-focus/90">
@@ -598,7 +637,7 @@ export const BillsPage: React.FC = () => {
                   }}
                   className={cn(
                     'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                    isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                    isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                 >
                   <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
@@ -972,27 +1011,43 @@ export const BillsPage: React.FC = () => {
 
                       {/* Status */}
                       <TableCell className="w-[10%] px-2.5 py-3.5 text-left truncate">
-                        {isPaid ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold shadow-2xs">
-                            <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                            <span>Paid</span>
-                          </span>
-                        ) : isOverdue ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold shadow-2xs">
-                            <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
-                            <span>Overdue</span>
-                          </span>
-                        ) : isDueSoon ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold shadow-2xs">
-                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                            <span>Due Soon</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold shadow-2xs">
-                            <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            <span>Unpaid</span>
-                          </span>
-                        )}
+                        <div className="flex flex-col gap-1 items-start">
+                          {isPaid ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold shadow-2xs">
+                              <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <span>Paid</span>
+                            </span>
+                          ) : isOverdue ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold shadow-2xs">
+                              <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                              <span>Overdue</span>
+                            </span>
+                          ) : isDueSoon ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold shadow-2xs">
+                              <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>Due Soon</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold shadow-2xs">
+                              <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              <span>Unpaid</span>
+                            </span>
+                          )}
+                          {bill.auditDate && (
+                            <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1" title={`Audited at: ${bill.auditDate}`}>
+                              <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[110px]">{bill.auditDate}</span>
+                            </span>
+                          )}
+                          {bill.auditStatus && (
+                            <span className={cn(
+                              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold w-fit",
+                              bill.auditStatus === 'Verified' ? "bg-emerald-50 text-emerald-700 border border-emerald-200/80" : "bg-amber-50 text-amber-700 border border-amber-200/80"
+                            )}>
+                              {bill.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
 
                       {/* Actions: 3 dots button with Edit and Delete choices (Delete removed for Audit) */}
@@ -1082,7 +1137,7 @@ export const BillsPage: React.FC = () => {
       {openMenuBillId && (activeMenuBill || bills.some((item) => item.id === openMenuBillId)) && menuPosition && typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="bill-portal-menu bill-action-menu fixed w-36 bg-white rounded-xl border border-slate-200 shadow-2xl p-1.5 z-[99999] animate-in fade-in-50 zoom-in-95 duration-150"
+            className="bill-portal-menu bill-action-menu fixed w-48 bg-white rounded-xl border border-slate-200 shadow-2xl p-1.5 z-[99999] animate-in fade-in-50 zoom-in-95 duration-150"
             style={{
               top: `${menuPosition.top}px`,
               right: `${menuPosition.right}px`,
@@ -1091,24 +1146,66 @@ export const BillsPage: React.FC = () => {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                const b = activeMenuBill || bills.find((item) => item.id === openMenuBillId)
-                setOpenMenuBillId(null)
-                setMenuPosition(null)
-                setActiveMenuBill(null)
-                if (b) handleRowClick(b)
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer"
-            >
-              <Eye className="w-3.5 h-3.5 text-muted-fg" />
-              <span>View Details</span>
-            </button>
-
-            {!isAudit && (
+            {isAudit ? (
               <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const b = activeMenuBill || bills.find((item) => item.id === openMenuBillId)
+                    if (b) handleMarkBillAudit(b, 'Verified')
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Mark as Audit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const b = activeMenuBill || bills.find((item) => item.id === openMenuBillId)
+                    if (b) handleMarkBillAudit(b, 'Flagged')
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors text-left cursor-pointer"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Mark as Discrepancy</span>
+                </button>
+                <div className="h-px bg-slate-100 my-1" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const b = activeMenuBill || bills.find((item) => item.id === openMenuBillId)
+                    setOpenMenuBillId(null)
+                    setMenuPosition(null)
+                    setActiveMenuBill(null)
+                    if (b) handleRowClick(b)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500" />
+                  <span>View Details</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const b = activeMenuBill || bills.find((item) => item.id === openMenuBillId)
+                    setOpenMenuBillId(null)
+                    setMenuPosition(null)
+                    setActiveMenuBill(null)
+                    if (b) handleRowClick(b)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-muted-fg" />
+                  <span>View Details</span>
+                </button>
                 <button
                   type="button"
                   onClick={(e) => {

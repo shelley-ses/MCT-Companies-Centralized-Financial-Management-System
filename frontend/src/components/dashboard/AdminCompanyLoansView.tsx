@@ -883,7 +883,7 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
                 }}
                 className={cn(
                   'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                  isPeriodDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isPeriodDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <Calendar className="h-3.5 w-3.5 text-muted-fg shrink-0" />
@@ -932,7 +932,7 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
                 }}
                 className={cn(
                   'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                  isCompanyDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
@@ -1044,7 +1044,7 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
                 }}
                 className={cn(
                   'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                  isCategoryDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isCategoryDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <CreditCard className="h-3.5 w-3.5 text-muted-fg shrink-0" />
@@ -1140,7 +1140,7 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
                 }}
                 className={cn(
                   'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
-                  isStatusDropdownOpen && 'ring-2 ring-focus/20 border-focus'
+                  isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-medium text-focus/90">

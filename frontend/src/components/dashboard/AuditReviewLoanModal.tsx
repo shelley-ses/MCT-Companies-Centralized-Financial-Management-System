@@ -13,7 +13,6 @@ import {
   XCircle,
   AlertCircle,
   Building2,
-  Calendar,
   MessageSquare,
   ShieldCheck,
 } from 'lucide-react'

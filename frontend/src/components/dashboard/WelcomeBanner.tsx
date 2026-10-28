@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Calendar, Clock, Sparkles } from 'lucide-react'
+import { Calendar, Clock } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import { cn } from '@/lib/utils'
 
@@ -57,7 +57,6 @@ export const WelcomeBanner: React.FC<WelcomeBannerProps> = ({
             <h2 className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-neutral-900 leading-tight">
               Welcome Back, {name}!
             </h2>
-            <Sparkles className="h-5 w-5 text-amber-500 shrink-0" />
           </div>
           <p className="text-xs sm:text-sm text-neutral-600 font-normal mt-1">
             MCT centralized financial operations and performance monitor
