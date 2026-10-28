@@ -109,7 +109,7 @@ export const UpdateLoanStatusModal: React.FC<UpdateLoanStatusModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl">
+      <DialogContent className="sm:max-w-[620px] max-h-[85vh] overflow-y-auto rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl">
         <DialogHeader className="text-left pb-3 border-b border-stroke/20">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">

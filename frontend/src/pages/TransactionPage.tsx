@@ -19,7 +19,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import {
   Table,
   TableHeader,
@@ -38,6 +37,7 @@ import { useSession } from '@/hooks/useSession'
 import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { getParticularsSummary } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 
 export const TransactionPage: React.FC = () => {
@@ -625,22 +625,21 @@ export const TransactionPage: React.FC = () => {
             <span className="hidden sm:inline">Refresh</span>
           </Button>
 
-          <LiveDateTimeBadge />
-
-          {/* Red Export Button with CSV & PDF options */}
+          {/* Export Button with CSV & PDF options */}
           <div ref={exportDropdownRef} className="relative inline-block">
             <Button
               type="button"
+              variant="outline"
               disabled={activeDataset.length === 0}
               onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent disabled:opacity-50"
+              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface disabled:opacity-50"
               aria-haspopup="true"
               aria-expanded={isExportDropdownOpen}
               aria-label="Export transaction records"
             >
-              <Download className="h-4 w-4 shrink-0 text-white" />
+              <Download className="h-4 w-4 shrink-0 text-focus/70" />
               <span>Export</span>
-              <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-white/90" />
+              <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
             </Button>
 
             {isExportDropdownOpen && (
@@ -667,54 +666,6 @@ export const TransactionPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Switch Bar: Deposit vs. Sales Record (Left Side) */}
-      <div className="flex items-center justify-start w-full">
-        <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-stroke/30">
-          <button
-            type="button"
-            onClick={() => setActiveTab('deposit')}
-            className={cn(
-              'flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-xs',
-              activeTab === 'deposit'
-                ? 'bg-[#960C01] text-white shadow-sm ring-1 ring-[#960C01]/30'
-                : 'text-focus/80 hover:bg-white hover:text-focus'
-            )}
-          >
-            <ArrowDownLeft className="h-4 w-4 shrink-0" />
-            <span>Deposit</span>
-            <span
-              className={cn(
-                'text-[11px] px-2 py-0.5 rounded-full font-bold ml-1',
-                activeTab === 'deposit' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
-              )}
-            >
-              {filteredDepositTransactions.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('sales')}
-            className={cn(
-              'flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-xs',
-              activeTab === 'sales'
-                ? 'bg-[#960C01] text-white shadow-sm ring-1 ring-[#960C01]/30'
-                : 'text-focus/80 hover:bg-white hover:text-focus'
-            )}
-          >
-            <TrendingUp className="h-4 w-4 shrink-0" />
-            <span>Sales Record</span>
-            <span
-              className={cn(
-                'text-[11px] px-2 py-0.5 rounded-full font-bold ml-1',
-                activeTab === 'sales' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
-              )}
-            >
-              {filteredSalesTransactions.length}
-            </span>
-          </button>
-        </div>
-      </div>
 
       {/* 3. Independent Filters Toolbar per Active Tab */}
       {activeTab === 'deposit' ? (
@@ -735,8 +686,8 @@ export const TransactionPage: React.FC = () => {
             />
           </div>
 
-          {/* Right Controls: Date Range Picker & Clear Button */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          {/* Right Controls: Date Range Picker, Clear Button, and Tab Switcher */}
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             <DateRangePicker
               value={depositDateRange}
               onChange={(newRange) => {
@@ -757,6 +708,52 @@ export const TransactionPage: React.FC = () => {
                 <span>Clear</span>
               </Button>
             )}
+
+            {/* Tab Switcher: Deposit / Sales Record (Right Side, matching Sales & Expense page) */}
+            <div className="flex items-center bg-slate-100 rounded-full border border-stroke/30 p-1 gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('deposit')}
+                className={cn(
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  activeTab === 'deposit'
+                    ? 'bg-[#960C01] text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <ArrowDownLeft className="h-4 w-4 shrink-0" />
+                <span>Deposit</span>
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-full font-bold ml-1',
+                    activeTab === 'deposit' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
+                  )}
+                >
+                  {filteredDepositTransactions.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('sales')}
+                className={cn(
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  activeTab === 'sales'
+                    ? 'bg-[#960C01] text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <TrendingUp className="h-4 w-4 shrink-0" />
+                <span>Sales Record</span>
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-full font-bold ml-1',
+                    activeTab === 'sales' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
+                  )}
+                >
+                  {filteredSalesTransactions.length}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -855,6 +852,52 @@ export const TransactionPage: React.FC = () => {
                 <span>Clear</span>
               </Button>
             )}
+
+            {/* Tab Switcher: Deposit / Sales Record (Right Side) */}
+            <div className="flex items-center bg-slate-100 rounded-full border border-stroke/30 p-1 gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('deposit')}
+                className={cn(
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  activeTab === 'deposit'
+                    ? 'bg-[#960C01] text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <ArrowDownLeft className="h-4 w-4 shrink-0" />
+                <span>Deposit</span>
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-full font-bold ml-1',
+                    activeTab === 'deposit' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
+                  )}
+                >
+                  {filteredDepositTransactions.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('sales')}
+                className={cn(
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  activeTab === 'sales'
+                    ? 'bg-[#960C01] text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <TrendingUp className="h-4 w-4 shrink-0" />
+                <span>Sales Record</span>
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-full font-bold ml-1',
+                    activeTab === 'sales' ? 'bg-white/20 text-white' : 'bg-slate-200 text-focus/70'
+                  )}
+                >
+                  {filteredSalesTransactions.length}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -864,7 +907,7 @@ export const TransactionPage: React.FC = () => {
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table>
             <TableHeader>
-              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
                   DATE
                 </TableHead>
@@ -958,8 +1001,21 @@ export const TransactionPage: React.FC = () => {
                       </TableCell>
 
                       {/* 4. Particulars */}
-                      <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-xs">
-                        <span className="line-clamp-1">{tx.particulars || tx.description}</span>
+                      <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-xs" title={tx.particulars || tx.description}>
+                        {(() => {
+                          const summary = getParticularsSummary(tx.particulars || tx.description, tx.items)
+                          if (summary.count > 1) {
+                            return (
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="truncate block font-medium">{summary.firstItemName}</span>
+                                <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                  +{summary.count - 1} more
+                                </span>
+                              </div>
+                            )
+                          }
+                          return <span className="truncate block font-medium">{summary.firstItemName}</span>
+                        })()}
                       </TableCell>
 
                       {/* 5. Category or Payment Method */}

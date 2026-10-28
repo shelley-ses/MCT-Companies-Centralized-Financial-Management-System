@@ -33,6 +33,10 @@ export const NavUserBlock: React.FC<NavUserBlockProps> = ({ isCollapsed = false 
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
   })()
 
+  const avatarSrc =
+    user?.avatarUrl ||
+    (typeof window !== 'undefined' ? localStorage.getItem('mct_user_avatar') : null)
+
   if (isCollapsed) {
     return (
       <div className="w-full flex flex-col items-center gap-2 py-1">
@@ -40,10 +44,10 @@ export const NavUserBlock: React.FC<NavUserBlockProps> = ({ isCollapsed = false 
           className="h-9 w-9 border-2 border-primary bg-white shrink-0 mx-auto"
           title={`${user?.fullName || 'User'} (${user?.role || ''})`}
         >
-          {user?.avatarUrl && (
+          {avatarSrc && (
             <AvatarImage
-              src={user.avatarUrl}
-              alt={user.fullName}
+              src={avatarSrc}
+              alt={user?.fullName || 'User'}
               className="p-1 object-contain"
             />
           )}
@@ -75,10 +79,10 @@ export const NavUserBlock: React.FC<NavUserBlockProps> = ({ isCollapsed = false 
     <div className="w-full">
       <div className="flex items-center gap-3 mb-3">
         <Avatar className="h-10 w-10 border-2 border-primary bg-white shrink-0">
-          {user?.avatarUrl && (
+          {avatarSrc && (
             <AvatarImage
-              src={user.avatarUrl}
-              alt={user.fullName}
+              src={avatarSrc}
+              alt={user?.fullName || 'User'}
               className="p-1 object-contain"
             />
           )}

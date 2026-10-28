@@ -103,9 +103,11 @@ export const DashboardPage: React.FC = () => {
     lowCount: number
     walletCount: number
   } | null>(null)
+  const [pettyCashLoading, setPettyCashLoading] = React.useState<boolean>(true)
 
   React.useEffect(() => {
     let isMounted = true
+    setPettyCashLoading(true)
     const company = isCompanyScoped ? assignedCompany : filters.company
     const request =
       company === 'All Companies'
@@ -121,19 +123,13 @@ export const DashboardPage: React.FC = () => {
         })
       })
       .catch(() => isMounted && setPettyCash(null))
+      .finally(() => {
+        if (isMounted) setPettyCashLoading(false)
+      })
     return () => {
       isMounted = false
     }
   }, [filters.company, isCompanyScoped, assignedCompany])
-
-  const pettyCashSubtext = !pettyCash
-    ? 'Unavailable right now'
-    : pettyCash.lowCount === 0
-    ? 'Available for small expenses'
-    : pettyCash.walletCount > 1
-    ? `${pettyCash.lowCount} of ${pettyCash.walletCount} wallets low — top up`
-    : 'Low balance — top up'
-
   // Filter transactions strictly on client side by company and date range, sorted latest first
   const filteredTransactions = React.useMemo(() => {
     if (!data?.recentTransactions) return []
@@ -206,19 +202,6 @@ export const DashboardPage: React.FC = () => {
 
       {/* 1. Sleek Compact Welcome Greeting Banner */}
       <WelcomeBanner />
-
-      {/* 2. Financial Overview Header & Global Custom Date Picker */}
-      <DashboardHeader
-        filters={filters}
-        onFiltersChange={(newFilters) => {
-          setFilters(newFilters)
-          if (!isCompanyScoped && newFilters.company !== filters.company) {
-            setActiveCompany(newFilters.company)
-          }
-        }}
-        isCompanyScoped={isCompanyScoped}
-      />
-
       {/* 3. KPI Cards (Admin and Company Auditor):
           1. Total Expenses
           2. Total Income
@@ -231,24 +214,24 @@ export const DashboardPage: React.FC = () => {
         <DashboardKpiCard
           label="Total Income"
           value={formatPHP(totalIncome)}
+          loading={loading}
           icon={TrendingUp}
-          subtext="Total deposits for period"
           valueClassName="text-emerald-600"
           iconContainerClassName="bg-emerald-50 text-emerald-600 border border-emerald-200/60"
         />
         <DashboardKpiCard
           label="Total Expenses"
           value={formatPHP(totalExpenses)}
+          loading={loading}
           icon={TrendingDown}
-          subtext="Total withdrawals for period"
           valueClassName="text-rose-600"
           iconContainerClassName="bg-rose-50 text-rose-600 border border-rose-200/60"
         />
         <DashboardKpiCard
           label="Net Income (Income - Expenses)"
           value={formatPHP(netIncome)}
+          loading={loading}
           icon={Landmark}
-          subtext={netIncome >= 0 ? 'Positive net cashflow' : 'Negative net cashflow'}
           valueClassName={netIncome >= 0 ? 'text-emerald-600' : 'text-rose-600'}
           iconContainerClassName={
             netIncome >= 0
@@ -259,8 +242,8 @@ export const DashboardPage: React.FC = () => {
         <DashboardKpiCard
           label="Overdue / Due Soon"
           value={`${overdueCount} / ${dueSoonCount}`}
+          loading={loading}
           icon={AlertCircle}
-          subtext="Requires prompt review"
           valueClassName="text-amber-600"
           iconContainerClassName="bg-amber-50 text-amber-600 border border-amber-200/60"
         />
@@ -272,20 +255,11 @@ export const DashboardPage: React.FC = () => {
           <DashboardKpiCard
             label="Petty Cash Balance"
             value={pettyCash ? formatPHP(pettyCash.balance) : '—'}
+            loading={loading || pettyCashLoading}
             icon={Wallet}
-            subtext={pettyCashSubtext}
-            className={cn(
-              'h-full',
-              pettyCash && pettyCash.lowCount > 0 && 'border-amber-300 bg-amber-50/60'
-            )}
-            valueClassName={
-              pettyCash && pettyCash.lowCount > 0 ? 'text-amber-600' : 'text-blue-600'
-            }
-            iconContainerClassName={
-              pettyCash && pettyCash.lowCount > 0
-                ? 'bg-amber-100 text-amber-700 border border-amber-300/60'
-                : 'bg-blue-50 text-blue-600 border border-blue-200/60'
-            }
+            className="h-full"
+            valueClassName="text-blue-600"
+            iconContainerClassName="bg-blue-50 text-blue-600 border border-blue-200/60"
           />
         </Link>
       </div>

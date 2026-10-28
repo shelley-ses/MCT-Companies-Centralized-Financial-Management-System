@@ -47,7 +47,6 @@ import {
 } from '@/components/ui/DateRangePicker'
 import { useCompany } from '@/context/CompanyContext'
 import { useSession } from '@/hooks/useSession'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
@@ -853,40 +852,32 @@ export const TenantPage: React.FC = () => {
   return (
     <div className="space-y-6 pb-10 max-w-[1600px] mx-auto animate-in fade-in duration-300">
       {/* 1. Header & Controls (Matching Sales & Expense pages) */}
-      <div className="space-y-3">
-        {/* Top Row: Action Buttons (Date/Time, Export & Add Tenant Lease) sitting on the right */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
+      <div className="space-y-4">
+        {/* Top Header Row: Page Title on Left, Action Buttons on Right */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+              Tenants
+            </h1>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Here's the summary of tenant leases and collections in JK Property and Ventures
+            </p>
+          </div>
 
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start shrink-0">
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant={!isAudit ? 'default' : 'outline'}
+                variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
-                  !isAudit
-                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
-                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-                )}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    !isAudit ? 'text-white' : 'text-focus/70'
-                  )}
-                />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 ml-0.5',
-                    !isAudit ? 'text-white/90' : 'text-muted-fg'
-                  )}
-                />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -925,19 +916,21 @@ export const TenantPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-              Tenants
-            </h1>
-            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Here's the summary of tenant leases and collections in JK Property and Ventures
-            </p>
+        {/* Second Row: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 text-muted-fg absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by tenant name, stall/unit, or tenant ID..."
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
           </div>
 
-          {/* Filter Toolbar (Aligned with Title/Subtitle, sitting directly under Export & Add) */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             {/* Custom Period Dropdown: Daily, Quarterly, Monthly, Annually */}
             <div ref={periodDropdownRef} className="relative inline-block">
               <button
@@ -1070,30 +1063,6 @@ export const TenantPage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Table Search Bar Toolbar */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative w-full">
-            <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by tenant name, stall/unit, or tenant ID..."
-              className="w-full h-10 pl-9 pr-8 rounded-full border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-xs box-border focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-
         {/* Table matching Sales/Expense formatting */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table className="w-full table-fixed min-w-[1050px]">
@@ -1476,7 +1445,7 @@ export const TenantPage: React.FC = () => {
 
       {/* MODAL 1: New Tenant Lease (Matching system modal UI) */}
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent className="sm:max-w-[540px] rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[680px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-7">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -1639,7 +1608,7 @@ export const TenantPage: React.FC = () => {
 
       {/* MODAL 2: Edit Tenant Lease (Matching system modal UI) */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-[540px] rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[680px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-7">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -1779,7 +1748,7 @@ export const TenantPage: React.FC = () => {
 
       {/* MODAL 3: Delete Confirmation Modal (Matching Sales / Expense pages) */}
       <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent className="sm:max-w-[440px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[560px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="text-center sm:text-left">
             <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600 mb-3 mx-auto sm:mx-0">
               <Trash2 className="w-5 h-5" />
@@ -1816,7 +1785,7 @@ export const TenantPage: React.FC = () => {
 
       {/* MODAL 4: Update Rent Payment (Decreased height, compact & sleek) */}
       <Dialog open={isUpdatePaymentModalOpen} onOpenChange={setIsUpdatePaymentModalOpen}>
-        <DialogContent className="sm:max-w-[460px] rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[620px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="text-left pb-2.5 border-b border-stroke/20 pr-7">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -2035,7 +2004,7 @@ export const TenantPage: React.FC = () => {
 
       {/* MODAL 5: Full Tenant Details & Payment History Modal */}
       <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-        <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[780px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-7">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">

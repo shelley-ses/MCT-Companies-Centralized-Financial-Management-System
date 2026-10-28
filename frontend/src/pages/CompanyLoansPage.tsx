@@ -25,7 +25,6 @@ export const CompanyLoansPage: React.FC = () => {
     borrowerId: '', category: '', paymentStatus: '', date: '',
   })
   const [selectedGroup, setSelectedGroup] = React.useState<CompanyLoanGroup | null>(null)
-  const [previewMode, setPreviewMode] = React.useState(false)
   const [repaymentTimeline, setRepaymentTimeline] = React.useState<Array<{
     refNo: string
     paymentDate: string
@@ -134,75 +133,6 @@ export const CompanyLoansPage: React.FC = () => {
     }
   }
 
-    const showPreviewData = () => {
-      setPreviewMode(true)
-      setPage(0)
-      setGroups([
-        {
-          key: 'preview-mct-hotel-mct-kitchen-rent',
-          borrower: 'MCT Hotel',
-          lender: 'MCT Kitchen',
-          category: 'Rent',
-          totalLoanAmount: 45000,
-          totalPaid: 13000,
-          outstandingBalance: 32000,
-          interestDisplay: '5.00%',
-          paymentStatus: 'Partially Paid',
-          loanCount: 2,
-          loans: [
-            {
-              id: 'loan_demo_1',
-              loanId: -1,
-              refNo: 'DEMO-RENT-001',
-              date: '08/01/26',
-              rawDate: '2026-08-01',
-              dueDate: '2026-12-31',
-              interestRate: 5,
-              interestType: 'simple',
-              particulars: 'Hotel building monthly rent',
-              category: 'Rent',
-              amount: 30000,
-              borrowerId: 3,
-              borrower: 'MCT Hotel',
-              lenderId: 2,
-              lender: 'MCT Kitchen',
-              company: 'MCT Hotel',
-              status: 'Approved',
-              auditStatus: 'Verified',
-              type: 'Loan',
-              totalPaid: 10000,
-              outstandingBalance: 20000,
-              paymentStatus: 'Partially Paid',
-            },
-            {
-              id: 'loan_demo_2',
-              loanId: -2,
-              refNo: 'DEMO-RENT-002',
-              date: '09/01/26',
-              rawDate: '2026-09-01',
-              dueDate: '2027-01-31',
-              interestRate: 5,
-              interestType: 'simple',
-              particulars: 'Warehouse rent advance',
-              category: 'Rent',
-              amount: 15000,
-              borrowerId: 3,
-              borrower: 'MCT Hotel',
-              lenderId: 2,
-              lender: 'MCT Kitchen',
-              company: 'MCT Hotel',
-              status: 'Approved',
-              auditStatus: 'Verified',
-              type: 'Loan',
-              totalPaid: 3000,
-              outstandingBalance: 12000,
-              paymentStatus: 'Partially Paid',
-            },
-          ],
-        },
-      ])
-      setTotal(1)
-    }
 
   return (
     <div className="space-y-6 p-6">
@@ -212,8 +142,7 @@ export const CompanyLoansPage: React.FC = () => {
           <p className="text-sm text-slate-500">Approved loans grouped by borrower, lender, and category.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={showPreviewData}>Preview Dummy Data</Button>
-          <Button onClick={() => void exportGroups()}><Download className="mr-2 h-4 w-4" />Export CSV</Button>
+          <Button variant="outline" onClick={() => void exportGroups()} className="border border-stroke/50 bg-white text-focus hover:bg-surface"><Download className="mr-2 h-4 w-4 text-focus/70" />Export CSV</Button>
         </div>
       </div>
 
@@ -235,27 +164,121 @@ export const CompanyLoansPage: React.FC = () => {
         </div>
       </Card>
 
-      {previewMode && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Preview mode: showing frontend-only dummy data. No database records were changed.</div>}
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      <Card className="overflow-x-auto">
-        {loading ? <div className="p-8 text-center text-sm text-slate-500">Loading company loans...</div> : groups.length === 0 ? <div className="p-8 text-center text-sm text-slate-500"><Search className="mx-auto mb-2 h-5 w-5" />No approved loans match these filters.</div> : (
-          <table className="w-full min-w-[1000px] text-left text-sm">
-            <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500"><tr>{['Borrower Company', 'Lender Company', 'Category', 'Total Loan Amount', 'Total Paid', 'Outstanding Balance', 'Int. Rate', 'Status'].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}</tr></thead>
-            <tbody>{groups.map((group) => <tr key={group.key} className="cursor-pointer border-b last:border-0 hover:bg-slate-50" onClick={() => void openGroupDetails(group)}>
-              <td className="px-4 py-3 font-medium">{group.borrower}</td><td className="px-4 py-3">{group.lender}</td><td className="px-4 py-3">{group.category}</td><td className="px-4 py-3">{formatPHP(group.totalLoanAmount)}</td><td className="px-4 py-3">{formatPHP(group.totalPaid)}</td><td className="px-4 py-3">{formatPHP(group.outstandingBalance)}</td><td className="px-4 py-3">{group.interestDisplay}</td><td className="px-4 py-3">{group.paymentStatus}</td>
-            </tr>)}</tbody>
-          </table>
-        )}
-      </Card>
-      <div className="flex items-center justify-between text-sm text-slate-500"><span>{total} loan group{total === 1 ? '' : 's'}</span><div className="flex gap-2"><Button variant="outline" disabled={page === 0 || loading} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button variant="outline" disabled={(page + 1) * PAGE_SIZE >= total || loading} onClick={() => setPage((current) => current + 1)}>Next</Button></div></div>
+      <div className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
+        <div className="overflow-x-auto rounded-xl border border-slate-100">
+          {loading ? (
+            <div className="p-8 text-center text-sm text-slate-500">Loading company loans...</div>
+          ) : groups.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">
+              <Search className="mx-auto mb-2 h-5 w-5" />
+              No approved loans match these filters.
+            </div>
+          ) : (
+            <table className="w-full min-w-[1000px] text-left text-xs">
+              <thead className="border-b border-slate-200/80 bg-slate-50/70 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                <tr>
+                  {['Borrower Company', 'Lender Company', 'Category', 'Total Loan Amount', 'Total Paid', 'Outstanding Balance', 'Int. Rate', 'Status'].map((heading) => (
+                    <th key={heading} className="px-4 py-3.5 font-bold uppercase tracking-wider text-muted-fg text-xs">
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {groups.map((group) => (
+                  <tr
+                    key={group.key}
+                    className="cursor-pointer border-b border-slate-100 hover:bg-slate-50/60 transition-colors text-xs"
+                    onClick={() => void openGroupDetails(group)}
+                  >
+                    <td className="px-4 py-3.5 font-medium text-focus">{group.borrower}</td>
+                    <td className="px-4 py-3.5 text-focus/90">{group.lender}</td>
+                    <td className="px-4 py-3.5 text-focus/90">{group.category}</td>
+                    <td className="px-4 py-3.5 font-bold text-focus tabular-nums">{formatPHP(group.totalLoanAmount)}</td>
+                    <td className="px-4 py-3.5 font-bold text-emerald-600 tabular-nums">{formatPHP(group.totalPaid)}</td>
+                    <td className="px-4 py-3.5 font-bold text-rose-600 tabular-nums">{formatPHP(group.outstandingBalance)}</td>
+                    <td className="px-4 py-3.5 font-medium text-focus/80">{group.interestDisplay}</td>
+                    <td className="px-4 py-3.5">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {group.paymentStatus}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="pt-4 mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
+          <span className="font-medium text-focus/80">
+            {total} loan group{total === 1 ? '' : 's'}
+          </span>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <span className="text-xs text-muted-fg italic">
+              Page {page + 1} out of {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page === 0 || loading}
+              onClick={() => setPage((current) => current - 1)}
+              className="h-8 px-3 rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40"
+            >
+              Previous
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={(page + 1) * PAGE_SIZE >= total || loading}
+              onClick={() => setPage((current) => current + 1)}
+              className="h-8 px-3 rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      </div>
 
       <Dialog open={Boolean(selectedGroup)} onOpenChange={(open) => !open && setSelectedGroup(null)}>
-        <DialogContent className="max-w-5xl"><DialogHeader><DialogTitle>Company Loan Details</DialogTitle></DialogHeader>
-          {selectedGroup && <div className="space-y-5 text-sm">
-            <div className="grid gap-3 md:grid-cols-4"><div><b>Borrower</b><p>{selectedGroup.borrower}</p></div><div><b>Lender</b><p>{selectedGroup.lender}</p></div><div><b>Category</b><p>{selectedGroup.category}</p></div><div><b>Status</b><p>{selectedGroup.paymentStatus}</p></div><div><b>Total loan amount</b><p>{formatPHP(selectedGroup.totalLoanAmount)}</p></div><div><b>Total paid</b><p>{formatPHP(selectedGroup.totalPaid)}</p></div><div><b>Outstanding balance</b><p>{formatPHP(selectedGroup.outstandingBalance)}</p></div><div><b>Interest</b><p>{selectedGroup.interestDisplay}</p></div></div>
-            <h3 className="font-semibold">Repayment timeline</h3>
-            {repaymentTimeline.length > 0 ? <div className="divide-y rounded border">{repaymentTimeline.map((repayment, index) => <div key={`${repayment.refNo}-${repayment.paymentDate}-${index}`} className="grid gap-2 p-3 md:grid-cols-5"><span>{repayment.refNo}</span><span>{repayment.paymentDate}</span><span>{formatPHP(repayment.amount)}</span><span>Balance: {formatPHP(repayment.remainingBalance)}</span><span>{repayment.reference}</span></div>)}</div> : <p className="text-slate-500">No repayments recorded for this group.</p>}
-          </div>}
+        <DialogContent className="sm:max-w-[850px] rounded-[24px] bg-white border border-stroke/30 shadow-2xl p-6 sm:p-8 max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="pb-3 border-b border-stroke/20">
+            <DialogTitle className="text-xl font-bold text-focus">Company Loan Details</DialogTitle>
+          </DialogHeader>
+          {selectedGroup && (
+            <div className="space-y-5 text-sm pt-2">
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 p-4 rounded-2xl bg-surface border border-stroke/30">
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Borrower</b><p className="font-semibold text-focus mt-0.5">{selectedGroup.borrower}</p></div>
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Lender</b><p className="font-semibold text-focus mt-0.5">{selectedGroup.lender}</p></div>
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Category</b><p className="font-semibold text-focus mt-0.5">{selectedGroup.category}</p></div>
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Status</b><p className="font-semibold text-focus mt-0.5">{selectedGroup.paymentStatus}</p></div>
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Total Loan Amount</b><p className="font-semibold text-focus mt-0.5">{formatPHP(selectedGroup.totalLoanAmount)}</p></div>
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Total Paid</b><p className="font-semibold text-emerald-600 mt-0.5">{formatPHP(selectedGroup.totalPaid)}</p></div>
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Outstanding Balance</b><p className="font-semibold text-rose-600 mt-0.5">{formatPHP(selectedGroup.outstandingBalance)}</p></div>
+                <div><b className="text-xs text-muted-fg uppercase tracking-wider block">Interest</b><p className="font-semibold text-focus mt-0.5">{selectedGroup.interestDisplay}</p></div>
+              </div>
+              <div>
+                <h3 className="font-bold text-focus text-sm mb-2">Repayment Timeline</h3>
+                {repaymentTimeline.length > 0 ? (
+                  <div className="divide-y divide-stroke/30 rounded-2xl border border-stroke/30 overflow-hidden bg-white">
+                    {repaymentTimeline.map((repayment, index) => (
+                      <div key={`${repayment.refNo}-${repayment.paymentDate}-${index}`} className="grid gap-2 p-3 text-xs md:grid-cols-5 items-center hover:bg-slate-50/70">
+                        <span className="font-mono font-medium">{repayment.refNo}</span>
+                        <span className="text-muted-fg">{repayment.paymentDate}</span>
+                        <span className="font-semibold text-emerald-600">{formatPHP(repayment.amount)}</span>
+                        <span className="text-muted-fg">Balance: {formatPHP(repayment.remainingBalance)}</span>
+                        <span className="text-muted-fg truncate">{repayment.reference}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-fg text-xs">No repayments recorded for this group.</p>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

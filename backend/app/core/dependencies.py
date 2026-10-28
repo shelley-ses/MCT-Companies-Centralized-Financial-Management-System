@@ -39,19 +39,40 @@ def get_current_user(
     company_ids = [company_id] if company_id else []
 
     if email:
-        db_user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+        from app.core.company_resolver import normalize_email, normalize_company_id
+        resolved_email = normalize_email(email)
+        db_user = db.query(User).filter(func.lower(User.email) == resolved_email.lower()).first()
         if db_user:
             user_id = db_user.user_id
             is_admin = db_user.is_admin or db_user.user_id == 1 or (db_user.email and db_user.email.lower() == "admin@mct.com")
             role = "admin" if is_admin else (db_user.role or "supervisor").lower()
             if role in ("company", "company employee"):
                 role = "supervisor"
-            assigned = [uc.company_id for uc in db_user.user_companies]
+            assigned = [normalize_company_id(uc.company_id) for uc in db_user.user_companies if uc.company_id is not None]
             if not assigned and db_user.company_id:
-                assigned = [db_user.company_id]
-            company_ids = assigned
+                assigned = [normalize_company_id(db_user.company_id)]
+            company_ids = [cid for cid in assigned if cid is not None]
             if company_ids:
                 company_id = company_ids[0]
+        else:
+            # Check Supabase users table fallback
+            try:
+                from app.db.supabase import get_supabase_admin_client
+                client = get_supabase_admin_client()
+                supa_res = client.table("users").select("*").ilike("email", resolved_email).limit(1).execute()
+                if supa_res.data:
+                    su = supa_res.data[0]
+                    user_id = su.get("user_id")
+                    is_admin = su.get("is_admin") is True or resolved_email == "admin@mct.com"
+                    role = "admin" if is_admin else (su.get("role") or "supervisor").lower()
+                    if role in ("company", "company employee"):
+                        role = "supervisor"
+                    s_cid = normalize_company_id(su.get("company_id"))
+                    if s_cid:
+                        company_id = s_cid
+                        company_ids = [s_cid]
+            except Exception:
+                pass
 
     return {
         "auth_user_id": claims.get("sub", ""),
@@ -105,13 +126,22 @@ CompanyUser = Annotated[AuthenticatedUser, Depends(require_company_user)]
 
 # Company scope authorization checker
 def check_company_access(user: AuthenticatedUser, target_company_id: int | None) -> None:
-    """Ensure user has access to a specific company or is an admin."""
+    """Ensure user has access to a specific company or is an administrator/finance/audit user."""
     if target_company_id is None:
         return
-    if user.get("is_admin") or user.get("role") == "admin":
+    from app.core.company_resolver import normalize_company_id
+    normalized_target_id = normalize_company_id(target_company_id)
+
+    role = str(user.get("role") or "").lower()
+    if user.get("is_admin") or role in ("admin", "finance", "audit", "auditor"):
         return
+
     assigned = user.get("company_ids") or []
-    if target_company_id not in assigned:
+    assigned_normalized = {normalize_company_id(cid) for cid in assigned if cid is not None}
+    if user.get("company_id"):
+        assigned_normalized.add(normalize_company_id(user.get("company_id")))
+
+    if normalized_target_id not in assigned_normalized:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: You are not assigned to this company."

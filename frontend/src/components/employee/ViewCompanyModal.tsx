@@ -192,7 +192,7 @@ export const ViewCompanyModal: React.FC<ViewCompanyModalProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={handleModalOpenChange}>
-        <DialogContent className="sm:max-w-[480px] md:max-w-[500px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[640px] md:max-w-[680px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
           <DialogTitle className="sr-only">
             {company.name} Details
           </DialogTitle>

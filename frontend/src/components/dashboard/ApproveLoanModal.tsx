@@ -33,17 +33,6 @@ interface ApproveLoanModalProps {
   companies?: string[]
 }
 
-const DEFAULT_COMPANY_LIST = [
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
 
 export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
   open,
@@ -81,7 +70,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
     if (propsCompanies && propsCompanies.length > 0) {
       return propsCompanies.filter((c) => c !== 'All Companies')
     }
-    return DEFAULT_COMPANY_LIST
+    return []
   }, [dbCompanies, propsCompanies])
 
   // Filter out borrower company so borrower cannot loan to itself

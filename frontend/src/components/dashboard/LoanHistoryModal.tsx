@@ -73,7 +73,7 @@ export const LoanHistoryModal: React.FC<LoanHistoryModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl sm:max-w-[680px] max-h-[85vh] overflow-y-auto">
         {/* Header */}
         <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-7">
           <div className="flex items-center justify-between gap-3 flex-wrap">

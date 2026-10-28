@@ -193,8 +193,11 @@ export function getSidebarNavSections(
   const operationsItems: NavItem[] = []
 
   if (!isAdmin) {
-    // Base operations for operational roles: Sales, Expense, Loan
-    operationsItems.push(NAV_ITEM_SALES, NAV_ITEM_EXPENSE, NAV_ITEM_LOAN)
+    // Filcap (Lending) and JK do not have the Sales page per business specifications
+    if (!isFilCap && !isJK) {
+      operationsItems.push(NAV_ITEM_SALES)
+    }
+    operationsItems.push(NAV_ITEM_EXPENSE, NAV_ITEM_LOAN)
 
     // Bank Management in Operations for Finance, Audit, and Company accounts
     operationsItems.push(NAV_ITEM_BANK_MANAGEMENT)

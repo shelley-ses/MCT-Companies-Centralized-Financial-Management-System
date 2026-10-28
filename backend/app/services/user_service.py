@@ -139,11 +139,20 @@ class UserService:
         if user_in.company_id and user_in.company_id not in company_ids:
             company_ids.append(user_in.company_id)
 
+        # If no numeric company ID provided, resolve from company_name
+        if not company_ids and getattr(user_in, "company_name", None):
+            try:
+                from app.core.company_resolver import resolve_company
+                resolved = resolve_company(self.db, company_name=user_in.company_name)
+                if resolved and resolved.company_id:
+                    company_ids.append(resolved.company_id)
+            except Exception:
+                pass
+
         self._validate_user_assignment(company_ids, False, user_role)
         self._ensure_email_available(user_in.email)
-        auth_user_id = self._create_auth_user(user_in, user_in.email)
-
         primary_company_id = company_ids[0] if company_ids else user_in.company_id
+        auth_user_id = self._create_auth_user(user_in, user_in.email, company_id=primary_company_id, role=user_role)
 
         user = User(
             name=user_in.name.strip(),
@@ -403,13 +412,26 @@ class UserService:
             self._ensure_company_exists(cid)
 
     @staticmethod
-    def _create_auth_user(user_in: UserCreate, email: str) -> str:
+    def _create_auth_user(user_in: UserCreate, email: str, company_id: Optional[int] = None, role: str = "supervisor") -> str:
         try:
+            user_meta = {"name": user_in.name.strip()}
+            if company_id is not None:
+                user_meta["company_id"] = company_id
+            if role:
+                user_meta["role"] = role
+
+            app_meta = {"is_admin": False}
+            if company_id is not None:
+                app_meta["company_id"] = company_id
+            if role:
+                app_meta["role"] = role
+
             response = get_supabase_admin_client().auth.admin.create_user({
                 "email": email,
                 "password": user_in.password,
                 "email_confirm": True,
-                "user_metadata": {"name": user_in.name.strip()},
+                "user_metadata": user_meta,
+                "app_metadata": app_meta,
             })
             auth_user = getattr(response, "user", response)
             auth_user_id = getattr(auth_user, "id", None)
@@ -421,9 +443,15 @@ class UserService:
         except Exception as error:
             logger.exception("Supabase Auth user creation failed (%s)", type(error).__name__)
             # Fallback if already in Supabase Auth
-            if "already registered" in str(error).lower() or "already exists" in str(error).lower():
+            err_str = (str(error) + " " + str(getattr(error, "message", "")) + " " + str(getattr(error, "code", ""))).lower()
+            if "registered" in err_str or "already exists" in err_str or "email_exists" in err_str:
                 try:
-                    return UserService._find_auth_user_id(email)
+                    uid = UserService._find_auth_user_id(email)
+                    UserService._update_auth_user(email, {
+                        "user_metadata": user_meta,
+                        "app_metadata": app_meta,
+                    })
+                    return uid
                 except Exception:
                     pass
             raise UserValidationError(

@@ -1,3 +1,5 @@
+import { websocketService } from '@/services/websocketService'
+
 export interface BankTransaction {
   id: string
   bankAccountId?: string
@@ -56,7 +58,9 @@ export interface DepositWithdrawInput {
 function backendHeaders(userRole?: string): Record<string, string> {
   const token =
     typeof window !== 'undefined'
-      ? localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+      ? sessionStorage.getItem('mct_access_token') ||
+        sessionStorage.getItem('auth_token') ||
+        localStorage.getItem('auth_token')
       : null
 
   const headers: Record<string, string> = {
@@ -123,14 +127,18 @@ export const bankService = {
     const url = companyName && companyName !== 'All Companies'
       ? `/api/v1/bank-accounts?company_name=${encodeURIComponent(companyName)}`
       : '/api/v1/bank-accounts'
-    const res = await fetch(url)
+    const res = await fetch(url, {
+      headers: backendHeaders(),
+    })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
     return Array.isArray(data) ? data.map(mapAccountFromBackend) : []
   },
 
   async getAccount(id: string): Promise<BankAccount> {
-    const res = await fetch(`/api/v1/bank-accounts/${encodeURIComponent(id)}`)
+    const res = await fetch(`/api/v1/bank-accounts/${encodeURIComponent(id)}`, {
+      headers: backendHeaders(),
+    })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
     return mapAccountFromBackend(data)
@@ -158,7 +166,9 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 
   async updateAccount(id: string, input: Partial<NewBankAccountInput>, userRole?: string): Promise<BankAccount> {
@@ -181,7 +191,9 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 
   async deleteAccount(id: string, userRole?: string): Promise<void> {
@@ -190,6 +202,7 @@ export const bankService = {
       headers: backendHeaders(userRole),
     })
     if (!res.ok) throw await handleResponseError(res)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: id })
   },
 
   async deposit(id: string, input: DepositWithdrawInput, userRole?: string): Promise<BankAccount> {
@@ -208,7 +221,9 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 
   async withdraw(id: string, input: DepositWithdrawInput, userRole?: string): Promise<BankAccount> {
@@ -227,6 +242,8 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 }

@@ -146,7 +146,7 @@ export const TopUpPettyCashModal: React.FC<TopUpPettyCashModalProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Wide modal with compact vertical height */}
-      <DialogContent className="sm:max-w-[740px] lg:max-w-[780px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl [&>button]:top-5 [&>button]:right-5">
+      <DialogContent className="sm:max-w-[760px] lg:max-w-[800px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl">
         <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-8">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#960C01] text-white flex items-center justify-center shrink-0 shadow-xs">

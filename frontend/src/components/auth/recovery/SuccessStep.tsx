@@ -13,27 +13,26 @@ interface SuccessStepProps {
 
 export const SuccessStep: React.FC<SuccessStepProps> = ({ onLoginClick }) => {
   return (
-    <div className="space-y-6 text-center py-4">
-      {/* Neutral check icon per DESIGN.md and AGENT_RULES.md (no invented green success color) */}
-      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-surface border border-stroke/50 text-focus shadow-sm">
+    <div className="space-y-6 text-center py-2">
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 border border-red-100 text-[#960C01] shadow-xs">
         <Check className="h-8 w-8 stroke-[2.5]" aria-hidden="true" />
       </div>
 
-      <DialogHeader className="text-center sm:text-center">
-        <DialogTitle className="text-2xl font-bold text-focus text-center">
+      <DialogHeader className="text-center sm:text-center space-y-1">
+        <DialogTitle className="text-2xl font-bold tracking-tight text-[#0B0F2B] text-center">
           Password changed successfully!
         </DialogTitle>
-        <DialogDescription className="text-center text-muted-fg">
+        <DialogDescription className="text-center text-sm text-gray-500">
           Your password has been securely updated. You can now log in with your
           new credentials.
         </DialogDescription>
       </DialogHeader>
 
-      <div className="pt-4 flex justify-center w-full">
+      <div className="pt-2 w-full">
         <Button
           type="button"
           onClick={onLoginClick}
-          className="w-full max-w-sm h-12 text-base font-semibold"
+          className="w-full h-12 rounded-xl text-base font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs transition-colors"
         >
           Log In
         </Button>

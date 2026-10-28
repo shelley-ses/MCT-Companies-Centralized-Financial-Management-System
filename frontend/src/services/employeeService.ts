@@ -1,3 +1,5 @@
+import { isCompanyMatch } from '@/utils/companyUtils'
+
 export interface Company {
   id: string
   name: string
@@ -315,13 +317,14 @@ export const employeeService = {
       companyIds.push(...payload.companyIds)
     } else if (payload.assignedCompanies && payload.assignedCompanies.length > 0) {
       for (const nameOrId of payload.assignedCompanies) {
-        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId)
+        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId || isCompanyMatch(c.name, nameOrId))
         if (found && !isNaN(Number(found.id))) {
-          companyIds.push(Number(found.id))
+          const numId = Number(found.id)
+          if (!companyIds.includes(numId)) companyIds.push(numId)
         }
       }
     } else if (payload.assignedCompany) {
-      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany)
+      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany || isCompanyMatch(c.name, payload.assignedCompany))
       if (found && !isNaN(Number(found.id))) {
         companyIds.push(Number(found.id))
       }
@@ -338,6 +341,7 @@ export const employeeService = {
         password: payload.password || 'Password123!',
         company_id: primaryCompanyId,
         company_ids: companyIds,
+        company_name: payload.assignedCompany || undefined,
         is_admin: payload.role === 'Admin',
         role: payload.role.toLowerCase(),
         photo_url: payload.avatarUrl && !payload.avatarUrl.startsWith('data:') ? payload.avatarUrl : null,
@@ -390,15 +394,16 @@ export const employeeService = {
     } else if (payload.assignedCompanies !== undefined) {
       const resolvedIds: number[] = []
       for (const nameOrId of payload.assignedCompanies) {
-        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId)
+        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId || isCompanyMatch(c.name, nameOrId))
         if (found && !isNaN(Number(found.id))) {
-          resolvedIds.push(Number(found.id))
+          const numId = Number(found.id)
+          if (!resolvedIds.includes(numId)) resolvedIds.push(numId)
         }
       }
       body.company_ids = resolvedIds
       body.company_id = resolvedIds[0] || null
     } else if (payload.assignedCompany !== undefined) {
-      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany)
+      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany || isCompanyMatch(c.name, payload.assignedCompany))
       if (found && !isNaN(Number(found.id))) {
         body.company_ids = [Number(found.id)]
         body.company_id = Number(found.id)

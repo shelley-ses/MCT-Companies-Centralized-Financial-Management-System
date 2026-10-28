@@ -35,17 +35,6 @@ interface AddLoanModalProps {
   companies?: string[]
 }
 
-const DEFAULT_COMPANY_OPTIONS = [
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
 
 export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   open,
@@ -79,13 +68,13 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
     if (propsCompanies && propsCompanies.length > 0) {
       return propsCompanies.filter((c) => c !== 'All Companies')
     }
-    return DEFAULT_COMPANY_OPTIONS
+    return []
   }, [dbCompanies, propsCompanies])
 
   const defaultBorrower =
     assignedCompany && assignedCompany !== 'All Companies'
       ? assignedCompany
-      : allCompanyNames[0] || 'MCT Kitchen'
+      : allCompanyNames[0] || ''
 
   const [date, setDate] = React.useState(formatToYYYYMMDD(new Date()))
   const [interestRate, setInterestRate] = React.useState('0')

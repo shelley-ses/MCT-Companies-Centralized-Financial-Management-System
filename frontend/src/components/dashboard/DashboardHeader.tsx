@@ -117,8 +117,8 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         </p>
       </div>
 
-      {/* Uniform Filter Bar: Shared Date Picker + Company Scope - strictly on one line */}
-      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-nowrap self-start lg:self-auto overflow-x-auto sm:overflow-visible max-w-full">
+      {/* Uniform Filter Bar: Shared Date Picker + Company Scope */}
+      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap sm:flex-nowrap self-start lg:self-auto overflow-x-auto sm:overflow-visible max-w-full">
         {/* 1. Global Custom Date Picker (Single date or Custom range, no presets) */}
         <DateRangePicker
           value={filters.dateRange}
@@ -131,7 +131,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         {isCompanyScoped ? (
           <div className="inline-flex items-center gap-2 h-10 sm:h-11 px-3.5 sm:px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
             <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-            <span className="font-semibold text-focus/90 truncate max-w-[160px]">
+            <span className="font-semibold text-focus/90 truncate max-w-[280px] sm:max-w-[360px]">
               {filters.company}
             </span>
           </div>
@@ -148,7 +148,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               aria-haspopup="listbox"
             >
               <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-              <span className="font-medium text-focus/90 truncate max-w-[130px] sm:max-w-[160px]">
+              <span className="font-medium text-focus/90 truncate max-w-[240px] sm:max-w-[360px]">
                 {filters.company}
               </span>
               <ChevronDown
@@ -158,22 +158,32 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 )}
               />
               {filters.company !== 'All Companies' && (
-                <button
-                  type="button"
-                  onClick={handleResetCompany}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleResetCompany(e)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation()
+                      handleResetCompany(e as unknown as React.MouseEvent)
+                    }
+                  }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="p-1 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5"
+                  className="p-1 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 cursor-pointer inline-flex items-center justify-center"
                   title="Reset to All Companies"
                   aria-label="Reset company filter"
                 >
                   <X className="h-3 w-3" />
-                </button>
+                </span>
               )}
             </button>
 
             {isOpen && (
               <div
-                className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150"
+                className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150"
                 role="listbox"
               >
                 {/* Dropdown Header */}

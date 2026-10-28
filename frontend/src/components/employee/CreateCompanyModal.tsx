@@ -147,7 +147,7 @@ export const CreateCompanyModal: React.FC<CreateCompanyModalProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl sm:max-w-[700px] w-full">
+        <DialogContent className="max-h-[85vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl sm:max-w-[780px] w-full">
           <DialogHeader className="text-left sm:text-left space-y-1 pb-3 border-b border-stroke/15">
             <DialogTitle className="text-xl sm:text-2xl font-bold text-focus">
               Create Company

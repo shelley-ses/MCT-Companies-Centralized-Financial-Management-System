@@ -203,7 +203,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[880px] md:max-w-[940px] rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
+      <DialogContent className="sm:max-w-[880px] md:max-w-[940px] max-h-[85vh] overflow-y-auto rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl">
         {/* Header */}
         <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-8">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

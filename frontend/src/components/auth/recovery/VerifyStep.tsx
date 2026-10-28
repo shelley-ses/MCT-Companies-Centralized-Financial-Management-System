@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DialogHeader,
@@ -83,11 +83,14 @@ export const VerifyStep: React.FC<VerifyStepProps> = ({ email, onVerified }) => 
 
   return (
     <div className="space-y-6">
-      <DialogHeader>
-        <DialogTitle>Verify Code</DialogTitle>
-        <DialogDescription>
+      <DialogHeader className="text-center sm:text-center flex flex-col items-center space-y-2">
+        <div className="h-12 w-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs mb-1">
+          <ShieldCheck className="h-6 w-6" />
+        </div>
+        <DialogTitle className="text-2xl font-bold text-focus text-center">Verify Code</DialogTitle>
+        <DialogDescription className="text-center text-muted-fg text-sm leading-relaxed max-w-sm mx-auto">
           Enter the 4-digit verification code sent to{' '}
-          <strong className="text-focus font-medium">{email}</strong>
+          <strong className="text-focus font-semibold">{email}</strong>
         </DialogDescription>
       </DialogHeader>
 
@@ -96,7 +99,7 @@ export const VerifyStep: React.FC<VerifyStepProps> = ({ email, onVerified }) => 
         <div
           role="alert"
           aria-live="assertive"
-          className="flex items-center gap-3 rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error"
+          className="flex items-center gap-3 rounded-xl border border-error/30 bg-error/10 p-3.5 text-xs sm:text-sm text-error font-medium"
         >
           <AlertCircle className="h-5 w-5 shrink-0" />
           <span>{error}</span>
@@ -130,11 +133,11 @@ export const VerifyStep: React.FC<VerifyStepProps> = ({ email, onVerified }) => 
           {/* Countdown timer display */}
           <div className="text-center">
             {countdown.isExpired ? (
-              <p className="text-sm font-medium text-error">
+              <p className="text-xs sm:text-sm font-semibold text-error">
                 Code has expired. Please resend a new code.
               </p>
             ) : (
-              <p className="text-sm font-medium text-error">
+              <p className="text-xs sm:text-sm font-semibold text-error">
                 Code expires in {countdown.formattedTime}
               </p>
             )}
@@ -146,12 +149,12 @@ export const VerifyStep: React.FC<VerifyStepProps> = ({ email, onVerified }) => 
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-col items-center justify-center gap-3 w-full max-w-sm mx-auto">
+        {/* Action Buttons - Full Width Aligned */}
+        <div className="space-y-2.5 w-full pt-1">
           <Button
             type="submit"
             disabled={isVerifyDisabled}
-            className="w-full h-12 text-base font-semibold"
+            className="w-full h-12 text-base font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs transition-all cursor-pointer"
           >
             {isVerifying ? (
               <>
@@ -168,7 +171,7 @@ export const VerifyStep: React.FC<VerifyStepProps> = ({ email, onVerified }) => 
             variant="outline"
             onClick={handleResend}
             disabled={!countdown.isExpired || isResending}
-            className="w-full h-12 text-base font-medium"
+            className="w-full h-12 text-sm font-semibold rounded-xl border-stroke/40 hover:bg-surface text-focus transition-all cursor-pointer disabled:opacity-50"
           >
             {isResending ? (
               <>

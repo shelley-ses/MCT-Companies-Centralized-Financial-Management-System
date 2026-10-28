@@ -30,22 +30,6 @@ from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
-CANONICAL_COMPANY_MAP = {
-    1: "MCT Kitchen",
-    2: "MCT Kitchen",
-    3: "MCT Hotel",
-    4: "JK Cafe",
-    5: "JK Cafe",
-    6: "Annex Nine",
-    7: "Merillon",
-    8: "JK Printing",
-    9: "Speedbox",
-    10: "JK Property and Ventures",
-    11: "Golden Sunburst Ventures",
-    12: "Southern Brew",
-    14: "FILCAP Prime Holdings Corp.",
-}
-
 from app.core.cache import get_cached, set_cached
 
 def get_supabase_company_mapping(client, db: Optional[Session] = None):
@@ -53,8 +37,8 @@ def get_supabase_company_mapping(client, db: Optional[Session] = None):
     if cached:
         return cached[0], cached[1]
 
-    id_to_name = dict(CANONICAL_COMPANY_MAP)
-    name_to_id = {v.strip().lower(): k for k, v in CANONICAL_COMPANY_MAP.items()}
+    id_to_name = {}
+    name_to_id = {}
 
     if db:
         try:
@@ -296,7 +280,7 @@ def export_company_loans(
     import io
 
 
-    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    is_admin = current_user.get("is_admin") or (current_user.get("role") or "").lower() in ("admin", "finance", "audit", "auditor")
     user_company_ids = current_user.get("company_ids") or []
     if not is_admin and not user_company_ids and current_user.get("company_id"):
         user_company_ids = [current_user["company_id"]]
@@ -375,7 +359,7 @@ def get_loans(
     if cached is not None:
         return cached
 
-    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    is_admin = current_user.get("is_admin") or (current_user.get("role") or "").lower() in ("admin", "finance", "audit", "auditor")
     user_company_ids = current_user.get("company_ids") or []
     if not is_admin and not user_company_ids and current_user.get("company_id"):
         user_company_ids = [current_user["company_id"]]

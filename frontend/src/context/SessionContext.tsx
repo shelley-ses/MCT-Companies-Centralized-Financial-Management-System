@@ -18,6 +18,7 @@ export interface SessionContextValue {
   resend2FA: () => Promise<Resend2FAResponse>
   complete2FA: () => Promise<void>
   signOut: () => Promise<void>
+  updateUser: (partial: Partial<User>) => void
 }
 
 export const SessionContext = React.createContext<SessionContextValue | undefined>(
@@ -124,6 +125,15 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [])
 
+  const handleUpdateUser = React.useCallback((partial: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return null
+      const updated = { ...prev, ...partial }
+      authService.updateSessionUser(partial)
+      return updated
+    })
+  }, [])
+
   const value = React.useMemo<SessionContextValue>(
     () => ({
       status,
@@ -133,8 +143,9 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({
       resend2FA: handleResend2FA,
       complete2FA: handleComplete2FA,
       signOut: handleSignOut,
+      updateUser: handleUpdateUser,
     }),
-    [status, user, handleSignIn, handleVerify2FA, handleResend2FA, handleComplete2FA, handleSignOut]
+    [status, user, handleSignIn, handleVerify2FA, handleResend2FA, handleComplete2FA, handleSignOut, handleUpdateUser]
   )
 
   return (

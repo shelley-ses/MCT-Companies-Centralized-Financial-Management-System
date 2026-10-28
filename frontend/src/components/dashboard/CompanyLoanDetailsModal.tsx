@@ -87,7 +87,7 @@ export const CompanyLoanDetailsModal: React.FC<CompanyLoanDetailsModalProps> = (
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[24px] sm:rounded-[28px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl sm:max-w-[760px] max-h-[90vh] overflow-y-auto [&>button]:top-5 [&>button]:right-5">
+      <DialogContent className="rounded-[24px] sm:rounded-[28px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl sm:max-w-[820px] max-h-[85vh] overflow-y-auto">
         {/* 1. Header */}
         <DialogHeader className="text-left pb-4 border-b border-stroke/20 pr-8">
           <div className="flex items-center justify-between gap-3 flex-wrap">

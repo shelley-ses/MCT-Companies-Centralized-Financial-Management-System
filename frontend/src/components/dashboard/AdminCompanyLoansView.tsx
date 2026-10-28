@@ -38,7 +38,6 @@ import {
 } from '@/services/loanService'
 import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD, isDateInRange } from '@/utils/dateUtils'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { cn } from '@/lib/utils'
 
 const LOAN_CATEGORIES = [
@@ -71,246 +70,6 @@ type PeriodOption = (typeof PERIOD_OPTIONS)[number]
 
 const ITEMS_PER_PAGE = 10
 
-const DUMMY_COMPANY_LOAN_GROUPS: CompanyLoanGroup[] = [
-  {
-    key: 'mct-hotel-mct-kitchen-rent',
-    borrower: 'MCT Hotel',
-    lender: 'MCT Kitchen',
-    category: 'Rent',
-    totalLoanAmount: 45000,
-    totalPaid: 13000,
-    outstandingBalance: 32000,
-    interestDisplay: '5.00%',
-    paymentStatus: 'Partially Paid',
-    loanCount: 2,
-    loans: [
-      {
-        id: 'loan_demo_1',
-        loanId: 101,
-        refNo: 'LN-2026-001',
-        date: '08/01/26',
-        rawDate: '2026-08-01',
-        dueDate: '2026-12-31',
-        interestRate: 5,
-        interestType: 'simple',
-        particulars: 'Hotel building monthly rental facility',
-        category: 'Rent',
-        amount: 30000,
-        borrowerId: 3,
-        borrower: 'MCT Hotel',
-        lenderId: 2,
-        lender: 'MCT Kitchen',
-        company: 'MCT Hotel',
-        status: 'Approved',
-        auditStatus: 'Verified',
-        type: 'Loan',
-        totalPaid: 10000,
-        outstandingBalance: 20000,
-        paymentStatus: 'Partially Paid',
-      },
-      {
-        id: 'loan_demo_2',
-        loanId: 102,
-        refNo: 'LN-2026-002',
-        date: '09/01/26',
-        rawDate: '2026-09-01',
-        dueDate: '2027-01-31',
-        interestRate: 5,
-        interestType: 'simple',
-        particulars: 'Commercial commissary facility lease advance',
-        category: 'Rent',
-        amount: 15000,
-        borrowerId: 3,
-        borrower: 'MCT Hotel',
-        lenderId: 2,
-        lender: 'MCT Kitchen',
-        company: 'MCT Hotel',
-        status: 'Approved',
-        auditStatus: 'Verified',
-        type: 'Loan',
-        totalPaid: 3000,
-        outstandingBalance: 12000,
-        paymentStatus: 'Partially Paid',
-      },
-    ],
-  },
-  {
-    key: 'jk-cafe-mct-kitchen-electricity',
-    borrower: 'JK Cafe',
-    lender: 'MCT Kitchen',
-    category: 'Electricity',
-    totalLoanAmount: 28500,
-    totalPaid: 28500,
-    outstandingBalance: 0,
-    interestDisplay: '3.50%',
-    paymentStatus: 'Fully Paid',
-    loanCount: 1,
-    loans: [
-      {
-        id: 'loan_demo_3',
-        loanId: 103,
-        refNo: 'LN-2026-003',
-        date: '07/15/26',
-        rawDate: '2026-07-15',
-        dueDate: '2026-10-15',
-        interestRate: 3.5,
-        interestType: 'simple',
-        particulars: 'Meralco sub-station transformer upgrade support',
-        category: 'Electricity',
-        amount: 28500,
-        borrowerId: 5,
-        borrower: 'JK Cafe',
-        lenderId: 2,
-        lender: 'MCT Kitchen',
-        company: 'JK Cafe',
-        status: 'Approved',
-        auditStatus: 'Verified',
-        type: 'Loan',
-        totalPaid: 28500,
-        outstandingBalance: 0,
-        paymentStatus: 'Fully Paid',
-      },
-    ],
-  },
-  {
-    key: 'annex-nine-jk-printing-supplies',
-    borrower: 'Annex Nine',
-    lender: 'JK Printing',
-    category: 'Operating Supplies',
-    totalLoanAmount: 62000,
-    totalPaid: 15000,
-    outstandingBalance: 47000,
-    interestDisplay: '4.00%',
-    paymentStatus: 'Partially Paid',
-    loanCount: 2,
-    loans: [
-      {
-        id: 'loan_demo_4',
-        loanId: 104,
-        refNo: 'LN-2026-004',
-        date: '08/20/26',
-        rawDate: '2026-08-20',
-        dueDate: '2026-12-20',
-        interestRate: 4,
-        interestType: 'simple',
-        particulars: 'Raw paper rolls and commercial offset ink bulk financing',
-        category: 'Operating Supplies',
-        amount: 40000,
-        borrowerId: 6,
-        borrower: 'Annex Nine',
-        lenderId: 8,
-        lender: 'JK Printing',
-        company: 'Annex Nine',
-        status: 'Approved',
-        auditStatus: 'Verified',
-        type: 'Loan',
-        totalPaid: 10000,
-        outstandingBalance: 30000,
-        paymentStatus: 'Partially Paid',
-      },
-      {
-        id: 'loan_demo_5',
-        loanId: 105,
-        refNo: 'LN-2026-005',
-        date: '09/10/26',
-        rawDate: '2026-09-10',
-        dueDate: '2027-01-10',
-        interestRate: 4,
-        interestType: 'simple',
-        particulars: 'Packaging and industrial warehouse supply stock',
-        category: 'Operating Supplies',
-        amount: 22000,
-        borrowerId: 6,
-        borrower: 'Annex Nine',
-        lenderId: 8,
-        lender: 'JK Printing',
-        company: 'Annex Nine',
-        status: 'Approved',
-        auditStatus: 'Verified',
-        type: 'Loan',
-        totalPaid: 5000,
-        outstandingBalance: 17000,
-        paymentStatus: 'Partially Paid',
-      },
-    ],
-  },
-  {
-    key: 'speedbox-merillon-internet',
-    borrower: 'Speedbox',
-    lender: 'Merillon',
-    category: 'Internet',
-    totalLoanAmount: 18000,
-    totalPaid: 0,
-    outstandingBalance: 18000,
-    interestDisplay: '0.00%',
-    paymentStatus: 'Unpaid',
-    loanCount: 1,
-    loans: [
-      {
-        id: 'loan_demo_6',
-        loanId: 106,
-        refNo: 'LN-2026-006',
-        date: '09/25/26',
-        rawDate: '2026-09-25',
-        dueDate: '2026-11-25',
-        interestRate: 0,
-        interestType: 'simple',
-        particulars: 'Dedicated fiber leased line and network rack installation',
-        category: 'Internet',
-        amount: 18000,
-        borrowerId: 9,
-        borrower: 'Speedbox',
-        lenderId: 7,
-        lender: 'Merillon',
-        company: 'Speedbox',
-        status: 'Approved',
-        auditStatus: 'Verified',
-        type: 'Loan',
-        totalPaid: 0,
-        outstandingBalance: 18000,
-        paymentStatus: 'Unpaid',
-      },
-    ],
-  },
-  {
-    key: 'southern-brew-mct-kitchen-water',
-    borrower: 'Southern Brew',
-    lender: 'MCT Kitchen',
-    category: 'Water Bill',
-    totalLoanAmount: 12500,
-    totalPaid: 0,
-    outstandingBalance: 12500,
-    interestDisplay: '2.50%',
-    paymentStatus: 'Overdue',
-    loanCount: 1,
-    loans: [
-      {
-        id: 'loan_demo_7',
-        loanId: 107,
-        refNo: 'LN-2026-007',
-        date: '06/10/26',
-        rawDate: '2026-06-10',
-        dueDate: '2026-09-10',
-        interestRate: 2.5,
-        interestType: 'simple',
-        particulars: 'Commercial reverse osmosis filtration and water facility bill',
-        category: 'Water Bill',
-        amount: 12500,
-        borrowerId: 12,
-        borrower: 'Southern Brew',
-        lenderId: 2,
-        lender: 'MCT Kitchen',
-        company: 'Southern Brew',
-        status: 'Approved',
-        auditStatus: 'Flagged',
-        type: 'Loan',
-        totalPaid: 0,
-        outstandingBalance: 12500,
-        paymentStatus: 'Overdue',
-      },
-    ],
-  },
-]
 
 interface AdminCompanyLoansViewProps {
   assignedCompany: string
@@ -326,7 +85,6 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
 }) => {
   const [groups, setGroups] = React.useState<CompanyLoanGroup[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [previewMode, setPreviewMode] = React.useState(false)
 
   // Filters
   const [selectedCompany, setSelectedCompany] = React.useState<string>('All Companies')
@@ -383,10 +141,10 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
       if (res.items && res.items.length > 0) {
         setGroups(res.items)
       } else {
-        setGroups(DUMMY_COMPANY_LOAN_GROUPS)
+        setGroups([])
       }
     } catch {
-      setGroups(DUMMY_COMPANY_LOAN_GROUPS)
+      setGroups([])
     } finally {
       setLoading(false)
     }
@@ -656,19 +414,6 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
     window.print()
   }
 
-  // Toggle preview mode
-  const togglePreviewMode = () => {
-    setPreviewMode((prev) => {
-      const next = !prev
-      if (next) {
-        setGroups(DUMMY_COMPANY_LOAN_GROUPS)
-      } else {
-        void loadCompanyLoans()
-      }
-      return next
-    })
-    setCurrentPage(1)
-  }
 
   // Filter company list for dropdown search
   const filteredCompanyList = React.useMemo(() => {
@@ -790,25 +535,8 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
       <div className="space-y-3">
         {/* Top Row: Action Buttons (Preview Dummy, Export & Add Loan) */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant={previewMode ? 'default' : 'outline'}
-              size="sm"
-              onClick={togglePreviewMode}
-              className={cn(
-                'h-9 sm:h-10 px-3.5 rounded-xl font-semibold text-xs shadow-xs cursor-pointer transition-all',
-                previewMode
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                  : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-              )}
-            >
-              <span>{previewMode ? 'Exit Preview Data' : 'Preview Dummy Data'}</span>
-            </Button>
-          </div>
 
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
@@ -1216,24 +944,7 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
         </div>
       </div>
 
-      {/* Preview Mode Notice */}
-      {previewMode && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-800 flex items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
-            <span>
-              <strong>Preview mode active:</strong> Showing demo inter-company loan portfolios and timeline records. No database records were altered.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={togglePreviewMode}
-            className="text-xs font-bold underline hover:text-amber-900 cursor-pointer shrink-0"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+
 
       {/* 2. KPI Cards: Total Loan Capital, Total Paid, Outstanding Balance */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">

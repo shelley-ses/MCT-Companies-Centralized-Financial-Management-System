@@ -53,8 +53,21 @@ export const SignInForm: React.FC = () => {
       const response = await signIn(values)
 
       if (response.status === 'authenticated') {
-        // Go to remembered path if safe internal route, else /dashboard
-        navigate(safeRedirectPath, { replace: true })
+        const isFinance = response.user.role?.toLowerCase() === 'finance'
+        const hasExplicitDeepRoute =
+          fromState &&
+          fromState.startsWith('/') &&
+          !fromState.startsWith('//') &&
+          fromState !== '/login' &&
+          fromState !== '/dashboard'
+
+        const destination = hasExplicitDeepRoute
+          ? fromState
+          : isFinance
+          ? '/centralized-auth'
+          : safeRedirectPath
+
+        navigate(destination, { replace: true })
       } else if (response.status === '2fa_required') {
         // Route to 2FA verification step, preserving return route
         navigate('/verify-2fa', { state: { from: fromState, email: response.email } })
