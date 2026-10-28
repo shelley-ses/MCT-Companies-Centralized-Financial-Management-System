@@ -3,7 +3,7 @@ from typing import Optional
 from app.schemas.user import UserResponse
 
 class LoginRequest(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     password: Optional[str] = None
     encrypted_payload: Optional[str] = None
 

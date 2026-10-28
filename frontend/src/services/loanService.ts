@@ -127,20 +127,7 @@ function saveStoredLoans(items: LoanItem[]): void {
 
 let inMemoryLoans: LoanItem[] = loadStoredLoans()
 
-const CANONICAL_COMPANIES_LOOKUP: Record<string, string> = {
-  '1': 'MCT Kitchen',
-  '2': 'MCT Kitchen',
-  '3': 'MCT Hotel',
-  '4': 'JK Cafe',
-  '5': 'JK Cafe',
-  '6': 'Annex Nine',
-  '7': 'Merillon',
-  '8': 'JK Printing',
-  '9': 'Speedbox',
-  '10': 'JK Property and Ventures',
-  '11': 'Golden Sunburst Ventures',
-  '12': 'Southern Brew',
-}
+const companyNameCache = new Map<string, string>()
 
 function mapBackendLoanToItem(l: any): LoanItem {
   const rawDateStr = l.loan_date || '2026-10-01'
@@ -155,15 +142,19 @@ function mapBackendLoanToItem(l: any): LoanItem {
   const amt = Number(l.principal_amount || l.amount || 0)
   
   let bName = l.borrower_name || l.borrower_company || ''
-  if (!bName || bName.startsWith('Company #')) {
-    const bId = String(l.borrower || '').replace(/\D/g, '')
-    bName = CANONICAL_COMPANIES_LOOKUP[bId] || (l.borrower ? `Company #${l.borrower}` : 'MCT Kitchen')
+  const bId = String(l.borrower || '').replace(/\D/g, '')
+  if ((!bName || bName.startsWith('Company #')) && bId) {
+    bName = companyNameCache.get(bId) || (l.borrower ? `Company #${l.borrower}` : '')
+  } else if (!bName) {
+    bName = l.borrower ? `Company #${l.borrower}` : ''
   }
 
   let lName = l.lender_name || l.lender_company || ''
-  if (!lName || lName.startsWith('Company #')) {
-    const lId = String(l.lender || '').replace(/\D/g, '')
-    lName = CANONICAL_COMPANIES_LOOKUP[lId] || (l.lender ? `Company #${l.lender}` : 'Pending Finance Assignment')
+  const lId = String(l.lender || '').replace(/\D/g, '')
+  if ((!lName || lName.startsWith('Company #')) && lId) {
+    lName = companyNameCache.get(lId) || (l.lender ? `Company #${l.lender}` : 'Pending Finance Assignment')
+  } else if (!lName) {
+    lName = l.lender ? `Company #${l.lender}` : 'Pending Finance Assignment'
   }
 
   const totalPaid = Number(l.total_paid || l.totalPaid || 0)
@@ -244,6 +235,10 @@ export const loanService = {
     const cached = loanCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < LOAN_CACHE_TTL) {
       return cached.data
+    }
+
+    if (companyNameCache.size === 0) {
+      await loanService.getCompanies().catch(() => [])
     }
 
     const token = typeof window !== 'undefined'
@@ -358,10 +353,17 @@ export const loanService = {
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data)) {
-          return data.map((c: any) => ({
-            company_id: c.company_id ?? c.id,
-            company_name: c.company_name || c.name,
-          }))
+          return data.map((c: any) => {
+            const companyId = Number(c.company_id ?? c.id)
+            const companyName = String(c.company_name || c.name || '')
+            if (companyId && companyName) {
+              companyNameCache.set(String(companyId), companyName)
+            }
+            return {
+              company_id: companyId,
+              company_name: companyName,
+            }
+          })
         }
       } else {
         console.warn('GET /api/v1/companies failed with status', res.status)
@@ -380,6 +382,10 @@ export const loanService = {
     end_date?: string
   }): Promise<LoanItem[]> {
     try {
+      if (companyNameCache.size === 0) {
+        await loanService.getCompanies().catch(() => [])
+      }
+
       const token =
         typeof window !== 'undefined'
           ? sessionStorage.getItem('mct_access_token')

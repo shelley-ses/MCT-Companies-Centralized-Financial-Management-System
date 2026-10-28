@@ -14,43 +14,60 @@ from app.services.petty_cash_service import PettyCashService
 
 router = APIRouter()
 
-CANONICAL_COMPANY_MAP = {
-    2: "MCT Kitchen",
-    3: "MCT Hotel",
-    4: "JK Cafe",
-    5: "JK Cafe",
-    6: "Annex Nine",
-    7: "Merillon",
-    8: "JK Printing",
-    9: "Speedfire",
-    10: "JK Property and Ventures",
-    11: "Golden Sunburst Ventures",
-    12: "Southern Brew",
-    14: "FILCAP Prime Holdings Corp.",
-}
-
 from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access
+from app.core.company_resolver import resolve_company, normalize_company_id
 from app.core.cache import get_cached, set_cached
 
-def get_supabase_mappings(client):
+def get_supabase_mappings(client=None, db: Optional[Session] = None):
     cached = get_cached("supabase_mappings")
     if cached:
         return cached[0], cached[1]
 
-    company_map = dict(CANONICAL_COMPANY_MAP)
-    try:
-        companies = client.table("company").select("company_id, company_name").execute().data or []
-        for c in companies:
-            if c.get("company_id") and c.get("company_name"):
-                company_map[c["company_id"]] = c["company_name"]
-    except Exception:
-        pass
+    company_map = {}
+    if db is not None:
+        try:
+            from app.models.company import Company as CompanyModel
+            comps = db.query(CompanyModel).all()
+            for c in comps:
+                if c.company_id and c.company_name:
+                    company_map[c.company_id] = c.company_name
+        except Exception:
+            pass
+    else:
+        try:
+            from app.db.session import SessionLocal
+            from app.models.company import Company as CompanyModel
+            with SessionLocal() as local_db:
+                comps = local_db.query(CompanyModel).all()
+                for c in comps:
+                    if c.company_id and c.company_name:
+                        company_map[c.company_id] = c.company_name
+        except Exception:
+            pass
 
-    try:
-        categories = client.table("category").select("category_id, name").execute().data or []
-        cat_map = {c["category_id"]: c["name"] for c in categories}
-    except Exception:
-        cat_map = {}
+    if not company_map and client is not None:
+        try:
+            companies = client.table("company").select("company_id, company_name").execute().data or []
+            for c in companies:
+                if c.get("company_id") and c.get("company_name"):
+                    company_map[c["company_id"]] = c["company_name"]
+        except Exception:
+            pass
+
+    cat_map = {}
+    if client is not None:
+        try:
+            categories = client.table("category").select("category_id, name").execute().data or []
+            cat_map = {c["category_id"]: c["name"] for c in categories}
+        except Exception:
+            cat_map = {}
+
+    if not cat_map and db is not None:
+        try:
+            cats = db.query(Category).all()
+            cat_map = {c.category_id: c.name for c in cats}
+        except Exception:
+            pass
 
     set_cached("supabase_mappings", (company_map, cat_map), ttl_seconds=600)
     return company_map, cat_map
@@ -80,35 +97,28 @@ def get_expenses(
     db: Session = Depends(get_db)
 ):
     is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    is_privileged = is_admin or current_user.get("role") in ("admin", "audit", "finance")
     user_company_ids = current_user.get("company_ids") or []
-    if not is_admin and not user_company_ids and current_user.get("company_id"):
+    if not is_privileged and not user_company_ids and current_user.get("company_id"):
         user_company_ids = [current_user["company_id"]]
 
     try:
         client = get_supabase_admin_client()
-        company_map, cat_map = get_supabase_mappings(client)
+        company_map, cat_map = get_supabase_mappings(client, db=db)
 
         sb_query = client.table("expenses").select("*")
 
         # Company filter & access check
-        resolved_company_id = company_id
+        resolved_company_id = normalize_company_id(company_id)
         if resolved_company_id:
             check_company_access(current_user, resolved_company_id)
             sb_query = sb_query.eq("company_id", resolved_company_id)
         elif company_name and company_name.lower() != "all companies":
-            target_norm = company_name.strip().lower()
-            matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() == target_norm]
-            if not matching_cids and target_norm in ("speedbox", "speedfire"):
-                matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() in ("speedbox", "speedfire")]
-            if not is_admin:
-                matching_cids = [cid for cid in matching_cids if cid in user_company_ids]
-                if not matching_cids:
-                    return []
-            if len(matching_cids) == 1:
-                sb_query = sb_query.eq("company_id", matching_cids[0])
-            elif len(matching_cids) > 1:
-                sb_query = sb_query.in_("company_id", matching_cids)
-        elif not is_admin:
+            resolved_comp = resolve_company(db, company_name=company_name)
+            target_cid = resolved_comp.company_id
+            check_company_access(current_user, target_cid)
+            sb_query = sb_query.eq("company_id", target_cid)
+        elif not is_privileged:
             if not user_company_ids:
                 return []
             if len(user_company_ids) == 1:
@@ -167,9 +177,9 @@ def get_expenses(
             query = query.filter(Expense.company_id == company_id)
         elif company_name and company_name.lower() != "all companies":
             query = query.filter(func.lower(Company.company_name) == func.lower(company_name.strip()))
-            if not is_admin:
+            if not is_privileged:
                 query = query.filter(Expense.company_id.in_(user_company_ids))
-        elif not is_admin:
+        elif not is_privileged:
             if not user_company_ids:
                 return []
             query = query.filter(Expense.company_id.in_(user_company_ids))
@@ -229,36 +239,12 @@ def create_expense(
 
     try:
         client = get_supabase_admin_client()
-        company_map, cat_map = get_supabase_mappings(client)
+        company_map, cat_map = get_supabase_mappings(client, db=db)
 
-        # 1. Resolve Company in Supabase
-        target_company_id = expense_in.company_id
-        target_company_name = expense_in.company or ""
-
-        if target_company_id and target_company_id in company_map:
-            target_company_name = company_map[target_company_id]
-        elif target_company_name:
-            for cid, cname in company_map.items():
-                if cname.strip().lower() == target_company_name.strip().lower():
-                    target_company_id = cid
-                    target_company_name = cname
-                    break
-
-        if not target_company_id:
-            if target_company_name:
-                ins_comp = client.table("company").insert({
-                    "company_name": target_company_name.strip(),
-                    "location": "Metro Manila, Philippines",
-                    "contact_person": f"{target_company_name} Manager",
-                    "contact_number": "09123456789",
-                    "email": "info@mct.com",
-                    "starting_balance": 0.00,
-                    "current_balance": 0.00
-                }).execute()
-                if ins_comp.data:
-                    target_company_id = ins_comp.data[0]["company_id"]
-            else:
-                raise HTTPException(status_code=400, detail="Invalid company specified.")
+        # 1. Resolve Company reliably
+        target_company = resolve_company(db, company_id=expense_in.company_id, company_name=expense_in.company)
+        target_company_id = target_company.company_id
+        target_company_name = target_company.company_name
 
         check_company_access(current_user, target_company_id)
 
@@ -398,26 +384,8 @@ def create_expense(
         raise
     except Exception as e:
         # Fallback to local SQLite only if Supabase error occurs
-        target_company = None
-        if expense_in.company_id:
-            target_company = db.query(Company).filter(Company.company_id == expense_in.company_id).first()
-        elif expense_in.company:
-            target_company = db.query(Company).filter(
-                func.lower(Company.company_name) == func.lower(expense_in.company.strip())
-            ).first()
-
-        if not target_company:
-            if expense_in.company and expense_in.company.strip():
-                target_company = Company(
-                    company_name=expense_in.company.strip(),
-                    starting_balance=0.00,
-                    current_balance=0.00
-                )
-                db.add(target_company)
-                db.commit()
-                db.refresh(target_company)
-            else:
-                raise HTTPException(status_code=400, detail="Invalid company specified.")
+        target_company = resolve_company(db, company_id=expense_in.company_id, company_name=expense_in.company)
+        check_company_access(current_user, target_company.company_id)
 
         PettyCashService(db).ensure_sufficient_balance(target_company.company_id, expense_in.payment_method, expense_in.amount)
 
@@ -500,7 +468,7 @@ def get_expense(
 
     try:
         client = get_supabase_admin_client()
-        company_map, cat_map = get_supabase_mappings(client)
+        company_map, cat_map = get_supabase_mappings(client, db=db)
         res = client.table("expenses").select("*").eq("expense_id", expense_id).execute()
         if res.data:
             row = res.data[0]
@@ -620,7 +588,7 @@ def update_expense(
     updated_row = None
     try:
         client = get_supabase_admin_client()
-        company_map, cat_map = get_supabase_mappings(client)
+        company_map, cat_map = get_supabase_mappings(client, db=db)
 
         category_str = (expense_in.category or "").strip()
         if category_str:
@@ -675,7 +643,7 @@ def update_expense(
 
     if updated_row:
         client = get_supabase_admin_client()
-        company_map, cat_map = get_supabase_mappings(client)
+        company_map, cat_map = get_supabase_mappings(client, db=db)
         log_transaction(
             db, AuditAction.EXPENSE_UPDATED,
             user_id=current_user.get("user_id"), company_id=updated_row.get("company_id"),
@@ -744,6 +712,7 @@ def delete_expense(
 
     deleted_from_supabase = False
     deleted_company_id = None
+    client = None
     try:
         client = get_supabase_admin_client()
         existing = client.table("expenses").select("company_id").eq("expense_id", expense_id).limit(1).execute()

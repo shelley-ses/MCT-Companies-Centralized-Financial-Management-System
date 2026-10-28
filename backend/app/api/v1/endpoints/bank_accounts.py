@@ -57,10 +57,34 @@ def check_finance_or_admin(
 @router.get("", response_model=List[BankAccountOut], summary="List all corporate bank accounts")
 def list_bank_accounts(
     company_name: Optional[str] = Query(None, description="Filter by company name"),
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
+    effective_company = company_name
+    effective_company_id = None
+    if request:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+            if token and token not in ("null", "undefined"):
+                try:
+                    from app.core.security import verify_token
+                    claims = verify_token(token)
+                    from app.core.dependencies import get_current_user
+                    current_user = get_current_user(claims, db)
+                    role = str(current_user.get("role") or "").lower()
+                    is_admin = current_user.get("is_admin") or role in ("admin", "finance", "audit")
+                    if not is_admin and current_user.get("company_id"):
+                        effective_company_id = current_user.get("company_id")
+                        from app.models.company import Company
+                        comp = db.query(Company).filter(Company.company_id == current_user["company_id"]).first()
+                        if comp:
+                            effective_company = comp.company_name
+                except Exception:
+                    pass
+
     service = BankService(db)
-    return service.list_accounts(company_name=company_name)
+    return service.list_accounts(company_name=effective_company, company_id=effective_company_id)
 
 
 @router.get("/{account_id}", response_model=BankAccountOut, summary="Get single bank account with transactions")

@@ -44,6 +44,7 @@ import { formatParticularsString, parseParticulars, type ParticularItem } from '
 import { cn } from '@/lib/utils'
 import { SALES_CATEGORY_LIST } from '@/utils/categoryConstants'
 import { bankService, type BankAccount } from '@/services/bankService'
+import { isCompanyMatch } from '@/utils/companyUtils'
 
 interface ParticularsRow {
   id: string
@@ -199,7 +200,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   React.useEffect(() => {
     let mounted = true
-    bankService.getAccounts().then((accounts) => {
+    const targetComp = isAuditor ? assignedCompany : selectedCompany
+    bankService.getAccounts(targetComp).then((accounts) => {
       if (mounted) {
         setBankAccounts(accounts || [])
       }
@@ -207,24 +209,23 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     return () => {
       mounted = false
     }
-  }, [])
+  }, [isAuditor, assignedCompany, selectedCompany])
 
-  // Filter available bank accounts by the selected company
+  // Filter available bank accounts strictly by the selected company
   const availableBankAccounts = React.useMemo(() => {
     const targetComp = isAuditor ? assignedCompany : selectedCompany
-    if (!targetComp) return bankAccounts
-    const norm = targetComp.trim().toLowerCase()
-    const matching = bankAccounts.filter((a) => {
-      const aComp = (a.companyName || '').toLowerCase()
-      return aComp.includes(norm) || norm.includes(aComp)
-    })
+    if (!targetComp || targetComp === 'All Companies') return bankAccounts
+    const matching = bankAccounts.filter((a) =>
+      isCompanyMatch(a.companyName, targetComp)
+    )
     if (matching.length > 0) return matching
     const general = bankAccounts.filter((a) =>
       !a.companyName ||
       a.companyName.toLowerCase().includes('general') ||
       a.companyName.toLowerCase().includes('unassigned')
     )
-    return general.length > 0 ? general : bankAccounts
+    // Never leak other companies' bank accounts when scoped to a specific company
+    return general
   }, [bankAccounts, selectedCompany, isAuditor, assignedCompany])
 
   // Auto-select the first bank account of the company if available

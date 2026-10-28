@@ -62,18 +62,7 @@ import { loanService } from '@/services/loanService'
 import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { useCompany } from '@/context/CompanyContext'
 
-const COMPANY_LIST = [
-  'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
+const DEFAULT_COMPANY_LIST = ['All Companies']
 
 const PERIOD_OPTIONS = ['Daily', 'Monthly', 'Quarterly', 'Annually'] as const
 type PeriodOption = (typeof PERIOD_OPTIONS)[number]
@@ -97,15 +86,15 @@ export const ExpensePage: React.FC = () => {
   const [expenses, setExpenses] = React.useState<ExpenseItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
-  // Dynamic companies list
-  const [companyList, setCompanyList] = React.useState<string[]>(COMPANY_LIST)
+  // Dynamic companies list populated directly from database
+  const [companyList, setCompanyList] = React.useState<string[]>(DEFAULT_COMPANY_LIST)
 
   React.useEffect(() => {
     let mounted = true
     loanService.getCompanies().then((companies) => {
       if (mounted && companies.length > 0) {
         const names = companies.map((c) => c.company_name).filter(Boolean)
-        const combined = Array.from(new Set(['All Companies', ...names, ...COMPANY_LIST]))
+        const combined = Array.from(new Set(['All Companies', ...names]))
         setCompanyList(combined)
       }
     })

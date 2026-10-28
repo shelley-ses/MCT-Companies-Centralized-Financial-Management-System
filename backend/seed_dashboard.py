@@ -83,7 +83,19 @@ def clear(db) -> None:
     sales = db.query(Sale).filter(Sale.cheque_no.like(f"{SEED_PREFIX}%")).delete(synchronize_session=False)
     expenses = db.query(Expense).filter(Expense.reference_no.like(f"{SEED_PREFIX}%")).delete(synchronize_session=False)
     db.commit()
-    print(f"[CLEARED] {sales} seeded sales, {expenses} seeded expenses")
+
+    # Reset sequences so IDs do not climb unnecessarily
+    try:
+        from sqlalchemy import text
+        max_s = db.execute(text("SELECT COALESCE(MAX(sales_id), 0) FROM sales;")).scalar() or 0
+        db.execute(text(f"ALTER SEQUENCE sales_sales_id_seq RESTART WITH {max_s + 1};"))
+        max_e = db.execute(text("SELECT COALESCE(MAX(expense_id), 0) FROM expenses;")).scalar() or 0
+        db.execute(text(f"ALTER SEQUENCE expenses_expense_id_seq RESTART WITH {max_e + 1};"))
+        db.commit()
+    except Exception:
+        pass
+
+    print(f"[CLEARED] {sales} seeded sales, {expenses} seeded expenses (sequences reset)")
 
 
 def category_ids(db, names) -> dict:

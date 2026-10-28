@@ -30,22 +30,6 @@ from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
-CANONICAL_COMPANY_MAP = {
-    1: "MCT Kitchen",
-    2: "MCT Kitchen",
-    3: "MCT Hotel",
-    4: "JK Cafe",
-    5: "JK Cafe",
-    6: "Annex Nine",
-    7: "Merillon",
-    8: "JK Printing",
-    9: "Speedbox",
-    10: "JK Property and Ventures",
-    11: "Golden Sunburst Ventures",
-    12: "Southern Brew",
-    14: "FILCAP Prime Holdings Corp.",
-}
-
 from app.core.cache import get_cached, set_cached
 
 def get_supabase_company_mapping(client, db: Optional[Session] = None):
@@ -53,8 +37,8 @@ def get_supabase_company_mapping(client, db: Optional[Session] = None):
     if cached:
         return cached[0], cached[1]
 
-    id_to_name = dict(CANONICAL_COMPANY_MAP)
-    name_to_id = {v.strip().lower(): k for k, v in CANONICAL_COMPANY_MAP.items()}
+    id_to_name = {}
+    name_to_id = {}
 
     if db:
         try:
