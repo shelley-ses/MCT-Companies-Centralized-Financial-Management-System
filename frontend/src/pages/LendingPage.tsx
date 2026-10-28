@@ -1133,7 +1133,7 @@ export const LendingPage: React.FC = () => {
               <col style={{ width: '7%' }} />  {/* Actions */}
             </colgroup>
             <TableHeader>
-              <TableRow className="border-b border-stroke/30 hover:bg-transparent">
+              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
                 <TableHead className="w-[20%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   BORROWER'S NAME
                 </TableHead>

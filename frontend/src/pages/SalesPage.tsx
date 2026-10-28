@@ -494,7 +494,7 @@ export const SalesPage: React.FC = () => {
               Sales
             </h1>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Here's the summary of sales in {displayedCompanyTitle}
+              Here's the summary of sales records and transactions.
             </p>
           </div>
 
@@ -672,13 +672,8 @@ export const SalesPage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor */}
-            {isCompanyScoped ? (
-              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs">
-                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90">{assignedCompany}</span>
-              </div>
-            ) : (
+            {/* Company Scope: Dropdown for Admin/Finance only */}
+            {!isCompanyScoped && (
               <div ref={companyDropdownRef} className="relative inline-block">
                 <button
                   type="button"
@@ -795,26 +790,26 @@ export const SalesPage: React.FC = () => {
                 type="button"
                 onClick={() => setTableTab('Deposit')}
                 className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
                   tableTab === 'Deposit'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-focus/70 hover:bg-white hover:text-focus'
                 )}
               >
-                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
+                <ArrowDownLeft className="h-4 w-4 shrink-0" />
                 Deposit
               </button>
               <button
                 type="button"
                 onClick={() => setTableTab('Sales Record')}
                 className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
                   tableTab === 'Sales Record'
                     ? 'bg-[#960C01] text-white shadow-xs'
                     : 'text-focus/70 hover:bg-white hover:text-focus'
                 )}
               >
-                <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                <TrendingUp className="h-4 w-4 shrink-0" />
                 Sales Record
               </button>
             </div>
@@ -831,21 +826,20 @@ export const SalesPage: React.FC = () => {
             <span className="text-xs font-medium text-muted-fg block">
               Total Sales
             </span>
-            {loading ? (
-              <div className="space-y-1.5 mt-2">
-                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
-                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
-              </div>
-            ) : (
-              <>
-                <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
-                  {formatPHP(kpis.totalSales)}
-                </h3>
-                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-                  Total sales volume for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-                </p>
-              </>
-            )}
+            <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
+              {loading ? (
+                <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
+                </span>
+              ) : (
+                formatPHP(kpis.totalSales)
+              )}
+            </h3>
+            <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+              Total sales volume for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
+            </p>
           </div>
 
           <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
@@ -859,21 +853,20 @@ export const SalesPage: React.FC = () => {
             <span className="text-xs font-medium text-muted-fg block">
               Total Cash
             </span>
-            {loading ? (
-              <div className="space-y-1.5 mt-2">
-                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
-                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
-              </div>
-            ) : (
-              <>
-                <h3 className="text-xl sm:text-2xl font-bold text-teal-600 mt-1 tabular-nums tracking-tight">
-                  {formatPHP(kpis.totalCash)}
-                </h3>
-                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-                  Actual cash collected from paid sales in {displayedCompanyTitle}
-                </p>
-              </>
-            )}
+            <h3 className="text-xl sm:text-2xl font-bold text-teal-600 mt-1 tabular-nums tracking-tight">
+              {loading ? (
+                <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
+                </span>
+              ) : (
+                formatPHP(kpis.totalCash)
+              )}
+            </h3>
+            <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+              Actual cash collected from paid sales in {displayedCompanyTitle}
+            </p>
           </div>
 
           <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-teal-50 border border-teal-200/60 flex items-center justify-center text-teal-600 shrink-0 shadow-2xs">
@@ -928,7 +921,7 @@ export const SalesPage: React.FC = () => {
               <col style={{ width: '8%' }} />
             </colgroup>
             <TableHeader>
-              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
                 <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>

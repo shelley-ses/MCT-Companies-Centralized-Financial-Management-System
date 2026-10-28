@@ -674,13 +674,8 @@ export const ExpensePage: React.FC = () => {
               hidePresets
             />
 
-            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor */}
-            {isCompanyScoped ? (
-              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs">
-                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90">{assignedCompany}</span>
-              </div>
-            ) : (
+            {/* Company Scope: Dropdown for Admin/Finance only */}
+            {!isCompanyScoped && (
               <div ref={companyDropdownRef} className="relative inline-block">
               <button
                 type="button"
@@ -785,26 +780,26 @@ export const ExpensePage: React.FC = () => {
                 type="button"
                 onClick={() => setTableTab('Deposit')}
                 className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
                   tableTab === 'Deposit'
                     ? 'bg-rose-600 text-white shadow-xs'
                     : 'text-focus/70 hover:bg-white hover:text-focus'
                 )}
               >
-                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
+                <ArrowDownLeft className="h-4 w-4 shrink-0" />
                 Deposit
               </button>
               <button
                 type="button"
                 onClick={() => setTableTab('Expense Record')}
                 className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
                   tableTab === 'Expense Record'
                     ? 'bg-[#960C01] text-white shadow-xs'
                     : 'text-focus/70 hover:bg-white hover:text-focus'
                 )}
               >
-                <TrendingDown className="h-3.5 w-3.5 shrink-0" />
+                <TrendingDown className="h-4 w-4 shrink-0" />
                 Expense Record
               </button>
             </div>
@@ -821,21 +816,20 @@ export const ExpensePage: React.FC = () => {
             <span className="text-xs font-medium text-muted-fg block">
               Total Expense
             </span>
-            {loading ? (
-              <div className="space-y-1.5 mt-2">
-                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
-                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
-              </div>
-            ) : (
-              <>
-                <h3 className="text-xl sm:text-2xl font-bold text-red-600 mt-1 tabular-nums tracking-tight">
-                  {formatPHP(kpis.totalExpense)}
-                </h3>
-                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-                  Total operational expense withdrawals for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-                </p>
-              </>
-            )}
+            <h3 className="text-xl sm:text-2xl font-bold text-red-600 mt-1 tabular-nums tracking-tight">
+              {loading ? (
+                <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
+                </span>
+              ) : (
+                formatPHP(kpis.totalExpense)
+              )}
+            </h3>
+            <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+              Total operational expense withdrawals for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
+            </p>
           </div>
 
           <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-red-50 border border-red-200/60 flex items-center justify-center text-red-600 shrink-0 shadow-2xs">
@@ -849,21 +843,20 @@ export const ExpensePage: React.FC = () => {
             <span className="text-xs font-medium text-muted-fg block">
               Total Cash
             </span>
-            {loading ? (
-              <div className="space-y-1.5 mt-2">
-                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
-                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
-              </div>
-            ) : (
-              <>
-                <h3 className="text-xl sm:text-2xl font-bold text-rose-600 mt-1 tabular-nums tracking-tight">
-                  {formatPHP(kpis.totalCash)}
-                </h3>
-                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-                  Actual cash disbursed for settled expenses in {displayedCompanyTitle}
-                </p>
-              </>
-            )}
+            <h3 className="text-xl sm:text-2xl font-bold text-rose-600 mt-1 tabular-nums tracking-tight">
+              {loading ? (
+                <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
+                </span>
+              ) : (
+                formatPHP(kpis.totalCash)
+              )}
+            </h3>
+            <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+              Actual cash disbursed for settled expenses in {displayedCompanyTitle}
+            </p>
           </div>
 
           <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-rose-50 border border-rose-200/60 flex items-center justify-center text-rose-600 shrink-0 shadow-2xs">
@@ -915,7 +908,7 @@ export const ExpensePage: React.FC = () => {
               <col style={{ width: '8%' }} />
             </colgroup>
             <TableHeader>
-              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
                 <TableHead className="w-[10%] px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>

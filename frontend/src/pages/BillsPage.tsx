@@ -1,8 +1,8 @@
 import * as React from 'react'
 import { createPortal } from 'react-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Receipt,
-  CreditCard,
   CheckCircle2,
   Clock,
   BellRing,
@@ -17,12 +17,12 @@ import {
   ChevronDown,
   Check,
   Building2,
-  Calendar,
   X,
   AlertCircle,
   Eye,
   MoreVertical,
   FileText,
+  ArrowLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,7 +47,6 @@ import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import {
   billsService,
-  getBillPaymentOptions,
   type BillItem,
   type BillReminder,
   type BillStatus,
@@ -55,11 +54,8 @@ import {
 import { loanService } from '@/services/loanService'
 import { AddBillModal } from '@/components/dashboard/AddBillModal'
 import { EditBillModal } from '@/components/dashboard/EditBillModal'
-import {
-  RecordBillPaymentModal,
-  MONTH_NAMES,
-  MONTH_FULL_NAMES,
-} from '@/components/dashboard/RecordBillPaymentModal'
+import { BillDetailPageView } from '@/components/dashboard/BillDetailPageView'
+import { RecordBillPaymentModal } from '@/components/dashboard/RecordBillPaymentModal'
 import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
 import { isCompanyMatch } from '@/utils/companyUtils'
 import { cn } from '@/lib/utils'
@@ -164,19 +160,28 @@ export const BillsPage: React.FC = () => {
     }
   }, [openMenuBillId])
 
-  // Details pop-up modal state
-  const [selectedDetailBill, setSelectedDetailBill] = React.useState<BillItem | null>(null)
-  const [detailCalendarYear, setDetailCalendarYear] = React.useState<number>(new Date().getFullYear())
-  const [detailHistoryPage, setDetailHistoryPage] = React.useState<number>(1)
+  const { billId } = useParams<{ billId?: string }>()
+  const navigate = useNavigate()
 
+  // Dedicated bill details page state
+  const [selectedDetailBill, setSelectedDetailBill] = React.useState<BillItem | null>(null)
+
+  // Sync selectedDetailBill with URL billId
   React.useEffect(() => {
-    if (selectedDetailBill) {
-      const targetDate = selectedDetailBill.dueDate
-      const parsedYear = targetDate ? parseInt(targetDate.slice(0, 4), 10) : new Date().getFullYear()
-      setDetailCalendarYear(!isNaN(parsedYear) ? Math.max(2025, parsedYear) : Math.max(2025, new Date().getFullYear()))
-      setDetailHistoryPage(1)
+    if (billId && bills.length > 0) {
+      const found = bills.find((b) => b.id === billId)
+      if (found) {
+        setSelectedDetailBill(found)
+      }
+    } else if (!billId) {
+      setSelectedDetailBill(null)
     }
-  }, [selectedDetailBill])
+  }, [billId, bills])
+
+  const handleBackToBills = () => {
+    setSelectedDetailBill(null)
+    navigate('/bills')
+  }
 
   // Sync assigned company if scoped
   React.useEffect(() => {
@@ -239,6 +244,9 @@ export const BillsPage: React.FC = () => {
       auditedBy: user?.fullName || 'Audit',
     }
     setBills((prev) => prev.map((item) => (item.id === bill.id ? updated : item)))
+    if (selectedDetailBill?.id === bill.id) {
+      setSelectedDetailBill(updated)
+    }
     try {
       const stored = localStorage.getItem('bills_audit_records')
       const records = stored ? JSON.parse(stored) : {}
@@ -360,6 +368,9 @@ export const BillsPage: React.FC = () => {
 
   const handleBillUpdated = (updated: BillItem) => {
     setBills((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
+    if (selectedDetailBill?.id === updated.id) {
+      setSelectedDetailBill(updated)
+    }
     setHighlightedBillId(updated.id)
     setTimeout(() => setHighlightedBillId(null), 3000)
   }
@@ -370,6 +381,10 @@ export const BillsPage: React.FC = () => {
       setIsDeleting(true)
       await billsService.deleteBill(deleteConfirmBill.id)
       setBills((prev) => prev.filter((b) => b.id !== deleteConfirmBill.id))
+      if (selectedDetailBill?.id === deleteConfirmBill.id) {
+        setSelectedDetailBill(null)
+        navigate('/bills')
+      }
       setDeleteConfirmBill(null)
     } catch (err: any) {
       alert(err?.message || 'Failed to delete bill')
@@ -380,6 +395,7 @@ export const BillsPage: React.FC = () => {
 
   const handleRowClick = (bill: BillItem) => {
     setSelectedDetailBill(bill)
+    navigate(`/bills/${bill.id}`)
   }
 
   const handleExportCsv = () => {
@@ -481,6 +497,105 @@ export const BillsPage: React.FC = () => {
     : selectedCompany === 'All Companies'
     ? 'All Subsidiaries'
     : selectedCompany
+
+  if (loading && billId) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#960C01] border-t-transparent" />
+          <span className="text-xs font-semibold text-muted-fg animate-pulse">Loading bill details...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (!loading && billId && !selectedDetailBill) {
+    return (
+      <div className="max-w-[800px] mx-auto py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+          <Receipt className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-focus">Bill Not Found</h2>
+        <p className="text-sm text-muted-fg">The requested bill may have been removed or does not exist.</p>
+        <Button onClick={handleBackToBills} className="rounded-xl bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold cursor-pointer">
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Bills
+        </Button>
+      </div>
+    )
+  }
+
+  if (selectedDetailBill) {
+    return (
+      <>
+        <BillDetailPageView
+          bill={selectedDetailBill}
+          onBack={handleBackToBills}
+          onPay={() => setPaymentBill(selectedDetailBill)}
+          onEdit={() => setEditingBill(selectedDetailBill)}
+          onDelete={() => setDeleteConfirmBill(selectedDetailBill)}
+          onMarkAudit={(status) => handleMarkBillAudit(selectedDetailBill, status)}
+          isAudit={isAudit}
+        />
+
+        <EditBillModal
+          open={Boolean(editingBill)}
+          onOpenChange={(open) => !open && setEditingBill(null)}
+          bill={editingBill}
+          onSuccess={handleBillUpdated}
+          isCompanyScoped={isCompanyScoped}
+          companies={companyList}
+        />
+
+        <RecordBillPaymentModal
+          open={Boolean(paymentBill)}
+          onOpenChange={(open) => !open && setPaymentBill(null)}
+          bill={paymentBill}
+          onBillPaid={handleBillUpdated}
+        />
+
+        <Dialog
+          open={Boolean(deleteConfirmBill)}
+          onOpenChange={(open) => !open && setDeleteConfirmBill(null)}
+        >
+          <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto p-6 rounded-[24px] bg-white border border-neutral-200 shadow-2xl">
+            <DialogHeader>
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 mb-2">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <DialogTitle className="text-lg font-bold text-neutral-900">
+                Delete Monthly Bill?
+              </DialogTitle>
+              <DialogDescription className="text-xs text-neutral-600 mt-1">
+                Are you sure you want to delete the bill for{' '}
+                <strong className="text-neutral-800">{deleteConfirmBill?.billerName}</strong> (
+                {deleteConfirmBill?.company})? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmBill(null)}
+                className="rounded-xl h-10 px-4 text-xs font-semibold border-neutral-200 hover:bg-neutral-100 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="rounded-xl h-10 px-5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/20 cursor-pointer"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Bill'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </>
+    )
+  }
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
@@ -1286,478 +1401,6 @@ export const BillsPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* 5. View Bill Details & Pay Modal */}
-      <Dialog
-        open={Boolean(selectedDetailBill)}
-        onOpenChange={(open) => !open && setSelectedDetailBill(null)}
-      >
-        <DialogContent className="sm:max-w-[780px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
-          {selectedDetailBill && (
-            <>
-              {/* Header */}
-              <DialogHeader className="text-left pb-4 border-b border-stroke/20 pr-8">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#960C01] text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <Receipt className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <DialogTitle className="text-xl sm:text-2xl font-bold text-focus leading-tight">
-                        {selectedDetailBill.billerName}
-                      </DialogTitle>
-                      <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
-                        Monthly Recurring Bill • {selectedDetailBill.company}
-                      </DialogDescription>
-                    </div>
-                  </div>
-
-                  {selectedDetailBill.status === 'Paid' ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Paid</span>
-                    </span>
-                  ) : selectedDetailBill.status === 'Partially Paid' ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold">
-                      <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Partially Paid</span>
-                    </span>
-                  ) : selectedDetailBill.status === 'Overdue' ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold">
-                      <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                      <span>Overdue</span>
-                    </span>
-                  ) : selectedDetailBill.status === 'Due Soon' ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">
-                      <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Due Soon</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Unpaid</span>
-                    </span>
-                  )}
-                </div>
-              </DialogHeader>
-
-              {/* Amount Overview Card */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs my-3">
-                <div>
-                  <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                    Monthly Obligation Amount
-                  </span>
-                  <span className="text-2xl sm:text-3xl font-bold text-focus tabular-nums">
-                    {formatPHP(selectedDetailBill.amount)}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                    Scheduled Due Date
-                  </span>
-                  <span className="text-sm font-bold text-focus flex items-center justify-end gap-1 mt-0.5">
-                    <Calendar className="w-3.5 h-3.5 text-muted-fg" />
-                    {selectedDetailBill.dueDate}
-                  </span>
-                  <span className="text-[11px] text-amber-600 font-medium block mt-0.5">
-                    Remind {selectedDetailBill.reminderDaysBefore} days before
-                  </span>
-                </div>
-              </div>
-
-              {/* Detailed Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs py-1">
-                <div className="p-3 rounded-xl bg-slate-50/70 border border-slate-100">
-                  <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                    Company / Entity
-                  </span>
-                  <span className="font-semibold text-focus text-sm mt-0.5 block truncate">
-                    {selectedDetailBill.company}
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-50/70 border border-slate-100">
-                  <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                    Billing Cycle
-                  </span>
-                  <span className="font-semibold text-focus text-sm mt-0.5 block">
-                    {selectedDetailBill.billingCycle}
-                  </span>
-                </div>
-
-                {selectedDetailBill.notes && (
-                  <div className="sm:col-span-2 p-3 rounded-xl bg-slate-50/70 border border-slate-100">
-                    <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                      Notes & Particulars
-                    </span>
-                    <span className="text-focus text-xs mt-0.5 block">
-                      {selectedDetailBill.notes}
-                    </span>
-                  </div>
-                )}
-
-                {selectedDetailBill.status === 'Paid' && (
-                  <div className="sm:col-span-2 p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/60 text-emerald-900">
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>Settlement Information</span>
-                    </div>
-                    <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs text-emerald-800">
-                      <div>
-                        <span className="opacity-75 block text-[11px]">Paid Date:</span>
-                        <span className="font-semibold">{selectedDetailBill.lastPaidDate || 'Recorded'}</span>
-                      </div>
-                      <div>
-                        <span className="opacity-75 block text-[11px]">Payment Method:</span>
-                        <span className="font-semibold">{selectedDetailBill.lastPaymentMethod || 'Bank Transfer'}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* PAYMENT SCHEDULE CALENDAR (Matching Record Bill Payment Modal) */}
-              {(() => {
-                const todayStr = new Date().toISOString().slice(0, 10)
-                const currentPeriodKey = todayStr.slice(0, 7)
-                const detailSchedule = getBillPaymentOptions(selectedDetailBill).periods
-                const dueDay =
-                  selectedDetailBill.dueDayOfMonth ||
-                  parseInt(selectedDetailBill.dueDate?.slice(8, 10) || '15', 10) ||
-                  15
-
-                return (
-                  <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-3 mt-3">
-                    {/* Calendar Controls */}
-                    <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-[#960C01]" />
-                        <span className="text-xs font-bold text-focus">Payment Schedule Calendar</span>
-                        <span className="text-[11px] text-muted-fg font-normal">
-                          ({selectedDetailBill.billingCycle} Cycle)
-                        </span>
-                      </div>
-
-                      {/* Year Navigator (Minimum 2025) */}
-                      <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-1.5 py-1 shadow-2xs">
-                        <button
-                          type="button"
-                          disabled={detailCalendarYear <= 2025}
-                          onClick={() => setDetailCalendarYear((y) => Math.max(2025, y - 1))}
-                          className={cn(
-                            'w-6 h-6 rounded-lg flex items-center justify-center text-focus transition-colors',
-                            detailCalendarYear <= 2025
-                              ? 'opacity-30 cursor-not-allowed'
-                              : 'hover:bg-slate-100 cursor-pointer'
-                          )}
-                          title="Previous Year (Minimum 2025)"
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="font-bold text-xs text-focus px-2 font-mono tabular-nums">
-                          {detailCalendarYear}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setDetailCalendarYear((y) => y + 1)}
-                          className="w-6 h-6 rounded-lg hover:bg-slate-100 flex items-center justify-center text-focus transition-colors cursor-pointer"
-                          title="Next Year"
-                        >
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Monthly Calendar Matrix (12 months of selected year) */}
-                    {selectedDetailBill.billingCycle === 'Monthly' && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                        {MONTH_NAMES.map((monthAbbr, idx) => {
-                          const monthNum = idx + 1
-                          const monthKey = `${detailCalendarYear}-${String(monthNum).padStart(2, '0')}`
-                          const lastDayOfMonth = new Date(detailCalendarYear, monthNum, 0).getDate()
-                          const effectiveDay = Math.min(dueDay, lastDayOfMonth)
-                          const periodDateStr = `${monthKey}-${String(effectiveDay).padStart(2, '0')}`
-
-                          const scheduledPeriod = detailSchedule.find((p) => p.key === monthKey)
-                          const isPaid = Boolean(scheduledPeriod?.paid && !scheduledPeriod?.partiallyPaid)
-                          const isPartiallyPaid = Boolean(scheduledPeriod?.partiallyPaid)
-                          const isOverdue =
-                            !isPaid &&
-                            !isPartiallyPaid &&
-                            ((scheduledPeriod && !scheduledPeriod.isFuture && (scheduledPeriod.periodDate || '') < todayStr) ||
-                              (!scheduledPeriod && periodDateStr < todayStr))
-                          const isDueCurrent =
-                            !isPaid && !isPartiallyPaid && !isOverdue && monthKey === currentPeriodKey
-
-                          const paidAmount = scheduledPeriod?.paidAmount || 0
-                          const remainingAmount =
-                            scheduledPeriod?.remainingAmount !== undefined
-                              ? scheduledPeriod.remainingAmount
-                              : Math.max(0, selectedDetailBill.amount - paidAmount)
-
-                          return (
-                            <div
-                              key={monthKey}
-                              className={cn(
-                                'p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between min-h-[76px] select-none',
-                                isPaid
-                                  ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950'
-                                  : isPartiallyPaid
-                                  ? 'border-amber-300 bg-amber-50/80 text-amber-950'
-                                  : isOverdue
-                                  ? 'border-rose-300 bg-rose-50/80 text-rose-950'
-                                  : isDueCurrent
-                                  ? 'border-blue-200 bg-blue-50/70 text-blue-950'
-                                  : 'border-slate-200 bg-white text-slate-700'
-                              )}
-                            >
-                              {/* Top Header: Month Name */}
-                              <div className="flex items-center justify-between w-full">
-                                <span className="text-xs font-bold truncate text-focus">
-                                  {MONTH_FULL_NAMES[idx]}
-                                </span>
-                              </div>
-
-                              {/* Due date info */}
-                              <div className="text-[10px] text-muted-fg font-medium truncate mt-0.5">
-                                Due: {monthAbbr} {effectiveDay}
-                              </div>
-
-                              {/* Status Badge */}
-                              <div className="mt-1 pt-1 border-t border-slate-200/50 flex flex-col gap-0.5">
-                                <div className="flex items-center justify-between">
-                                  {isPaid ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700">
-                                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                                      <span>Paid</span>
-                                    </span>
-                                  ) : isPartiallyPaid ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700">
-                                      <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                                      <span>Partially Paid</span>
-                                    </span>
-                                  ) : isOverdue ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700">
-                                      <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
-                                      <span>Overdue</span>
-                                    </span>
-                                  ) : isDueCurrent ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700">
-                                      <Clock className="w-3 h-3 text-blue-600 shrink-0" />
-                                      <span>Due Soon</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400 font-medium">Upcoming</span>
-                                  )}
-
-                                  {scheduledPeriod?.paymentDate && (
-                                    <span className="text-[9px] text-emerald-600/90 font-mono truncate">
-                                      {scheduledPeriod.paymentDate.slice(5)}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Partially Paid breakdown showing remaining amount left to pay */}
-                                {isPartiallyPaid && (
-                                  <div className="text-[9px] text-amber-900 font-medium font-mono pt-0.5 border-t border-amber-200/50 flex flex-col">
-                                    <span>Paid: {formatPHP(paidAmount)}</span>
-                                    <span className="font-bold text-amber-800">
-                                      Remaining: {formatPHP(remainingAmount)}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {/* Non-Monthly Billing Cycle (Daily / Yearly fallback schedule view) */}
-                    {selectedDetailBill.billingCycle !== 'Monthly' && (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-52 overflow-y-auto pr-1">
-                        {detailSchedule.map((period) => {
-                          const isPaid = Boolean(period.paid && !period.partiallyPaid)
-                          const isPartiallyPaid = Boolean(period.partiallyPaid)
-                          const isOverdue =
-                            !isPaid && !isPartiallyPaid && !period.isFuture && (period.periodDate || '') < todayStr
-                          return (
-                            <div
-                              key={period.key}
-                              className={cn(
-                                'p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between select-none',
-                                isPaid
-                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                  : isPartiallyPaid
-                                  ? 'border-amber-200 bg-amber-50 text-amber-800'
-                                  : isOverdue
-                                  ? 'border-rose-200 bg-rose-50 text-rose-800'
-                                  : 'border-slate-200 bg-white text-slate-600'
-                              )}
-                            >
-                              <div className="font-bold text-xs truncate">{period.label}</div>
-                              <div className="text-[10px] mt-1 flex items-center gap-1">
-                                {isPaid ? (
-                                  <>
-                                    <Check className="w-3 h-3 text-emerald-600" />
-                                    <span className="font-semibold">Paid</span>
-                                  </>
-                                ) : isPartiallyPaid ? (
-                                  <>
-                                    <Clock className="w-3 h-3 text-amber-600" />
-                                    <span className="font-semibold">Partially Paid</span>
-                                  </>
-                                ) : isOverdue ? (
-                                  <>
-                                    <AlertCircle className="w-3 h-3 text-rose-600" />
-                                    <span className="font-semibold">Overdue</span>
-                                  </>
-                                ) : (
-                                  <span>Upcoming</span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* PAYMENT HISTORY (Embedded in Bill Details with Pagination) */}
-              {(() => {
-                const HISTORY_PAGE_SIZE = 5
-                const payments = selectedDetailBill.payments || []
-                const totalHistoryPages = Math.ceil(payments.length / HISTORY_PAGE_SIZE) || 1
-                const paginatedPayments = payments.slice(
-                  (detailHistoryPage - 1) * HISTORY_PAGE_SIZE,
-                  detailHistoryPage * HISTORY_PAGE_SIZE
-                )
-
-                return (
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3 mt-3">
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
-                      <div className="flex items-center gap-2">
-                        <FileSpreadsheet className="w-4 h-4 text-[#960C01]" />
-                        <span className="text-xs font-bold text-focus uppercase tracking-wider">
-                          Payment History
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700 font-mono">
-                          {payments.length} Record{payments.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                      {totalHistoryPages > 1 && (
-                        <div className="flex items-center gap-1.5 text-xs text-muted-fg">
-                          <span className="text-[11px] font-medium mr-1">
-                            Page {detailHistoryPage} of {totalHistoryPages}
-                          </span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={detailHistoryPage <= 1}
-                            onClick={() => setDetailHistoryPage((p) => Math.max(1, p - 1))}
-                            className="h-7 w-7 p-0 rounded-lg bg-white border-slate-200 hover:bg-slate-100"
-                            title="Previous history page"
-                          >
-                            <ChevronLeft className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={detailHistoryPage >= totalHistoryPages}
-                            onClick={() =>
-                              setDetailHistoryPage((p) => Math.min(totalHistoryPages, p + 1))
-                            }
-                            className="h-7 w-7 p-0 rounded-lg bg-white border-slate-200 hover:bg-slate-100"
-                            title="Next history page"
-                          >
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    {paginatedPayments.length > 0 ? (
-                      <div className="space-y-2">
-                        {paginatedPayments.map((p) => (
-                          <div
-                            key={p.id}
-                            className="p-3 rounded-xl bg-white border border-slate-200 text-xs shadow-2xs space-y-1.5"
-                          >
-                            <div className="flex items-center justify-between font-semibold text-focus">
-                              <span className="flex items-center gap-1.5">
-                                <span className="font-bold text-[#960C01]">
-                                  {p.periodKey ? `Period ${p.periodKey}` : 'Billing Period'}
-                                </span>
-                                <span className="text-slate-300">•</span>
-                                <span className="text-muted-fg font-normal">{p.paymentDate}</span>
-                              </span>
-                              <span className="text-emerald-700 font-bold tabular-nums text-sm">
-                                {formatPHP(p.amount)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] text-muted-fg">
-                              <span>
-                                Method: <strong className="text-focus font-medium">{p.paymentMethod}</strong>
-                              </span>
-                              {p.refNo && (
-                                <span className="font-mono">
-                                  Ref: <strong className="text-focus font-semibold">{p.refNo}</strong>
-                                </span>
-                              )}
-                            </div>
-                            {p.notes && (
-                              <div className="text-[11px] text-slate-500 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                {p.notes}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="py-6 text-center text-xs text-muted-fg">
-                        <p className="font-semibold text-focus">No payment history records yet</p>
-                        <p className="text-[11px] text-muted-fg mt-0.5">
-                          Payments recorded through "Pay Bill" will be logged here.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* Action Buttons: Close and Pay Bill */}
-              <div className="pt-4 border-t border-stroke/20 flex items-center justify-end gap-2.5 mt-3 flex-wrap">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setSelectedDetailBill(null)}
-                  className="rounded-xl h-10 sm:h-11 px-5 text-xs sm:text-sm font-semibold border-stroke/50 bg-white text-focus hover:bg-surface cursor-pointer"
-                >
-                  Close
-                </Button>
-
-                {!isAudit && (
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      const billToPay = selectedDetailBill
-                      setSelectedDetailBill(null)
-                      setPaymentBill(billToPay)
-                    }}
-                    className="rounded-xl h-10 sm:h-11 px-6 text-xs sm:text-sm font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs flex items-center gap-2 cursor-pointer"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    <span>Pay Bill</span>
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

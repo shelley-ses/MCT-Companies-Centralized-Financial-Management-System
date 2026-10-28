@@ -37,7 +37,7 @@ interface NotificationSettings {
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate()
-  const { user } = useSession()
+  const { user, updateUser } = useSession()
   const isAuditor = user?.role === 'Supervisor'
   const isRestrictedRole = user?.role === 'Admin' || user?.role === 'Finance' || user?.role === 'Audit'
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
@@ -184,6 +184,7 @@ export const SettingsPage: React.FC = () => {
     setLogoUrl(croppedDataUrl)
     setLogoFile(croppedFile)
     setIsCropperOpen(false)
+    updateUser({ avatarUrl: croppedDataUrl })
   }
 
   // Reset image to default
@@ -193,6 +194,7 @@ export const SettingsPage: React.FC = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
+    updateUser({ avatarUrl: logo2Url })
   }
 
   // Save changes handler
@@ -214,9 +216,11 @@ export const SettingsPage: React.FC = () => {
       })
 
       setLogoFile(null)
+      const finalAvatar = updated.logoUrl || logoUrl
       if (updated.logoUrl) {
         setLogoUrl(updated.logoUrl)
       }
+      updateUser({ avatarUrl: finalAvatar })
 
       // Update local company list copy
       setCompanies((prev) =>
@@ -331,16 +335,6 @@ export const SettingsPage: React.FC = () => {
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Assigned Company Badge (Auditor) */}
-          {isAuditor && (
-            <div className="inline-flex items-center gap-2 h-10 sm:h-11 px-4 rounded-full border border-stroke/60 bg-white text-focus text-xs sm:text-sm font-medium shadow-xs select-none">
-              <Building2 className="h-4 w-4 text-primary shrink-0" />
-              <span className="font-semibold text-focus truncate max-w-[180px]">
-                Assigned: {assignedCompany}
-              </span>
             </div>
           )}
 

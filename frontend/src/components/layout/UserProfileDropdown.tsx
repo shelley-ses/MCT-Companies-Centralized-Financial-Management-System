@@ -52,6 +52,10 @@ export const UserProfileDropdown: React.FC = () => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
   })()
 
+  const avatarSrc =
+    user?.avatarUrl ||
+    (typeof window !== 'undefined' ? localStorage.getItem('mct_user_avatar') : null)
+
   return (
     <div ref={menuRef} className="relative inline-block text-left">
       <button
@@ -63,10 +67,10 @@ export const UserProfileDropdown: React.FC = () => {
         aria-label="User Account Menu"
       >
         <Avatar className="h-8 w-8 sm:h-9 sm:w-9 border border-primary/30 bg-white shrink-0 shadow-2xs">
-          {user?.avatarUrl && (
+          {avatarSrc && (
             <AvatarImage
-              src={user.avatarUrl}
-              alt={user.fullName}
+              src={avatarSrc}
+              alt={user?.fullName || 'User'}
               className="p-0.5 object-contain"
             />
           )}
@@ -75,11 +79,11 @@ export const UserProfileDropdown: React.FC = () => {
           </AvatarFallback>
         </Avatar>
 
-        <div className="hidden sm:flex flex-col items-start min-w-0 text-left">
-          <span className="text-xs sm:text-sm font-semibold text-focus truncate max-w-[130px] leading-tight">
+        <div className="hidden sm:flex flex-col items-start text-left shrink-0">
+          <span className="text-xs sm:text-sm font-semibold text-focus whitespace-nowrap leading-tight">
             {user?.fullName || 'User'}
           </span>
-          <span className="text-[10px] text-muted-fg font-medium truncate leading-tight">
+          <span className="text-[10px] text-muted-fg font-medium whitespace-nowrap leading-tight">
             {user?.role || 'Member'}
           </span>
         </div>
@@ -93,10 +97,10 @@ export const UserProfileDropdown: React.FC = () => {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-60 sm:w-64 bg-white rounded-2xl border border-stroke/30 shadow-xl py-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+        <div className="absolute right-0 top-full mt-2 w-64 sm:w-72 bg-white rounded-2xl border border-stroke/30 shadow-xl py-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
           {/* Header row */}
           <div className="px-4 py-2.5 border-b border-stroke/20">
-            <p className="text-xs font-bold text-focus truncate leading-tight">
+            <p className="text-xs font-bold text-focus break-words leading-tight">
               {user?.fullName || 'User'}
             </p>
             <p className="text-[11px] text-muted-fg truncate mt-0.5 font-normal">
