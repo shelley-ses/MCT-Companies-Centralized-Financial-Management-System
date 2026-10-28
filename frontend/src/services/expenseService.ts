@@ -56,6 +56,7 @@ export interface NewExpenseInput {
   company: string
   status: 'Paid' | 'Pending' | 'On hold' | 'Unpaid'
   items?: ParticularItem[]
+  bankAccountId?: string
 }
 
 const EXPENSES_STORAGE_KEY = 'mct_expense_records_v1'
@@ -288,6 +289,7 @@ export const expenseService = {
         payment_method: input.paymentMethod || null,
         cheque_no: input.chequeNo || null,
         reference_no: refNo,
+        bank_account_id: input.bankAccountId || undefined,
       }
 
       const res = await fetch('/api/v1/expenses', {

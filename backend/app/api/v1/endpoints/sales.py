@@ -290,6 +290,31 @@ def create_sale(
         except Exception:
             db.rollback()
 
+        # Credit to bank account if specified or company account exists
+        try:
+            from app.services.bank_service import BankService
+            from app.core.websocket import ws_manager
+            bank_svc = BankService(db)
+            if sale_in.bank_account_id:
+                bank_svc.record_deposit_by_account_id(
+                    account_id=sale_in.bank_account_id,
+                    amount=sale_in.amount,
+                    particulars=f"Sales Collection: {parts}",
+                    reference_no=cheque,
+                    tx_date=sale_in.transaction_date.strftime("%m/%d/%y") if hasattr(sale_in.transaction_date, "strftime") else str(sale_in.transaction_date),
+                )
+            elif target_company_name:
+                bank_svc.record_sale_cash_deposit(
+                    company_name=target_company_name,
+                    amount=sale_in.amount,
+                    particulars=f"Sales Collection: {parts}",
+                    reference_no=cheque,
+                    tx_date=sale_in.transaction_date.strftime("%m/%d/%y") if hasattr(sale_in.transaction_date, "strftime") else str(sale_in.transaction_date),
+                )
+            ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company_name}})
+        except Exception:
+            pass
+
         log_transaction(
             db, AuditAction.SALE_CREATED,
             user_id=current_user.get("user_id"), company_id=target_company_id,
@@ -353,6 +378,31 @@ def create_sale(
         db.commit()
         db.refresh(sale)
 
+        # Auto-credit to company bank account for settled sales
+        try:
+            from app.services.bank_service import BankService
+            from app.core.websocket import ws_manager
+            bank_svc = BankService(db)
+            if sale_in.bank_account_id:
+                bank_svc.record_deposit_by_account_id(
+                    account_id=sale_in.bank_account_id,
+                    amount=sale.amount,
+                    particulars=f"Sales Collection: {sale.particulars}",
+                    reference_no=cheque,
+                    tx_date=sale.transaction_date.strftime("%m/%d/%y") if hasattr(sale.transaction_date, "strftime") else str(sale.transaction_date),
+                )
+            else:
+                bank_svc.record_sale_cash_deposit(
+                    company_name=target_company.company_name,
+                    amount=sale.amount,
+                    particulars=f"Sales Collection: {sale.particulars}",
+                    reference_no=cheque,
+                    tx_date=sale.transaction_date.strftime("%m/%d/%y") if hasattr(sale.transaction_date, "strftime") else str(sale.transaction_date),
+                )
+            ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"company": target_company.company_name}})
+        except Exception:
+            pass
+
         log_transaction(
             db, AuditAction.SALE_CREATED,
             user_id=current_user.get("user_id"), company_id=target_company.company_id,
@@ -374,6 +424,7 @@ def create_sale(
             created_at=sale.created_at,
             updated_at=sale.updated_at
         )
+
 
 @router.get("/{sales_id}", response_model=SaleOut, summary="Get sale details")
 def get_sale(

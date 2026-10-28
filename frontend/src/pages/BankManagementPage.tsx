@@ -18,11 +18,13 @@ import {
   Check,
   History,
   Landmark,
+  Loader2,
   Plus,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { isCompanyMatch } from '@/utils/companyUtils'
 import {
   Dialog,
   DialogContent,
@@ -45,582 +47,26 @@ import {
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { bankService, type BankAccount, type BankTransaction } from '@/services/bankService'
+import { websocketService } from '@/services/websocketService'
 
-// Data model for bank transactions matching screenshot columns
-export interface BankTransaction {
-  id: string
-  date: string // MM/DD/YY or YYYY-MM-DD
-  chequeNo?: string
-  particulars: string
-  withdrawal?: number
-  deposit?: number
-  category: string // Cheque | Bank Transfer | Cash | Online Payment | Point-of-Sale
-  netAmount: number
-  timestamp?: string
-}
-
-// Data model for corporate bank accounts
-export interface BankAccount {
-  id: string
-  bankName: string // e.g. 'CHINABANK', 'BDO UNIBANK', 'BPI', 'METROBANK', etc.
-  accountName: string // e.g. 'Bagong Bansa May Pagasa Movement', 'JK Property Commercial'
-  accountNumber: string // e.g. '0042-8819-2041'
-  companyName: string
-  cardLabel?: string // Canonical tab label matching screenshot
-  accountType: 'Checking' | 'Savings' | 'Payroll' | 'Time Deposit'
-  branch: string
-  currentBalance: number
-  startingBalance: number
-  colorTheme: 'red' | 'grey'
-  transactions: BankTransaction[]
-  createdAt: string
-  notes?: string
-}
+export type { BankAccount, BankTransaction }
 
 export function getAccountCardLabel(acc: BankAccount): string {
-  if (acc.cardLabel) return acc.cardLabel
-  const name = acc.companyName.trim()
-  const lower = name.toLowerCase()
-  if (lower.includes('jk property')) return 'JK Property'
-  if (lower.includes('hotel')) return 'Hotel'
-  if (lower.includes('kitchen')) return 'Kitchen'
-  if (lower.includes('medsys')) return 'MedSys'
-  if (lower.includes('speedfire')) return 'Speedfire'
-  if (lower.includes('college')) return 'College Foundation'
-  if (lower.includes('trading')) return 'Trading Corp.'
-  if (lower.includes('filcap') || lower.includes('filcam')) return 'Filcam Prime'
-  if (lower.includes('jupiter')) return 'Golden Jupiter'
-  if (lower.includes('bookworld')) return 'Bookworld Systems Solutions & Technologies'
-  return name
+  if (acc.cardLabel && acc.cardLabel.trim()) return acc.cardLabel.trim()
+  const comp = acc.companyName?.trim() || ''
+  const bank = acc.bankName?.trim() || ''
+  const acct = acc.accountName?.trim() || ''
+  if (acct && acct !== comp) {
+    return bank ? `${bank} · ${acct}` : acct
+  }
+  if (comp) {
+    return bank ? `${bank} · ${comp}` : comp
+  }
+  return bank || 'Corporate Bank Account'
 }
 
-const STORAGE_KEY = 'mct_bank_management_accounts_v5'
 const ITEMS_PER_PAGE = 8
-
-// Initial 14 bank accounts matching user's layout and exact companies shown in screenshot
-const INITIAL_ACCOUNTS: BankAccount[] = [
-  // 1. Hero Default Selected: Bagong Bansa May Pagasa Movement (Chinabank)
-  {
-    id: 'bnk-cb-001',
-    bankName: 'CHINABANK',
-    accountName: 'Bagong Bansa May Pagasa Movement',
-    accountNumber: '1088-2940-8892',
-    companyName: 'Bagong Bansa May Pagasa Movement',
-    accountType: 'Checking',
-    branch: 'Quezon Avenue Main Branch, Quezon City',
-    startingBalance: 1000000,
-    currentBalance: 1000000,
-    colorTheme: 'red',
-    createdAt: '2026-01-10',
-    notes: 'Operating settlement account for community livelihood programs and initiatives.',
-    transactions: [
-      {
-        id: 'tx-cb-01',
-        date: '10/01/26',
-        chequeNo: 'CHQ-8892',
-        particulars: 'Office Supplies',
-        withdrawal: 12450,
-        category: 'Cheque',
-        netAmount: 12450,
-      },
-      {
-        id: 'tx-cb-02',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Freight Services',
-        withdrawal: 8900,
-        category: 'Bank Transfer',
-        netAmount: 8900,
-      },
-      {
-        id: 'tx-cb-03',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Mobile Top-up',
-        withdrawal: 5000,
-        category: 'Cash',
-        netAmount: 5000,
-      },
-      {
-        id: 'tx-cb-04',
-        date: '10/01/26',
-        chequeNo: 'CHQ-8895',
-        particulars: 'Warehouse Lease',
-        withdrawal: 45000,
-        category: 'Cheque',
-        netAmount: 45000,
-      },
-      {
-        id: 'tx-cb-05',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Point-of-Sale',
-        deposit: 180000,
-        category: 'Bank Transfer',
-        netAmount: 180000,
-      },
-      {
-        id: 'tx-cb-06',
-        date: '10/02/26',
-        chequeNo: 'CHQ-8898',
-        particulars: 'Logistics Fleet Fuel & Tolls',
-        withdrawal: 16500,
-        category: 'Cheque',
-        netAmount: 16500,
-      },
-      {
-        id: 'tx-cb-07',
-        date: '10/03/26',
-        chequeNo: '—',
-        particulars: 'Institutional Grant Remittance',
-        deposit: 250000,
-        category: 'Bank Transfer',
-        netAmount: 250000,
-      },
-    ],
-  },
-
-  // ---------------- RED CARDS STACK ----------------
-  // 2. JK Property
-  {
-    id: 'bnk-jk-002',
-    bankName: 'UNIONBANK',
-    accountName: 'JK Property and Ventures Commercial',
-    accountNumber: '1099-4412-8801',
-    companyName: 'JK Property and Ventures',
-    accountType: 'Checking',
-    branch: 'Ortigas Corporate Center, Pasig',
-    startingBalance: 3650000,
-    currentBalance: 3650000,
-    colorTheme: 'red',
-    createdAt: '2026-01-15',
-    notes: 'Commercial mall leasing and tenant escrow collections pool.',
-    transactions: [
-      {
-        id: 'tx-jk-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Tenant Stall #12 Rent Settlement',
-        deposit: 45000,
-        category: 'Bank Transfer',
-        netAmount: 45000,
-      },
-      {
-        id: 'tx-jk-02',
-        date: '10/02/26',
-        chequeNo: 'CHQ-4401',
-        particulars: 'Plaza Janitorial & Facility Security',
-        withdrawal: 32000,
-        category: 'Cheque',
-        netAmount: 32000,
-      },
-      {
-        id: 'tx-jk-03',
-        date: '10/03/26',
-        chequeNo: '—',
-        particulars: 'Meralco Commercial Plaza Electricity',
-        withdrawal: 88500,
-        category: 'Bank Transfer',
-        netAmount: 88500,
-      },
-    ],
-  },
-  // 3. Hotel
-  {
-    id: 'bnk-ht-003',
-    bankName: 'BPI',
-    accountName: 'MCT Hotel & Suites Operations',
-    accountNumber: '0821-4490-1123',
-    companyName: 'MCT Hotel',
-    accountType: 'Checking',
-    branch: 'Commonwealth Ave., Quezon City',
-    startingBalance: 3890000,
-    currentBalance: 3890000,
-    colorTheme: 'red',
-    createdAt: '2026-01-20',
-    notes: 'Front desk merchant terminal settlement and hospitality reservations.',
-    transactions: [
-      {
-        id: 'tx-ht-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Weekend Room Bookings Merchant Batch',
-        deposit: 215000,
-        category: 'Bank Transfer',
-        netAmount: 215000,
-      },
-      {
-        id: 'tx-ht-02',
-        date: '10/02/26',
-        chequeNo: 'CHQ-5512',
-        particulars: 'Linen & Laundry Supplies Vendor',
-        withdrawal: 28400,
-        category: 'Cheque',
-        netAmount: 28400,
-      },
-    ],
-  },
-  // 4. Kitchen
-  {
-    id: 'bnk-kt-004',
-    bankName: 'BDO UNIBANK',
-    accountName: 'MCT Kitchen Operations Corp.',
-    accountNumber: '0042-8819-2041',
-    companyName: 'MCT Kitchen',
-    accountType: 'Checking',
-    branch: 'Fairview Regalado Branch, Quezon City',
-    startingBalance: 2450000,
-    currentBalance: 2450000,
-    colorTheme: 'red',
-    createdAt: '2026-01-25',
-    notes: 'Main commercial kitchen and commissary supply accounts.',
-    transactions: [
-      {
-        id: 'tx-kt-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Daily Commissary Sales Settlement',
-        deposit: 125000,
-        category: 'Bank Transfer',
-        netAmount: 125000,
-      },
-      {
-        id: 'tx-kt-02',
-        date: '10/02/26',
-        chequeNo: 'CHQ-7721',
-        particulars: 'Fresh Meat & Produce Wholesaler',
-        withdrawal: 64200,
-        category: 'Cheque',
-        netAmount: 64200,
-      },
-    ],
-  },
-  // 5. MedSys
-  {
-    id: 'bnk-ms-005',
-    bankName: 'METROBANK',
-    accountName: 'MedSys Clinical Healthcare Corp.',
-    accountNumber: '2190-8831-5501',
-    companyName: 'MedSys',
-    accountType: 'Savings',
-    branch: 'St. Luke’s Medical Hub, Quezon City',
-    startingBalance: 1780000,
-    currentBalance: 1780000,
-    colorTheme: 'red',
-    createdAt: '2026-02-01',
-    notes: 'Pharmaceutical supplies and medical diagnostic operations.',
-    transactions: [
-      {
-        id: 'tx-ms-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Diagnostic Clinic Client Collections',
-        deposit: 94000,
-        category: 'Bank Transfer',
-        netAmount: 94000,
-      },
-      {
-        id: 'tx-ms-02',
-        date: '10/03/26',
-        chequeNo: 'CHQ-3310',
-        particulars: 'Laboratory Reagents Procurement',
-        withdrawal: 41200,
-        category: 'Cheque',
-        netAmount: 41200,
-      },
-    ],
-  },
-  // 6. Speedfire
-  {
-    id: 'bnk-sf-006',
-    bankName: 'RCBC',
-    accountName: 'Speedfire Express Logistics',
-    accountNumber: '0912-7744-3319',
-    companyName: 'Speedfire',
-    accountType: 'Savings',
-    branch: 'Novaliches Logistics Hub, Quezon City',
-    startingBalance: 670000,
-    currentBalance: 670000,
-    colorTheme: 'red',
-    createdAt: '2026-02-05',
-    notes: 'Fleet maintenance and courier operational settlement.',
-    transactions: [
-      {
-        id: 'tx-sf-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'E-commerce Delivery Remittance',
-        deposit: 78500,
-        category: 'Cash',
-        netAmount: 78500,
-      },
-      {
-        id: 'tx-sf-02',
-        date: '10/02/26',
-        chequeNo: 'CHQ-9901',
-        particulars: 'Fleet Maintenance & Engine Overhaul',
-        withdrawal: 35000,
-        category: 'Cheque',
-        netAmount: 35000,
-      },
-    ],
-  },
-
-  // ---------------- GREY / DARK CARDS STACK ----------------
-  // 7. College Foundation
-  {
-    id: 'bnk-cf-007',
-    bankName: 'SECURITY BANK',
-    accountName: 'College Foundation Educational Institute',
-    accountNumber: '0310-4491-7720',
-    companyName: 'College Foundation',
-    accountType: 'Checking',
-    branch: 'Katipunan Ave., Loyola Heights, QC',
-    startingBalance: 4200000,
-    currentBalance: 4200000,
-    colorTheme: 'grey',
-    createdAt: '2026-02-10',
-    notes: 'Tuition fees escrow and academic faculty payroll pool.',
-    transactions: [
-      {
-        id: 'tx-cf-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Semester Enrollment Tuition Remittance',
-        deposit: 340000,
-        category: 'Bank Transfer',
-        netAmount: 340000,
-      },
-      {
-        id: 'tx-cf-02',
-        date: '10/03/26',
-        chequeNo: 'CHQ-1205',
-        particulars: 'Library Learning Software License',
-        withdrawal: 52000,
-        category: 'Cheque',
-        netAmount: 52000,
-      },
-    ],
-  },
-  // 8. Trading Corp.
-  {
-    id: 'bnk-tc-008',
-    bankName: 'LANDBANK',
-    accountName: 'Trading Corp. Wholesale Distributors',
-    accountNumber: '1840-2291-7703',
-    companyName: 'Trading Corp.',
-    accountType: 'Savings',
-    branch: 'Bocaue Bulacan Commercial Hub',
-    startingBalance: 1250000,
-    currentBalance: 1250000,
-    colorTheme: 'grey',
-    createdAt: '2026-02-15',
-    notes: 'Grain trading, bulk wholesale & food staples procurement.',
-    transactions: [
-      {
-        id: 'tx-tc-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Wholesale Rice & Flour Dispatch Deposit',
-        deposit: 195000,
-        category: 'Bank Transfer',
-        netAmount: 195000,
-      },
-      {
-        id: 'tx-tc-02',
-        date: '10/02/26',
-        chequeNo: 'CHQ-8810',
-        particulars: 'Bulk Cargo Transport Freight',
-        withdrawal: 48000,
-        category: 'Cheque',
-        netAmount: 48000,
-      },
-    ],
-  },
-  // 9. Filcam Prime
-  {
-    id: 'bnk-fp-009',
-    bankName: 'METROBANK',
-    accountName: 'FilCap Prime Holdings Corp. Lending',
-    accountNumber: '2190-3382-7714',
-    companyName: 'FilCap Prime Holdings Corp.',
-    accountType: 'Checking',
-    branch: 'Quezon Ave. Corporate Center, QC',
-    startingBalance: 5200000,
-    currentBalance: 5200000,
-    colorTheme: 'grey',
-    createdAt: '2026-02-20',
-    notes: 'Micro-credit credit disbursement and daily repayments escrow.',
-    transactions: [
-      {
-        id: 'tx-fp-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Everyday Borrower Repayments Pool',
-        deposit: 82500,
-        category: 'Cash',
-        netAmount: 82500,
-      },
-      {
-        id: 'tx-fp-02',
-        date: '10/02/26',
-        chequeNo: 'CHQ-6601',
-        particulars: 'SME Retail Facility Disbursal',
-        withdrawal: 150000,
-        category: 'Cheque',
-        netAmount: 150000,
-      },
-    ],
-  },
-  // 10. Golden Jupiter
-  {
-    id: 'bnk-gj-010',
-    bankName: 'CHINABANK',
-    accountName: 'Golden Jupiter Holdings Corp.',
-    accountNumber: '1088-5521-9944',
-    companyName: 'Golden Jupiter',
-    accountType: 'Checking',
-    branch: 'Binondo Financial District, Manila',
-    startingBalance: 2800000,
-    currentBalance: 2800000,
-    colorTheme: 'grey',
-    createdAt: '2026-02-25',
-    notes: 'Central holding investments & property asset management pool.',
-    transactions: [
-      {
-        id: 'tx-gj-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Commercial Unit Dividend Deposit',
-        deposit: 160000,
-        category: 'Bank Transfer',
-        netAmount: 160000,
-      },
-      {
-        id: 'tx-gj-02',
-        date: '10/03/26',
-        chequeNo: 'CHQ-2209',
-        particulars: 'Corporate Audit & Legal Retainer',
-        withdrawal: 75000,
-        category: 'Cheque',
-        netAmount: 75000,
-      },
-    ],
-  },
-  // 11. Bookworld Systems Solutions & Technologies
-  {
-    id: 'bnk-bw-011',
-    bankName: 'PNB',
-    accountName: 'Bookworld Systems Solutions & Tech Corp.',
-    accountNumber: '1420-9981-6632',
-    companyName: 'Bookworld Systems Solutions & Technologies',
-    accountType: 'Checking',
-    branch: 'Macapagal Blvd., Pasay City',
-    startingBalance: 920000,
-    currentBalance: 920000,
-    colorTheme: 'grey',
-    createdAt: '2026-03-01',
-    notes: 'Enterprise IT infrastructure, POS terminals & cloud licenses.',
-    transactions: [
-      {
-        id: 'tx-bw-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'ERP Cloud Maintenance Subscription',
-        deposit: 110000,
-        category: 'Bank Transfer',
-        netAmount: 110000,
-      },
-      {
-        id: 'tx-bw-02',
-        date: '10/02/26',
-        chequeNo: 'CHQ-4450',
-        particulars: 'Data Center Colocation Hosting',
-        withdrawal: 38500,
-        category: 'Cheque',
-        netAmount: 38500,
-      },
-    ],
-  },
-  // 12. Annex Nine
-  {
-    id: 'bnk-an-012',
-    bankName: 'BDO UNIBANK',
-    accountName: 'Annex Nine Commercial Hub',
-    accountNumber: '0042-5510-9922',
-    companyName: 'Annex Nine',
-    accountType: 'Checking',
-    branch: 'Fairview Regalado Branch, QC',
-    startingBalance: 845000,
-    currentBalance: 845000,
-    colorTheme: 'grey',
-    createdAt: '2026-03-05',
-    notes: 'Retail strip utilities & maintenance escrow.',
-    transactions: [
-      {
-        id: 'tx-an-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Retail Stall Utility Reimbursement',
-        deposit: 38000,
-        category: 'Cash',
-        netAmount: 38000,
-      },
-    ],
-  },
-  // 13. JK Cafe
-  {
-    id: 'bnk-jc-013',
-    bankName: 'SECURITY BANK',
-    accountName: 'JK Cafe Food & Beverages Corp.',
-    accountNumber: '0310-9921-5542',
-    companyName: 'JK Cafe',
-    accountType: 'Checking',
-    branch: 'UP Technohub Branch, Diliman, QC',
-    startingBalance: 1120000,
-    currentBalance: 1120000,
-    colorTheme: 'red',
-    createdAt: '2026-03-10',
-    notes: 'Coffee beans, bakery commissary & daily POS collections.',
-    transactions: [
-      {
-        id: 'tx-jc-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Daily Storefront Cash Collections',
-        deposit: 62000,
-        category: 'Cash',
-        netAmount: 62000,
-      },
-    ],
-  },
-  // 14. Merillon
-  {
-    id: 'bnk-mr-014',
-    bankName: 'UNIONBANK',
-    accountName: 'Merillon Printing & Packaging Hub',
-    accountNumber: '1099-6612-3304',
-    companyName: 'Merillon',
-    accountType: 'Checking',
-    branch: 'East Bank Road, Pasig City',
-    startingBalance: 760000,
-    currentBalance: 760000,
-    colorTheme: 'grey',
-    createdAt: '2026-03-15',
-    notes: 'Industrial packaging paper stock & printing ink supplier payments.',
-    transactions: [
-      {
-        id: 'tx-mr-01',
-        date: '10/01/26',
-        chequeNo: '—',
-        particulars: 'Corrugated Box Order Batch Deposit',
-        deposit: 89000,
-        category: 'Bank Transfer',
-        netAmount: 89000,
-      },
-    ],
-  },
-]
 
 export const BankManagementPage: React.FC = () => {
   const { user } = useSession()
@@ -629,41 +75,23 @@ export const BankManagementPage: React.FC = () => {
   const isFinance = userRole === 'finance'
   const isAudit = userRole === 'audit' || userRole.includes('auditor')
   const isCompanyScoped = !isAdmin && !isFinance && !isAudit
+  const canManageBank = isAdmin || isFinance
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
+
+  // Custom bank name state for "Others" option
+  const [customBankName, setCustomBankName] = React.useState('')
 
   // Document title
   React.useEffect(() => {
     document.title = 'Bank Management - MCT Group'
   }, [])
 
-  // Persistent storage for bank accounts
-  const [accounts, setAccounts] = React.useState<BankAccount[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY)
-        if (saved) {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed
-          }
-        }
-      } catch (err) {
-        console.error('Error loading bank accounts:', err)
-      }
-    }
-    return INITIAL_ACCOUNTS
-  })
+  // Bank accounts strictly loaded from database
+  const [accounts, setAccounts] = React.useState<BankAccount[]>([])
+  const [_isLoading, setIsLoading] = React.useState(true)
 
-  // Synchronize with local storage
   const saveAccounts = React.useCallback((newAccounts: BankAccount[]) => {
     setAccounts(newAccounts)
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newAccounts))
-      } catch (err) {
-        console.error('Error saving bank accounts:', err)
-      }
-    }
   }, [])
 
   // Company filtering state
@@ -678,16 +106,69 @@ export const BankManagementPage: React.FC = () => {
     }
   }, [isCompanyScoped, assignedCompany])
 
-  // Active selected bank account (defaults to first account matching company scope)
-  const [selectedAccountId, setSelectedAccountId] = React.useState<string>(() => {
-    if (isCompanyScoped) {
-      const match = INITIAL_ACCOUNTS.find((a) =>
-        a.companyName.toLowerCase().includes(assignedCompany.toLowerCase())
-      )
-      return match ? match.id : INITIAL_ACCOUNTS[0].id
+  // Dynamic companies fetched directly from database
+  const [dbCompanies, setDbCompanies] = React.useState<string[]>([])
+
+  React.useEffect(() => {
+    let active = true
+    fetch('/api/v1/companies')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (active && Array.isArray(data)) {
+          const names = data.map((c: any) => c.name || c.company_name).filter(Boolean)
+          setDbCompanies(names)
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load database companies:', err)
+      })
+    return () => {
+      active = false
     }
-    return INITIAL_ACCOUNTS[0].id
-  })
+  }, [])
+
+  // Synchronize bank accounts with database
+  const fetchAccounts = React.useCallback(async () => {
+    try {
+      // For company-scoped users, request their company accounts.
+      // For admin and finance, fetch all accounts so company filtering in memory is instantaneous and never fails on aliases.
+      const targetComp = isCompanyScoped ? assignedCompany : undefined
+      const data = await bankService.getAccounts(targetComp)
+      setAccounts(data || [])
+    } catch (err) {
+      console.warn('Bank accounts database fetch warning:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [isCompanyScoped, assignedCompany])
+
+  React.useEffect(() => {
+    fetchAccounts()
+  }, [fetchAccounts])
+
+  // Realtime multi-tab WebSocket synchronization
+  React.useEffect(() => {
+    const unsubscribe = websocketService.subscribe('BANK_UPDATED', () => {
+      fetchAccounts()
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [fetchAccounts])
+
+  // Purge legacy mock storage on initial load
+  React.useEffect(() => {
+    try {
+      localStorage.removeItem('mct_bank_management_accounts_v5')
+      localStorage.removeItem('mct_bank_management_accounts_v4')
+      localStorage.removeItem('mct_bank_management_accounts_v3')
+      localStorage.removeItem('mct_bank_management_accounts_v2')
+      localStorage.removeItem('mct_bank_management_accounts')
+    } catch {}
+  }, [])
+
+  // Active selected bank account
+  const [selectedAccountId, setSelectedAccountId] = React.useState<string>('')
 
   // Toggle privacy of balance on the big card
   const [showBalance, setShowBalance] = React.useState(true)
@@ -722,12 +203,19 @@ export const BankManagementPage: React.FC = () => {
   const [isActivityLogOpen, setIsActivityLogOpen] = React.useState(false)
   const lastTapRef = React.useRef<number>(0)
 
+  // In-flight submission guards to prevent duplicate records
+  const [isSubmittingBank, setIsSubmittingBank] = React.useState(false)
+  const [isSubmittingDeposit, setIsSubmittingDeposit] = React.useState(false)
+  const [isSubmittingWithdraw, setIsSubmittingWithdraw] = React.useState(false)
+  const [isSubmittingEdit, setIsSubmittingEdit] = React.useState(false)
+
   // Modal form states
   const [addBankSuccessMessage, setAddBankSuccessMessage] = React.useState<string | null>(null)
   const [addBankForm, setAddBankForm] = React.useState({
     bankName: 'CHINABANK',
     accountName: '',
     accountNumber: '',
+    cardLabel: '',
     companyName: isCompanyScoped ? assignedCompany : '',
     accountType: 'Checking' as BankAccount['accountType'],
     branch: '',
@@ -771,16 +259,16 @@ export const BankManagementPage: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Filter accounts accessible by role
+  // Filter accounts accessible by role with robust alias matching
   const roleScopedAccounts = React.useMemo(() => {
     if (isCompanyScoped) {
       return accounts.filter((a) =>
-        a.companyName.toLowerCase().includes(assignedCompany.toLowerCase())
+        isCompanyMatch(a.companyName, assignedCompany)
       )
     }
     if (selectedCompany !== 'All Companies') {
       return accounts.filter((a) =>
-        a.companyName.toLowerCase().trim() === selectedCompany.toLowerCase().trim()
+        isCompanyMatch(a.companyName, selectedCompany)
       )
     }
     return accounts
@@ -814,23 +302,26 @@ export const BankManagementPage: React.FC = () => {
     }
   }, [activeAccount])
 
-  const handleSaveEditAccount = (e: React.FormEvent) => {
+  const handleSaveEditAccount = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!activeAccount) return
+    if (!canManageBank || !activeAccount || isSubmittingEdit) return
 
-    const parsedCurrent = parseFloat(editAccountForm.currentBalance)
+    setIsSubmittingEdit(true)
+    try {
+      const updatedAccount = await bankService.updateAccount(activeAccount.id, {
+        accountName: editAccountForm.accountName.trim(),
+        branch: editAccountForm.branch.trim(),
+        notes: editAccountForm.notes.trim(),
+      }, user?.role)
 
-    const updatedAccount: BankAccount = {
-      ...activeAccount,
-      accountName: editAccountForm.accountName.trim() || activeAccount.accountName,
-      branch: editAccountForm.branch.trim() || activeAccount.branch,
-      currentBalance: !isNaN(parsedCurrent) ? parsedCurrent : activeAccount.currentBalance,
-      notes: editAccountForm.notes.trim(),
+      const updated = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a))
+      saveAccounts(updated)
+      setIsEditModalOpen(false)
+    } catch (err: any) {
+      alert(err.message || 'Failed to update bank account.')
+    } finally {
+      setIsSubmittingEdit(false)
     }
-
-    const updated = accounts.map((a) => (a.id === activeAccount.id ? updatedAccount : a))
-    saveAccounts(updated)
-    setIsEditModalOpen(false)
   }
 
   // Keep selectedAccountId valid when filter changes
@@ -843,50 +334,20 @@ export const BankManagementPage: React.FC = () => {
     }
   }, [roleScopedAccounts, selectedAccountId])
 
-  // Canonical Red Deck Stack Accounts (Ordered matching screenshot: Bagong Bansa, JK Property, Hotel, Kitchen, MedSys, Speedfire)
+  // Canonical Red Deck Stack Accounts (Crimson Commercial Accounts)
   const redStackAccounts = React.useMemo(() => {
-    const list = roleScopedAccounts.filter(
-      (a) =>
-        a.colorTheme === 'red' ||
-        ['bagong', 'jk', 'hotel', 'kitchen', 'medsys', 'speedfire', 'annex', 'cafe'].some((term) =>
-          a.companyName.toLowerCase().includes(term)
-        )
+    return roleScopedAccounts.filter(
+      (a) => a.colorTheme === 'red' || (!a.colorTheme && a.colorTheme !== 'grey')
     )
-    const priority = ['bagong bansa', 'jk property', 'hotel', 'kitchen', 'medsys', 'speedfire']
-    return [...list].sort((a, b) => {
-      const idxA = priority.findIndex((p) => a.companyName.toLowerCase().includes(p))
-      const idxB = priority.findIndex((p) => b.companyName.toLowerCase().includes(p))
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB
-      if (idxA !== -1) return -1
-      if (idxB !== -1) return 1
-      return 0
-    })
   }, [roleScopedAccounts])
 
-  // Canonical Grey Deck Stack Accounts (Ordered matching screenshot: College Foundation, Trading Corp., Filcam Prime, Golden Jupiter, Bookworld)
+  // Canonical Grey Deck Stack Accounts (Slate Metallic Holdings & Tech Accounts)
   const greyStackAccounts = React.useMemo(() => {
-    const list = roleScopedAccounts.filter(
-      (a) =>
-        a.colorTheme === 'grey' ||
-        ['college', 'trading', 'filc', 'jupiter', 'bookworld', 'merillon'].some((term) =>
-          a.companyName.toLowerCase().includes(term)
-        )
-    )
-    const priority = ['college', 'trading', 'filc', 'jupiter', 'bookworld']
-    return [...list].sort((a, b) => {
-      const idxA = priority.findIndex((p) => a.companyName.toLowerCase().includes(p))
-      const idxB = priority.findIndex((p) => b.companyName.toLowerCase().includes(p))
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB
-      if (idxA !== -1) return -1
-      if (idxB !== -1) return 1
-      return 0
-    })
+    return roleScopedAccounts.filter((a) => a.colorTheme === 'grey')
   }, [roleScopedAccounts])
 
-  // Single-account / single-company mode:
-  // If role is company-scoped, or if Finance/Audit chose a specific company from the dropdown,
-  // or if there is only 1 account, display as ONE full-width ATM card only.
-  const isSingleAccount = isCompanyScoped || selectedCompany !== 'All Companies' || roleScopedAccounts.length <= 1
+  // Single-account mode: only when exactly 1 account exists for the current scope
+  const isSingleAccount = roleScopedAccounts.length === 1
 
   // Accounts belonging to the active company (supports multi-bank up to 3 banks per company)
   const activeCompanyAccounts = React.useMemo(() => {
@@ -984,97 +445,126 @@ export const BankManagementPage: React.FC = () => {
     setCurrentPage(1)
   }, [selectedAccountId, tableSearchQuery, txTypeFilter])
 
-  // Distinct company list for filter dropdown
+  // Distinct company list from database and bank accounts for filter dropdown
   const companyOptions = React.useMemo(() => {
     const set = new Set<string>()
-    accounts.forEach((a) => set.add(a.companyName))
-    return ['All Companies', ...Array.from(set)]
-  }, [accounts])
+    dbCompanies.forEach((c) => set.add(c))
+    accounts.forEach((a) => {
+      if (a.companyName && !a.companyName.toLowerCase().includes('general treasury')) {
+        set.add(a.companyName)
+      }
+    })
+    return ['All Companies', ...Array.from(set).sort()]
+  }, [dbCompanies, accounts])
 
   // Handlers for Finance / Admin
-  const createBankAccount = (keepModalOpen: boolean) => {
-    if (isAudit || isCompanyScoped) return
+  const openAddBankModal = React.useCallback(() => {
+    setAddBankForm((prev) => ({
+      ...prev,
+      companyName: isCompanyScoped
+        ? assignedCompany
+        : selectedCompany !== 'All Companies'
+        ? selectedCompany
+        : prev.companyName || '',
+    }))
+    setIsAddBankModalOpen(true)
+  }, [isCompanyScoped, assignedCompany, selectedCompany])
+
+  const handleCreateBank = async (e: React.FormEvent, keepOpen: boolean = false) => {
+    e.preventDefault()
+    if (!canManageBank || isSubmittingBank) return
 
     const startingNum = parseFloat(addBankForm.startingBalance) || 0
     const companyAssigned = addBankForm.companyName.trim() || 'General Treasury / Unassigned'
-    const customAccNo = addBankForm.accountNumber.trim()
-    const autoAccNo = `BNK-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-4)}`
-
-    // Count existing banks for this company
-    const existingCompanyBanks = accounts.filter(
-      (a) => a.companyName.toLowerCase().trim() === companyAssigned.toLowerCase().trim()
-    ).length
-
-    const newAccount: BankAccount = {
-      id: `bnk-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      bankName: addBankForm.bankName.trim().toUpperCase(),
-      accountName: addBankForm.accountName.trim() || `${companyAssigned} (${addBankForm.bankName.toUpperCase()})`,
-      accountNumber: customAccNo || autoAccNo,
-      companyName: companyAssigned,
-      cardLabel: addBankForm.accountName.trim() || companyAssigned,
-      accountType: addBankForm.accountType,
-      branch: addBankForm.branch.trim() || 'Central Corporate Branch',
-      startingBalance: startingNum,
-      currentBalance: startingNum,
-      colorTheme: addBankForm.colorTheme,
-      createdAt: new Date().toISOString().split('T')[0],
-      notes: addBankForm.notes.trim(),
-      transactions: [],
+    const chosenBankName = addBankForm.bankName === 'Others' ? customBankName.trim() : addBankForm.bankName.trim()
+    if (!chosenBankName) {
+      alert('Please enter a bank name.')
+      return
     }
 
-    const updated = [newAccount, ...accounts]
-    saveAccounts(updated)
-    setSelectedAccountId(newAccount.id)
+    const computedCardLabel =
+      addBankForm.cardLabel.trim() ||
+      (addBankForm.accountName.trim()
+        ? `${chosenBankName.toUpperCase()} · ${addBankForm.accountName.trim()}`
+        : `${chosenBankName.toUpperCase()} · ${companyAssigned}`)
 
-    if (keepModalOpen) {
-      setAddBankSuccessMessage(
-        `✓ ${newAccount.bankName} (${newAccount.accountType}) created for ${companyAssigned}! You can now register another bank facility (Account #${existingCompanyBanks + 2}).`
-      )
-      setAddBankForm((prev) => ({
-        ...prev,
-        bankName:
-          prev.bankName === 'CHINABANK'
-            ? 'BDO UNIBANK'
-            : prev.bankName === 'BDO UNIBANK'
-            ? 'BPI'
-            : 'METROBANK',
-        accountName: '',
-        accountNumber: '',
-        accountType: prev.accountType === 'Checking' ? 'Savings' : 'Checking',
-        startingBalance: '',
-        branch: prev.branch,
-        notes: '',
-      }))
-    } else {
-      setIsAddBankModalOpen(false)
-      setAddBankSuccessMessage(null)
-      setAddBankForm({
-        bankName: 'CHINABANK',
-        accountName: '',
-        accountNumber: '',
-        companyName: isCompanyScoped ? assignedCompany : '',
-        accountType: 'Checking',
-        branch: '',
-        startingBalance: '',
-        colorTheme: 'red',
-        notes: '',
-      })
+    setIsSubmittingBank(true)
+    try {
+      const newAccount = await bankService.createAccount({
+        bankName: chosenBankName.toUpperCase(),
+        accountName: addBankForm.accountName.trim(),
+        accountNumber: addBankForm.accountNumber.trim() || undefined,
+        companyName: companyAssigned,
+        cardLabel: computedCardLabel,
+        accountType: addBankForm.accountType,
+        branch: addBankForm.branch.trim() || 'Central Corporate Branch',
+        startingBalance: startingNum,
+        colorTheme: addBankForm.colorTheme,
+        notes: addBankForm.notes.trim(),
+      }, user?.role)
+
+      const updated = [newAccount, ...accounts.filter((a) => a.id !== newAccount.id)]
+      saveAccounts(updated)
+      setSelectedAccountId(newAccount.id)
+
+      if (
+        selectedCompany !== 'All Companies' &&
+        !isCompanyMatch(newAccount.companyName, selectedCompany)
+      ) {
+        setSelectedCompany(newAccount.companyName)
+      }
+
+      if (keepOpen) {
+        setAddBankSuccessMessage(
+          `✓ ${newAccount.bankName} (${newAccount.accountType}) created for ${companyAssigned}! You can now register another bank facility.`
+        )
+        setAddBankForm((prev) => ({
+          ...prev,
+          bankName:
+            prev.bankName === 'CHINABANK'
+              ? 'BDO UNIBANK'
+              : prev.bankName === 'BDO UNIBANK'
+              ? 'BPI'
+              : 'METROBANK',
+          accountName: '',
+          accountNumber: '',
+          cardLabel: '',
+          startingBalance: '',
+          branch: prev.branch,
+          notes: '',
+        }))
+      } else {
+        setIsAddBankModalOpen(false)
+        setAddBankSuccessMessage(null)
+        setCustomBankName('')
+        setAddBankForm({
+          bankName: 'CHINABANK',
+          accountName: '',
+          accountNumber: '',
+          cardLabel: '',
+          companyName: isCompanyScoped ? assignedCompany : (selectedCompany !== 'All Companies' ? selectedCompany : ''),
+          accountType: 'Checking',
+          branch: '',
+          startingBalance: '',
+          colorTheme: 'red',
+          notes: '',
+        })
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to create bank account.')
+    } finally {
+      setIsSubmittingBank(false)
     }
-  }
-
-  const handleCreateBank = (e: React.FormEvent) => {
-    e.preventDefault()
-    createBankAccount(false)
   }
 
   const handleCreateBankAndAddAnother = (e: React.MouseEvent) => {
     e.preventDefault()
-    createBankAccount(true)
+    handleCreateBank(e, true)
   }
 
-  const handleDeposit = (e: React.FormEvent) => {
+  const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isAudit || isCompanyScoped || !activeAccount) return
+    if (!canManageBank || !activeAccount || isSubmittingDeposit) return
 
     const amountNum = parseFloat(depositForm.amount)
     if (isNaN(amountNum) || amountNum <= 0) {
@@ -1082,38 +572,36 @@ export const BankManagementPage: React.FC = () => {
       return
     }
 
-    const newTx: BankTransaction = {
-      id: `tx-${Date.now()}`,
-      date: depositForm.date || '10/01/26',
-      chequeNo: depositForm.referenceNo.trim() || '—',
-      particulars: depositForm.particulars.trim() || 'Deposit Remittance',
-      deposit: amountNum,
-      category: depositForm.category,
-      netAmount: amountNum,
-      timestamp: new Date().toISOString(),
-    }
+    setIsSubmittingDeposit(true)
+    try {
+      const updatedAccount = await bankService.deposit(activeAccount.id, {
+        amount: amountNum,
+        date: depositForm.date || '10/01/26',
+        particulars: depositForm.particulars.trim() || 'Deposit Remittance',
+        category: depositForm.category,
+        referenceNo: depositForm.referenceNo.trim(),
+      }, user?.role)
 
-    const updatedAccount: BankAccount = {
-      ...activeAccount,
-      currentBalance: activeAccount.currentBalance + amountNum,
-      transactions: [newTx, ...activeAccount.transactions],
+      const updated = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a))
+      saveAccounts(updated)
+      setIsDepositModalOpen(false)
+      setDepositForm({
+        amount: '',
+        date: '10/01/26',
+        particulars: '',
+        category: 'Bank Transfer',
+        referenceNo: '',
+      })
+    } catch (err: any) {
+      alert(err.message || 'Failed to process deposit.')
+    } finally {
+      setIsSubmittingDeposit(false)
     }
-
-    const updated = accounts.map((a) => (a.id === activeAccount.id ? updatedAccount : a))
-    saveAccounts(updated)
-    setIsDepositModalOpen(false)
-    setDepositForm({
-      amount: '',
-      date: '10/01/26',
-      particulars: '',
-      category: 'Bank Transfer',
-      referenceNo: '',
-    })
   }
 
-  const handleWithdraw = (e: React.FormEvent) => {
+  const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isAudit || isCompanyScoped || !activeAccount) return
+    if (!canManageBank || !activeAccount || isSubmittingWithdraw) return
 
     const amountNum = parseFloat(withdrawForm.amount)
     if (isNaN(amountNum) || amountNum <= 0) {
@@ -1126,33 +614,31 @@ export const BankManagementPage: React.FC = () => {
       return
     }
 
-    const newTx: BankTransaction = {
-      id: `tx-${Date.now()}`,
-      date: withdrawForm.date || '10/01/26',
-      chequeNo: withdrawForm.chequeNo.trim() || '—',
-      particulars: withdrawForm.particulars.trim() || 'Withdrawal Settlement',
-      withdrawal: amountNum,
-      category: withdrawForm.category,
-      netAmount: amountNum,
-      timestamp: new Date().toISOString(),
-    }
+    setIsSubmittingWithdraw(true)
+    try {
+      const updatedAccount = await bankService.withdraw(activeAccount.id, {
+        amount: amountNum,
+        date: withdrawForm.date || '10/01/26',
+        particulars: withdrawForm.particulars.trim() || 'Withdrawal Settlement',
+        category: withdrawForm.category,
+        chequeNo: withdrawForm.chequeNo.trim(),
+      }, user?.role)
 
-    const updatedAccount: BankAccount = {
-      ...activeAccount,
-      currentBalance: activeAccount.currentBalance - amountNum,
-      transactions: [newTx, ...activeAccount.transactions],
+      const updated = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a))
+      saveAccounts(updated)
+      setIsWithdrawModalOpen(false)
+      setWithdrawForm({
+        amount: '',
+        date: '10/01/26',
+        chequeNo: '',
+        particulars: '',
+        category: 'Cheque',
+      })
+    } catch (err: any) {
+      alert(err.message || 'Failed to process withdrawal.')
+    } finally {
+      setIsSubmittingWithdraw(false)
     }
-
-    const updated = accounts.map((a) => (a.id === activeAccount.id ? updatedAccount : a))
-    saveAccounts(updated)
-    setIsWithdrawModalOpen(false)
-    setWithdrawForm({
-      amount: '',
-      date: '10/01/26',
-      chequeNo: '',
-      particulars: '',
-      category: 'Cheque',
-    })
   }
 
   // Export handlers
@@ -1298,10 +784,10 @@ export const BankManagementPage: React.FC = () => {
             </div>
 
             {/* Add New Bank Button (Finance & Admin only) */}
-            {!isAudit && !isCompanyScoped && (
+            {canManageBank && (
               <Button
                 type="button"
-                onClick={() => setIsAddBankModalOpen(true)}
+                onClick={openAddBankModal}
                 className="h-9 sm:h-9.5 px-4 sm:px-5 rounded-full bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
               >
                 <span>Add New Bank</span>
@@ -1428,8 +914,31 @@ export const BankManagementPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Bank Cards Hero Section: Full-Width for Single Account, Grid for Multi Accounts */}
-      {isSingleAccount ? (
+      {/* 2. Bank Cards Hero Section: Empty State if 0 accounts, Full-Width for Single Account, Grid for Multi Accounts */}
+      {roleScopedAccounts.length === 0 ? (
+        <Card className="rounded-[28px] sm:rounded-[36px] p-8 sm:p-12 text-center border border-dashed border-stroke/40 bg-white shadow-xs flex flex-col items-center justify-center min-h-[220px]">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-4">
+            <Landmark className="h-7 w-7" />
+          </div>
+          <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+            No Corporate Bank Accounts Registered
+          </h3>
+          <p className="text-xs sm:text-sm text-muted-fg max-w-md mt-1 mb-5">
+            {canManageBank
+              ? 'No bank facilities have been registered yet. Click "Add Bank Account" to create your first corporate bank account.'
+              : 'There are no active corporate bank accounts available for the selected company scope.'}
+          </p>
+          {canManageBank && (
+            <Button
+              type="button"
+              onClick={openAddBankModal}
+              className="rounded-full bg-[#960C01] hover:bg-[#800a01] text-white px-5 py-2 text-xs font-semibold cursor-pointer shadow-sm"
+            >
+              + Add Bank Account
+            </Button>
+          )}
+        </Card>
+      ) : isSingleAccount ? (
         /* SINGLE ACCOUNT FULL-WIDTH HERO CARD (Matching User's Reference Screenshot) */
         <div className="w-full space-y-3">
           {/* Multi-Bank Switcher Pill Bar (When company has 1, 2, or 3 banks) */}
@@ -1552,20 +1061,22 @@ export const BankManagementPage: React.FC = () => {
             </div>
 
             {/* Bottom Row: White Circular Pen/Edit Action Button (Bottom Right) */}
-            <div className="flex items-center justify-end relative z-10">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIsEditModalOpen(true)
-                }}
-                className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-white text-[#960C01] hover:bg-slate-100 flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ml-auto"
-                title="Edit Bank Details"
-                aria-label="Edit Bank Details"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-            </div>
+            {canManageBank && (
+              <div className="flex items-center justify-end relative z-10">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setIsEditModalOpen(true)
+                  }}
+                  className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-white text-[#960C01] hover:bg-slate-100 flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ml-auto"
+                  title="Edit Bank Details"
+                  aria-label="Edit Bank Details"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -1573,12 +1084,11 @@ export const BankManagementPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
           {/* LEFT COLUMN: Selected Bank Card (ATM Format) */}
           <div className="md:col-span-5 flex flex-col gap-2.5">
-            {/* ATM Card matching screenshot (Double click / double tap opens full details modal) */}
             <div
               onClick={handleCardClick}
               onDoubleClick={() => setIsCardDetailsModalOpen(true)}
               onTouchEnd={handleCardTouch}
-              title="Double-click to view complete bank details"
+              title="Double-click to view complete bank specifications"
               className={cn(
                 'w-full rounded-[28px] p-6 sm:p-7 text-white shadow-xl relative overflow-hidden flex flex-col justify-between h-[295px] sm:h-[315px] lg:h-[320px] transition-all duration-300 border select-none cursor-pointer group',
                 activeAccount?.colorTheme === 'grey'
@@ -1600,7 +1110,7 @@ export const BankManagementPage: React.FC = () => {
                 <div className="absolute left-6 bottom-4 w-44 h-44 bg-amber-500/20 rounded-full blur-2xl pointer-events-none" />
               )}
 
-              {/* Top row: Bank Name only (Top Right, Clean & Bold, matching screenshot) */}
+              {/* Top row: Bank Name only (Top Right, Clean & Bold) */}
               <div className="flex items-start justify-end relative z-10">
                 <span className="font-black text-sm sm:text-base tracking-widest uppercase text-white/95 text-right drop-shadow-sm">
                   {activeAccount?.bankName}
@@ -1637,20 +1147,29 @@ export const BankManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Bottom Row: White Circular Pen/Edit Action Button (Bottom Right) */}
-              <div className="flex items-center justify-end relative z-10">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setIsEditModalOpen(true)
-                  }}
-                  className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-white text-[#960C01] hover:bg-slate-100 flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ml-auto"
-                  title="Edit Bank Details"
-                  aria-label="Edit Bank Details"
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
+              {/* Bottom Row: Account Number, Branch, and White Circular Pen Edit Button */}
+              <div className="flex items-end justify-between relative z-10 pt-2 border-t border-white/15">
+                <div className="text-xs text-white/80 space-y-0.5">
+                  <p className="font-medium">{activeAccount?.accountType} Facility</p>
+                  <p className="truncate max-w-[200px] sm:max-w-[240px] text-white/70 text-[11px]">
+                    {activeAccount?.accountNumber} · {activeAccount?.branch}
+                  </p>
+                </div>
+
+                {canManageBank && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsEditModalOpen(true)
+                    }}
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-white text-[#960C01] hover:bg-slate-100 flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ml-auto"
+                    title="Edit Bank Details"
+                    aria-label="Edit Bank Details"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1659,123 +1178,147 @@ export const BankManagementPage: React.FC = () => {
           <div className="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Deck 1: Red Overlapping Cards */}
             <div className="relative w-full h-[295px] sm:h-[315px] lg:h-[320px] rounded-[28px] overflow-hidden shadow-xl bg-gradient-to-b from-[#4a0500] to-[#780b02] border border-red-900/40 select-none">
-              {redStackAccounts.slice(0, 5).map((acc, index) => {
-                const isSelected = acc.id === activeAccount?.id
-                const topOffset = index * 32
-                const isLast = index === Math.min(redStackAccounts.length, 5) - 1
+              {redStackAccounts.length === 0 ? (
+                <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 text-white/60">
+                  <CreditCard className="h-8 w-8 mb-2 opacity-40" />
+                  <span className="text-xs font-semibold">No Crimson Accounts</span>
+                  <span className="text-[11px] text-white/40 mt-1">Commercial bank accounts with crimson theme will stack here</span>
+                </div>
+              ) : (
+                redStackAccounts.map((acc, index) => {
+                  const isSelected = acc.id === activeAccount?.id
+                  const total = redStackAccounts.length
+                  const step =
+                    total <= 2 ? 52 : total <= 3 ? 46 : total <= 4 ? 40 : Math.max(28, Math.floor(180 / Math.max(1, total - 1)))
+                  const topOffset = index * step
+                  const isLast = index === total - 1
 
-                return (
-                  <div
-                    key={acc.id}
-                    onClick={() => setSelectedAccountId(acc.id)}
-                    className={cn(
-                      'absolute left-0 right-0 cursor-pointer transition-all duration-200 group',
-                      isLast ? 'bottom-0 rounded-b-[28px]' : 'rounded-t-[20px]',
-                      isSelected ? 'z-30' : ''
-                    )}
-                    style={{
-                      top: `${topOffset}px`,
-                      bottom: 0,
-                      zIndex: isSelected ? 30 : 10 + index,
-                    }}
-                  >
+                  return (
                     <div
+                      key={acc.id}
+                      onClick={() => setSelectedAccountId(acc.id)}
                       className={cn(
-                        'w-full h-full relative overflow-hidden transition-all duration-200',
-                        isLast ? 'rounded-b-[28px]' : 'rounded-t-[20px]',
-                        'border-t border-white/25 shadow-[0_-3px_10px_rgba(0,0,0,0.35)]',
-                        'group-hover:-translate-y-1.5',
-                        isSelected ? 'border-t-2 border-amber-400' : ''
+                        'absolute left-0 right-0 cursor-pointer transition-all duration-200 group',
+                        isLast ? 'bottom-0 rounded-b-[28px]' : 'rounded-t-[20px]'
                       )}
                       style={{
-                        background:
-                          'radial-gradient(circle at 85% 20%, rgba(255, 215, 0, 0.22) 0%, transparent 45%), linear-gradient(135deg, #580600 0%, #7e0b02 30%, #960C01 65%, #c22d14 100%)',
+                        top: `${topOffset}px`,
+                        bottom: 0,
+                        zIndex: 10 + index,
                       }}
                     >
-                      {/* Satin Sheen overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-white/10 pointer-events-none" />
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 rounded-full blur-xl pointer-events-none" />
-
-                      {/* Card Tab Header with Company Name & Active indicator */}
-                      <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between relative z-10">
-                        <span className="font-semibold text-xs sm:text-[13px] text-white/95 tracking-wide truncate max-w-[70%] drop-shadow-xs group-hover:text-white">
-                          {getAccountCardLabel(acc)}
-                        </span>
-                        {isSelected ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-stone-950 shadow-xs shrink-0">
-                            Viewing
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-white/50 opacity-0 group-hover:opacity-100 transition-opacity font-medium shrink-0">
-                            Click to view
-                          </span>
+                      <div
+                        className={cn(
+                          'w-full h-full relative overflow-hidden transition-all duration-200',
+                          isLast ? 'rounded-b-[28px]' : 'rounded-t-[20px]',
+                          'border-t shadow-[0_-3px_10px_rgba(0,0,0,0.35)]',
+                          'group-hover:-translate-y-1',
+                          isSelected
+                            ? 'border-t-2 border-amber-400 ring-1 ring-amber-400/30'
+                            : 'border-white/25 hover:border-white/40'
                         )}
+                        style={{
+                          background:
+                            'radial-gradient(circle at 85% 20%, rgba(255, 215, 0, 0.22) 0%, transparent 45%), linear-gradient(135deg, #580600 0%, #7e0b02 30%, #960C01 65%, #c22d14 100%)',
+                        }}
+                      >
+                        {/* Satin Sheen overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-white/10 pointer-events-none" />
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 rounded-full blur-xl pointer-events-none" />
+
+                        {/* Card Tab Header with Company Name & Active indicator */}
+                        <div className="px-4 sm:px-5 py-3 flex items-center justify-between relative z-10">
+                          <span className="font-semibold text-xs sm:text-[13px] text-white/95 tracking-wide truncate max-w-[70%] drop-shadow-xs group-hover:text-white">
+                            {getAccountCardLabel(acc)}
+                          </span>
+                          {isSelected ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-stone-950 shadow-xs shrink-0">
+                              Viewing
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-white/50 opacity-0 group-hover:opacity-100 transition-opacity font-medium shrink-0">
+                              Click to view
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              )}
             </div>
 
-            {/* Deck 2: Warm Graphite & Gold Overlapping Cards (Matching User's Reference Image) */}
+            {/* Deck 2: Warm Graphite & Gold Overlapping Cards */}
             <div className="relative w-full h-[295px] sm:h-[315px] lg:h-[320px] rounded-[28px] overflow-hidden shadow-xl bg-gradient-to-b from-[#1c1917] to-[#292524] border border-stone-700/60 select-none">
-              {greyStackAccounts.slice(0, 5).map((acc, index) => {
-                const isSelected = acc.id === activeAccount?.id
-                const topOffset = index * 32
-                const isLast = index === Math.min(greyStackAccounts.length, 5) - 1
+              {greyStackAccounts.length === 0 ? (
+                <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 text-white/60">
+                  <CreditCard className="h-8 w-8 mb-2 opacity-40" />
+                  <span className="text-xs font-semibold">No Slate Accounts</span>
+                  <span className="text-[11px] text-white/40 mt-1">Holdings & tech bank accounts with slate theme will stack here</span>
+                </div>
+              ) : (
+                greyStackAccounts.map((acc, index) => {
+                  const isSelected = acc.id === activeAccount?.id
+                  const total = greyStackAccounts.length
+                  const step =
+                    total <= 2 ? 52 : total <= 3 ? 46 : total <= 4 ? 40 : Math.max(28, Math.floor(180 / Math.max(1, total - 1)))
+                  const topOffset = index * step
+                  const isLast = index === total - 1
 
-                return (
-                  <div
-                    key={acc.id}
-                    onClick={() => setSelectedAccountId(acc.id)}
-                    className={cn(
-                      'absolute left-0 right-0 cursor-pointer transition-all duration-200 group',
-                      isLast ? 'bottom-0 rounded-b-[28px]' : 'rounded-t-[20px]',
-                      isSelected ? 'z-30' : ''
-                    )}
-                    style={{
-                      top: `${topOffset}px`,
-                      bottom: 0,
-                      zIndex: isSelected ? 30 : 10 + index,
-                    }}
-                  >
+                  return (
                     <div
+                      key={acc.id}
+                      onClick={() => setSelectedAccountId(acc.id)}
                       className={cn(
-                        'w-full h-full relative overflow-hidden transition-all duration-200',
-                        isLast ? 'rounded-b-[28px]' : 'rounded-t-[20px]',
-                        'border-t border-white/20 shadow-[0_-3px_10px_rgba(0,0,0,0.45)]',
-                        'group-hover:-translate-y-1.5',
-                        isSelected ? 'border-t-2 border-amber-400' : ''
+                        'absolute left-0 right-0 cursor-pointer transition-all duration-200 group',
+                        isLast ? 'bottom-0 rounded-b-[28px]' : 'rounded-t-[20px]'
                       )}
                       style={{
-                        background:
-                          'radial-gradient(circle at 25% 85%, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.18) 30%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(254, 240, 138, 0.15) 0%, transparent 40%), linear-gradient(135deg, #1c1917 0%, #292524 35%, #44403c 70%, #57534e 100%)',
+                        top: `${topOffset}px`,
+                        bottom: 0,
+                        zIndex: 10 + index,
                       }}
                     >
-                      {/* Warm Graphite & Amber Sheen overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/25 via-transparent to-white/10 pointer-events-none" />
-                      <div className="absolute left-6 bottom-4 w-32 h-32 bg-amber-400/20 rounded-full blur-xl pointer-events-none" />
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-stone-400/10 rounded-full blur-xl pointer-events-none" />
-
-                      {/* Card Tab Header with Company Name & Active indicator */}
-                      <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between relative z-10">
-                        <span className="font-semibold text-xs sm:text-[13px] text-white/95 tracking-wide truncate max-w-[70%] drop-shadow-xs group-hover:text-white">
-                          {getAccountCardLabel(acc)}
-                        </span>
-                        {isSelected ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-stone-950 shadow-xs shrink-0">
-                            Viewing
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-white/50 opacity-0 group-hover:opacity-100 transition-opacity font-medium shrink-0">
-                            Click to view
-                          </span>
+                      <div
+                        className={cn(
+                          'w-full h-full relative overflow-hidden transition-all duration-200',
+                          isLast ? 'rounded-b-[28px]' : 'rounded-t-[20px]',
+                          'border-t shadow-[0_-3px_10px_rgba(0,0,0,0.45)]',
+                          'group-hover:-translate-y-1',
+                          isSelected
+                            ? 'border-t-2 border-amber-400 ring-1 ring-amber-400/30'
+                            : 'border-white/20 hover:border-white/40'
                         )}
+                        style={{
+                          background:
+                            'radial-gradient(circle at 25% 85%, rgba(245, 158, 11, 0.35) 0%, rgba(217, 119, 6, 0.18) 30%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(254, 240, 138, 0.15) 0%, transparent 40%), linear-gradient(135deg, #1c1917 0%, #292524 35%, #44403c 70%, #57534e 100%)',
+                        }}
+                      >
+                        {/* Warm Graphite & Amber Sheen overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/25 via-transparent to-white/10 pointer-events-none" />
+                        <div className="absolute left-6 bottom-4 w-32 h-32 bg-amber-400/20 rounded-full blur-xl pointer-events-none" />
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-stone-400/10 rounded-full blur-xl pointer-events-none" />
+
+                        {/* Card Tab Header with Company Name & Active indicator */}
+                        <div className="px-4 sm:px-5 py-3 flex items-center justify-between relative z-10">
+                          <span className="font-semibold text-xs sm:text-[13px] text-white/95 tracking-wide truncate max-w-[70%] drop-shadow-xs group-hover:text-white">
+                            {getAccountCardLabel(acc)}
+                          </span>
+                          {isSelected ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-stone-950 shadow-xs shrink-0">
+                              Viewing
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-white/50 opacity-0 group-hover:opacity-100 transition-opacity font-medium shrink-0">
+                              Click to view
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              )}
             </div>
           </div>
         </div>
@@ -1783,14 +1326,16 @@ export const BankManagementPage: React.FC = () => {
 
       {/* 3. Bottom Section: Bank Banner Bar & Transactions Table */}
       <Card className="rounded-[24px] border border-stroke/20 bg-white shadow-xs overflow-hidden">
-        {/* Grey Header Banner matching screenshot: "Bagong Bansa May Pagasa Movement" */}
+        {/* Grey Header Banner */}
         <div className="bg-[#E2E8F0] px-5 sm:px-6 py-3.5 border-b border-slate-300 flex items-center justify-between">
           <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
-            {activeAccount?.accountName || activeAccount?.companyName}
+            {activeAccount?.accountName || activeAccount?.companyName || 'No Account Selected'}
           </h3>
-          <span className="text-xs font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full border border-slate-300">
-            {activeAccount?.bankName}
-          </span>
+          {activeAccount?.bankName && (
+            <span className="text-xs font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full border border-slate-300">
+              {activeAccount.bankName}
+            </span>
+          )}
         </div>
 
         {/* Table Search Bar Toolbar & Compact Deposit/Withdraw Action Buttons */}
@@ -1823,20 +1368,22 @@ export const BankManagementPage: React.FC = () => {
 
           {/* Action buttons (Deposit & Withdraw) replacing "showing records" and "balance" */}
           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-            {!isAudit && !isCompanyScoped && (
+            {canManageBank && (
               <>
                 <Button
                   type="button"
+                  disabled={!activeAccount}
                   onClick={() => setIsDepositModalOpen(true)}
-                  className="h-8 sm:h-8.5 px-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                  className="h-8 sm:h-8.5 px-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                 >
                   <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
                   <span>Deposit</span>
                 </Button>
                 <Button
                   type="button"
+                  disabled={!activeAccount}
                   onClick={() => setIsWithdrawModalOpen(true)}
-                  className="h-8 sm:h-8.5 px-3.5 rounded-full bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                  className="h-8 sm:h-8.5 px-3.5 rounded-full bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] disabled:opacity-50 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                 >
                   <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
                   <span>Withdraw</span>
@@ -2021,7 +1568,22 @@ export const BankManagementPage: React.FC = () => {
                   <option value="LANDBANK">LANDBANK</option>
                   <option value="PNB">PNB</option>
                   <option value="EASTWEST">EASTWEST</option>
+                  <option value="Others">Others (Specify)</option>
                 </select>
+                {addBankForm.bankName === 'Others' && (
+                  <div className="mt-2">
+                    <label className="text-2xs font-semibold text-focus block mb-1">
+                      Specify Bank Name <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      required
+                      value={customBankName}
+                      onChange={(e) => setCustomBankName(e.target.value)}
+                      placeholder="e.g. Maya Bank, Seabank, GoTyme"
+                      className="h-9 text-xs rounded-xl"
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -2071,6 +1633,18 @@ export const BankManagementPage: React.FC = () => {
                   className="h-10 text-xs sm:text-sm rounded-xl font-mono"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-focus block mb-1">
+                Card Display Label <span className="text-xs text-muted-fg font-normal">(Optional tab title)</span>
+              </label>
+              <Input
+                value={addBankForm.cardLabel}
+                onChange={(e) => setAddBankForm({ ...addBankForm, cardLabel: e.target.value })}
+                placeholder="e.g. BDO · Operations Checking"
+                className="h-10 text-xs sm:text-sm rounded-xl"
+              />
             </div>
 
             <div>
@@ -2142,6 +1716,7 @@ export const BankManagementPage: React.FC = () => {
               <Button
                 type="button"
                 variant="outline"
+                disabled={isSubmittingBank}
                 onClick={() => {
                   setIsAddBankModalOpen(false)
                   setAddBankSuccessMessage(null)
@@ -2153,16 +1728,19 @@ export const BankManagementPage: React.FC = () => {
               <Button
                 type="button"
                 variant="outline"
+                disabled={isSubmittingBank}
                 onClick={handleCreateBankAndAddAnother}
-                className="h-10 px-4 rounded-xl text-xs font-semibold border-primary/60 text-primary hover:bg-primary/10 cursor-pointer"
+                className="h-10 px-4 rounded-xl text-xs font-semibold border-primary/60 text-primary hover:bg-primary/10 disabled:opacity-60 cursor-pointer"
               >
                 + Save & Add Another Bank
               </Button>
               <Button
                 type="submit"
-                className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer"
+                disabled={isSubmittingBank}
+                className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] disabled:opacity-60 text-white cursor-pointer flex items-center gap-2"
               >
-                Save Bank Account
+                {isSubmittingBank && <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />}
+                <span>{isSubmittingBank ? 'Saving...' : 'Save Bank Account'}</span>
               </Button>
             </div>
           </form>
@@ -2265,6 +1843,7 @@ export const BankManagementPage: React.FC = () => {
               <Button
                 type="button"
                 variant="outline"
+                disabled={isSubmittingDeposit}
                 onClick={() => setIsDepositModalOpen(false)}
                 className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
               >
@@ -2272,9 +1851,11 @@ export const BankManagementPage: React.FC = () => {
               </Button>
               <Button
                 type="submit"
-                className="h-10 px-5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                disabled={isSubmittingDeposit}
+                className="h-10 px-5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white cursor-pointer flex items-center gap-2"
               >
-                Confirm Deposit
+                {isSubmittingDeposit && <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />}
+                <span>{isSubmittingDeposit ? 'Processing...' : 'Confirm Deposit'}</span>
               </Button>
             </div>
           </form>
@@ -2379,6 +1960,7 @@ export const BankManagementPage: React.FC = () => {
               <Button
                 type="button"
                 variant="outline"
+                disabled={isSubmittingWithdraw}
                 onClick={() => setIsWithdrawModalOpen(false)}
                 className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
               >
@@ -2386,9 +1968,11 @@ export const BankManagementPage: React.FC = () => {
               </Button>
               <Button
                 type="submit"
-                className="h-10 px-5 rounded-xl text-xs font-semibold bg-rose-700 hover:bg-rose-800 text-white cursor-pointer"
+                disabled={isSubmittingWithdraw}
+                className="h-10 px-5 rounded-xl text-xs font-semibold bg-rose-700 hover:bg-rose-800 disabled:opacity-60 text-white cursor-pointer flex items-center gap-2"
               >
-                Confirm Withdrawal
+                {isSubmittingWithdraw && <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />}
+                <span>{isSubmittingWithdraw ? 'Processing...' : 'Confirm Withdrawal'}</span>
               </Button>
             </div>
           </form>
@@ -2567,6 +2151,7 @@ export const BankManagementPage: React.FC = () => {
               <Button
                 type="button"
                 variant="outline"
+                disabled={isSubmittingEdit}
                 onClick={() => setIsEditModalOpen(false)}
                 className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
               >
@@ -2574,9 +2159,11 @@ export const BankManagementPage: React.FC = () => {
               </Button>
               <Button
                 type="submit"
-                className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer"
+                disabled={isSubmittingEdit}
+                className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] disabled:opacity-60 text-white cursor-pointer flex items-center gap-2"
               >
-                Save Changes
+                {isSubmittingEdit && <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />}
+                <span>{isSubmittingEdit ? 'Saving...' : 'Save Changes'}</span>
               </Button>
             </div>
           </form>
@@ -2690,7 +2277,7 @@ export const BankManagementPage: React.FC = () => {
             </div>
           </div>
 
-          {!isAudit && !isCompanyScoped && (
+          {canManageBank && (
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 mt-3">
               <Button
                 type="button"

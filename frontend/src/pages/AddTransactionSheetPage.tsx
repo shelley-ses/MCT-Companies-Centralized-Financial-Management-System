@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Tag,
   CreditCard,
+  Landmark,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -42,6 +43,7 @@ import { formatToYYYYMMDD, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { formatParticularsString, parseParticulars, type ParticularItem } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { SALES_CATEGORY_LIST } from '@/utils/categoryConstants'
+import { bankService, type BankAccount } from '@/services/bankService'
 
 interface ParticularsRow {
   id: string
@@ -190,6 +192,52 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   // Payment Method state
   const [paymentMethod, setPaymentMethod] = React.useState<string>('Cash')
   const [chequeNo, setChequeNo] = React.useState<string>('')
+
+  // Bank Accounts state for direct account routing
+  const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>([])
+  const [selectedBankAccountId, setSelectedBankAccountId] = React.useState<string>('')
+
+  React.useEffect(() => {
+    let mounted = true
+    bankService.getAccounts().then((accounts) => {
+      if (mounted) {
+        setBankAccounts(accounts || [])
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  // Filter available bank accounts by the selected company
+  const availableBankAccounts = React.useMemo(() => {
+    const targetComp = isAuditor ? assignedCompany : selectedCompany
+    if (!targetComp) return bankAccounts
+    const norm = targetComp.trim().toLowerCase()
+    const matching = bankAccounts.filter((a) => {
+      const aComp = (a.companyName || '').toLowerCase()
+      return aComp.includes(norm) || norm.includes(aComp)
+    })
+    if (matching.length > 0) return matching
+    const general = bankAccounts.filter((a) =>
+      !a.companyName ||
+      a.companyName.toLowerCase().includes('general') ||
+      a.companyName.toLowerCase().includes('unassigned')
+    )
+    return general.length > 0 ? general : bankAccounts
+  }, [bankAccounts, selectedCompany, isAuditor, assignedCompany])
+
+  // Auto-select the first bank account of the company if available
+  React.useEffect(() => {
+    if (availableBankAccounts.length > 0) {
+      const exists = availableBankAccounts.some((a) => a.id === selectedBankAccountId)
+      if (!exists) {
+        setSelectedBankAccountId(availableBankAccounts[0].id)
+      }
+    } else {
+      setSelectedBankAccountId('')
+    }
+  }, [availableBankAccounts, selectedBankAccountId])
 
   // Category state (only used in Expense transactions; removed from Sales)
   const [category, setCategory] = React.useState<string>('Rendered Fee')
@@ -562,6 +610,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             category: category || SALES_CATEGORY_LIST[0],
             status: overallStatus,
             items: itemizedParticulars,
+            bankAccountId: selectedBankAccountId || undefined,
           })
         } else {
           await expenseService.updateExpense(editItem.id, {
@@ -575,6 +624,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             chequeNo: chequeNo.trim() || undefined,
             status: overallStatus,
             items: itemizedParticulars,
+            bankAccountId: selectedBankAccountId || undefined,
           })
         }
       } else {
@@ -590,6 +640,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             category: category || SALES_CATEGORY_LIST[0],
             status: overallStatus,
             items: itemizedParticulars,
+            bankAccountId: selectedBankAccountId || undefined,
           })
         } else {
           // Record all particulars consolidated as ONE single entry
@@ -603,6 +654,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             chequeNo: chequeNo.trim() || undefined,
             status: overallStatus,
             items: itemizedParticulars,
+            bankAccountId: selectedBankAccountId || undefined,
           })
         }
       }
@@ -737,7 +789,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             'grid gap-3.5 sm:gap-4 items-start',
             isPettyCash
               ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
-              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5'
+              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
           )}
         >
           {/* 1. Date */}
@@ -818,6 +870,35 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
               </p>
             )}
           </div>
+
+          {/* 3b. Bank Account Dropdown (Direct destination/source for multi-bank companies) */}
+          {!isPettyCash && (
+            <div className="space-y-1.5 flex flex-col justify-start">
+              <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+                <Landmark className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                <span className="truncate">{transactionType === 'Sales' ? 'Deposit Bank' : 'Withdraw Bank'}</span>
+                <span className="text-[11px] font-normal text-muted-fg shrink-0">(Bank)</span>
+              </label>
+              <select
+                value={selectedBankAccountId}
+                onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+              >
+                {availableBankAccounts.length === 0 ? (
+                  <option value="">No Bank Registered</option>
+                ) : (
+                  <>
+                    <option value="">None / Skip Bank Sync</option>
+                    {availableBankAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bankName} - {acc.accountName || acc.accountNumber} ({formatPHP(acc.currentBalance)})
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </div>
+          )}
 
           {/* 4. Category (Expense only; hidden when Payment Method is Petty Cash since category is auto-set to Petty Cash and specific categories are selected in the spreadsheet table column below) */}
           {!isPettyCash && (
