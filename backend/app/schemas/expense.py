@@ -83,16 +83,16 @@ class ExpenseUpdate(BaseModel):
 
 class ExpenseOut(BaseModel):
     expense_id: int
-    company_id: int
+    company_id: Optional[int] = None
     company_name: Optional[str] = None
     category_id: Optional[int] = None
     category_name: Optional[str] = None
     payment_method: Optional[str] = None
     created_by: Optional[int] = None
-    expense_date: date
+    expense_date: Optional[date] = None
     reference_no: Optional[str] = None
     cheque_no: Optional[str] = None
-    amount: Decimal
+    amount: Decimal = Field(default=Decimal("0.00"))
     amount_paid: Optional[Decimal] = None
     unpaid_balance: Optional[Decimal] = None
     particulars: Optional[str] = None

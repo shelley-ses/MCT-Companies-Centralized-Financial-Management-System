@@ -29,19 +29,52 @@ class BankService:
         """Purge all bank accounts and transactions to guarantee a pristine database."""
         self.purge_all_accounts()
 
-    def list_accounts(self, company_name: Optional[str] = None) -> List[BankAccount]:
+    def list_accounts(self, company_name: Optional[str] = None, company_id: Optional[int] = None) -> List[BankAccount]:
         query = self.db.query(BankAccount)
+        
+        # 1. Direct company_id filter
+        if company_id:
+            from app.models.company import Company
+            comp = self.db.query(Company).filter(Company.company_id == company_id).first()
+            comp_name = comp.company_name.strip().lower() if comp else ""
+            
+            from app.core.company_resolver import COMPANY_ALIASES
+            aliases = [comp_name] if comp_name else []
+            for key, val_list in COMPANY_ALIASES.items():
+                if comp_name == key or comp_name in val_list or key in comp_name:
+                    aliases.append(key)
+                    aliases.extend(val_list)
+            aliases = [a for a in set(aliases) if a]
+
+            conditions = [BankAccount.company_id == company_id]
+            if aliases:
+                conditions.extend([func.lower(BankAccount.company_name).contains(a) for a in aliases])
+            query = query.filter(or_(*conditions))
+            return query.order_by(BankAccount.id.asc()).all()
+
+        # 2. Company name filter
         if company_name and company_name != "All Companies":
             normalized = company_name.strip().lower()
-            from app.services.bills_service import KNOWN_COMPANY_ALIASES
+            from app.core.company_resolver import COMPANY_ALIASES, resolve_company
             aliases = [normalized]
-            for key, val_list in KNOWN_COMPANY_ALIASES.items():
+            resolved_cid = None
+            try:
+                c = resolve_company(self.db, company_name=company_name)
+                if c and c.company_id:
+                    resolved_cid = c.company_id
+                    aliases.append(c.company_name.strip().lower())
+            except Exception:
+                pass
+
+            for key, val_list in COMPANY_ALIASES.items():
                 if normalized == key or normalized in val_list or key in normalized:
                     aliases.append(key)
                     aliases.extend(val_list)
-            aliases = list(set(aliases))
+            aliases = [a for a in set(aliases) if a]
 
             conditions = [func.lower(BankAccount.company_name).contains(a) for a in aliases]
+            if resolved_cid:
+                conditions.append(BankAccount.company_id == resolved_cid)
             query = query.filter(or_(*conditions))
         return query.order_by(BankAccount.id.asc()).all()
 
@@ -97,12 +130,24 @@ class BankService:
         acc_num = data.account_number.strip() if data.account_number and data.account_number.strip() else f"1092-4820-{num_suffix}"
         label = (data.card_label or data.account_name or data.company_name or "").strip()
 
+        # Resolve company_id from input or company name
+        resolved_cid = data.company_id
+        if not resolved_cid:
+            try:
+                from app.core.company_resolver import resolve_company
+                c = resolve_company(self.db, company_name=comp_clean)
+                if c and c.company_id:
+                    resolved_cid = c.company_id
+            except Exception:
+                pass
+
         account = BankAccount(
             id=account_id,
             bank_name=bank_clean,
             account_name=acct_clean,
             account_number=acc_num,
             company_name=comp_clean,
+            company_id=resolved_cid,
             card_label=label,
             account_type=data.account_type or "Checking",
             branch=data.branch.strip() if data.branch else "Central Corporate Branch",

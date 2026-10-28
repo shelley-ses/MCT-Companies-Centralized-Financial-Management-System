@@ -278,8 +278,8 @@ export const BankManagementPage: React.FC = () => {
   const activeAccount = React.useMemo(() => {
     const found = roleScopedAccounts.find((a) => a.id === selectedAccountId)
     if (found) return found
-    return roleScopedAccounts[0] || accounts[0]
-  }, [roleScopedAccounts, selectedAccountId, accounts])
+    return roleScopedAccounts[0] || (isCompanyScoped ? undefined : accounts[0])
+  }, [roleScopedAccounts, selectedAccountId, accounts, isCompanyScoped])
 
   // Edit form state with accountName, branch, startingBalance (view-only), currentBalance, and notes
   const [editAccountForm, setEditAccountForm] = React.useState({

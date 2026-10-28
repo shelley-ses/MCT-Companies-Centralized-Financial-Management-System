@@ -6,6 +6,7 @@ class UserBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     company_id: Optional[int] = None
+    company_name: Optional[str] = None
     company_ids: List[int] = Field(default_factory=list)
     is_admin: bool = False
     role: str = Field(default="supervisor", description="Role of the user: admin, audit, finance, supervisor")

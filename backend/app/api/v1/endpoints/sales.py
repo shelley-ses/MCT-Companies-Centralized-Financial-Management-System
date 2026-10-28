@@ -12,22 +12,8 @@ from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
-CANONICAL_COMPANY_MAP = {
-    2: "MCT Kitchen",
-    3: "MCT Hotel",
-    4: "JK Cafe",
-    5: "JK Cafe",
-    6: "Annex Nine",
-    7: "Merillon",
-    8: "JK Printing",
-    9: "Speedfire",
-    10: "JK Property and Ventures",
-    11: "Golden Sunburst Ventures",
-    12: "Southern Brew",
-    14: "FILCAP Prime Holdings Corp.",
-}
-
 from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access
+from app.core.company_resolver import resolve_company, normalize_company_id
 from app.core.cache import get_cached, set_cached
 
 def get_supabase_mappings(client):
@@ -35,14 +21,27 @@ def get_supabase_mappings(client):
     if cached:
         return cached[0], cached[1]
 
-    company_map = dict(CANONICAL_COMPANY_MAP)
+    company_map = {}
     try:
-        companies = client.table("company").select("company_id, company_name").execute().data or []
-        for c in companies:
-            if c.get("company_id") and c.get("company_name"):
-                company_map[c["company_id"]] = c["company_name"]
+        from app.db.session import SessionLocal
+        from app.models.company import Company as CompanyModel
+        db = SessionLocal()
+        comps = db.query(CompanyModel).all()
+        for c in comps:
+            if c.company_id and c.company_name:
+                company_map[c.company_id] = c.company_name
+        db.close()
     except Exception:
         pass
+
+    if not company_map:
+        try:
+            companies = client.table("company").select("company_id, company_name").execute().data or []
+            for c in companies:
+                if c.get("company_id") and c.get("company_name"):
+                    company_map[c["company_id"]] = c["company_name"]
+        except Exception:
+            pass
 
     try:
         categories = client.table("category").select("category_id, name").execute().data or []
@@ -75,24 +74,15 @@ def get_sales(
         sb_query = client.table("sales").select("*")
 
         # Company filter & access check
-        resolved_company_id = company_id
+        resolved_company_id = normalize_company_id(company_id)
         if resolved_company_id:
             check_company_access(current_user, resolved_company_id)
             sb_query = sb_query.eq("company_id", resolved_company_id)
         elif company_name and company_name.lower() != "all companies":
-            target_norm = company_name.strip().lower()
-            matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() == target_norm]
-            if not matching_cids and target_norm in ("speedbox", "speedfire"):
-                matching_cids = [cid for cid, cname in company_map.items() if cname.strip().lower() in ("speedbox", "speedfire")]
-            
-            if not is_admin:
-                matching_cids = [cid for cid in matching_cids if cid in user_company_ids]
-                if not matching_cids:
-                    return []
-            if len(matching_cids) == 1:
-                sb_query = sb_query.eq("company_id", matching_cids[0])
-            elif len(matching_cids) > 1:
-                sb_query = sb_query.in_("company_id", matching_cids)
+            resolved_comp = resolve_company(db, company_name=company_name)
+            target_cid = resolved_comp.company_id
+            check_company_access(current_user, target_cid)
+            sb_query = sb_query.eq("company_id", target_cid)
         elif not is_admin:
             if not user_company_ids:
                 return []
@@ -194,31 +184,10 @@ def create_sale(
         client = get_supabase_admin_client()
         company_map, cat_map = get_supabase_mappings(client)
 
-        # 1. Resolve Company in Supabase
-        target_company_id = sale_in.company_id
-        target_company_name = sale_in.company or ""
-
-        if target_company_id and target_company_id in company_map:
-            target_company_name = company_map[target_company_id]
-        elif target_company_name:
-            for cid, cname in company_map.items():
-                if cname.strip().lower() == target_company_name.strip().lower():
-                    target_company_id = cid
-                    target_company_name = cname
-                    break
-
-        if not target_company_id:
-            # Create company in Supabase
-            if target_company_name:
-                ins_comp = client.table("company").insert({
-                    "company_name": target_company_name.strip(),
-                    "starting_balance": 0.00,
-                    "current_balance": 0.00
-                }).execute()
-                if ins_comp.data:
-                    target_company_id = ins_comp.data[0]["company_id"]
-            else:
-                raise HTTPException(status_code=400, detail="Invalid company specified.")
+        # 1. Resolve Company reliably
+        target_company = resolve_company(db, company_id=sale_in.company_id, company_name=sale_in.company)
+        target_company_id = target_company.company_id
+        target_company_name = target_company.company_name
 
         check_company_access(current_user, target_company_id)
 
@@ -342,27 +311,7 @@ def create_sale(
         raise
     except Exception as e:
         # Fallback to local SQLite only if Supabase error occurs
-        target_company = None
-        if sale_in.company_id:
-            target_company = db.query(Company).filter(Company.company_id == sale_in.company_id).first()
-        elif sale_in.company:
-            target_company = db.query(Company).filter(
-                func.lower(Company.company_name) == func.lower(sale_in.company.strip())
-            ).first()
-
-        if not target_company:
-            if sale_in.company and sale_in.company.strip():
-                target_company = Company(
-                    company_name=sale_in.company.strip(),
-                    starting_balance=0.00,
-                    current_balance=0.00
-                )
-                db.add(target_company)
-                db.commit()
-                db.refresh(target_company)
-            else:
-                raise HTTPException(status_code=400, detail="Invalid company specified.")
-
+        target_company = resolve_company(db, company_id=sale_in.company_id, company_name=sale_in.company)
         check_company_access(current_user, target_company.company_id)
 
         sale = Sale(

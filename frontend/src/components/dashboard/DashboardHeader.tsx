@@ -158,16 +158,26 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 )}
               />
               {filters.company !== 'All Companies' && (
-                <button
-                  type="button"
-                  onClick={handleResetCompany}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleResetCompany(e)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation()
+                      handleResetCompany(e as unknown as React.MouseEvent)
+                    }
+                  }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="p-1 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5"
+                  className="p-1 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 cursor-pointer inline-flex items-center justify-center"
                   title="Reset to All Companies"
                   aria-label="Reset company filter"
                 >
                   <X className="h-3 w-3" />
-                </button>
+                </span>
               )}
             </button>
 

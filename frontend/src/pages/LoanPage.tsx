@@ -66,18 +66,6 @@ import { cn } from '@/lib/utils'
 import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { useCompany } from '@/context/CompanyContext'
 
-const COMPANY_LIST = [
-  'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
 
 const PERIOD_OPTIONS = ['All Periods', 'Daily', 'Monthly', 'Quarterly', 'Annually'] as const
 type PeriodOption = (typeof PERIOD_OPTIONS)[number]
@@ -244,11 +232,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   }, [])
 
   const companyNamesList = React.useMemo(() => {
-    if (dbCompanies.length > 0) {
-      const list = dbCompanies.map((c) => c.company_name).filter(Boolean)
-      return Array.from(new Set(['All Companies', ...list, ...COMPANY_LIST]))
-    }
-    return COMPANY_LIST
+    const list = dbCompanies.map((c) => c.company_name).filter(Boolean)
+    return ['All Companies', ...list]
   }, [dbCompanies])
 
   const handlePeriodChange = (period: PeriodOption) => {

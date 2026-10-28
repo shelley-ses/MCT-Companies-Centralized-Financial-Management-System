@@ -761,38 +761,23 @@ export const dashboardService = {
       // Backend not available or empty
     }
 
-    // 2. 18-month rich dummy transactions exclusively for the dashboard
-    let dummyTransactions = getDummyTransactions()
-    if (isCompanySpecific) {
-      dummyTransactions = dummyTransactions.filter(
-        (t) => t.company?.toLowerCase().trim() === targetComp
-      )
-    }
-
-    // Combine real and dummy transactions (real user transactions prioritized)
+    // Real transactions strictly from the database
     let transactions: DashboardTransactionItem[] = [
       ...realTransactions,
-      ...dummyTransactions,
     ]
 
-    // Consolidated KPI Totals (or filtered by company if chosen)
-    const totalSales =
-      transactions
-        .filter((t) => t.type === 'Sales' || t.type === 'Income')
-        .reduce((sum, t) => sum + (t.deposit || t.amount || 0), 0) ||
-      (isCompanySpecific ? 85000 : 1350000)
+    // Consolidated KPI Totals based purely on real database records
+    const totalSales = transactions
+      .filter((t) => t.type === 'Sales' || t.type === 'Income')
+      .reduce((sum, t) => sum + (t.deposit || t.amount || 0), 0)
 
-    const totalExpense =
-      transactions
-        .filter((t) => t.type === 'Expense')
-        .reduce((sum, t) => sum + (t.withdrawal || t.amount || 0), 0) ||
-      (isCompanySpecific ? 24000 : 335000)
+    const totalExpense = transactions
+      .filter((t) => t.type === 'Expense')
+      .reduce((sum, t) => sum + (t.withdrawal || t.amount || 0), 0)
 
-    const totalLoan =
-      transactions
-        .filter((t) => t.type === 'Loan')
-        .reduce((sum, t) => sum + (t.amount || t.withdrawal || 0), 0) ||
-      (isCompanySpecific ? 25000 : 120000)
+    const totalLoan = transactions
+      .filter((t) => t.type === 'Loan')
+      .reduce((sum, t) => sum + (t.amount || t.withdrawal || 0), 0)
 
     const overdueLoans = transactions.filter(
       (t) =>
@@ -818,8 +803,8 @@ export const dashboardService = {
         totalSales,
         totalExpense,
         totalLoan,
-        overdueLoans: Math.max(overdueLoans, 2),
-        dueSoon: Math.max(dueSoon, 3),
+        overdueLoans,
+        dueSoon,
       },
       weeklySales: INITIAL_WEEKLY_SALES,
       expenses: INITIAL_EXPENSES,

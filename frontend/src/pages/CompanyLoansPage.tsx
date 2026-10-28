@@ -25,7 +25,6 @@ export const CompanyLoansPage: React.FC = () => {
     borrowerId: '', category: '', paymentStatus: '', date: '',
   })
   const [selectedGroup, setSelectedGroup] = React.useState<CompanyLoanGroup | null>(null)
-  const [previewMode, setPreviewMode] = React.useState(false)
   const [repaymentTimeline, setRepaymentTimeline] = React.useState<Array<{
     refNo: string
     paymentDate: string
@@ -134,75 +133,6 @@ export const CompanyLoansPage: React.FC = () => {
     }
   }
 
-    const showPreviewData = () => {
-      setPreviewMode(true)
-      setPage(0)
-      setGroups([
-        {
-          key: 'preview-mct-hotel-mct-kitchen-rent',
-          borrower: 'MCT Hotel',
-          lender: 'MCT Kitchen',
-          category: 'Rent',
-          totalLoanAmount: 45000,
-          totalPaid: 13000,
-          outstandingBalance: 32000,
-          interestDisplay: '5.00%',
-          paymentStatus: 'Partially Paid',
-          loanCount: 2,
-          loans: [
-            {
-              id: 'loan_demo_1',
-              loanId: -1,
-              refNo: 'DEMO-RENT-001',
-              date: '08/01/26',
-              rawDate: '2026-08-01',
-              dueDate: '2026-12-31',
-              interestRate: 5,
-              interestType: 'simple',
-              particulars: 'Hotel building monthly rent',
-              category: 'Rent',
-              amount: 30000,
-              borrowerId: 3,
-              borrower: 'MCT Hotel',
-              lenderId: 2,
-              lender: 'MCT Kitchen',
-              company: 'MCT Hotel',
-              status: 'Approved',
-              auditStatus: 'Verified',
-              type: 'Loan',
-              totalPaid: 10000,
-              outstandingBalance: 20000,
-              paymentStatus: 'Partially Paid',
-            },
-            {
-              id: 'loan_demo_2',
-              loanId: -2,
-              refNo: 'DEMO-RENT-002',
-              date: '09/01/26',
-              rawDate: '2026-09-01',
-              dueDate: '2027-01-31',
-              interestRate: 5,
-              interestType: 'simple',
-              particulars: 'Warehouse rent advance',
-              category: 'Rent',
-              amount: 15000,
-              borrowerId: 3,
-              borrower: 'MCT Hotel',
-              lenderId: 2,
-              lender: 'MCT Kitchen',
-              company: 'MCT Hotel',
-              status: 'Approved',
-              auditStatus: 'Verified',
-              type: 'Loan',
-              totalPaid: 3000,
-              outstandingBalance: 12000,
-              paymentStatus: 'Partially Paid',
-            },
-          ],
-        },
-      ])
-      setTotal(1)
-    }
 
   return (
     <div className="space-y-6 p-6">
@@ -212,7 +142,6 @@ export const CompanyLoansPage: React.FC = () => {
           <p className="text-sm text-slate-500">Approved loans grouped by borrower, lender, and category.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={showPreviewData}>Preview Dummy Data</Button>
           <Button onClick={() => void exportGroups()}><Download className="mr-2 h-4 w-4" />Export CSV</Button>
         </div>
       </div>
@@ -235,7 +164,6 @@ export const CompanyLoansPage: React.FC = () => {
         </div>
       </Card>
 
-      {previewMode && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Preview mode: showing frontend-only dummy data. No database records were changed.</div>}
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <Card className="overflow-x-auto">
         {loading ? <div className="p-8 text-center text-sm text-slate-500">Loading company loans...</div> : groups.length === 0 ? <div className="p-8 text-center text-sm text-slate-500"><Search className="mx-auto mb-2 h-5 w-5" />No approved loans match these filters.</div> : (
