@@ -16,13 +16,10 @@ import {
   Calendar,
   Bell,
   Check,
-  Tag,
-  Hash,
 } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import {
   billsService,
-  BILL_CATEGORIES,
   type BillItem,
   type NewBillInput,
 } from '@/services/billsService'
@@ -84,8 +81,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
 
   // Form states
   const [billerName, setBillerName] = React.useState('')
-  const [category, setCategory] = React.useState<string>(BILL_CATEGORIES[0])
-  const [accountNo, setAccountNo] = React.useState('')
   const [amount, setAmount] = React.useState('')
   const [dueDate, setDueDate] = React.useState(getTodayIso())
   const [company, setCompany] = React.useState(assignedCompany || 'MCT Kitchen')
@@ -105,8 +100,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   React.useEffect(() => {
     if (open) {
       setBillerName('')
-      setCategory(BILL_CATEGORIES[0])
-      setAccountNo('')
       setAmount('')
       setDueDate(getTodayIso())
       setCompany(assignedCompany || 'MCT Kitchen')
@@ -143,15 +136,36 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       return
     }
 
+    const targetCompany = canChooseCompany ? company : assignedCompany
+
+    // Check for duplicate biller name under this company
+    try {
+      const existingBills = await billsService.getBills(targetCompany)
+      const isDuplicate = existingBills.some(
+        (b) =>
+          b.company.toLowerCase() === targetCompany.toLowerCase() &&
+          b.billerName.trim().toLowerCase() === billerName.trim().toLowerCase()
+      )
+      if (isDuplicate) {
+        setFieldErrors({
+          billerName: `A bill for provider "${billerName.trim()}" already exists for ${targetCompany}. Provider names cannot be duplicated.`,
+        })
+        setError(`A bill for provider "${billerName.trim()}" already exists for ${targetCompany}.`)
+        return
+      }
+    } catch {
+      // Continue to submission if verification fails
+    }
+
     setIsSubmitting(true)
     try {
       const input: NewBillInput = {
         billerName: billerName.trim(),
-        category,
-        accountNo: accountNo.trim(),
+        category: 'General',
+        accountNo: '',
         amount: numAmount,
         dueDate,
-        company: canChooseCompany ? company : assignedCompany,
+        company: targetCompany,
         billingCycle,
         reminderDaysBefore,
         notes: notes.trim(),
@@ -161,7 +175,11 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       onSuccess(created)
       onOpenChange(false)
     } catch (err: any) {
-      setError(err?.message || 'Failed to create bill record.')
+      const msg = err?.message || 'Failed to create bill record.'
+      if (msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('duplicate')) {
+        setFieldErrors({ billerName: msg })
+      }
+      setError(msg)
     } finally {
       setIsSubmitting(false)
     }
@@ -221,27 +239,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 2. Category */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>Category</span>
-                <span className="text-red-500">*</span>
-              </Label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-              >
-                {BILL_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 3. Company */}
+            {/* 2. Company */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -266,43 +264,28 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 </div>
               )}
             </div>
-          </div>
 
-          {/* 4. Recurring Schedule */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-              <span>Recurring</span>
-              <span className="text-red-500">*</span>
-            </Label>
-            <select
-              value={billingCycle}
-              onChange={(e) => setBillingCycle(e.target.value as 'Daily' | 'Monthly' | 'Yearly')}
-              className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-            >
-              <option value="Daily">Daily</option>
-              <option value="Monthly">Monthly</option>
-              <option value="Yearly">Yearly</option>
-            </select>
+            {/* 3. Recurring Schedule */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                <span>Recurring Schedule</span>
+                <span className="text-red-500">*</span>
+              </Label>
+              <select
+                value={billingCycle}
+                onChange={(e) => setBillingCycle(e.target.value as 'Daily' | 'Monthly' | 'Yearly')}
+                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+              >
+                <option value="Daily">Daily</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Yearly">Yearly</option>
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 5. Account / Reference No */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <Hash className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>Account / Ref No.</span>
-              </Label>
-              <Input
-                type="text"
-                placeholder="e.g. 0192-8837-192"
-                value={accountNo}
-                onChange={(e) => setAccountNo(e.target.value)}
-                className="h-10 rounded-xl border-stroke/50 text-xs font-mono"
-              />
-            </div>
-
-            {/* 6. Amount */}
+            {/* 4. Amount */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <span>Amount (₱)</span>
@@ -336,10 +319,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 <p className="text-[11px] text-red-600 font-medium">{fieldErrors.amount}</p>
               )}
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 7. Due Date */}
+            {/* 5. Due Date */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
@@ -364,35 +345,35 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 <p className="text-[11px] text-red-600 font-medium">{fieldErrors.dueDate}</p>
               )}
             </div>
-
-            {/* 8. Reminder Notification */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span>Due Date Reminder</span>
-              </Label>
-              <select
-                value={reminderDaysBefore}
-                onChange={(e) => setReminderDaysBefore(parseInt(e.target.value, 10))}
-                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-              >
-                <option value={1}>1 day before due date</option>
-                <option value={3}>3 days before due date</option>
-                <option value={5}>5 days before due date</option>
-                <option value={7}>7 days before due date</option>
-                <option value={10}>10 days before due date</option>
-              </select>
-            </div>
           </div>
 
-          {/* 9. Notes */}
+          {/* 6. Reminder Notification */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+              <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>Due Date Reminder</span>
+            </Label>
+            <select
+              value={reminderDaysBefore}
+              onChange={(e) => setReminderDaysBefore(parseInt(e.target.value, 10))}
+              className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+            >
+              <option value={1}>1 day before due date</option>
+              <option value={3}>3 days before due date</option>
+              <option value={5}>5 days before due date</option>
+              <option value={7}>7 days before due date</option>
+              <option value={10}>10 days before due date</option>
+            </select>
+          </div>
+
+          {/* 7. Notes */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-focus block">
               Notes / Particulars (Optional)
             </Label>
             <Input
               type="text"
-              placeholder="e.g. Meter reading ID, store location, auto-debit reminder..."
+              placeholder="e.g. Meter reading ID, store location, payment instructions..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="h-10 rounded-xl border-stroke/50 text-xs"
