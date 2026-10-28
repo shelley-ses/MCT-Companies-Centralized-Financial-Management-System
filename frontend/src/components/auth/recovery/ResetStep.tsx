@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check, Circle, Loader2, AlertCircle } from 'lucide-react'
+import { Check, Circle, Loader2, AlertCircle, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -75,12 +75,19 @@ export const ResetStep: React.FC<ResetStepProps> = ({
 
   return (
     <div className="space-y-6">
-      <DialogHeader>
-        <DialogTitle>Reset Password</DialogTitle>
-        <DialogDescription>
-          Create a new, strong password for your account.
-        </DialogDescription>
-      </DialogHeader>
+      <div className="text-center space-y-3">
+        <div className="mx-auto w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-[#960C01]">
+          <KeyRound className="w-6 h-6" />
+        </div>
+        <DialogHeader className="text-center sm:text-center space-y-1">
+          <DialogTitle className="text-2xl font-bold tracking-tight text-[#0B0F2B]">
+            Reset Password
+          </DialogTitle>
+          <DialogDescription className="text-sm text-gray-500">
+            Create a new, strong password for your account.
+          </DialogDescription>
+        </DialogHeader>
+      </div>
 
       {serverError && (
         <div
@@ -207,11 +214,11 @@ export const ResetStep: React.FC<ResetStepProps> = ({
             </ul>
           </div>
 
-          <div className="pt-2 flex justify-center w-full">
+          <div className="pt-2 w-full">
             <Button
               type="submit"
               disabled={isDoneDisabled}
-              className="w-full max-w-sm h-12 text-base font-semibold"
+              className="w-full h-12 rounded-xl text-base font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs transition-colors"
             >
               {isLoading ? (
                 <>

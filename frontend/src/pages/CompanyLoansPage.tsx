@@ -142,7 +142,7 @@ export const CompanyLoansPage: React.FC = () => {
           <p className="text-sm text-slate-500">Approved loans grouped by borrower, lender, and category.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => void exportGroups()}><Download className="mr-2 h-4 w-4" />Export CSV</Button>
+          <Button variant="outline" onClick={() => void exportGroups()} className="border border-stroke/50 bg-white text-focus hover:bg-surface"><Download className="mr-2 h-4 w-4 text-focus/70" />Export CSV</Button>
         </div>
       </div>
 

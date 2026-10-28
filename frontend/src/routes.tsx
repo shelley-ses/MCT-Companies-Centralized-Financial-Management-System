@@ -5,8 +5,10 @@ import {
   ProtectedRoute,
   PublicOnlyRoute,
   AdminOnlyRoute,
+  FinanceOnlyRoute,
   LendingRouteGuard,
   TenantRouteGuard,
+  SalesRouteGuard,
 } from '@/components/layout/RouteGuards'
 
 function PageFallback() {
@@ -57,11 +59,32 @@ const AddTransactionSheetPage = lazyPage(
   () => import('@/pages/AddTransactionSheetPage'),
   'AddTransactionSheetPage'
 )
+const CentralizedAuthPage = lazyPage(
+  () => import('@/pages/CentralizedAuthPage'),
+  'CentralizedAuthPage'
+)
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <LandingPage />,
+  },
+  // Finance Centralized Company Selector & Hub (Strictly Finance only)
+  {
+    path: '/centralized-auth',
+    element: (
+      <FinanceOnlyRoute>
+        <CentralizedAuthPage />
+      </FinanceOnlyRoute>
+    ),
+  },
+  {
+    path: '/finance/centralized-auth',
+    element: <Navigate to="/centralized-auth" replace />,
+  },
+  {
+    path: '/choose-company',
+    element: <Navigate to="/centralized-auth" replace />,
   },
   // Public Only routes (authenticated users redirected to /dashboard)
   {
@@ -105,7 +128,11 @@ export const router = createBrowserRouter([
       // Sales routes
       {
         path: '/sales',
-        element: <SalesPage />,
+        element: (
+          <SalesRouteGuard>
+            <SalesPage />
+          </SalesRouteGuard>
+        ),
       },
       {
         path: '/sales/daily',

@@ -53,7 +53,7 @@ export const RecoveryDialog: React.FC<RecoveryDialogProps> = ({ open }) => {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[460px]">
+      <DialogContent className="max-w-[420px] sm:max-w-[440px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl">
         {step === 'request' && <RequestStep onCodeSent={handleCodeSent} />}
         {step === 'verify' && (
           <VerifyStep email={email} onVerified={handleVerified} />

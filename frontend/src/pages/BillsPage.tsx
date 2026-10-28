@@ -44,7 +44,6 @@ import {
 } from '@/components/ui/dialog'
 import { useSession } from '@/hooks/useSession'
 import { useCompany } from '@/context/CompanyContext'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { formatPHP } from '@/lib/format'
 import {
   billsService,
@@ -486,39 +485,37 @@ export const BillsPage: React.FC = () => {
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 animate-in fade-in duration-300">
       {/* 1. Header & Controls */}
-      <div className="space-y-3">
-        {/* Top Row: Action Buttons (Live Date/Time, Export & Add Bill) */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
+      <div className="space-y-4">
+        {/* Top Header Row: Page Title on Left, Action Buttons on Right */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+                Monthly Bills
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                {stats.totalBillsCount} Bills
+              </span>
+            </div>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Track recurring utility, rental, and scheduled bills for {displayedCompanyTitle} with automated due date reminders and payment history.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start shrink-0">
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant={!isAudit ? 'default' : 'outline'}
+                variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
-                  !isAudit
-                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
-                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-                )}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    !isAudit ? 'text-white' : 'text-focus/70'
-                  )}
-                />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 ml-0.5',
-                    !isAudit ? 'text-white/90' : 'text-muted-fg'
-                  )}
-                />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -557,24 +554,21 @@ export const BillsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-                Monthly Bills
-              </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
-                {stats.totalBillsCount} Bills
-              </span>
-            </div>
-            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Track recurring utility, rental, and scheduled bills for {displayedCompanyTitle} with automated due date reminders and payment history.
-            </p>
+        {/* Second Row: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+            <Input
+              type="search"
+              placeholder="Search by biller, account number, company, category, or notes…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
           </div>
 
-          {/* Filter Toolbar */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap shrink-0 self-start lg:self-auto relative z-30">
+          <div className="flex items-center justify-end gap-2.5 flex-wrap relative z-30 shrink-0">
             {/* Status Filter */}
             <div ref={statusDropdownRef} className="relative inline-block shrink-0">
               <button
@@ -584,18 +578,18 @@ export const BillsPage: React.FC = () => {
                   setIsCompanyDropdownOpen(false)
                 }}
                 className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
                   isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <span className="font-medium text-focus/90">
                   {statusFilter === 'All' ? 'Status: All' : statusFilter}
                 </span>
-                <ChevronDown className="h-3 w-3 text-muted-fg shrink-0" />
+                <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
               </button>
 
               {isStatusDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
                   {(['All', 'Due Soon', 'Overdue', 'Unpaid', 'Partially Paid', 'Paid'] as const).map((st) => (
                     <button
                       key={st}
@@ -621,9 +615,9 @@ export const BillsPage: React.FC = () => {
 
             {/* Company Filter (Locked for Supervisor, dropdown for Finance/Admin) */}
             {isCompanyScoped ? (
-              <div className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs font-medium shadow-xs shrink-0 whitespace-nowrap">
-                <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90 truncate max-w-[130px]">
+              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
+                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                <span className="font-semibold text-focus/90 truncate max-w-[140px]">
                   {assignedCompany}
                 </span>
               </div>
@@ -636,15 +630,15 @@ export const BillsPage: React.FC = () => {
                     setIsStatusDropdownOpen(false)
                   }}
                   className={cn(
-                    'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
+                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
                     isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                 >
-                  <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                  <span className="font-medium text-focus/90 truncate max-w-[110px] sm:max-w-[130px]">
+                  <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                  <span className="font-medium text-focus/90 truncate max-w-[140px] sm:max-w-[180px]">
                     {selectedCompany}
                   </span>
-                  <ChevronDown className="h-3 w-3 text-muted-fg shrink-0" />
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
                   {selectedCompany !== 'All Companies' && (
                     <span
                       onClick={(e) => {
@@ -655,7 +649,7 @@ export const BillsPage: React.FC = () => {
                       className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
                       title="Reset to All Companies"
                     >
-                      <X className="h-2.5 w-2.5" />
+                      <X className="h-3 w-3" />
                     </span>
                   )}
                 </button>
@@ -852,30 +846,6 @@ export const BillsPage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Table Search Bar Toolbar (Title & subtext removed) */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
-            <Input
-              type="text"
-              placeholder="Search by biller, account number, company, category, or notes…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
         {/* Table View */}
         <div className="w-full rounded-xl border border-slate-100 overflow-hidden">
           <Table containerClassName="overflow-hidden" className="w-full table-fixed">
@@ -1279,7 +1249,7 @@ export const BillsPage: React.FC = () => {
         open={Boolean(deleteConfirmBill)}
         onOpenChange={(open) => !open && setDeleteConfirmBill(null)}
       >
-        <DialogContent className="max-w-md p-6 rounded-2xl bg-white border border-neutral-200 shadow-2xl">
+        <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto p-6 rounded-[24px] bg-white border border-neutral-200 shadow-2xl">
           <DialogHeader>
             <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 mb-2">
               <Trash2 className="w-5 h-5" />
@@ -1321,7 +1291,7 @@ export const BillsPage: React.FC = () => {
         open={Boolean(selectedDetailBill)}
         onOpenChange={(open) => !open && setSelectedDetailBill(null)}
       >
-        <DialogContent className="sm:max-w-[680px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl [&>button]:top-5 [&>button]:right-5 max-h-[92vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[780px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
           {selectedDetailBill && (
             <>
               {/* Header */}

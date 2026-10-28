@@ -133,7 +133,7 @@ def check_company_access(user: AuthenticatedUser, target_company_id: int | None)
     normalized_target_id = normalize_company_id(target_company_id)
 
     role = str(user.get("role") or "").lower()
-    if user.get("is_admin") or role in ("admin", "finance", "audit"):
+    if user.get("is_admin") or role in ("admin", "finance", "audit", "auditor"):
         return
 
     assigned = user.get("company_ids") or []

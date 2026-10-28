@@ -164,7 +164,7 @@ export const BankManagementPage: React.FC = () => {
       localStorage.removeItem('mct_bank_management_accounts_v3')
       localStorage.removeItem('mct_bank_management_accounts_v2')
       localStorage.removeItem('mct_bank_management_accounts')
-    } catch {}
+    } catch { }
   }, [])
 
   // Active selected bank account
@@ -464,8 +464,8 @@ export const BankManagementPage: React.FC = () => {
       companyName: isCompanyScoped
         ? assignedCompany
         : selectedCompany !== 'All Companies'
-        ? selectedCompany
-        : prev.companyName || '',
+          ? selectedCompany
+          : prev.companyName || '',
     }))
     setIsAddBankModalOpen(true)
   }, [isCompanyScoped, assignedCompany, selectedCompany])
@@ -524,8 +524,8 @@ export const BankManagementPage: React.FC = () => {
             prev.bankName === 'CHINABANK'
               ? 'BDO UNIBANK'
               : prev.bankName === 'BDO UNIBANK'
-              ? 'BPI'
-              : 'METROBANK',
+                ? 'BPI'
+                : 'METROBANK',
           accountName: '',
           accountNumber: '',
           cardLabel: '',
@@ -677,8 +677,8 @@ export const BankManagementPage: React.FC = () => {
       filteredTransactions.length === 0
         ? `<tr><td colspan="7" style="padding: 20px; text-align: center; color: #64748B;">No transactions recorded.</td></tr>`
         : filteredTransactions
-            .map(
-              (t) => `
+          .map(
+            (t) => `
           <tr>
             <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${t.date}</td>
             <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px; font-weight: 600;">${t.chequeNo || '—'}</td>
@@ -689,8 +689,8 @@ export const BankManagementPage: React.FC = () => {
             <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">₱${t.runningBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
           </tr>
         `
-            )
-            .join('')
+          )
+          .join('')
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -735,30 +735,37 @@ export const BankManagementPage: React.FC = () => {
   return (
     <div className="space-y-6 pb-12 max-w-[1600px] mx-auto animate-in fade-in duration-300 select-none">
       {/* 1. Header & Controls (Matching Reference Screenshot) */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-            Bank Management
-          </h1>
-          <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-            {roleScopedAccounts.length} {roleScopedAccounts.length === 1 ? 'account.' : 'accounts.'}
-          </p>
-        </div>
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+                Bank Management
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                {roleScopedAccounts.length} {roleScopedAccounts.length === 1 ? 'Account' : 'Accounts'}
+              </span>
+            </div>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Manage corporate bank accounts, monitor active balance.
+            </p>
+          </div>
 
-        {/* Action Controls & Filters in 2 stacked rows (Matching screenshot) */}
-        <div className="flex flex-col items-start sm:items-end gap-2.5 self-start sm:self-auto">
-          {/* Row 1: Export and Add New Bank */}
-          <div className="flex items-center gap-2.5">
-            {/* Export Button matching System One UI red styling */}
+          {/* Action Controls: Export and Add New Bank */}
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start shrink-0">
+            {/* Export Dropdown Button matching standard system UI */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
+                variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-9 sm:h-9.5 px-4 sm:px-5 rounded-full bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border border-transparent"
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                aria-haspopup="true"
+                aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 text-white shrink-0" />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 text-white/90 shrink-0" />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -788,66 +795,84 @@ export const BankManagementPage: React.FC = () => {
               <Button
                 type="button"
                 onClick={openAddBankModal}
-                className="h-9 sm:h-9.5 px-4 sm:px-5 rounded-full bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
               >
+                <Plus className="h-4 w-4 shrink-0" />
                 <span>Add New Bank</span>
               </Button>
             )}
           </div>
+        </div>
 
-          {/* Row 2: Date Range, Company Selector, and Activity Log */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Date Range Button / Display */}
-            <DateRangePicker
-              value={dateRange}
-              onChange={(newRange) => setDateRange(newRange)}
-              hidePresets
-            />
+        {/* Row 2: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+              <Input
+                type="search"
+                placeholder="Search by particulars, cheque no., or category..."
+                value={tableSearchQuery}
+                onChange={(e) => {
+                  setTableSearchQuery(e.target.value)
+                  setCurrentPage(1)
+                }}
+                className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+              />
+            </div>
 
-            {/* Company Dropdown / Badge */}
-            {isCompanyScoped ? (
-              <div className="inline-flex items-center gap-1.5 h-9 sm:h-9.5 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
-                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90 truncate max-w-[160px]">
-                  {assignedCompany}
-                </span>
-              </div>
-            ) : (
-              <div ref={companyDropdownRef} className="relative inline-block">
+            <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
+              {/* 1. Date Range Button / Display */}
+              <DateRangePicker
+                value={dateRange}
+                onChange={(newRange) => setDateRange(newRange)}
+                hidePresets
+              />
+
+              {/* 2. Deposit / Withdraw Dropdown Filter (Comes before Company) */}
+              <div ref={txTypeDropdownRef} className="relative inline-block">
                 <button
                   type="button"
-                  onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
+                  onClick={() => {
+                    setIsTxTypeDropdownOpen((prev) => !prev)
+                    setIsCompanyDropdownOpen(false)
+                    setIsExportDropdownOpen(false)
+                  }}
                   className={cn(
-                    'inline-flex items-center gap-2 h-9 sm:h-9.5 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                    isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
+                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                    isTxTypeDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                 >
-                  <span className="font-semibold text-focus/90 truncate max-w-[140px]">
-                    {selectedCompany === 'All Companies' ? 'Company' : selectedCompany}
+                  <span className="font-semibold text-focus/90 truncate max-w-[150px]">
+                    {txTypeFilter === 'All' ? 'Deposit / Withdraw' : txTypeFilter}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
                 </button>
 
-                {isCompanyDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-72 overflow-y-auto">
+                {isTxTypeDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
                     <div className="space-y-1">
-                      {companyOptions.map((c) => (
+                      {[
+                        { label: 'All Transactions', value: 'All' as const },
+                        { label: 'Deposit', value: 'Deposit' as const },
+                        { label: 'Withdrawal', value: 'Withdrawal' as const },
+                      ].map((opt) => (
                         <button
-                          key={c}
+                          key={opt.value}
                           type="button"
                           onClick={() => {
-                            setSelectedCompany(c)
-                            setIsCompanyDropdownOpen(false)
+                            setTxTypeFilter(opt.value)
+                            setIsTxTypeDropdownOpen(false)
                           }}
                           className={cn(
                             'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                            selectedCompany === c
+                            txTypeFilter === opt.value
                               ? 'bg-primary/10 text-primary font-semibold'
                               : 'text-focus/80 hover:bg-slate-50'
                           )}
                         >
-                          <span className="truncate">{c}</span>
-                          {selectedCompany === c && (
+                          <span>{opt.label}</span>
+                          {txTypeFilter === opt.value && (
                             <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
                           )}
                         </button>
@@ -856,63 +881,64 @@ export const BankManagementPage: React.FC = () => {
                   </div>
                 )}
               </div>
-            )}
 
-            {/* Deposit / Withdraw Dropdown Filter (Replacing Activity Log button, applied to all: audit, finance, companies) */}
-            <div ref={txTypeDropdownRef} className="relative inline-block">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsTxTypeDropdownOpen((prev) => !prev)
-                  setIsCompanyDropdownOpen(false)
-                  setIsExportDropdownOpen(false)
-                }}
-                className={cn(
-                  'inline-flex items-center gap-2 h-9 sm:h-9.5 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                  isTxTypeDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
-                )}
-              >
-                <span className="font-semibold text-focus/90 truncate max-w-[150px]">
-                  {txTypeFilter === 'All' ? 'Deposit / Withdraw' : txTypeFilter}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-              </button>
+              {/* 3. Company Dropdown / Badge (Comes after Deposit / Withdraw) */}
+              {isCompanyScoped ? (
+                <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
+                  <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                  <span className="font-semibold text-focus/90 truncate max-w-[160px]">
+                    {assignedCompany}
+                  </span>
+                </div>
+              ) : (
+                <div ref={companyDropdownRef} className="relative inline-block">
+                  <button
+                    type="button"
+                    onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
+                    className={cn(
+                      'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                      isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
+                    )}
+                  >
+                    <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                    <span className="font-semibold text-focus/90 truncate max-w-[140px]">
+                      {selectedCompany === 'All Companies' ? 'Company' : selectedCompany}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                  </button>
 
-              {isTxTypeDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                  <div className="space-y-1">
-                    {[
-                      { label: 'All Transactions', value: 'All' as const },
-                      { label: 'Deposit', value: 'Deposit' as const },
-                      { label: 'Withdrawal', value: 'Withdrawal' as const },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => {
-                          setTxTypeFilter(opt.value)
-                          setIsTxTypeDropdownOpen(false)
-                        }}
-                        className={cn(
-                          'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                          txTypeFilter === opt.value
-                            ? 'bg-primary/10 text-primary font-semibold'
-                            : 'text-focus/80 hover:bg-slate-50'
-                        )}
-                      >
-                        <span>{opt.label}</span>
-                        {txTypeFilter === opt.value && (
-                          <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                  {isCompanyDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-72 overflow-y-auto">
+                      <div className="space-y-1">
+                        {companyOptions.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCompany(c)
+                              setIsCompanyDropdownOpen(false)
+                            }}
+                            className={cn(
+                              'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                              selectedCompany === c
+                                ? 'bg-primary/10 text-primary font-semibold'
+                                : 'text-focus/80 hover:bg-slate-50'
+                            )}
+                          >
+                            <span className="truncate">{c}</span>
+                            {selectedCompany === c && (
+                              <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
-      </div>
 
       {/* 2. Bank Cards Hero Section: Empty State if 0 accounts, Full-Width for Single Account, Grid for Multi Accounts */}
       {roleScopedAccounts.length === 0 ? (
@@ -945,9 +971,6 @@ export const BankManagementPage: React.FC = () => {
           {activeCompanyAccounts.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-2.5 px-1 py-0.5">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-muted-fg uppercase tracking-wider mr-1">
-                  Banks ({activeCompanyAccounts.length}/3):
-                </span>
                 {activeCompanyAccounts.map((acc) => {
                   const isActive = acc.id === activeAccount?.id
                   return (
@@ -1327,70 +1350,41 @@ export const BankManagementPage: React.FC = () => {
       {/* 3. Bottom Section: Bank Banner Bar & Transactions Table */}
       <Card className="rounded-[24px] border border-stroke/20 bg-white shadow-xs overflow-hidden">
         {/* Grey Header Banner */}
-        <div className="bg-[#E2E8F0] px-5 sm:px-6 py-3.5 border-b border-slate-300 flex items-center justify-between">
-          <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
-            {activeAccount?.accountName || activeAccount?.companyName || 'No Account Selected'}
-          </h3>
-          {activeAccount?.bankName && (
-            <span className="text-xs font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full border border-slate-300">
-              {activeAccount.bankName}
-            </span>
-          )}
-        </div>
+        <div className="bg-[#E2E8F0] px-5 sm:px-6 py-3 border-b border-slate-300 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
+              {activeAccount?.accountName || activeAccount?.companyName || 'No Account Selected'}
+            </h3>
+            {activeAccount?.bankName && (
+              <span className="text-xs font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full border border-slate-300">
+                {activeAccount.bankName}
+              </span>
+            )}
+          </div>
 
-        {/* Table Search Bar Toolbar & Compact Deposit/Withdraw Action Buttons */}
-        <div className="p-3.5 sm:px-6 sm:py-3.5 border-b border-slate-200/80 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
-            <Input
-              type="text"
-              placeholder="Search by particulars, cheque no., or category..."
-              value={tableSearchQuery}
-              onChange={(e) => {
-                setTableSearchQuery(e.target.value)
-                setCurrentPage(1)
-              }}
-              className="w-full h-9 sm:h-10 pl-10 pr-8 rounded-full border-slate-200 bg-slate-50/70 hover:bg-white text-xs sm:text-sm focus-visible:ring-2 focus-visible:ring-[#960C01] shadow-2xs"
-            />
-            {tableSearchQuery && (
-              <button
+          {/* Action buttons (Deposit & Withdraw) aligned right on the banner */}
+          {canManageBank && (
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
                 type="button"
-                onClick={() => {
-                  setTableSearchQuery('')
-                  setCurrentPage(1)
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
+                disabled={!activeAccount}
+                onClick={() => setIsDepositModalOpen(true)}
+                className="h-8 sm:h-8.5 px-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Action buttons (Deposit & Withdraw) replacing "showing records" and "balance" */}
-          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-            {canManageBank && (
-              <>
-                <Button
-                  type="button"
-                  disabled={!activeAccount}
-                  onClick={() => setIsDepositModalOpen(true)}
-                  className="h-8 sm:h-8.5 px-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                >
-                  <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
-                  <span>Deposit</span>
-                </Button>
-                <Button
-                  type="button"
-                  disabled={!activeAccount}
-                  onClick={() => setIsWithdrawModalOpen(true)}
-                  className="h-8 sm:h-8.5 px-3.5 rounded-full bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] disabled:opacity-50 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                >
-                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
-                  <span>Withdraw</span>
-                </Button>
-              </>
-            )}
-          </div>
+                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
+                <span>Deposit</span>
+              </Button>
+              <Button
+                type="button"
+                disabled={!activeAccount}
+                onClick={() => setIsWithdrawModalOpen(true)}
+                className="h-8 sm:h-8.5 px-3.5 rounded-full bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] disabled:opacity-50 text-white font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+              >
+                <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+                <span>Withdraw</span>
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Unified Table matching screenshot columns: DATE, CHEQUE NO., PARTICULARS, WITHDRAWAL, DEPOSIT, CATEGORY, CURRENT BALANCE */}
@@ -1523,7 +1517,7 @@ export const BankManagementPage: React.FC = () => {
 
       {/* Modal A: Add New Bank Account */}
       <Dialog open={isAddBankModalOpen} onOpenChange={setIsAddBankModalOpen}>
-        <DialogContent className="sm:max-w-lg bg-white rounded-[24px] p-6 shadow-2xl">
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader className="space-y-1.5 pb-2">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-[#0B0F2B] text-white flex items-center justify-center">
@@ -1749,7 +1743,7 @@ export const BankManagementPage: React.FC = () => {
 
       {/* Modal B: Deposit Funds */}
       <Dialog open={isDepositModalOpen} onOpenChange={setIsDepositModalOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-[24px] p-6 shadow-2xl">
+        <DialogContent className="sm:max-w-[620px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader className="space-y-1.5 pb-2">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -1864,7 +1858,7 @@ export const BankManagementPage: React.FC = () => {
 
       {/* Modal C: Withdraw Funds */}
       <Dialog open={isWithdrawModalOpen} onOpenChange={setIsWithdrawModalOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-[24px] p-6 shadow-2xl">
+        <DialogContent className="sm:max-w-[620px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader className="space-y-1.5 pb-2">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
@@ -1981,7 +1975,7 @@ export const BankManagementPage: React.FC = () => {
 
       {/* Modal D: Activity Log */}
       <Dialog open={isActivityLogOpen} onOpenChange={setIsActivityLogOpen}>
-        <DialogContent className="sm:max-w-2xl bg-white rounded-[24px] p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[800px] bg-white rounded-[24px] p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="space-y-1 pb-2 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-[#0B0F2B] text-white flex items-center justify-center">
@@ -2066,7 +2060,7 @@ export const BankManagementPage: React.FC = () => {
 
       {/* Modal E: Edit Bank Account Details */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-[24px] p-6 shadow-2xl">
+        <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader className="space-y-1.5 pb-2">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-slate-100 text-focus flex items-center justify-center">
@@ -2172,7 +2166,7 @@ export const BankManagementPage: React.FC = () => {
 
       {/* Modal F: Full Pop-up ATM Card Details (Triggered on Double Click / Double Tap) */}
       <Dialog open={isCardDetailsModalOpen} onOpenChange={setIsCardDetailsModalOpen}>
-        <DialogContent className="sm:max-w-xl bg-white rounded-[28px] p-6 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto [&>button.absolute]:hidden [&>button:has(svg.lucide-x)]:hidden [&>button[aria-label=Close]]:hidden">
+        <DialogContent className="sm:max-w-[720px] bg-white rounded-[28px] p-6 shadow-2xl overflow-hidden max-h-[85vh] overflow-y-auto [&>button.absolute]:hidden [&>button:has(svg.lucide-x)]:hidden [&>button[aria-label=Close]]:hidden">
           <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-[#0B0F2B] text-white flex items-center justify-center">

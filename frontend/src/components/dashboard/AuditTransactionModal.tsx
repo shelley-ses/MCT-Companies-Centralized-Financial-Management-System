@@ -656,8 +656,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     >
       <DialogContent
         className={cn(
-          'rounded-[24px] p-5 sm:p-6 bg-white border border-stroke/30 shadow-2xl transition-all duration-200 max-h-[92vh] overflow-y-auto',
-          isEditing ? 'sm:max-w-[540px]' : (hasMultipleParticulars ? 'sm:max-w-[640px]' : 'sm:max-w-[480px]')
+          'rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl transition-all duration-200 max-h-[85vh] overflow-y-auto',
+          isEditing ? 'sm:max-w-[640px]' : (hasMultipleParticulars ? 'sm:max-w-[740px]' : 'sm:max-w-[580px]')
         )}
       >
         {/* Header */}

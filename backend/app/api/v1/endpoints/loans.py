@@ -280,7 +280,7 @@ def export_company_loans(
     import io
 
 
-    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    is_admin = current_user.get("is_admin") or (current_user.get("role") or "").lower() in ("admin", "finance", "audit", "auditor")
     user_company_ids = current_user.get("company_ids") or []
     if not is_admin and not user_company_ids and current_user.get("company_id"):
         user_company_ids = [current_user["company_id"]]
@@ -359,7 +359,7 @@ def get_loans(
     if cached is not None:
         return cached
 
-    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
+    is_admin = current_user.get("is_admin") or (current_user.get("role") or "").lower() in ("admin", "finance", "audit", "auditor")
     user_company_ids = current_user.get("company_ids") or []
     if not is_admin and not user_company_ids and current_user.get("company_id"):
         user_company_ids = [current_user["company_id"]]

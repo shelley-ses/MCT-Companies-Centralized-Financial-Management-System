@@ -58,7 +58,6 @@ import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/util
 import { getParticularsSummary } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { useCompany } from '@/context/CompanyContext'
 
 const DEFAULT_COMPANIES = [
@@ -487,39 +486,32 @@ export const SalesPage: React.FC = () => {
   return (
     <div className="space-y-6 pb-10 max-w-[1600px] mx-auto animate-in fade-in duration-300">
       {/* 1. Header & Controls */}
-      <div className="space-y-3">
-        {/* Top Row: Action Buttons (Date/Time, Export & Add Sales) sitting on the right */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
-            {/* Export Dropdown Button (Red in Admin sales page per user request; Outline for Auditor where Add Sales is red) */}
+      <div className="space-y-4">
+        {/* Top Header Row: Page Title on Left, Action Buttons on Right */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+              Sales
+            </h1>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Here's the summary of sales in {displayedCompanyTitle}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start sm:self-auto">
+            {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant={!isAuditor ? 'default' : 'outline'}
+                variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
-                  !isAuditor
-                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
-                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-                )}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    !isAuditor ? 'text-white' : 'text-focus/70'
-                  )}
-                />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 ml-0.5',
-                    !isAuditor ? 'text-white/90' : 'text-muted-fg'
-                  )}
-                />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -558,19 +550,21 @@ export const SalesPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right (level with Title & Subtitle) */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-              Sales
-            </h1>
-            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Here's the summary of sales in {displayedCompanyTitle}
-            </p>
+        {/* Second Row: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 text-muted-fg absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by Ref No. or Cheque No. (or customer)…"
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
           </div>
 
-          {/* Filter Toolbar (Aligned with Title/Subtitle, sitting directly under Export & Add Sales) */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             {/* Custom Period Dropdown: Daily, Quarterly, Monthly, Annually */}
             <div ref={periodDropdownRef} className="relative inline-block">
               <button
@@ -794,6 +788,36 @@ export const SalesPage: React.FC = () => {
                 )}
               </div>
             )}
+
+            {/* Tab Switcher: Deposit / Sales Record (Right Side) */}
+            <div className="flex items-center bg-slate-100 rounded-full border border-stroke/30 p-1 gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setTableTab('Deposit')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  tableTab === 'Deposit'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
+                Deposit
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableTab('Sales Record')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  tableTab === 'Sales Record'
+                    ? 'bg-[#960C01] text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                Sales Record
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -887,59 +911,7 @@ export const SalesPage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Table Search Bar Toolbar */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Ref No. or Cheque No. (or customer)…"
-              className="w-full h-10 pl-9 pr-8 rounded-full border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-xs box-border focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Tab Switcher: Deposit / Sales Record */}
-          <div className="flex items-center bg-white border border-stroke/50 rounded-xl p-1 gap-0.5 shrink-0 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setTableTab('Deposit')}
-              className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
-                tableTab === 'Deposit'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-focus/60 hover:bg-slate-100 hover:text-focus'
-              )}
-            >
-              <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
-              Deposit
-            </button>
-            <button
-              type="button"
-              onClick={() => setTableTab('Sales Record')}
-              className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
-                tableTab === 'Sales Record'
-                  ? 'bg-[#960C01] text-white shadow-sm'
-                  : 'text-focus/60 hover:bg-slate-100 hover:text-focus'
-              )}
-            >
-              <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-              Sales Record
-            </button>
-          </div>
-        </div>
+        {/* Table matching the Sales table from mockup with equal spacing across all columns */}
 
 
         {/* Table matching the Sales table from mockup with equal spacing across all columns */}
@@ -1241,7 +1213,7 @@ export const SalesPage: React.FC = () => {
       {/* Delete Confirmation Dialog (Hidden for Admin who has no delete ability) */}
       {!isAdmin && (
         <Dialog open={!!deleteConfirmSale} onOpenChange={(open) => !open && setDeleteConfirmSale(null)}>
-          <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+          <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
             <DialogHeader>
               <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center mb-2">
                 <Trash2 className="w-5 h-5" />

@@ -2,7 +2,12 @@ import * as React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useSession } from '@/hooks/useSession'
 import { Skeleton } from '@/components/ui/skeleton'
-import { isLendingEnabledCompany, isTenantEnabledCompany } from '@/config/companyFeatures'
+import {
+  isLendingEnabledCompany,
+  isTenantEnabledCompany,
+  isFilCapCompany,
+  isJKPropertyCompany,
+} from '@/config/companyFeatures'
 
 export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -41,7 +46,7 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
 export const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { status } = useSession()
+  const { user, status } = useSession()
 
   if (status === 'loading') {
     return (
@@ -52,6 +57,9 @@ export const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
   }
 
   if (status === 'authenticated') {
+    if (user?.role?.toLowerCase() === 'finance') {
+      return <Navigate to="/centralized-auth" replace />
+    }
     return <Navigate to="/dashboard" replace />
   }
 
@@ -73,6 +81,31 @@ export const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
 
   // Only Admin has access to Company / User Management and Audit Activity Log
   if (user?.role !== 'Admin') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
+
+export const FinanceOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const { user, status } = useSession()
+
+  if (status === 'loading') {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-background">
+        <Skeleton className="h-96 w-96 rounded-lg" />
+      </div>
+    )
+  }
+
+  if (status !== 'authenticated') {
+    return <Navigate to="/login" replace />
+  }
+
+  const isFinance = (user?.role || '').toLowerCase() === 'finance'
+  if (!isFinance) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -122,4 +155,30 @@ export const TenantRouteGuard: React.FC<{ children: React.ReactNode }> = ({ chil
 
   return <>{children}</>
 }
+
+export const SalesRouteGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useSession()
+  const userRole = (user?.role || '').toLowerCase()
+  const isAdmin = userRole === 'admin'
+  const isFinance = userRole === 'finance'
+  const isAudit = userRole === 'audit' || userRole.includes('auditor')
+  const isCompanyScoped = Boolean(
+    user?.assignedCompany &&
+      user.assignedCompany !== 'All Companies' &&
+      !isAdmin &&
+      !isFinance &&
+      !isAudit
+  )
+
+  // Company-scoped users assigned to Filcap or JK are blocked from Sales
+  if (
+    isCompanyScoped &&
+    (isFilCapCompany(user?.assignedCompany) || isJKPropertyCompany(user?.assignedCompany))
+  ) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
+
 

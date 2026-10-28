@@ -228,7 +228,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[680px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="text-left sm:text-left space-y-1">
             <DialogTitle className="text-xl sm:text-2xl font-bold text-focus">
               Create User

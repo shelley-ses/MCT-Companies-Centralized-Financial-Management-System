@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useSession } from '@/hooks/useSession'
 import { useCountdown } from '@/hooks/useCountdown'
+import { authService } from '@/services/authService'
 
 interface TwoFactorDialogProps {
   open: boolean
@@ -85,36 +86,52 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
 
   const handleContinue = async () => {
     await complete2FA()
+    const sessionUser = await authService.getSession()
+    const isFinance = sessionUser?.role?.toLowerCase() === 'finance'
+    const hasExplicitDeepRoute =
+      fromPath &&
+      fromPath.startsWith('/') &&
+      !fromPath.startsWith('//') &&
+      fromPath !== '/login' &&
+      fromPath !== '/verify-2fa' &&
+      fromPath !== '/dashboard'
+
+    const destination = hasExplicitDeepRoute
+      ? fromPath
+      : isFinance
+      ? '/centralized-auth'
+      : safeRedirectPath
+
     resetState()
-    navigate(safeRedirectPath, { replace: true })
+    navigate(destination, { replace: true })
   }
 
   const isVerifyDisabled = code.length !== 6 || isLoading
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[460px]">
+      <DialogContent className="max-w-[400px] sm:max-w-[420px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl">
         {isSuccess ? (
-          <div className="space-y-6 text-center py-4">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-surface border border-stroke/50 text-focus shadow-sm">
-              <Check className="h-8 w-8 stroke-[2.5]" aria-hidden="true" />
+          <div className="space-y-6 text-center py-2">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-surface border border-stroke/40 text-focus shadow-xs">
+              <Check className="h-7 w-7 stroke-[2.5]" aria-hidden="true" />
             </div>
 
-            <DialogHeader className="text-center sm:text-center">
-              <DialogTitle className="text-2xl font-bold text-focus text-center">
+            <DialogHeader className="text-center sm:text-center space-y-2">
+              <DialogTitle className="text-xl sm:text-2xl font-bold text-focus text-center">
                 Authentication Successful
               </DialogTitle>
-              <DialogDescription className="text-center text-muted-fg">
+              <DialogDescription className="text-center text-muted-fg text-xs sm:text-sm leading-relaxed max-w-xs mx-auto">
                 Your identity has been verified. Welcome to the MCT Financial
                 Management System.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="pt-2 flex justify-center w-full">
+            <div className="pt-2 w-full">
               <Button
                 type="button"
                 onClick={handleContinue}
-                className="w-full max-w-sm h-12 text-base font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white"
+                className="w-full h-11 text-sm font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs transition-all cursor-pointer"
               >
                 Continue to System
               </Button>
@@ -122,15 +139,14 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
           </div>
         ) : (
           <div className="space-y-6">
-            <DialogHeader>
-              <div className="flex items-center gap-2 mb-1 text-primary">
-                <ShieldCheck className="h-5 w-5" />
-                <span className="text-xs font-semibold uppercase tracking-wider">
-                  Security Verification
-                </span>
+            <DialogHeader className="text-center sm:text-center flex flex-col items-center space-y-2">
+              <div className="h-12 w-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs mb-1">
+                <ShieldCheck className="h-6 w-6" />
               </div>
-              <DialogTitle>Two-Factor Authentication</DialogTitle>
-              <DialogDescription>
+              <DialogTitle className="text-2xl font-bold text-focus text-center">
+                Two-Factor Authentication
+              </DialogTitle>
+              <DialogDescription className="text-center text-muted-fg text-sm leading-relaxed max-w-sm mx-auto">
                 Enter the 6-digit code sent to your registered email to complete
                 signing in{challengeEmail ? ` (${challengeEmail})` : ''}.
               </DialogDescription>
@@ -141,7 +157,7 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
               <div
                 role="alert"
                 aria-live="assertive"
-                className="flex items-center gap-3 rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error"
+                className="flex items-center gap-3 rounded-xl border border-error/30 bg-error/10 p-3.5 text-xs sm:text-sm text-error font-medium"
               >
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <span>{error}</span>
@@ -176,27 +192,28 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
                     <InputOTPSlot index={5} isError={!!error} />
                   </InputOTPGroup>
                 </InputOTP>
-                <div className="rounded-md bg-muted/60 px-3 py-1.5 text-xs text-muted-fg text-center border border-border/50">
+                <div className="rounded-xl bg-surface px-3 py-1.5 text-xs text-muted-fg text-center border border-stroke/30">
                   <span>Seeded Verification Code: </span>
-                  <span className="font-mono font-semibold text-foreground">123456</span>
+                  <span className="font-mono font-bold text-focus">123456</span>
                 </div>
               </div>
-              <div className="text-center text-sm text-muted-fg">
+
+              <div className="text-center text-xs sm:text-sm text-muted-fg font-medium">
                 {resendCountdown.isExpired
                   ? 'You can request a new code.'
                   : `Resend available in ${resendCountdown.formattedTime}`}
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col items-center justify-center gap-3 w-full max-w-sm mx-auto">
+              <div className="space-y-2.5 w-full pt-1">
                 <Button
                   type="submit"
                   disabled={isVerifyDisabled}
-                  className="w-full h-12 text-base font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white"
+                  className="w-full h-11 text-sm font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white shadow-xs transition-all cursor-pointer"
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Verifying…
                     </>
                   ) : (
@@ -218,7 +235,7 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
                     }
                   }}
                   disabled={!resendCountdown.isExpired || isLoading}
-                  className="w-full h-12 text-base font-medium"
+                  className="w-full h-11 text-xs sm:text-sm font-semibold rounded-xl border-stroke/40 hover:bg-surface text-focus transition-all cursor-pointer disabled:opacity-50"
                 >
                   Resend Code
                 </Button>

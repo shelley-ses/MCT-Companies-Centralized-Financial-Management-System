@@ -63,7 +63,6 @@ import { websocketService } from '@/services/websocketService'
 import { useLocation } from 'react-router-dom'
 import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { useCompany } from '@/context/CompanyContext'
 
 
@@ -626,39 +625,34 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   return (
     <div className="space-y-6 sm:space-y-8 max-w-[1600px] mx-auto pb-12">
       {/* 1. Header & Controls */}
-      <div className="space-y-3">
-        {/* Top Row: Action Buttons (Date/Time, Export & Add Loan) */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 flex-wrap">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
-            {/* Export Dropdown Button (White style) */}
+      <div className="space-y-4">
+        {/* Top Header Row: Page Title on Left, Action Buttons on Right */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+              {loanType} Loans
+            </h1>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              {loanType === 'Borrower'
+                ? `Loans and facilities borrowed by ${displayedCompanyTitle} from partner companies.`
+                : `Loans and financing extended by ${displayedCompanyTitle} to partner companies.`}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start shrink-0">
+            {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant={!isAuditor ? 'default' : 'outline'}
+                variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
-                  !isAuditor
-                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
-                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-                )}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    !isAuditor ? 'text-white' : 'text-focus/70'
-                  )}
-                />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 ml-0.5',
-                    !isAuditor ? 'text-white/90' : 'text-muted-fg'
-                  )}
-                />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -697,21 +691,21 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-              {loanType} Loans
-            </h1>
-            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              {loanType === 'Borrower'
-                ? `Loans and facilities borrowed by ${displayedCompanyTitle} from partner companies.`
-                : `Loans and financing extended by ${displayedCompanyTitle} to partner companies.`}
-            </p>
+        {/* Second Row: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+            <Input
+              type="search"
+              placeholder="Search ref no, company, purpose…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
           </div>
 
-          {/* Filter Toolbar - Compact single line without overflow clipping */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0 self-start lg:self-auto relative z-30 overflow-visible">
+          <div className="flex items-center justify-end gap-2.5 flex-wrap relative z-30 overflow-visible shrink-0">
             {/* Period Dropdown */}
             <div ref={periodDropdownRef} className="relative inline-block shrink-0">
               <button
@@ -722,22 +716,22 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                   setIsCompanyDropdownOpen(false)
                 }}
                 className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
                   isPeriodDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
-                <Calendar className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
                 <span className="font-medium text-focus/90">{selectedPeriod}</span>
                 <ChevronDown
                   className={cn(
-                    'h-3 w-3 text-muted-fg shrink-0 transition-transform duration-200',
+                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
                     isPeriodDropdownOpen && 'transform rotate-180'
                   )}
                 />
               </button>
 
               {isPeriodDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-40 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
                   {PERIOD_OPTIONS.map((period) => (
                     <button
                       key={period}
@@ -770,7 +764,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                   setIsCompanyDropdownOpen(false)
                 }}
                 className={cn(
-                  'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus whitespace-nowrap shrink-0',
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus whitespace-nowrap shrink-0',
                   isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
@@ -779,14 +773,14 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                 </span>
                 <ChevronDown
                   className={cn(
-                    'h-3 w-3 text-muted-fg shrink-0 transition-transform duration-200',
+                    'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
                     isStatusDropdownOpen && 'transform rotate-180'
                   )}
                 />
               </button>
 
               {isStatusDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-56 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
                   {statusOptions.map((st) => (
                     <button
                       key={st}
@@ -812,19 +806,18 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               )}
             </div>
 
-            {/* Unified Date Range Picker (presets hidden, compact size) */}
+            {/* Unified Date Range Picker (presets hidden) */}
             <DateRangePicker
               value={dateRange}
               onChange={(newRange: DateRange) => setDateRange(newRange)}
               hidePresets
-              compact
             />
 
             {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor */}
             {isCompanyScoped ? (
-              <div className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs font-medium shadow-xs shrink-0 whitespace-nowrap">
-                <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90 truncate max-w-[130px]">
+              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
+                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                <span className="font-semibold text-focus/90 truncate max-w-[140px]">
                   {assignedCompany}
                 </span>
               </div>
@@ -838,15 +831,15 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                     setIsStatusDropdownOpen(false)
                   }}
                   className={cn(
-                    'inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
+                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
                     isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
                   )}
                 >
-                  <Building2 className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                  <span className="font-medium text-focus/90 truncate max-w-[110px] sm:max-w-[130px]">
+                  <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                  <span className="font-medium text-focus/90 truncate max-w-[140px] sm:max-w-[180px]">
                     {selectedCompany}
                   </span>
-                  <ChevronDown className="h-3 w-3 text-muted-fg shrink-0" />
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
                   {selectedCompany !== 'All Companies' && (
                     <span
                       onClick={(e) => {
@@ -857,7 +850,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       className="p-0.5 rounded-full hover:bg-slate-200 text-muted-fg hover:text-focus transition-colors ml-0.5 inline-flex items-center justify-center cursor-pointer"
                       title="Reset to All Companies"
                     >
-                      <X className="h-2.5 w-2.5" />
+                      <X className="h-3 w-3" />
                     </span>
                   )}
                 </button>
@@ -990,30 +983,6 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Table Search Bar Toolbar */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
-            <Input
-              type="text"
-              placeholder="Search ref no, company, purpose…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
         {/* Loan Table: table-fixed with explicit column percentages to eliminate horizontal scrolling */}
         <div className="w-full rounded-xl border border-slate-100 overflow-hidden">
           <Table className="w-full table-fixed">
@@ -1510,7 +1479,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         open={Boolean(deleteConfirmLoan)}
         onOpenChange={(open) => !open && setDeleteConfirmLoan(null)}
       >
-        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
+        <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="text-left pb-2 pr-6">
             <DialogTitle className="text-lg font-bold text-focus leading-tight">
               Delete Loan Request

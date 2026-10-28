@@ -1,12 +1,14 @@
 import * as React from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Settings, LogOut, ChevronDown, Loader2 } from 'lucide-react'
+import { Settings, LogOut, ChevronDown, Loader2, Building2 } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
 export const UserProfileDropdown: React.FC = () => {
   const { user, signOut } = useSession()
+  const userRole = (user?.role || '').toLowerCase()
+  const canAccessCentralized = userRole === 'finance'
   const navigate = useNavigate()
   const [isOpen, setIsOpen] = React.useState(false)
   const [isLoggingOut, setIsLoggingOut] = React.useState(false)
@@ -107,6 +109,17 @@ export const UserProfileDropdown: React.FC = () => {
 
           {/* Options */}
           <div className="p-1.5 space-y-0.5">
+            {canAccessCentralized && (
+              <Link
+                to="/centralized-auth"
+                onClick={() => setIsOpen(false)}
+                className="flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-[#960C01] bg-[#960C01]/5 hover:bg-[#960C01]/10 transition-colors cursor-pointer"
+              >
+                <Building2 className="h-4 w-4 text-[#960C01] shrink-0" />
+                <span>Choose Company</span>
+              </Link>
+            )}
+
             <Link
               to="/settings"
               onClick={() => setIsOpen(false)}

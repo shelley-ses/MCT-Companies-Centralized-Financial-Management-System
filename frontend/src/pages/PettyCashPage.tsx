@@ -51,7 +51,6 @@ import {
 import {
   TopUpPettyCashModal,
 } from '@/components/dashboard/TopUpPettyCashModal'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { useSession } from '@/hooks/useSession'
 import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
@@ -562,11 +561,26 @@ export const PettyCashPage: React.FC = () => {
       )}
 
       {/* Top Header Row */}
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 flex-wrap">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+                Petty Cash
+              </h1>
+              {pendingCount > 0 && isFinanceOrAdmin && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-700 border border-amber-500/20 animate-pulse">
+                  <Clock className="w-3.5 h-3.5" />
+                  {pendingCount} Pending Finance Review
+                </span>
+              )}
+            </div>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Petty cash requests, approvals, and disbursements connected live to the MCT database
+            </p>
+          </div>
 
+          <div className="flex flex-wrap items-center justify-end gap-2.5 sm:gap-3 self-start sm:self-auto sm:ml-auto shrink-0">
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
@@ -618,27 +632,24 @@ export const PettyCashPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-                Petty Cash
-              </h1>
-              {pendingCount > 0 && isFinanceOrAdmin && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-700 border border-amber-500/20 animate-pulse">
-                  <Clock className="w-3.5 h-3.5" />
-                  {pendingCount} Pending Finance Review
-                </span>
-              )}
-            </div>
-            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Petty cash requests, approvals, and disbursements connected live to the MCT database
-            </p>
+        {/* Second Row: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+            <Input
+              type="search"
+              placeholder="Search by particulars, company, category, remarks…"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setCurrentPage(1)
+              }}
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
           </div>
 
-          {/* Filter Toolbar */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             {/* Custom Period Dropdown */}
             <div ref={periodDropdownRef} className="relative inline-block">
               <button
@@ -837,33 +848,6 @@ export const PettyCashPage: React.FC = () => {
 
       {/* 3. Main Table Card */}
       <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6">
-        {/* Table Search Bar */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
-            <Input
-              type="text"
-              placeholder="Search by particulars, company, category, remarks…"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                setCurrentPage(1)
-              }}
-              className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
         {/* Clean Table Structure: Reference / Voucher No and Funding Source are Removed */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table className="w-full table-fixed min-w-[1000px]">
@@ -1165,7 +1149,7 @@ export const PettyCashPage: React.FC = () => {
 
       {/* MODAL 1: Transaction Detail & Action Dialog on Row Click */}
       <Dialog open={isSummaryModalOpen} onOpenChange={setIsSummaryModalOpen}>
-        <DialogContent className="sm:max-w-[560px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="pb-3 border-b border-stroke/20">
             <div className="flex items-center justify-between">
               <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
@@ -1377,7 +1361,7 @@ export const PettyCashPage: React.FC = () => {
 
       {/* MODAL 2: Confirmation Modal with Mandatory Remark */}
       <Dialog open={isReviewConfirmModalOpen} onOpenChange={setIsReviewConfirmModalOpen}>
-        <DialogContent className="sm:max-w-[480px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="pb-3 border-b border-stroke/20">
             <DialogTitle
               className={cn(
@@ -1512,7 +1496,7 @@ export const PettyCashPage: React.FC = () => {
 
       {/* Edit Top Up Request Modal */}
       <Dialog open={Boolean(editEntry)} onOpenChange={(open) => !open && setEditEntry(null)}>
-        <DialogContent className="sm:max-w-[480px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="pb-3 border-b border-stroke/20">
             <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
               <Pencil className="w-5 h-5 text-primary" />
@@ -1598,7 +1582,7 @@ export const PettyCashPage: React.FC = () => {
         open={Boolean(deleteConfirmEntry)}
         onOpenChange={(open) => !open && setDeleteConfirmEntry(null)}
       >
-        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+        <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
           <DialogHeader className="pb-2">
             <DialogTitle className="text-lg font-bold text-focus">
               Delete Petty Cash Request

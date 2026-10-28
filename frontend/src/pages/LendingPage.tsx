@@ -19,6 +19,7 @@ import {
   Coins,
   MoreVertical,
   Eye,
+  Building2,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -43,7 +44,6 @@ import {
   type DateRange,
 } from '@/components/ui/DateRangePicker'
 import { useSession } from '@/hooks/useSession'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
@@ -900,24 +900,32 @@ export const LendingPage: React.FC = () => {
   return (
     <div className="space-y-6 pb-12 max-w-[1600px] mx-auto animate-in fade-in duration-300">
       {/* 1. Header & Controls matching Sales Page */}
-      <div className="space-y-3">
-        {/* Top Row: Action Buttons (Live Date/Time, Export & New Lending Facility) sitting on the right */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
-            {/* Export Dropdown Button matching SalesPage */}
+      <div className="space-y-4">
+        {/* Top Header Row: Page Title on Left, Action Buttons on Right */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+              Lending
+            </h1>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Here's the summary of lending facilities in {displayedCompanyTitle}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start shrink-0">
+            {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all border border-stroke/50 bg-white text-focus hover:bg-surface box-border"
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 text-focus/70 shrink-0" />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-fg ml-0.5" />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -956,19 +964,21 @@ export const LendingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right (level with Title & Subtitle) */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-              Lending
-            </h1>
-            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Here's the summary of lending facilities in {displayedCompanyTitle}
-            </p>
+        {/* Second Row: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 text-muted-fg absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by Borrower's Name or Notes…"
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
           </div>
 
-          {/* Filter Toolbar matching SalesPage layout */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             {/* Custom Period Dropdown: Daily, Quarterly, Monthly, Annually */}
             <div ref={periodDropdownRef} className="relative inline-block">
               <button
@@ -1075,6 +1085,12 @@ export const LendingPage: React.FC = () => {
               onChange={(newRange) => setDateRange(newRange)}
               hidePresets
             />
+
+            {/* Company Scope Pill for FilCap Prime Holdings Corp. (matching Tenant page) */}
+            <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs">
+              <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+              <span className="font-semibold text-focus/90">FilCap Prime Holdings Corp.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1102,54 +1118,26 @@ export const LendingPage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Table Search Bar Toolbar */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative w-full">
-            <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Loan ID, Borrower's Name, or Notes…"
-              className="w-full h-10 pl-9 pr-8 rounded-full border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-xs box-border focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded-full cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-
         {/* Table with Requirement 3 columns and Action Buttons */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table className="w-full table-fixed min-w-[1100px]">
+          <Table className="w-full table-fixed min-w-[1000px]">
             <colgroup>
-              <col style={{ width: '11%' }} /> {/* Loan ID */}
-              <col style={{ width: '17%' }} /> {/* Borrower's Name */}
-              <col style={{ width: '11%' }} /> {/* Loan Amount */}
+              <col style={{ width: '20%' }} /> {/* Borrower's Name */}
+              <col style={{ width: '12%' }} /> {/* Loan Amount */}
               <col style={{ width: '10%' }} /> {/* Date Borrowed */}
               <col style={{ width: '10%' }} /> {/* Due Date */}
               <col style={{ width: '12%' }} /> {/* Total Amount Payable */}
-              <col style={{ width: '11%' }} /> {/* Amount Paid */}
+              <col style={{ width: '10%' }} /> {/* Amount Paid */}
               <col style={{ width: '11%' }} /> {/* Remaining Balance */}
-              <col style={{ width: '9%' }} />  {/* Status */}
-              <col style={{ width: '8%' }} />  {/* Actions */}
+              <col style={{ width: '8%' }} />  {/* Status */}
+              <col style={{ width: '7%' }} />  {/* Actions */}
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-stroke/30 hover:bg-transparent">
-                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  LOAN ID
-                </TableHead>
-                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
+                <TableHead className="w-[20%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   BORROWER'S NAME
                 </TableHead>
-                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   LOAN AMOUNT
                 </TableHead>
                 <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
@@ -1161,16 +1149,16 @@ export const LendingPage: React.FC = () => {
                 <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   TOTAL AMOUNT PAYABLE
                 </TableHead>
-                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
+                <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   AMOUNT PAID
                 </TableHead>
                 <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   REMAINING BALANCE
                 </TableHead>
-                <TableHead className="w-[9%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
+                <TableHead className="w-[8%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
                   STATUS
                 </TableHead>
-                <TableHead className="w-[8%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
+                <TableHead className="w-[7%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -1178,7 +1166,7 @@ export const LendingPage: React.FC = () => {
             <TableBody>
               {paginatedFacilities.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-44 text-center py-8">
+                  <TableCell colSpan={9} className="h-44 text-center py-8">
                     <div className="flex flex-col items-center justify-center text-muted-fg">
                       <CreditCard className="h-8 w-8 text-muted-fg/40 mb-2" />
                       <p className="text-sm font-semibold">No lending facilities found</p>
@@ -1209,13 +1197,8 @@ export const LendingPage: React.FC = () => {
                       )}
                       title="Click row to view complete lending and borrower details"
                     >
-                      {/* 1. Loan ID */}
-                      <TableCell className="w-[11%] px-3.5 py-3.5 font-mono text-xs font-bold text-focus text-left whitespace-nowrap">
-                        {facility.loanId}
-                      </TableCell>
-
-                      {/* 2. Borrower's Name */}
-                      <TableCell className="w-[17%] px-3.5 py-3.5 text-left">
+                      {/* Borrower's Name */}
+                      <TableCell className="w-[20%] px-3.5 py-3.5 text-left">
                         <div className="font-semibold text-xs text-focus truncate max-w-[220px]" title={facility.borrowerName}>
                           {facility.borrowerName}
                         </div>
@@ -1244,18 +1227,18 @@ export const LendingPage: React.FC = () => {
                         {formatPHP(facility.totalAmountPayable)}
                       </TableCell>
 
-                      {/* 7. Amount Paid */}
-                      <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-semibold text-xs text-emerald-600 tabular-nums whitespace-nowrap">
+                      {/* 6. Amount Paid */}
+                      <TableCell className="w-[10%] px-3.5 py-3.5 text-left font-semibold text-xs text-emerald-600 tabular-nums whitespace-nowrap">
                         {formatPHP(facility.amountPaid)}
                       </TableCell>
 
-                      {/* 8. Remaining Balance */}
+                      {/* 7. Remaining Balance */}
                       <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-bold text-xs text-amber-600 tabular-nums whitespace-nowrap">
                         {formatPHP(facility.remainingBalance)}
                       </TableCell>
 
-                      {/* 9. Status */}
-                      <TableCell className="w-[9%] px-3.5 py-3.5 text-center whitespace-nowrap">
+                      {/* 8. Status */}
+                      <TableCell className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap">
                         <span
                           className={cn(
                             'inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold border uppercase tracking-wider',
@@ -1270,7 +1253,7 @@ export const LendingPage: React.FC = () => {
                               className={cn(
                                 'inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold border',
                                 facility.auditStatus === 'Verified'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                   : 'bg-rose-50 text-rose-700 border-rose-200'
                               )}
                             >
@@ -1285,8 +1268,8 @@ export const LendingPage: React.FC = () => {
                         )}
                       </TableCell>
 
-                      {/* 10. Actions: 3 dots dropdown (Edit, Delete, Update) */}
-                      <TableCell className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {/* 9. Actions: 3 dots dropdown (Edit, Delete, Update) */}
+                      <TableCell className="w-[7%] px-3.5 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1532,7 +1515,7 @@ export const LendingPage: React.FC = () => {
 
       {/* 4. Modal: New Lending Facility (Requirement 2) */}
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent className="sm:max-w-lg bg-white rounded-2xl p-6">
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-focus">
               New Lending Facility
@@ -1690,7 +1673,7 @@ export const LendingPage: React.FC = () => {
 
       {/* 5. Modal: Everyday Daily Payment ("Update" Action Button per Requirement 2) */}
       <Dialog open={isDailyPaymentModalOpen} onOpenChange={setIsDailyPaymentModalOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6">
+        <DialogContent className="sm:max-w-[620px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
               <Coins className="h-5 w-5 text-emerald-600" />
@@ -2039,7 +2022,7 @@ export const LendingPage: React.FC = () => {
 
       {/* 6. Modal: Edit Facility Details */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-lg bg-white rounded-2xl p-6">
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-focus">
               Edit Lending Facility
@@ -2191,7 +2174,7 @@ export const LendingPage: React.FC = () => {
 
       {/* 7. Modal: Delete Facility Confirmation */}
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl p-6">
+        <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-rose-600 flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-rose-600" />
@@ -2226,7 +2209,7 @@ export const LendingPage: React.FC = () => {
 
       {/* 8. Modal: Complete Facility Information on Row Click (Requirement 3) */}
       <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[800px] bg-white rounded-[24px] p-6 sm:p-7 max-h-[85vh] overflow-y-auto shadow-2xl">
           {activeFacility && (
             <div>
               <DialogHeader>

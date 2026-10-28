@@ -59,7 +59,6 @@ import { getParticularsSummary } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { loanService } from '@/services/loanService'
-import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import { useCompany } from '@/context/CompanyContext'
 
 const DEFAULT_COMPANY_LIST = ['All Companies']
@@ -491,39 +490,32 @@ export const ExpensePage: React.FC = () => {
   return (
     <div className="space-y-6 sm:space-y-8 max-w-[1600px] mx-auto pb-12">
       {/* 1. Header & Controls */}
-      <div className="space-y-3">
-        {/* Top Row: Action Buttons (Date/Time, Export & Add Expense) sitting on the right */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 ml-auto">
-            <LiveDateTimeBadge />
+      <div className="space-y-4">
+        {/* Top Header Row: Page Title on Left, Action Buttons on Right */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
+              Expense
+            </h1>
+            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
+              Comprehensive breakdown of operational expenses.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start sm:self-auto">
             {/* Export Dropdown Button */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant={!isAuditor ? 'default' : 'outline'}
+                variant="outline"
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className={cn(
-                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
-                  !isAuditor
-                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white border-transparent'
-                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
-                )}
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    !isAuditor ? 'text-white' : 'text-focus/70'
-                  )}
-                />
+                <Download className="h-4 w-4 shrink-0 text-focus/70" />
                 <span>Export</span>
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 ml-0.5',
-                    !isAuditor ? 'text-white/90' : 'text-muted-fg'
-                  )}
-                />
+                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
               </Button>
 
               {isExportDropdownOpen && (
@@ -562,19 +554,21 @@ export const ExpensePage: React.FC = () => {
           </div>
         </div>
 
-        {/* Second Row: Page Title on Left, Filter Toolbar on Right (level with Title & Subtitle) */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-              Expense
-            </h1>
-            <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Comprehensive breakdown of operational expenses.
-            </p>
+        {/* Second Row: Search Bar & Filter Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
+          {/* Extended Width Search Bar */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+            <Input
+              type="search"
+              placeholder="Search by ref no, cheque, particulars, category…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"
+            />
           </div>
 
-          {/* Filter Toolbar (Aligned with Title/Subtitle, sitting directly under Export & Add Expense) */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             {/* Period Dropdown */}
             <div ref={periodDropdownRef} className="relative inline-block">
               <button
@@ -784,6 +778,36 @@ export const ExpensePage: React.FC = () => {
               )}
             </div>
             )}
+
+            {/* Tab Switcher: Disbursement / Expense Record (Right Side) */}
+            <div className="flex items-center bg-slate-100 rounded-full border border-stroke/30 p-1 gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setTableTab('Deposit')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  tableTab === 'Deposit'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
+                Deposit
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableTab('Expense Record')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
+                  tableTab === 'Expense Record'
+                    ? 'bg-[#960C01] text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <TrendingDown className="h-3.5 w-3.5 shrink-0" />
+                Expense Record
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -877,60 +901,6 @@ export const ExpensePage: React.FC = () => {
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Table Search Bar Toolbar */}
-        <div className="p-3 sm:p-4 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex items-center justify-between gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
-            <Input
-              type="text"
-              placeholder="Search by ref no, cheque, particulars, category…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-9 h-10 w-full text-xs sm:text-sm rounded-full bg-white border border-stroke/60 shadow-xs focus-visible:ring-2 focus-visible:ring-focus"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          {/* Tab Switcher: Disbursement / Expense Record */}
-          <div className="flex items-center bg-white border border-stroke/50 rounded-xl p-1 gap-0.5 shrink-0 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setTableTab('Deposit')}
-              className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
-                tableTab === 'Deposit'
-                  ? 'bg-rose-600 text-white shadow-sm'
-                  : 'text-focus/60 hover:bg-slate-100 hover:text-focus'
-              )}
-            >
-              <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
-              Deposit
-            </button>
-            <button
-              type="button"
-              onClick={() => setTableTab('Expense Record')}
-              className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
-                tableTab === 'Expense Record'
-                  ? 'bg-[#960C01] text-white shadow-sm'
-                  : 'text-focus/60 hover:bg-slate-100 hover:text-focus'
-              )}
-            >
-              <TrendingDown className="h-3.5 w-3.5 shrink-0" />
-              Expense Record
-            </button>
-          </div>
-        </div>
-
         {/* Expense Table: equal spacing across all 8 columns including Company */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table className="w-full table-fixed min-w-[900px]">
@@ -1230,7 +1200,7 @@ export const ExpensePage: React.FC = () => {
           open={Boolean(deleteConfirmExpense)}
           onOpenChange={(open) => !open && setDeleteConfirmExpense(null)}
         >
-          <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+          <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
             <DialogHeader>
               <DialogTitle className="text-base font-bold text-focus flex items-center gap-2 text-red-600">
                 <Trash2 className="w-5 h-5 text-red-600" />

@@ -96,8 +96,9 @@ def get_expenses(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    is_admin = current_user.get("is_admin") or current_user.get("role") == "admin"
-    is_privileged = is_admin or current_user.get("role") in ("admin", "audit", "finance")
+    user_role = (current_user.get("role") or "").lower()
+    is_admin = current_user.get("is_admin") or user_role == "admin"
+    is_privileged = is_admin or user_role in ("admin", "audit", "finance", "auditor")
     user_company_ids = current_user.get("company_ids") or []
     if not is_privileged and not user_company_ids and current_user.get("company_id"):
         user_company_ids = [current_user["company_id"]]
