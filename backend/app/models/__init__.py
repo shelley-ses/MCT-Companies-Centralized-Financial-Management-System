@@ -5,6 +5,7 @@ from app.models.finance import Category, CashInflow, Sale, Expense, Budget
 from app.models.loan import Loan, LoanRepayment
 from app.models.staff_credit import StaffCredit, StaffCreditRepayment
 from app.models.bills import Bill, BillPayment
+from app.models.lending import LendingFacility, LendingTransaction
 
 __all__ = [
     "Company",
@@ -21,4 +22,6 @@ __all__ = [
     "StaffCreditRepayment",
     "Bill",
     "BillPayment",
+    "LendingFacility",
+    "LendingTransaction",
 ]
