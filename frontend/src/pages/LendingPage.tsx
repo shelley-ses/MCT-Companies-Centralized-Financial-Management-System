@@ -163,12 +163,23 @@ export const LendingPage: React.FC = () => {
   const [highlightedFacilityId, setHighlightedFacilityId] = React.useState<string | null>(null)
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 
+  // Helper to project due date from start date and term days
+  const calculateProjectedDueDate = React.useCallback((startDateStr: string, daysStr: string): string => {
+    if (!startDateStr) return ''
+    const d = new Date(startDateStr)
+    const days = parseInt(daysStr, 10)
+    if (isNaN(d.getTime()) || isNaN(days) || days <= 0) return ''
+    d.setDate(d.getDate() + days)
+    return formatToYYYYMMDD(d)
+  }, [])
+
   // Form state for New Lending Facility Modal
-  // Requirement 2 fields: Name, Due Date, Loan Amount, Interest Rate, Date Borrowed, Due Date, Payment Frequency
+  // Default 40 term days for Daily and 20.0% interest rate
   const [formData, setFormData] = React.useState<{
     borrowerName: string
     loanAmount: string
     interestRate: string
+    termDays: string
     dateBorrowed: string
     dueDate: string
     paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
@@ -176,9 +187,10 @@ export const LendingPage: React.FC = () => {
   }>({
     borrowerName: '',
     loanAmount: '',
-    interestRate: '5.0',
+    interestRate: '20.0',
+    termDays: '40',
     dateBorrowed: '2026-10-21',
-    dueDate: '2026-11-21',
+    dueDate: '2026-11-30',
     paymentFrequency: 'Daily',
     notes: '',
   })
@@ -188,6 +200,7 @@ export const LendingPage: React.FC = () => {
     borrowerName: string
     loanAmount: string
     interestRate: string
+    termDays: string
     dateBorrowed: string
     dueDate: string
     status: LendingFacility['status']
@@ -197,6 +210,7 @@ export const LendingPage: React.FC = () => {
     borrowerName: '',
     loanAmount: '',
     interestRate: '',
+    termDays: '40',
     dateBorrowed: '',
     dueDate: '',
     status: 'Active',
@@ -505,11 +519,14 @@ export const LendingPage: React.FC = () => {
       return
     }
 
+    const termDaysNum = parseInt(formData.termDays || (formData.paymentFrequency === 'Daily' ? '40' : '60'), 10)
+
     const newFacility = await lendingService.createFacility({
       borrowerName: formData.borrowerName.trim(),
       loanAmount: principalNum,
       interestRate: rateNum,
       paymentFrequency: formData.paymentFrequency,
+      termDays: termDaysNum,
       dateBorrowed: formData.dateBorrowed,
       dueDate: formData.dueDate,
       notes: formData.notes.trim() || 'Everyday micro-credit lending facility.',
@@ -520,12 +537,14 @@ export const LendingPage: React.FC = () => {
     setIsAddModalOpen(false)
 
     // Reset form
+    const currentToday = formatToYYYYMMDD(new Date())
     setFormData({
       borrowerName: '',
       loanAmount: '',
-      interestRate: '5.0',
-      dateBorrowed: '2026-10-21',
-      dueDate: '2026-11-21',
+      interestRate: '20.0',
+      termDays: '40',
+      dateBorrowed: currentToday,
+      dueDate: calculateProjectedDueDate(currentToday, '40'),
       paymentFrequency: 'Daily',
       notes: '',
     })
@@ -557,6 +576,7 @@ export const LendingPage: React.FC = () => {
       borrowerName: facility.borrowerName,
       loanAmount: String(facility.loanAmount),
       interestRate: String(facility.interestRate),
+      termDays: String(facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 60)),
       dateBorrowed: facility.dateBorrowed,
       dueDate: facility.dueDate,
       status: facility.status,
@@ -1121,6 +1141,9 @@ export const LendingPage: React.FC = () => {
                       {/* 4. Due Date */}
                       <TableCell className="w-[10%] px-3.5 py-3.5 text-left text-xs whitespace-nowrap">
                         <div className="font-mono text-muted-fg font-medium">{facility.dueDate}</div>
+                        <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                          {facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 60)} days term
+                        </div>
                         {facility.paymentFrequency && facility.paymentFrequency !== 'Daily' && facility.remainingBalance > 0 && (() => {
                           const cycle = getNextInstallmentInfo(facility)
                           if (!cycle) return null
@@ -1145,10 +1168,15 @@ export const LendingPage: React.FC = () => {
 
                       {/* 7. Remaining Balance */}
                       <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-bold text-xs text-amber-600 tabular-nums whitespace-nowrap">
-                        {formatPHP(facility.remainingBalance)}
+                        <div>{formatPHP(facility.remainingBalance)}</div>
+                        {facility.totalPenalties && facility.totalPenalties > 0 ? (
+                          <div className="text-[10px] text-rose-600 font-medium font-sans">
+                            +{formatPHP(facility.totalPenalties)} penalty
+                          </div>
+                        ) : null}
                       </TableCell>
 
-                      {/* 8. Status */}
+                      {/* 8. Status & Compliance */}
                       <TableCell className="w-[8%] px-3 py-3.5 text-center whitespace-nowrap">
                         <span
                           className={cn(
@@ -1158,6 +1186,36 @@ export const LendingPage: React.FC = () => {
                         >
                           {facility.status}
                         </span>
+
+                        {/* Compliance Status Badge */}
+                        {(() => {
+                          const compliance = facility.complianceStatus || 'Compliant'
+                          const complianceStyles = {
+                            Compliant: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                            Delayed: 'bg-amber-50 text-amber-700 border-amber-200',
+                            Delinquent: 'bg-rose-50 text-rose-700 border-rose-200',
+                          }[compliance]
+                          return (
+                            <div className="mt-1">
+                              <span
+                                className={cn(
+                                  'inline-block px-2 py-0.5 rounded text-[9.5px] font-bold border',
+                                  complianceStyles
+                                )}
+                                title={
+                                  compliance === 'Compliant'
+                                    ? 'Zero unpaid cycles up to date'
+                                    : compliance === 'Delayed'
+                                    ? 'One unpaid installment pending settlement'
+                                    : 'Two or more missed cycles past due'
+                                }
+                              >
+                                {compliance}
+                              </span>
+                            </div>
+                          )
+                        })()}
+
                         {facility.auditStatus && (
                           <div className="mt-1 flex items-center justify-center gap-1">
                             <span
@@ -1465,8 +1523,8 @@ export const LendingPage: React.FC = () => {
                   step="500"
                   value={formData.loanAmount}
                   onChange={(e) => setFormData({ ...formData, loanAmount: e.target.value })}
-                  placeholder="100000"
-                  className="h-10 text-xs sm:text-sm rounded-xl"
+                  placeholder="30000"
+                  className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
                 />
               </div>
 
@@ -1481,35 +1539,65 @@ export const LendingPage: React.FC = () => {
                   min="0"
                   value={formData.interestRate}
                   onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
-                  placeholder="5.0"
-                  className="h-10 text-xs sm:text-sm rounded-xl"
+                  placeholder="20.0"
+                  className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
                 />
               </div>
             </div>
 
-            {/* Field 4: Payment Schedule */}
-            <div>
-              <label className="text-xs font-semibold text-focus block mb-1">
-                Payment Schedule <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.paymentFrequency}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    paymentFrequency: e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually',
-                  })
-                }
-                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
-              >
-                <option value="Daily">Daily</option>
-                <option value="Monthly">Monthly</option>
-                <option value="Quarterly">Quarterly</option>
-                <option value="Annually">Annually</option>
-              </select>
+            {/* Field 4 & 5: Payment Schedule & Term Days */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-focus block mb-1">
+                  Payment Schedule <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.paymentFrequency}
+                  onChange={(e) => {
+                    const freq = e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+                    const newTerm = freq === 'Daily' ? '40' : (freq === 'Monthly' ? '60' : formData.termDays)
+                    const newDue = calculateProjectedDueDate(formData.dateBorrowed, newTerm)
+                    setFormData({
+                      ...formData,
+                      paymentFrequency: freq,
+                      termDays: newTerm,
+                      dueDate: newDue || formData.dueDate,
+                    })
+                  }}
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20 font-semibold"
+                >
+                  <option value="Daily">Daily</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Quarterly">Quarterly</option>
+                  <option value="Annually">Annually</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-focus block mb-1">
+                  Term (Days) <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  required
+                  type="number"
+                  min="1"
+                  value={formData.termDays}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    const newDue = calculateProjectedDueDate(formData.dateBorrowed, val)
+                    setFormData({
+                      ...formData,
+                      termDays: val,
+                      dueDate: newDue || formData.dueDate,
+                    })
+                  }}
+                  placeholder="40"
+                  className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
+                />
+              </div>
             </div>
 
-            {/* Field 5 & 6: Date Borrowed & Due Date */}
+            {/* Field 6 & 7: Date Borrowed & Due Date */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
@@ -1519,62 +1607,78 @@ export const LendingPage: React.FC = () => {
                   required
                   type="date"
                   value={formData.dateBorrowed}
-                  onChange={(e) => setFormData({ ...formData, dateBorrowed: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    const newDue = calculateProjectedDueDate(val, formData.termDays)
+                    setFormData({
+                      ...formData,
+                      dateBorrowed: val,
+                      dueDate: newDue || formData.dueDate,
+                    })
+                  }}
                   className="h-10 text-xs sm:text-sm rounded-xl"
                 />
               </div>
 
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Due Date <span className="text-red-500">*</span>
+                  Due Date (Auto projected) <span className="text-red-500">*</span>
                 </label>
                 <Input
                   required
                   type="date"
                   value={formData.dueDate}
                   onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  className="h-10 text-xs sm:text-sm rounded-xl"
+                  className="h-10 text-xs sm:text-sm rounded-xl font-mono"
                 />
               </div>
             </div>
 
             {/* Dynamic Calculation Summary Box */}
-            {formData.loanAmount && !isNaN(parseFloat(formData.loanAmount)) && (
-              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-fg">Total Interest ({formData.interestRate}%):</span>
-                  <span className="font-semibold text-focus">
-                    {formatPHP(parseFloat(formData.loanAmount) * (parseFloat(formData.interestRate || '0') / 100))}
-                  </span>
+            {formData.loanAmount && !isNaN(parseFloat(formData.loanAmount)) && (() => {
+              const p = parseFloat(formData.loanAmount) || 0
+              const r = parseFloat(formData.interestRate || '20.0') || 0
+              const interest = p * (r / 100)
+              const totalPayable = p + interest
+              const termDays = parseInt(formData.termDays || '40', 10) || 40
+              const cycleCount = formData.paymentFrequency === 'Daily' ? termDays : Math.max(1, Math.round(termDays / 30))
+              const installmentTarget = cycleCount > 0 ? totalPayable / cycleCount : totalPayable
+              const penaltyFee = installmentTarget * 0.05
+
+              return (
+                <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-fg">Total Interest ({formData.interestRate}%):</span>
+                    <span className="font-semibold text-focus">
+                      {formatPHP(interest)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-slate-200/60 pt-1">
+                    <span className="font-bold text-focus">Total Amount Payable:</span>
+                    <span className="font-bold text-emerald-600 text-sm">
+                      {formatPHP(totalPayable)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-muted-fg text-[11px] pt-0.5">
+                    <span>
+                      {formData.paymentFrequency} Installment Target ({termDays} days):
+                    </span>
+                    <span className="font-bold text-focus">
+                      {formatPHP(installmentTarget)}{' '}
+                      / {formData.paymentFrequency === 'Daily' ? 'day' : 'month'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] pt-0.5 text-rose-600 border-t border-slate-200/40">
+                    <span className="font-medium">
+                      5% Missed Installment Penalty:
+                    </span>
+                    <span className="font-bold">
+                      +{formatPHP(penaltyFee)} / missed {formData.paymentFrequency === 'Daily' ? 'day' : 'month'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between border-t border-slate-200/60 pt-1">
-                  <span className="font-bold text-focus">Total Amount Payable:</span>
-                  <span className="font-bold text-emerald-600">
-                    {formatPHP(
-                      parseFloat(formData.loanAmount) +
-                        parseFloat(formData.loanAmount) * (parseFloat(formData.interestRate || '0') / 100)
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between text-muted-fg text-[11px] pt-0.5">
-                  <span>
-                    Estimated {formData.paymentFrequency} Installment
-                    {formData.paymentFrequency === 'Daily' ? ' (30 days)' : ''}:
-                  </span>
-                  <span className="font-medium text-focus">
-                    {formatPHP(
-                      formData.paymentFrequency === 'Daily'
-                        ? (parseFloat(formData.loanAmount) +
-                            parseFloat(formData.loanAmount) * (parseFloat(formData.interestRate || '0') / 100)) /
-                          30
-                        : (parseFloat(formData.loanAmount) +
-                            parseFloat(formData.loanAmount) * (parseFloat(formData.interestRate || '0') / 100))
-                    )}{' '}
-                    / {formData.paymentFrequency === 'Daily' ? 'day' : formData.paymentFrequency === 'Monthly' ? 'month' : formData.paymentFrequency === 'Quarterly' ? 'quarter' : 'year'}
-                  </span>
-                </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Optional Facility Purpose / Notes */}
             <div>
@@ -2072,14 +2176,36 @@ export const LendingPage: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* Payment Schedule */}
+                    {/* Payment Schedule & Term Days */}
                     <div>
                       <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Payment Schedule
+                        Schedule & Term
                       </span>
                       <span className="text-sm font-semibold text-focus">
-                        {activeFacility.paymentFrequency || 'Daily'}
+                        {activeFacility.paymentFrequency || 'Daily'} ({activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)} Days)
                       </span>
+                    </div>
+
+                    {/* Compliance Status */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Compliance Tier
+                      </span>
+                      {(() => {
+                        const compliance = activeFacility.complianceStatus || 'Compliant'
+                        const complianceColors = {
+                          Compliant: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                          Delayed: 'bg-amber-50 text-amber-700 border-amber-200',
+                          Delinquent: 'bg-rose-50 text-rose-700 border-rose-200',
+                        }[compliance]
+                        return (
+                          <div className="mt-0.5">
+                            <span className={cn('inline-block px-2.5 py-0.5 rounded text-xs font-bold border', complianceColors)}>
+                              {compliance}
+                            </span>
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     {/* Loan Amount */}
@@ -2098,7 +2224,35 @@ export const LendingPage: React.FC = () => {
                         Interest Rate
                       </span>
                       <span className="text-sm font-bold text-focus">
-                        {activeFacility.interestRate}% ({formatPHP(activeFacility.totalAmountPayable - activeFacility.loanAmount)})
+                        {activeFacility.interestRate}% ({formatPHP(activeFacility.totalAmountPayable - (activeFacility.totalPenalties || 0) - activeFacility.loanAmount)})
+                      </span>
+                    </div>
+
+                    {/* Installment Target */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Installment Target
+                      </span>
+                      <span className="text-sm font-bold text-focus">
+                        {formatPHP(
+                          activeFacility.installmentTarget ||
+                            Math.round(
+                              ((activeFacility.totalAmountPayable - (activeFacility.totalPenalties || 0)) /
+                                (activeFacility.termDays || 40)) *
+                                100
+                            ) / 100
+                        )}{' '}
+                        / {activeFacility.paymentFrequency === 'Daily' ? 'day' : 'month'}
+                      </span>
+                    </div>
+
+                    {/* Accrued Penalties */}
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Accrued Penalties (5%)
+                      </span>
+                      <span className={cn('text-sm font-bold', activeFacility.totalPenalties && activeFacility.totalPenalties > 0 ? 'text-rose-600' : 'text-focus')}>
+                        {formatPHP(activeFacility.totalPenalties || 0)}
                       </span>
                     </div>
 
@@ -2112,7 +2266,7 @@ export const LendingPage: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* Due Date & Active Installment Due Date */}
+                    {/* Maturity Due Date */}
                     <div>
                       <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
                         Maturity Due Date
@@ -2122,39 +2276,13 @@ export const LendingPage: React.FC = () => {
                       </span>
                     </div>
 
-                    {activeFacility.paymentFrequency && activeFacility.paymentFrequency !== 'Daily' && (() => {
-                      const cycle = getNextInstallmentInfo(activeFacility)
-                      if (!cycle) return null
-                      return (
-                        <div>
-                          <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                            Active {cycle.periodLabel} Due Date
-                          </span>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="font-mono text-xs font-bold text-focus">
-                              {cycle.dueDate}
-                            </span>
-                            {cycle.isOverdue ? (
-                              <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                Overdue
-                              </span>
-                            ) : (
-                              <span className="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Current
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    {/* Total Amount Payable */}
+                    {/* Advance Credit */}
                     <div>
                       <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-                        Total Amount Payable
+                        Advance Payment Credit
                       </span>
-                      <span className="text-base font-extrabold text-focus">
-                        {formatPHP(activeFacility.totalAmountPayable)}
+                      <span className="text-sm font-bold text-sky-600">
+                        {formatPHP(activeFacility.advanceAmount || 0)}
                       </span>
                     </div>
 
@@ -2168,8 +2296,18 @@ export const LendingPage: React.FC = () => {
                       </span>
                     </div>
 
+                    {/* Total Amount Payable */}
+                    <div className="pt-2 border-t border-slate-200/60">
+                      <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
+                        Total Amount Payable
+                      </span>
+                      <span className="text-base font-extrabold text-focus">
+                        {formatPHP(activeFacility.totalAmountPayable)}
+                      </span>
+                    </div>
+
                     {/* Remaining Balance */}
-                    <div className="sm:col-span-2 pt-2 border-t border-slate-200/60">
+                    <div className="pt-2 border-t border-slate-200/60">
                       <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
                         Remaining Balance
                       </span>
@@ -2288,20 +2426,40 @@ export const LendingPage: React.FC = () => {
                           </tr>
                         ) : (
                           filteredHistoryPayments.map((p) => {
-                            const isMissed = p.status === 'Missed' || (p.amount === 0 && p.status !== 'Paid')
+                            const isAdvancePaid = p.status === 'Advance Paid'
+                            const isMissed = p.status === 'Missed' || (p.amount === 0 && p.status !== 'Paid' && !isAdvancePaid)
                             const isPartial = p.status === 'Partial'
                             return (
-                              <tr key={p.id} className={cn('hover:bg-slate-50/60', isMissed && 'bg-rose-50/30', isPartial && 'bg-amber-50/30')}>
+                              <tr key={p.id} className={cn('hover:bg-slate-50/60', isAdvancePaid && 'bg-sky-50/20', isMissed && 'bg-rose-50/30', isPartial && 'bg-amber-50/30')}>
                                 <td className="py-2.5 px-3 font-mono text-muted-fg whitespace-nowrap">{p.date}</td>
                                 <td className="py-2.5 px-3 whitespace-nowrap">
-                                  {isMissed ? (
-                                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                      Missed
+                                  {isAdvancePaid ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                                      <Lock className="w-2.5 h-2.5 text-sky-600" />
+                                      <span>Advance Paid</span>
                                     </span>
+                                  ) : isMissed ? (
+                                    <div>
+                                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                        Missed
+                                      </span>
+                                      {p.penalty && p.penalty > 0 ? (
+                                        <div className="text-[9.5px] text-rose-600 font-sans font-medium mt-0.5">
+                                          +{formatPHP(p.penalty)} fee
+                                        </div>
+                                      ) : null}
+                                    </div>
                                   ) : isPartial ? (
-                                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                      {p.periodLabel ? `${p.periodLabel} (Partial)` : 'Partial'}
-                                    </span>
+                                    <div>
+                                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                        {p.periodLabel ? `${p.periodLabel} (Partial)` : 'Partial'}
+                                      </span>
+                                      {p.penalty && p.penalty > 0 ? (
+                                        <div className="text-[9.5px] text-rose-600 font-sans font-medium mt-0.5">
+                                          +{formatPHP(p.penalty)} fee
+                                        </div>
+                                      ) : null}
+                                    </div>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                       <Lock className="w-2.5 h-2.5 text-emerald-600" />
@@ -2312,19 +2470,19 @@ export const LendingPage: React.FC = () => {
                                 <td
                                   className={cn(
                                     'py-2.5 px-3 font-bold whitespace-nowrap',
-                                    isMissed ? 'text-muted-fg font-normal' : isPartial ? 'text-amber-700' : 'text-emerald-600'
+                                    isAdvancePaid ? 'text-sky-600' : isMissed ? 'text-muted-fg font-normal' : isPartial ? 'text-amber-700' : 'text-emerald-600'
                                   )}
                                 >
-                                  {isMissed ? '-' : formatPHP(p.amount)}
+                                  {isAdvancePaid ? 'Covered' : isMissed ? '-' : formatPHP(p.amount)}
                                 </td>
                                 <td className="py-2.5 px-3 text-focus whitespace-nowrap">
-                                  {isMissed ? '-' : p.method || '-'}
+                                  {isAdvancePaid ? 'Advance Credit' : isMissed ? '-' : p.method || '-'}
                                 </td>
                                 <td className="py-2.5 px-3 font-mono text-muted-fg whitespace-nowrap">
-                                  {isMissed ? '-' : p.referenceNo || '-'}
+                                  {isAdvancePaid ? 'ADVANCE' : isMissed ? '-' : p.referenceNo || '-'}
                                 </td>
                                 <td className="py-2.5 px-3 text-muted-fg truncate max-w-[150px]" title={isMissed ? '-' : p.notes || '-'}>
-                                  {isMissed ? '-' : p.notes || '-'}
+                                  {isAdvancePaid ? 'Covered by advance payment' : isMissed ? '-' : p.notes || '-'}
                                 </td>
                               </tr>
                             )

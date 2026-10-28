@@ -5,18 +5,22 @@ export interface DailyPaymentRecord {
   method: string
   referenceNo?: string
   notes?: string
-  status?: 'Paid' | 'Missed' | 'Partial'
+  status?: 'Paid' | 'Missed' | 'Partial' | 'Advance Paid' | 'Pending' | 'Scheduled'
   missedReason?: string
   timestamp: string
   monthIndex?: number
   periodLabel?: string
   isLocked?: boolean
+  target?: number
+  penalty?: number
 }
 
 export interface LendingFacility {
   id: string
   loanId: string
   borrowerName: string
+  borrowerContact?: string
+  borrowerAddress?: string
   loanAmount: number
   interestRate: number
   dateBorrowed: string
@@ -26,6 +30,14 @@ export interface LendingFacility {
   remainingBalance: number
   status: 'Active' | 'Completed' | 'Overdue' | 'Pending'
   paymentFrequency?: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+  termDays?: number
+  penaltyRate?: number
+  penaltyPerCycle?: number
+  totalPenalties?: number
+  advanceAmount?: number
+  installmentTarget?: number
+  complianceStatus?: 'Compliant' | 'Delayed' | 'Delinquent'
+  missedCyclesCount?: number
   lenderCompany: string
   notes?: string
   dailyPayments: DailyPaymentRecord[]
@@ -39,7 +51,8 @@ export interface LendingCalculateParams {
   interestRate: number
   paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
   dateBorrowed: string
-  dueDate: string
+  dueDate?: string
+  termDays?: number
 }
 
 export interface LendingCalculateResult {
@@ -50,19 +63,24 @@ export interface LendingCalculateResult {
   frequency: string
   cycle_count: number
   installment_target: number
+  term_days: number
+  penalty_rate: number
+  penalty_per_cycle: number
   date_borrowed: string
   due_date: string
 }
 
 export interface LendingCreateFacilityPayload {
   borrowerName: string
+  borrowerContact?: string
+  borrowerAddress?: string
   loanAmount: number
   interestRate: number
   paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
   dateBorrowed: string
-  dueDate: string
+  dueDate?: string
+  termDays?: number
   notes?: string
-  companyId?: number
 }
 
 export interface LendingRecordPaymentPayload {
@@ -72,6 +90,27 @@ export interface LendingRecordPaymentPayload {
   method: string
   referenceNo?: string
   notes?: string
+}
+
+export interface LendingTransactionRecord {
+  transaction_id: number
+  facility_id: number
+  transaction_ref_no?: string
+  transaction_type: string
+  payment_date: string
+  due_date?: string
+  amount: number
+  principal_portion?: number
+  interest_portion?: number
+  penalty_portion?: number
+  remaining_balance?: number
+  payment_method: string
+  reference_no?: string
+  status: string
+  notes?: string
+  recorded_by?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface LendingLedgerResult {
@@ -86,10 +125,22 @@ export interface LendingLedgerResult {
   remaining_balance: number
   date_borrowed: string
   due_date: string
+  term_days: number
+  penalty_rate: number
+  penalty_per_cycle: number
+  total_penalties: number
+  advance_amount: number
+  installment_target: number
+  compliance_status: string
+  missed_cycles_count: number
   ledger_items: DailyPaymentRecord[]
   monthly_progress?: {
     totalMonths: number
     targetPerMonth: number
+    totalPenalties: number
+    advanceAmount: number
+    complianceStatus: string
+    missedCyclesCount: number
     monthDetails: Array<{
       month_index: number
       target: number
@@ -99,6 +150,7 @@ export interface LendingLedgerResult {
       dueDate: string
       isOverdue: boolean
       isLocked: boolean
+      penalty?: number
     }>
     activeMonth: {
       month_index: number
@@ -109,6 +161,7 @@ export interface LendingLedgerResult {
       dueDate: string
       isOverdue: boolean
       isLocked: boolean
+      penalty?: number
     }
   }
   next_installment?: {
@@ -281,6 +334,7 @@ class LendingServiceGateway {
    * Calculate facility terms by calling backend service, with local fallback.
    */
   async calculateTerms(params: LendingCalculateParams): Promise<LendingCalculateResult> {
+    const termDays = params.termDays || (params.paymentFrequency === 'Daily' ? 40 : 60)
     try {
       const res = await fetch('/api/v1/lending/calculate', {
         method: 'POST',
@@ -289,8 +343,9 @@ class LendingServiceGateway {
           principal: params.principal,
           interest_rate: params.interestRate,
           payment_frequency: params.paymentFrequency,
+          term_days: termDays,
           date_borrowed: params.dateBorrowed,
-          due_date: params.dueDate,
+          due_date: params.dueDate || '',
         }),
       })
       if (res.ok) {
@@ -303,18 +358,26 @@ class LendingServiceGateway {
     // Local fallback calculation
     const p = params.principal
     const r = params.interestRate
-    const interest = p * (r / 100)
+    const interest = Math.round((p * (r / 100)) * 100) / 100
     const total = p + interest
+    const cycleCount = params.paymentFrequency === 'Daily' ? termDays : Math.max(1, Math.round(termDays / 30))
+    const installmentTarget = Math.round((total / cycleCount) * 100) / 100
+    const penaltyRate = 5.0
+    const penaltyPerCycle = Math.round((installmentTarget * (penaltyRate / 100)) * 100) / 100
+
     return {
       principal: p,
       interest_rate: r,
       interest: interest,
       total_payable: total,
       frequency: params.paymentFrequency,
-      cycle_count: 1,
-      installment_target: total,
+      cycle_count: cycleCount,
+      installment_target: installmentTarget,
+      term_days: termDays,
+      penalty_rate: penaltyRate,
+      penalty_per_cycle: penaltyPerCycle,
       date_borrowed: params.dateBorrowed,
-      due_date: params.dueDate,
+      due_date: params.dueDate || '',
     }
   }
 
@@ -342,19 +405,22 @@ class LendingServiceGateway {
    * Create a new lending facility via backend, with local cache update.
    */
   async createFacility(payload: LendingCreateFacilityPayload): Promise<LendingFacility> {
+    const termDays = payload.termDays || (payload.paymentFrequency === 'Daily' ? 40 : 60)
     try {
       const res = await fetch('/api/v1/lending/facilities', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           borrower_name: payload.borrowerName,
+          borrower_contact: payload.borrowerContact || '',
+          borrower_address: payload.borrowerAddress || '',
           loan_amount: payload.loanAmount,
           interest_rate: payload.interestRate,
           payment_frequency: payload.paymentFrequency,
+          term_days: termDays,
           date_borrowed: payload.dateBorrowed,
-          due_date: payload.dueDate,
+          due_date: payload.dueDate || '',
           notes: payload.notes || '',
-          company_id: payload.companyId,
         }),
       })
       if (res.ok) {
@@ -369,8 +435,12 @@ class LendingServiceGateway {
     }
 
     // Local fallback
-    const interest = payload.loanAmount * (payload.interestRate / 100)
+    const interest = Math.round((payload.loanAmount * (payload.interestRate / 100)) * 100) / 100
     const totalPayable = payload.loanAmount + interest
+    const cycleCount = payload.paymentFrequency === 'Daily' ? termDays : Math.max(1, Math.round(termDays / 30))
+    const installmentTarget = Math.round((totalPayable / cycleCount) * 100) / 100
+    const penaltyPerCycle = Math.round((installmentTarget * 0.05) * 100) / 100
+
     const localCreated: LendingFacility = {
       id: `fac-${Date.now()}`,
       loanId: `LN-FC-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -378,12 +448,20 @@ class LendingServiceGateway {
       loanAmount: payload.loanAmount,
       interestRate: payload.interestRate,
       dateBorrowed: payload.dateBorrowed,
-      dueDate: payload.dueDate,
+      dueDate: payload.dueDate || '',
       totalAmountPayable: totalPayable,
       amountPaid: 0,
       remainingBalance: totalPayable,
       status: 'Active',
       paymentFrequency: payload.paymentFrequency,
+      termDays: termDays,
+      penaltyRate: 5.0,
+      penaltyPerCycle: penaltyPerCycle,
+      totalPenalties: 0,
+      advanceAmount: 0,
+      installmentTarget: installmentTarget,
+      complianceStatus: 'Compliant',
+      missedCyclesCount: 0,
       lenderCompany: 'FilCap Prime Holdings Corp.',
       notes: payload.notes || '',
       dailyPayments: [],
@@ -443,6 +521,23 @@ class LendingServiceGateway {
     }
     return { success: true }
   }
+
+  /**
+   * Retrieve all lending transactions from the database with optional facility filter.
+   */
+  async getTransactions(facilityId?: number | string): Promise<LendingTransactionRecord[]> {
+    try {
+      const numId = facilityId ? parseInt(String(facilityId).replace(/\D/g, ''), 10) : undefined
+      const query = numId && !isNaN(numId) ? `?facility_id=${numId}` : ''
+      const res = await fetch(`/api/v1/lending/transactions${query}`)
+      if (res.ok) {
+        return await res.json()
+      }
+    } catch (err) {
+      console.warn('LendingServiceGateway.getTransactions failed:', err)
+    }
+    return []
+  }
 }
 
 export const lendingService = new LendingServiceGateway()
@@ -501,38 +596,51 @@ export function getCycleDueDate(
 }
 
 export function getMonthlyProgress(facility: LendingFacility) {
-  const totalMonths = getMonthsBetween(facility.dateBorrowed, facility.dueDate)
-  const monthTarget = Math.round(facility.totalAmountPayable / totalMonths)
+  const termDays = facility.termDays || 60
+  const totalMonths = Math.max(1, Math.round(termDays / 30))
+  const monthTarget = Math.round((facility.totalAmountPayable / totalMonths) * 100) / 100
+  const penaltyPerMonth = Math.round((monthTarget * 0.05) * 100) / 100
   const todayStr = formatToYYYYMMDD(new Date())
+
+  // Aggregate payments by monthIndex or payment date
+  const monthPaidMap = new Map<number, number>()
+  ;(facility.dailyPayments || []).forEach((r) => {
+    if (r.monthIndex && r.monthIndex >= 1) {
+      monthPaidMap.set(r.monthIndex, (monthPaidMap.get(r.monthIndex) || 0) + (r.amount || 0))
+    } else if (r.date && facility.dateBorrowed) {
+      const start = new Date(facility.dateBorrowed)
+      const pDate = new Date(r.date)
+      if (!isNaN(start.getTime()) && !isNaN(pDate.getTime()) && pDate >= start) {
+        const mIdx = Math.min(totalMonths, Math.max(1, (pDate.getFullYear() - start.getFullYear()) * 12 + (pDate.getMonth() - start.getMonth()) + 1))
+        monthPaidMap.set(mIdx, (monthPaidMap.get(mIdx) || 0) + (r.amount || 0))
+      }
+    }
+  })
 
   const months: Array<{
     monthIndex: number
     target: number
     paid: number
     remaining: number
-    status: 'Paid' | 'Partial' | 'Unpaid'
+    status: 'Paid' | 'Partial' | 'Unpaid' | 'Advance Paid' | 'Missed'
     dueDate: string
     isOverdue: boolean
     isLocked: boolean
+    penalty?: number
   }> = []
 
-  let runningTotalPaid = facility.amountPaid
+  let availableCredit = 0
+  let totalPenalties = 0
+  let missedCount = 0
+
   for (let i = 1; i <= totalMonths; i++) {
     const isLast = i === totalMonths
     const target = isLast
-      ? Math.max(0, facility.totalAmountPayable - (monthTarget * (totalMonths - 1)))
+      ? Math.max(0, Math.round((facility.totalAmountPayable - (monthTarget * (totalMonths - 1))) * 100) / 100)
       : monthTarget
 
-    const paidForThisMonth = Math.min(target, Math.max(0, runningTotalPaid))
-    runningTotalPaid = Math.max(0, runningTotalPaid - paidForThisMonth)
-    const remainingForThisMonth = Math.max(0, target - paidForThisMonth)
-    const status: 'Paid' | 'Partial' | 'Unpaid' =
-      remainingForThisMonth === 0
-        ? 'Paid'
-        : paidForThisMonth > 0
-        ? 'Partial'
-        : 'Unpaid'
-
+    const directPaid = monthPaidMap.get(i) || 0
+    const availableFunds = directPaid + availableCredit
     const cycleDueDate = getCycleDueDate(
       facility.dateBorrowed,
       facility.dueDate,
@@ -540,26 +648,68 @@ export function getMonthlyProgress(facility: LendingFacility) {
       i,
       totalMonths
     )
-    const isOverdue = remainingForThisMonth > 0 && todayStr > cycleDueDate
+
+    let status: 'Paid' | 'Partial' | 'Unpaid' | 'Advance Paid' | 'Missed' = 'Unpaid'
+    let remaining = target
+    let isLocked = false
+    let isOverdue = false
+    let monthPenalty = 0
+
+    if (availableFunds >= target && target > 0) {
+      availableCredit = availableFunds - target
+      remaining = 0
+      status = directPaid > 0 ? 'Paid' : 'Advance Paid'
+      isLocked = true
+    } else if (availableFunds > 0) {
+      remaining = target - availableFunds
+      availableCredit = 0
+      isOverdue = todayStr > cycleDueDate
+      if (isOverdue) {
+        missedCount += 1
+        totalPenalties += penaltyPerMonth
+        monthPenalty = penaltyPerMonth
+        status = 'Partial'
+      } else {
+        status = 'Partial'
+      }
+    } else {
+      isOverdue = todayStr > cycleDueDate
+      if (isOverdue) {
+        missedCount += 1
+        totalPenalties += penaltyPerMonth
+        monthPenalty = penaltyPerMonth
+        status = 'Missed'
+      } else {
+        status = 'Unpaid'
+      }
+    }
 
     months.push({
       monthIndex: i,
       target,
-      paid: paidForThisMonth,
-      remaining: remainingForThisMonth,
+      paid: directPaid,
+      remaining,
       status,
       dueDate: cycleDueDate,
       isOverdue,
-      isLocked: status === 'Paid',
+      isLocked,
+      penalty: monthPenalty,
     })
   }
 
   const activeMonth = months.find((m) => m.remaining > 0) || months[months.length - 1]
+  const complianceStatus: 'Compliant' | 'Delayed' | 'Delinquent' =
+    missedCount === 0 ? 'Compliant' : (missedCount === 1 ? 'Delayed' : 'Delinquent')
+
   return {
     totalMonths,
     monthTarget,
     months,
     activeMonth,
+    totalPenalties,
+    advanceAmount: availableCredit,
+    complianceStatus,
+    missedCyclesCount: missedCount,
   }
 }
 
@@ -575,11 +725,13 @@ export function getNextInstallmentInfo(facility: LendingFacility): {
   const todayStr = formatToYYYYMMDD(new Date())
 
   if (freq === 'Daily') {
+    const termDays = facility.termDays || 40
+    const target = facility.installmentTarget || Math.round((facility.totalAmountPayable / termDays) * 100) / 100
     return {
       periodLabel: 'Today',
       dueDate: todayStr,
-      target: Math.round(facility.totalAmountPayable / 30),
-      remaining: Math.min(facility.remainingBalance, Math.round(facility.totalAmountPayable / 30)),
+      target,
+      remaining: Math.min(facility.remainingBalance, target),
       isOverdue: false,
     }
   }
@@ -632,59 +784,96 @@ export function buildDailyLedger(facility: LendingFacility): DailyPaymentRecord[
     return existingPayments
   }
 
-  const paymentsByDate = new Map<string, DailyPaymentRecord>()
-  existingPayments.forEach((p) => {
-    if (!paymentsByDate.has(p.date) || (p.status === 'Paid' && paymentsByDate.get(p.date)?.status !== 'Paid')) {
-      paymentsByDate.set(p.date, p)
-    }
-  })
-
   if (!facility.dateBorrowed) return existingPayments
   const start = new Date(facility.dateBorrowed)
+  if (isNaN(start.getTime())) return existingPayments
+
+  const termDays = facility.termDays || 40
+  const target = facility.installmentTarget || Math.round((facility.totalAmountPayable / termDays) * 100) / 100
+  const penaltyPerCycle = facility.penaltyPerCycle || Math.round((target * 0.05) * 100) / 100
+
   const todayStr = formatToYYYYMMDD(new Date())
   const today = new Date(todayStr)
 
-  if (isNaN(start.getTime()) || start > today) {
-    return existingPayments
-  }
+  // Map payments by actual payment date
+  const dayPayments = new Map<string, DailyPaymentRecord[]>()
+  existingPayments.forEach((p) => {
+    const list = dayPayments.get(p.date) || []
+    list.push(p)
+    dayPayments.set(p.date, list)
+  })
 
-  const result: DailyPaymentRecord[] = []
-  const current = new Date(today)
-  while (current >= start) {
-    const dateStr = formatToYYYYMMDD(current)
-    const existing = paymentsByDate.get(dateStr)
-    if (existing) {
-      if (existing.status === 'Missed' || existing.amount === 0) {
-        result.push({
-          ...existing,
-          amount: 0,
-          method: '-',
-          referenceNo: '-',
-          notes: '-',
-          status: 'Missed',
-          isLocked: false,
-        })
-      } else {
-        result.push({
-          ...existing,
-          isLocked: existing.status === 'Paid',
-        })
-      }
+  // End date is max(today, start + termDays - 1)
+  const endDate = new Date(start)
+  endDate.setDate(endDate.getDate() + Math.max(1, termDays) - 1)
+  const finalEnd = today > endDate ? today : endDate
+
+  let availableCredit = 0
+  const rows: DailyPaymentRecord[] = []
+  const cur = new Date(start)
+
+  while (cur <= finalEnd) {
+    const dateStr = formatToYYYYMMDD(cur)
+    const list = dayPayments.get(dateStr) || []
+    const paidToday = list.reduce((sum, item) => sum + (item.amount || 0), 0)
+    const availableFunds = paidToday + availableCredit
+
+    if (availableFunds >= target && target > 0) {
+      availableCredit = availableFunds - target
+      const isDirectPaid = paidToday > 0
+      const first = list[0]
+      rows.push({
+        id: first?.id || `day-${dateStr}`,
+        date: dateStr,
+        amount: paidToday,
+        target,
+        method: isDirectPaid ? (first?.method || 'Cash') : 'Advance Credit',
+        referenceNo: isDirectPaid ? (first?.referenceNo || '-') : 'ADVANCE',
+        notes: isDirectPaid ? (first?.notes || '-') : 'Covered by advance payment',
+        status: isDirectPaid ? 'Paid' : 'Advance Paid',
+        penalty: 0,
+        timestamp: first?.timestamp || `${dateStr}T10:00:00Z`,
+        isLocked: true,
+      })
+    } else if (availableFunds > 0) {
+      availableCredit = 0
+      const isPast = cur < today
+      const first = list[0]
+      rows.push({
+        id: first?.id || `day-${dateStr}`,
+        date: dateStr,
+        amount: paidToday,
+        target,
+        method: first?.method || 'Cash',
+        referenceNo: first?.referenceNo || '-',
+        notes: first?.notes || '-',
+        status: 'Partial',
+        penalty: isPast ? penaltyPerCycle : 0,
+        timestamp: first?.timestamp || `${dateStr}T10:00:00Z`,
+        isLocked: false,
+      })
     } else {
-      result.push({
-        id: `missed-${dateStr}`,
+      const isPast = cur < today
+      const isToday = dateStr === todayStr
+      rows.push({
+        id: `day-${dateStr}`,
         date: dateStr,
         amount: 0,
+        target,
         method: '-',
         referenceNo: '-',
         notes: '-',
-        status: 'Missed',
+        status: isPast ? 'Missed' : (isToday ? 'Pending' : 'Scheduled'),
+        penalty: isPast ? penaltyPerCycle : 0,
         timestamp: `${dateStr}T23:59:59Z`,
         isLocked: false,
       })
     }
-    current.setDate(current.getDate() - 1)
+
+    cur.setDate(cur.getDate() + 1)
   }
 
-  return result
+  // Sort descending (most recent date first)
+  rows.sort((a, b) => b.date.localeCompare(a.date))
+  return rows
 }
