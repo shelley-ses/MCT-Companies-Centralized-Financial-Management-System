@@ -8,7 +8,7 @@ class LendingCalculateRequest(BaseModel):
     interest_rate: Decimal = Field(default=Decimal("20.00"), ge=0.0)
     payment_frequency: str = Field(default="Daily")
     term_days: Optional[int] = Field(default=40, ge=1)
-    date_borrowed: str
+    date_borrowed: Optional[str] = None
     due_date: Optional[str] = ""
 
 
@@ -35,7 +35,7 @@ class LendingFacilityCreateRequest(BaseModel):
     interest_rate: Decimal = Field(default=Decimal("20.00"), ge=0.0)
     payment_frequency: str = Field(default="Daily")
     term_days: Optional[int] = Field(default=40, ge=1)
-    date_borrowed: str
+    date_borrowed: Optional[str] = None
     due_date: Optional[str] = ""
     notes: Optional[str] = ""
 

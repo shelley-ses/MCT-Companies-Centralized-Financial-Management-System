@@ -48,6 +48,7 @@ import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, formatToYYYYMMDD } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
+import { LiveDateTimeBadge } from '@/components/common/LiveDateTimeBadge'
 import {
   type DailyPaymentRecord,
   type LendingFacility,
@@ -56,7 +57,6 @@ import {
   LENDING_STORAGE_KEY as STORAGE_KEY,
   getMonthlyProgress,
   getNextInstallmentInfo,
-  buildDailyLedger,
 } from '@/services/lendingService'
 
 // Period options matching Sales Page
@@ -216,15 +216,20 @@ export const LendingPage: React.FC = () => {
     dueDate: string
     paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
     notes: string
-  }>({
-    borrowerName: '',
-    loanAmount: '',
-    interestRate: '20.0',
-    termDays: '40',
-    dateBorrowed: '2026-10-21',
-    dueDate: '2026-11-30',
-    paymentFrequency: 'Daily',
-    notes: '',
+  }>(() => {
+    const today = formatToYYYYMMDD(new Date())
+    const initialDue = new Date()
+    initialDue.setDate(initialDue.getDate() + 40)
+    return {
+      borrowerName: '',
+      loanAmount: '',
+      interestRate: '20.0',
+      termDays: '40',
+      dateBorrowed: today,
+      dueDate: formatToYYYYMMDD(initialDue),
+      paymentFrequency: 'Daily',
+      notes: '',
+    }
   })
 
   // Form state for Edit Lending Facility Modal
@@ -955,13 +960,10 @@ export const LendingPage: React.FC = () => {
     setViewMode('details')
   }
 
-  // Filtered payment records for Lending Information View
+  // Filtered payment records for Lending Details View (Payment Log of the borrower)
   const filteredHistoryPayments = React.useMemo(() => {
     if (!activeFacility) return []
-    const baseList =
-      !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
-        ? buildDailyLedger(activeFacility)
-        : activeFacility.dailyPayments || []
+    const baseList = activeFacility.dailyPayments || []
 
     if (!historySearchQuery.trim()) return baseList
     const q = historySearchQuery.toLowerCase().trim()
@@ -1249,161 +1251,188 @@ export const LendingPage: React.FC = () => {
                 </h3>
               </div>
 
-              <div className="relative w-full sm:w-96 md:w-[420px]">
-                <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={historySearchQuery}
-                  onChange={(e) => setHistorySearchQuery(e.target.value)}
-                  placeholder="Search payments by date, status, ref, remarks..."
-                  className="w-full h-10.5 py-2.5 pl-10 pr-9 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
-                />
-                {historySearchQuery && (
-                  <button
+              {(activeFacility.dailyPayments || []).length > 0 && (
+                <div className="relative w-full sm:w-96 md:w-[420px]">
+                  <Search className="w-4 h-4 text-muted-fg absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    placeholder="Search payments by date, status, ref, remarks..."
+                    className="w-full h-10.5 py-2.5 pl-10 pr-9 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus placeholder:text-muted-fg/70 shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus transition-all"
+                  />
+                  {historySearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setHistorySearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer p-0.5"
+                      aria-label="Clear payment search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Payment Schedule & History Table or Empty State */}
+            {(activeFacility.dailyPayments || []).length === 0 ? (
+              <div className="py-16 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-center">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-3 text-emerald-600 shadow-2xs">
+                  <Coins className="w-7 h-7" />
+                </div>
+                <h4 className="text-sm font-bold text-focus">No Payments Recorded Yet</h4>
+                <p className="text-xs text-muted-fg max-w-md mt-1 mb-4 leading-relaxed">
+                  This borrower has not started paying yet. All recorded payment transactions, dates, amounts, and receipt references will appear here as a payment log.
+                </p>
+                {!isAudit && activeFacility.remainingBalance > 0 && (
+                  <Button
                     type="button"
-                    onClick={() => setHistorySearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus cursor-pointer p-0.5"
-                    aria-label="Clear payment search"
+                    onClick={(e) => handleOpenPaymentModal(activeFacility, e)}
+                    className="h-9 px-4 rounded-xl font-semibold text-xs bg-focus hover:bg-focus/90 text-white flex items-center gap-2 cursor-pointer shadow-2xs"
                   >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Record Payment</span>
+                  </Button>
                 )}
               </div>
-            </div>
-
-            {/* Ledger Table (Paginated to up to 5 rows) */}
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
-                  <tr>
-                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Date</th>
-                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Status</th>
-                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Target Due</th>
-                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Amount Paid</th>
-                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Method</th>
-                    <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Reference No.</th>
-                    <th className="py-2.5 px-3.5 text-left">Remarks</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {paginatedHistoryPayments.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-10 text-center text-muted-fg text-xs">
-                        {historySearchQuery
-                          ? `No payment records matching "${historySearchQuery}".`
-                          : 'No payments recorded yet.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedHistoryPayments.map((p) => {
-                      const isAdvancePaid = p.status === 'Advance Paid'
-                      const isPartial =
-                        p.status === 'Partial' ||
-                        p.status === 'Partially Paid' ||
-                        (p.amount > 0 && p.target !== undefined && p.amount < p.target - 0.005 && p.status !== 'Paid' && !isAdvancePaid)
-                      const isMissed =
-                        p.status === 'Missed' ||
-                        (p.amount === 0 && p.status !== 'Paid' && !isAdvancePaid && !isPartial)
-                      return (
-                        <tr
-                          key={p.id}
-                          className={cn(
-                            'hover:bg-slate-50/70 transition-colors',
-                            isAdvancePaid && 'bg-sky-50/20',
-                            isMissed && 'bg-rose-50/20',
-                            isPartial && 'bg-amber-50/20'
-                          )}
-                        >
-                          <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap font-medium">
-                            {p.date}
-                          </td>
-                          <td className="py-2.5 px-3.5 whitespace-nowrap">
-                            {isAdvancePaid ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
-                                <Lock className="w-2.5 h-2.5 text-sky-600" />
-                                <span>Advance Paid</span>
-                              </span>
-                            ) : isMissed ? (
-                              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                Missed
-                              </span>
-                            ) : isPartial ? (
-                              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                {p.periodLabel ? `${p.periodLabel} (Partially Paid)` : 'Partially Paid'}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <Lock className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>{p.periodLabel ? `${p.periodLabel} (Paid)` : 'Paid'}</span>
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3.5 text-muted-fg whitespace-nowrap">
-                            {p.target ? formatPHP(p.target) : '-'}
-                          </td>
-                          <td
-                            className={cn(
-                              'py-2.5 px-3.5 font-bold whitespace-nowrap',
-                              isAdvancePaid ? 'text-sky-600' : isMissed ? 'text-muted-fg font-normal' : isPartial ? 'text-amber-700' : 'text-emerald-600'
-                            )}
-                          >
-                            {isAdvancePaid ? 'Covered' : isMissed ? '-' : formatPHP(p.amount)}
-                          </td>
-                          <td className="py-2.5 px-3.5 text-focus whitespace-nowrap">
-                            {isAdvancePaid ? 'Advance Credit' : isMissed ? '-' : p.method || '-'}
-                          </td>
-                          <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap">
-                            {isAdvancePaid ? 'ADVANCE' : isMissed ? '-' : p.referenceNo || '-'}
-                          </td>
-                          <td className="py-2.5 px-3.5 text-muted-fg truncate max-w-[200px]" title={isMissed ? '-' : p.notes || '-'}>
-                            {isAdvancePaid ? 'Covered by advance payment' : isMissed ? '-' : p.notes || '-'}
+            ) : (
+              <>
+                {/* Ledger Table (Paginated to up to 5 rows) */}
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
+                      <tr>
+                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Payment Date</th>
+                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Status</th>
+                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Amount Paid</th>
+                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Method</th>
+                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Reference No.</th>
+                        <th className="py-2.5 px-3.5 text-left">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paginatedHistoryPayments.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-muted-fg text-xs">
+                            <div className="flex flex-col items-center justify-center">
+                              <Search className="w-6 h-6 text-muted-fg/40 mb-2" />
+                              <p className="font-semibold text-focus">No matching payments found</p>
+                              <p className="text-xs text-muted-fg/70 mt-0.5">
+                                No payment logs matching "{historySearchQuery}".
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setHistorySearchQuery('')}
+                                className="mt-3 text-xs rounded-xl cursor-pointer"
+                              >
+                                Clear Search
+                              </Button>
+                            </div>
                           </td>
                         </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                      ) : (
+                        paginatedHistoryPayments.map((p) => {
+                          const isAdvancePaid = p.status === 'Advance Paid'
+                          const isPartial =
+                            p.status === 'Partial' ||
+                            p.status === 'Partially Paid'
+                          return (
+                            <tr
+                              key={p.id}
+                              className={cn(
+                                'hover:bg-slate-50/70 transition-colors',
+                                isAdvancePaid && 'bg-sky-50/20',
+                                isPartial && 'bg-amber-50/20'
+                              )}
+                            >
+                              <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap font-medium">
+                                {p.date}
+                              </td>
+                              <td className="py-2.5 px-3.5 whitespace-nowrap">
+                                {isAdvancePaid ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                                    <Lock className="w-2.5 h-2.5 text-sky-600" />
+                                    <span>Advance Paid</span>
+                                  </span>
+                                ) : isPartial ? (
+                                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    {p.periodLabel ? `${p.periodLabel} (Partially Paid)` : 'Partially Paid'}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                    <span>{p.periodLabel ? `${p.periodLabel} (Paid)` : (p.status || 'Paid')}</span>
+                                  </span>
+                                )}
+                              </td>
+                              <td
+                                className={cn(
+                                  'py-2.5 px-3.5 font-bold whitespace-nowrap',
+                                  isAdvancePaid ? 'text-sky-600' : isPartial ? 'text-amber-700' : 'text-emerald-600'
+                                )}
+                              >
+                                {isAdvancePaid ? 'Covered' : formatPHP(p.amount)}
+                              </td>
+                              <td className="py-2.5 px-3.5 text-focus whitespace-nowrap">
+                                {isAdvancePaid ? 'Advance Credit' : p.method || 'Cash'}
+                              </td>
+                              <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap">
+                                {isAdvancePaid ? 'ADVANCE' : p.referenceNo || '-'}
+                              </td>
+                              <td className="py-2.5 px-3.5 text-muted-fg truncate max-w-[240px]" title={isAdvancePaid ? 'Covered by advance payment' : p.notes || '-'}>
+                                {isAdvancePaid ? 'Covered by advance payment' : p.notes || '-'}
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* Payment Schedule & History Pagination Footer (up to 5 rows per page) */}
-            <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
-              <span className="font-medium text-focus/80">
-                {filteredHistoryPayments.length === 0
-                  ? 'Showing 0 of 0 records'
-                  : `Showing ${historyStartIndex + 1}-${historyEndIndex} of ${filteredHistoryPayments.length} records`}
-              </span>
+                {/* Payment Schedule & History Pagination Footer (up to 5 rows per page) */}
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
+                  <span className="font-medium text-focus/80">
+                    {filteredHistoryPayments.length === 0
+                      ? 'Showing 0 of 0 records'
+                      : `Showing ${historyStartIndex + 1}-${historyEndIndex} of ${filteredHistoryPayments.length} records`}
+                  </span>
 
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <span className="text-xs text-muted-fg italic">
-                  Page {safeHistoryPage} out of {historyTotalPages}
-                </span>
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <span className="text-xs text-muted-fg italic">
+                      Page {safeHistoryPage} out of {historyTotalPages}
+                    </span>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={safeHistoryPage <= 1}
-                  onClick={() => setHistoryCurrentPage((p) => Math.max(1, p - 1))}
-                  className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                  aria-label="Previous history page"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={safeHistoryPage <= 1}
+                      onClick={() => setHistoryCurrentPage((p) => Math.max(1, p - 1))}
+                      className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                      aria-label="Previous history page"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={safeHistoryPage >= historyTotalPages}
-                  onClick={() => setHistoryCurrentPage((p) => Math.min(historyTotalPages, p + 1))}
-                  className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                  aria-label="Next history page"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={safeHistoryPage >= historyTotalPages}
+                      onClick={() => setHistoryCurrentPage((p) => Math.min(historyTotalPages, p + 1))}
+                      className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                      aria-label="Next history page"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1474,10 +1503,14 @@ export const LendingPage: React.FC = () => {
               <Button
                 type="button"
                 onClick={() => {
-                  const projected = calculateProjectedDueDate(formData.dateBorrowed, formData.termDays || '40')
-                  if (projected && projected !== formData.dueDate) {
-                    setFormData((prev) => ({ ...prev, dueDate: projected }))
-                  }
+                  const today = formatToYYYYMMDD(new Date())
+                  const term = formData.termDays || '40'
+                  const projected = calculateProjectedDueDate(today, term)
+                  setFormData((prev) => ({
+                    ...prev,
+                    dateBorrowed: today,
+                    dueDate: projected || prev.dueDate,
+                  }))
                   setIsAddModalOpen(true)
                 }}
                 className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
@@ -2171,10 +2204,7 @@ export const LendingPage: React.FC = () => {
 
               <div>
                 <label className="text-xs font-semibold text-focus flex items-center justify-between mb-1">
-                  <span>Due Date (Read-only)</span>
-                  <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-muted-fg">
-                    <Lock className="w-3 h-3" /> Auto-calculated
-                  </span>
+                  <span>Due Date</span>
                 </label>
                 <Input
                   required
