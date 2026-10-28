@@ -634,8 +634,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
             </h1>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
               {loanType === 'Borrower'
-                ? `Loans and facilities borrowed by ${displayedCompanyTitle} from partner companies.`
-                : `Loans and financing extended by ${displayedCompanyTitle} to partner companies.`}
+                ? 'Loans and facilities borrowed from partner companies.'
+                : 'Loans and financing extended to partner companies.'}
             </p>
           </div>
 
@@ -813,15 +813,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               hidePresets
             />
 
-            {/* Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor */}
-            {isCompanyScoped ? (
-              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
-                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90 truncate max-w-[140px]">
-                  {assignedCompany}
-                </span>
-              </div>
-            ) : (
+            {/* Company Scope: Dropdown for Admin/Finance only */}
+            {!isCompanyScoped && (
               <div ref={companyDropdownRef} className="relative inline-block shrink-0">
                 <button
                   type="button"
@@ -932,23 +925,22 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           <span className="text-xs font-medium text-muted-fg block">
             {loanType === 'Borrower' ? 'Total Borrowed Amount' : 'Total Lent Capital'}
           </span>
-          {loading ? (
-            <div className="space-y-1.5 mt-2">
-              <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
-              <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
-            </div>
-          ) : (
-            <>
-              <h3 className="text-xl sm:text-2xl font-bold text-focus mt-1 tabular-nums tracking-tight">
-                {formatPHP(kpis.totalLoans)}
-              </h3>
-              <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-                {loanType === 'Borrower'
-                  ? `Active borrowed principal across partners for ${displayedCompanyTitle}`
-                  : `Financing capital provided to subsidiary partners by ${displayedCompanyTitle}`}
-              </p>
-            </>
-          )}
+          <h3 className="text-xl sm:text-2xl font-bold text-focus mt-1 tabular-nums tracking-tight">
+            {loading ? (
+              <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
+              </span>
+            ) : (
+              formatPHP(kpis.totalLoans)
+            )}
+          </h3>
+          <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+            {loanType === 'Borrower'
+              ? `Active borrowed principal across partners for ${displayedCompanyTitle}`
+              : `Financing capital provided to subsidiary partners by ${displayedCompanyTitle}`}
+          </p>
         </div>
 
         <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-slate-100 border border-slate-200/80 flex items-center justify-center text-focus shrink-0 shadow-2xs">
@@ -1011,7 +1003,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               )}
             </colgroup>
             <TableHeader>
-              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
                 <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
                   DATE
                 </TableHead>

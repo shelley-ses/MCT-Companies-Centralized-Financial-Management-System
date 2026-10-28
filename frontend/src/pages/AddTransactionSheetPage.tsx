@@ -381,7 +381,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           particulars: it.particulars || '',
           unitPrice: typeof it.unitPrice === 'number' ? it.unitPrice : (it.total || ''),
           quantity: typeof it.quantity === 'number' ? it.quantity : 1,
-          status: (it.status || editItem.status || 'Paid') as 'Paid' | 'Pending' | 'On hold',
+          status: (it.status || editItem.status || 'Pending') as 'Paid' | 'Pending' | 'On hold',
         }))
       )
     } else if (editItem.particulars) {
@@ -398,19 +398,16 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             particulars: p.particulars,
             unitPrice: typeof p.unitPrice === 'number' && p.unitPrice > 0 ? p.unitPrice : (p.total || ''),
             quantity: typeof p.quantity === 'number' && p.quantity > 0 ? p.quantity : 1,
-            status: (p.status || editItem.status || 'Paid') as 'Paid' | 'Pending' | 'On hold',
+            status: (p.status || editItem.status || 'Pending') as 'Paid' | 'Pending' | 'On hold',
           }))
         )
       }
     }
   }, [editItem])
 
-  // Excel-style rows state: initialize with 4 clean rows
+  // Excel-style rows state: initialize with 1 clean row (status defaults to Pending)
   const [rows, setRows] = React.useState<ParticularsRow[]>([
-    { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
-    { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
-    { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
-    { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+    { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' },
   ])
 
   // Submission state
@@ -430,7 +427,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     const newId = `row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     setRows((prev) => [
       ...prev,
-      { id: newId, pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+      { id: newId, pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' },
     ])
     setTimeout(() => {
       particularsInputRefs.current[newId]?.focus()
@@ -440,7 +437,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const handleRemoveRow = (id: string) => {
     if (rows.length <= 1) {
       // Don't remove last row, just clear it
-      setRows([{ id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' }])
+      setRows([{ id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' }])
       return
     }
     setRows((prev) => prev.filter((r) => r.id !== id))
@@ -583,7 +580,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           quantity: item.numericQty,
           unitPrice: item.numericPrice,
           total: item.rowTotal,
-          status: item.status || 'Paid',
+          status: item.status || 'Pending',
         }
       })
 
@@ -680,10 +677,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   const handleReset = () => {
     setRows([
-      { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
-      { id: 'row-2', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
-      { id: 'row-3', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
-      { id: 'row-4', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Paid' },
+      { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' },
     ])
     setErrorMessage(null)
   }
@@ -691,7 +685,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const isSales = transactionType === 'Sales'
 
   return (
-    <div className="space-y-6 pb-16 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 pb-16 w-full animate-in fade-in duration-300">
       {/* 1. Navigation & Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
@@ -787,10 +781,12 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
         <div
           className={cn(
-            'grid gap-3.5 sm:gap-4 items-start',
+            'grid gap-4 items-start',
             isPettyCash
               ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
-              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
+              : isAuditor
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
+              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6'
           )}
         >
           {/* 1. Date */}
@@ -808,21 +804,17 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             />
           </div>
 
-          {/* 2. Company */}
-          <div className="space-y-1.5 flex flex-col justify-start">
-            <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
-              <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-              <span>Company</span>
-            </label>
-            {isAuditor ? (
-              <div className="w-full h-10 px-3 rounded-xl border border-stroke/40 bg-slate-50 text-xs sm:text-sm text-focus font-medium flex items-center truncate">
-                {assignedCompany}
-              </div>
-            ) : (
+          {/* 2. Company (Finance only; hidden for Supervisor) */}
+          {!isAuditor && (
+            <div className="space-y-1.5 flex flex-col justify-start">
+              <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+                <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                <span>Company</span>
+              </label>
               <select
                 value={selectedCompany}
                 onChange={(e) => setSelectedCompany(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                className="w-full h-10 px-3 pr-8 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer truncate"
               >
                 {dbCompanies.map((c) => (
                   <option key={c} value={c}>
@@ -830,8 +822,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   </option>
                 ))}
               </select>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 3. Payment Method */}
           <div className="space-y-1.5 flex flex-col justify-start">
@@ -852,7 +844,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   }
                 }
               }}
-              className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+              className="w-full h-10 px-3 pr-8 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
             >
               {(transactionType === 'Expense' ? EXPENSE_PAYMENT_METHODS : SALES_PAYMENT_METHODS).map((pm) => (
                 <option key={pm} value={pm}>
@@ -883,7 +875,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
               <select
                 value={selectedBankAccountId}
                 onChange={(e) => setSelectedBankAccountId(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                className="w-full h-10 px-3 pr-8 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer truncate"
               >
                 {availableBankAccounts.length === 0 ? (
                   <option value="">No Bank Registered</option>
@@ -892,7 +884,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                     <option value="">None / Skip Bank Sync</option>
                     {availableBankAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.bankName} - {acc.accountName || acc.accountNumber} ({formatPHP(acc.currentBalance)})
+                        {acc.bankName}
                       </option>
                     ))}
                   </>
@@ -1140,7 +1132,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                     {/* Status Dropdown Cell: Paid, Unpaid, Pending */}
                     <TableCell className="w-36 border-r border-slate-200/60 p-1.5 px-2.5">
                       <select
-                        value={row.status || 'Paid'}
+                        value={row.status || 'Pending'}
                         onChange={(e) =>
                           handleRowChange(row.id, 'status', e.target.value as 'Paid' | 'Unpaid' | 'Pending')
                         }
@@ -1153,9 +1145,9 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                             : 'bg-amber-50 text-amber-700 border-amber-300 focus:border-amber-500 focus:ring-amber-500'
                         )}
                       >
+                        <option value="Pending">Pending</option>
                         <option value="Paid">Paid</option>
                         <option value="Unpaid">Unpaid</option>
-                        <option value="Pending">Pending</option>
                       </select>
                     </TableCell>
 

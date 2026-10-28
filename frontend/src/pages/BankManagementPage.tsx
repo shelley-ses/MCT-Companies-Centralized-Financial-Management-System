@@ -2,7 +2,6 @@ import * as React from 'react'
 import {
   Download,
   Search,
-  X,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -49,20 +48,14 @@ import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { bankService, type BankAccount, type BankTransaction } from '@/services/bankService'
 import { websocketService } from '@/services/websocketService'
+import { AuditTransactionModal } from '@/components/dashboard/AuditTransactionModal'
+import { getParticularsSummary } from '@/utils/particularsUtils'
+import type { DashboardTransactionItem } from '@/services/dashboardService'
 
 export type { BankAccount, BankTransaction }
 
 export function getAccountCardLabel(acc: BankAccount): string {
-  if (acc.cardLabel && acc.cardLabel.trim()) return acc.cardLabel.trim()
-  const comp = acc.companyName?.trim() || ''
   const bank = acc.bankName?.trim() || ''
-  const acct = acc.accountName?.trim() || ''
-  if (acct && acct !== comp) {
-    return bank ? `${bank} · ${acct}` : acct
-  }
-  if (comp) {
-    return bank ? `${bank} · ${comp}` : comp
-  }
   return bank || 'Corporate Bank Account'
 }
 
@@ -88,7 +81,7 @@ export const BankManagementPage: React.FC = () => {
 
   // Bank accounts strictly loaded from database
   const [accounts, setAccounts] = React.useState<BankAccount[]>([])
-  const [_isLoading, setIsLoading] = React.useState(true)
+  const [isLoading, setIsLoading] = React.useState(true)
 
   const saveAccounts = React.useCallback((newAccounts: BankAccount[]) => {
     setAccounts(newAccounts)
@@ -148,27 +141,24 @@ export const BankManagementPage: React.FC = () => {
 
   // Realtime multi-tab WebSocket synchronization
   React.useEffect(() => {
-    const unsubscribe = websocketService.subscribe('BANK_UPDATED', () => {
+    const unsubBank = websocketService.subscribe('BANK_UPDATED', () => {
+      fetchAccounts()
+    })
+    const unsubTx = websocketService.subscribe('TRANSACTION_UPDATED', () => {
       fetchAccounts()
     })
     return () => {
-      unsubscribe()
+      unsubBank()
+      unsubTx()
     }
   }, [fetchAccounts])
 
-  // Purge legacy mock storage on initial load
-  React.useEffect(() => {
-    try {
-      localStorage.removeItem('mct_bank_management_accounts_v5')
-      localStorage.removeItem('mct_bank_management_accounts_v4')
-      localStorage.removeItem('mct_bank_management_accounts_v3')
-      localStorage.removeItem('mct_bank_management_accounts_v2')
-      localStorage.removeItem('mct_bank_management_accounts')
-    } catch { }
-  }, [])
-
   // Active selected bank account
   const [selectedAccountId, setSelectedAccountId] = React.useState<string>('')
+
+  // Selected bank transaction for details modal inspection
+  const [viewingBankTx, setViewingBankTx] = React.useState<DashboardTransactionItem | null>(null)
+  const [isViewTxModalOpen, setIsViewTxModalOpen] = React.useState(false)
 
   // Toggle privacy of balance on the big card
   const [showBalance, setShowBalance] = React.useState(true)
@@ -189,9 +179,11 @@ export const BankManagementPage: React.FC = () => {
   // Dropdown states
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
+  const [isBankDropdownOpen, setIsBankDropdownOpen] = React.useState(false)
   const [isTxTypeDropdownOpen, setIsTxTypeDropdownOpen] = React.useState(false)
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
   const companyDropdownRef = React.useRef<HTMLDivElement>(null)
+  const bankDropdownRef = React.useRef<HTMLDivElement>(null)
   const txTypeDropdownRef = React.useRef<HTMLDivElement>(null)
 
   // Modals state
@@ -240,7 +232,6 @@ export const BankManagementPage: React.FC = () => {
     category: 'Cheque',
   })
 
-
   // Click outside listener for dropdowns
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -250,6 +241,9 @@ export const BankManagementPage: React.FC = () => {
       }
       if (companyDropdownRef.current && !companyDropdownRef.current.contains(target)) {
         setIsCompanyDropdownOpen(false)
+      }
+      if (bankDropdownRef.current && !bankDropdownRef.current.contains(target)) {
+        setIsBankDropdownOpen(false)
       }
       if (txTypeDropdownRef.current && !txTypeDropdownRef.current.contains(target)) {
         setIsTxTypeDropdownOpen(false)
@@ -316,6 +310,7 @@ export const BankManagementPage: React.FC = () => {
 
       const updated = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a))
       saveAccounts(updated)
+      websocketService.emitLocal('BANK_UPDATED', { accountId: updatedAccount.id })
       setIsEditModalOpen(false)
     } catch (err: any) {
       alert(err.message || 'Failed to update bank account.')
@@ -506,6 +501,7 @@ export const BankManagementPage: React.FC = () => {
       const updated = [newAccount, ...accounts.filter((a) => a.id !== newAccount.id)]
       saveAccounts(updated)
       setSelectedAccountId(newAccount.id)
+      websocketService.emitLocal('BANK_UPDATED', { accountId: newAccount.id })
 
       if (
         selectedCompany !== 'All Companies' &&
@@ -584,6 +580,7 @@ export const BankManagementPage: React.FC = () => {
 
       const updated = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a))
       saveAccounts(updated)
+      websocketService.emitLocal('BANK_UPDATED', { accountId: updatedAccount.id })
       setIsDepositModalOpen(false)
       setDepositForm({
         amount: '',
@@ -626,6 +623,7 @@ export const BankManagementPage: React.FC = () => {
 
       const updated = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a))
       saveAccounts(updated)
+      websocketService.emitLocal('BANK_UPDATED', { accountId: updatedAccount.id })
       setIsWithdrawModalOpen(false)
       setWithdrawForm({
         amount: '',
@@ -882,15 +880,8 @@ export const BankManagementPage: React.FC = () => {
                 )}
               </div>
 
-              {/* 3. Company Dropdown / Badge (Comes after Deposit / Withdraw) */}
-              {isCompanyScoped ? (
-                <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
-                  <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                  <span className="font-semibold text-focus/90 truncate max-w-[160px]">
-                    {assignedCompany}
-                  </span>
-                </div>
-              ) : (
+              {/* 3. Company Dropdown (Finance/Admin only) */}
+              {!isCompanyScoped && (
                 <div ref={companyDropdownRef} className="relative inline-block">
                   <button
                     type="button"
@@ -917,6 +908,12 @@ export const BankManagementPage: React.FC = () => {
                             onClick={() => {
                               setSelectedCompany(c)
                               setIsCompanyDropdownOpen(false)
+                              if (c !== 'All Companies') {
+                                const matched = accounts.filter((a) => isCompanyMatch(a.companyName, c))
+                                if (matched.length > 0) {
+                                  setSelectedAccountId(matched[0].id)
+                                }
+                              }
                             }}
                             className={cn(
                               'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
@@ -936,12 +933,68 @@ export const BankManagementPage: React.FC = () => {
                   )}
                 </div>
               )}
+
+              {/* 4. Bank Selector Dropdown (Allows switching which bank card to view directly) */}
+              <div ref={bankDropdownRef} className="relative inline-block">
+                <button
+                  type="button"
+                  onClick={() => setIsBankDropdownOpen((prev) => !prev)}
+                  className={cn(
+                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
+                    isBankDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
+                  )}
+                >
+                  <CreditCard className="h-4 w-4 text-muted-fg shrink-0" />
+                  <span className="font-semibold text-focus/90 truncate max-w-[140px]">
+                    {activeAccount?.bankName || 'Select Bank'}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
+                </button>
+
+                {isBankDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-72 overflow-y-auto">
+                    <div className="space-y-1">
+                      {roleScopedAccounts.map((acc) => (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAccountId(acc.id)
+                            setIsBankDropdownOpen(false)
+                          }}
+                          className={cn(
+                            'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
+                            activeAccount?.id === acc.id
+                              ? 'bg-primary/10 text-primary font-semibold'
+                              : 'text-focus/80 hover:bg-slate-50'
+                          )}
+                        >
+                          <div className="flex flex-col truncate pr-2">
+                            <span className="font-semibold text-focus truncate">{acc.bankName}</span>
+                          </div>
+                          {activeAccount?.id === acc.id && (
+                            <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-1" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-      {/* 2. Bank Cards Hero Section: Empty State if 0 accounts, Full-Width for Single Account, Grid for Multi Accounts */}
-      {roleScopedAccounts.length === 0 ? (
+      {/* 2. Bank Cards Hero Section: Skeleton when loading, Empty State if 0 accounts, Full-Width for Single Account, Grid for Multi Accounts */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start animate-pulse">
+          <div className="md:col-span-5 h-[295px] sm:h-[315px] lg:h-[320px] rounded-[28px] bg-slate-200/80 p-6 flex flex-col justify-between" />
+          <div className="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="h-[295px] sm:h-[315px] lg:h-[320px] rounded-[28px] bg-slate-200/70" />
+            <div className="h-[295px] sm:h-[315px] lg:h-[320px] rounded-[28px] bg-slate-200/70" />
+          </div>
+        </div>
+      ) : roleScopedAccounts.length === 0 ? (
         <Card className="rounded-[28px] sm:rounded-[36px] p-8 sm:p-12 text-center border border-dashed border-stroke/40 bg-white shadow-xs flex flex-col items-center justify-center min-h-[220px]">
           <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-4">
             <Landmark className="h-7 w-7" />
@@ -967,8 +1020,8 @@ export const BankManagementPage: React.FC = () => {
       ) : isSingleAccount ? (
         /* SINGLE ACCOUNT FULL-WIDTH HERO CARD (Matching User's Reference Screenshot) */
         <div className="w-full space-y-3">
-          {/* Multi-Bank Switcher Pill Bar (When company has 1, 2, or 3 banks) */}
-          {activeCompanyAccounts.length > 0 && (
+          {/* Multi-Bank Switcher Pill Bar (Only when company has multiple banks: 2 or 3 banks) */}
+          {activeCompanyAccounts.length > 1 && (
             <div className="flex flex-wrap items-center justify-between gap-2.5 px-1 py-0.5">
               <div className="flex flex-wrap items-center gap-2">
                 {activeCompanyAccounts.map((acc) => {
@@ -986,12 +1039,7 @@ export const BankManagementPage: React.FC = () => {
                       )}
                     >
                       <CreditCard className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                      <span>
-                        {acc.bankName}
-                        <span className="ml-1 text-[11px] font-normal opacity-80">
-                          ({acc.accountType})
-                        </span>
-                      </span>
+                      <span>{acc.bankName}</span>
                       {isActive && <Check className="h-3 w-3 text-white ml-0.5" />}
                     </button>
                   )
@@ -1046,9 +1094,9 @@ export const BankManagementPage: React.FC = () => {
             />
             <div className="absolute inset-0 bg-gradient-to-tr from-black/25 via-transparent to-white/10 pointer-events-none" />
 
-            {/* Top row: Bank Name only (Top Right, Clean & Bold, matching screenshot) */}
-            <div className="flex items-start justify-end relative z-10">
-              <span className="font-black text-sm sm:text-base md:text-lg tracking-widest uppercase text-white/95 text-right drop-shadow-sm">
+            {/* Top row: Bank Name */}
+            <div className="flex items-start justify-between relative z-10">
+              <span className="font-black text-base sm:text-lg md:text-xl tracking-widest uppercase text-white/95 drop-shadow-sm">
                 {activeAccount?.bankName}
               </span>
             </div>
@@ -1133,9 +1181,9 @@ export const BankManagementPage: React.FC = () => {
                 <div className="absolute left-6 bottom-4 w-44 h-44 bg-amber-500/20 rounded-full blur-2xl pointer-events-none" />
               )}
 
-              {/* Top row: Bank Name only (Top Right, Clean & Bold) */}
-              <div className="flex items-start justify-end relative z-10">
-                <span className="font-black text-sm sm:text-base tracking-widest uppercase text-white/95 text-right drop-shadow-sm">
+              {/* Top row: Bank Name */}
+              <div className="flex items-start justify-between relative z-10">
+                <span className="font-black text-base sm:text-lg tracking-widest uppercase text-white/95 drop-shadow-sm">
                   {activeAccount?.bankName}
                 </span>
               </div>
@@ -1170,16 +1218,9 @@ export const BankManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Bottom Row: Account Number, Branch, and White Circular Pen Edit Button */}
-              <div className="flex items-end justify-between relative z-10 pt-2 border-t border-white/15">
-                <div className="text-xs text-white/80 space-y-0.5">
-                  <p className="font-medium">{activeAccount?.accountType} Facility</p>
-                  <p className="truncate max-w-[200px] sm:max-w-[240px] text-white/70 text-[11px]">
-                    {activeAccount?.accountNumber} · {activeAccount?.branch}
-                  </p>
-                </div>
-
-                {canManageBank && (
+              {/* Bottom Row: Edit Action Button */}
+              {canManageBank && (
+                <div className="flex items-center justify-end relative z-10">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -1192,8 +1233,8 @@ export const BankManagementPage: React.FC = () => {
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1353,13 +1394,11 @@ export const BankManagementPage: React.FC = () => {
         <div className="bg-[#E2E8F0] px-5 sm:px-6 py-3 border-b border-slate-300 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
-              {activeAccount?.accountName || activeAccount?.companyName || 'No Account Selected'}
+              {activeAccount?.bankName || 'Bank Account'}
             </h3>
-            {activeAccount?.bankName && (
-              <span className="text-xs font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full border border-slate-300">
-                {activeAccount.bankName}
-              </span>
-            )}
+            <span className="text-xs font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full border border-slate-300">
+              Transactions
+            </span>
           </div>
 
           {/* Action buttons (Deposit & Withdraw) aligned right on the banner */}
@@ -1388,35 +1427,47 @@ export const BankManagementPage: React.FC = () => {
         </div>
 
         {/* Unified Table matching screenshot columns: DATE, CHEQUE NO., PARTICULARS, WITHDRAWAL, DEPOSIT, CATEGORY, CURRENT BALANCE */}
-        <div className="overflow-x-auto">
-          <Table className="w-full text-xs sm:text-sm">
-            <TableHeader className="bg-slate-50/70 border-b border-slate-200">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="px-4 py-3 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[12%]">
+        <div className="overflow-x-auto rounded-xl border border-slate-100 mx-5 sm:mx-6 my-4">
+          <Table className="w-full text-xs">
+            <TableHeader>
+              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
+                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[12%]">
                   DATE
                 </TableHead>
-                <TableHead className="px-4 py-3 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[15%]">
+                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[15%]">
                   CHEQUE NO.
                 </TableHead>
-                <TableHead className="px-4 py-3 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[28%]">
+                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[28%]">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="px-4 py-3 font-bold text-muted-fg uppercase tracking-wider text-xs text-right w-[13%]">
+                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-right w-[13%]">
                   WITHDRAWAL
                 </TableHead>
-                <TableHead className="px-4 py-3 font-bold text-muted-fg uppercase tracking-wider text-xs text-right w-[13%]">
+                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-right w-[13%]">
                   DEPOSIT
                 </TableHead>
-                <TableHead className="px-4 py-3 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[14%]">
+                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[14%]">
                   CATEGORY
                 </TableHead>
-                <TableHead className="px-4 py-3 font-bold text-muted-fg uppercase tracking-wider text-xs text-right w-[15%]">
+                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-right w-[15%]">
                   CURRENT BALANCE
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedTransactions.length === 0 ? (
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i} className="animate-pulse">
+                    <TableCell className="px-4 py-3.5"><div className="h-4 w-20 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-4 py-3.5"><div className="h-4 w-24 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-4 py-3.5"><div className="h-4 w-48 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-4 py-3.5 text-right"><div className="h-4 w-20 bg-slate-200 rounded ml-auto" /></TableCell>
+                    <TableCell className="px-4 py-3.5 text-right"><div className="h-4 w-20 bg-slate-200 rounded ml-auto" /></TableCell>
+                    <TableCell className="px-4 py-3.5"><div className="h-4 w-24 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-4 py-3.5 text-right"><div className="h-4 w-24 bg-slate-200 rounded ml-auto" /></TableCell>
+                  </TableRow>
+                ))
+              ) : paginatedTransactions.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-44 text-center py-8">
                     <div className="flex flex-col items-center justify-center text-muted-fg">
@@ -1432,42 +1483,78 @@ export const BankManagementPage: React.FC = () => {
                 paginatedTransactions.map((tx) => (
                   <TableRow
                     key={tx.id}
-                    className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors"
+                    onClick={() => {
+                      setViewingBankTx({
+                        id: tx.id,
+                        refNo: tx.chequeNo || tx.id,
+                        chequeNo: tx.chequeNo || '',
+                        date: tx.date,
+                        type: tx.withdrawal && tx.withdrawal > 0 ? 'Expense' : 'Sales',
+                        company: activeAccount?.companyName || selectedCompany || 'MCT Group of Companies',
+                        description: tx.particulars,
+                        particulars: tx.particulars,
+                        amount: tx.deposit || tx.withdrawal || 0,
+                        withdrawal: tx.withdrawal || 0,
+                        deposit: tx.deposit || 0,
+                        category: tx.category as any,
+                        paymentMethod: tx.chequeNo ? 'Cheque' : 'Bank Transfer',
+                        status: 'Paid',
+                        auditStatus: 'Verified',
+                        createdAt: tx.date,
+                        attachments: [],
+                      })
+                      setIsViewTxModalOpen(true)
+                    }}
+                    title="Click to view complete particulars and transaction breakdown"
+                    className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors cursor-pointer text-xs"
                   >
                     {/* Date */}
-                    <TableCell className="px-4 py-3 font-mono text-xs text-muted-fg whitespace-nowrap">
+                    <TableCell className="px-4 py-3.5 font-mono text-xs text-muted-fg whitespace-nowrap">
                       {tx.date}
                     </TableCell>
 
                     {/* Cheque No */}
-                    <TableCell className="px-4 py-3 font-mono text-xs font-semibold text-focus whitespace-nowrap">
+                    <TableCell className="px-4 py-3.5 font-mono text-xs font-semibold text-focus whitespace-nowrap">
                       {tx.chequeNo || '—'}
                     </TableCell>
 
                     {/* Particulars */}
-                    <TableCell className="px-4 py-3 font-medium text-xs text-focus">
-                      {tx.particulars}
+                    <TableCell className="px-4 py-3.5 font-medium text-xs text-focus max-w-xs" title={tx.particulars}>
+                      {(() => {
+                        const summary = getParticularsSummary(tx.particulars)
+                        if (summary.count > 1) {
+                          return (
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="truncate block font-medium">{summary.firstItemName}</span>
+                              <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                +{summary.count - 1} more
+                              </span>
+                            </div>
+                          )
+                        }
+                        return <span className="truncate block font-medium">{summary.firstItemName}</span>
+                      })()}
                     </TableCell>
 
                     {/* Withdrawal */}
-                    <TableCell className="px-4 py-3 font-semibold text-xs text-rose-600 text-right whitespace-nowrap">
+                    <TableCell className="px-4 py-3.5 font-semibold text-xs text-rose-600 text-right whitespace-nowrap">
                       {tx.withdrawal ? `₱ ${tx.withdrawal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : ''}
                     </TableCell>
 
                     {/* Deposit */}
-                    <TableCell className="px-4 py-3 font-semibold text-xs text-emerald-600 text-right whitespace-nowrap">
+                    <TableCell className="px-4 py-3.5 font-semibold text-xs text-emerald-600 text-right whitespace-nowrap">
                       {tx.deposit ? `₱ ${tx.deposit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : ''}
                     </TableCell>
 
                     {/* Category */}
-                    <TableCell className="px-4 py-3 text-xs text-muted-fg whitespace-nowrap">
+                    <TableCell className="px-4 py-3.5 text-xs text-muted-fg whitespace-nowrap">
                       <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-focus/80">
                         {tx.category}
                       </span>
                     </TableCell>
 
                     {/* Current Balance */}
-                    <TableCell className="px-4 py-3 font-bold text-xs text-focus text-right whitespace-nowrap tabular-nums">
+                    <TableCell className="px-4 py-3.5 font-bold text-xs text-focus text-right whitespace-nowrap tabular-nums">
                       ₱ {tx.runningBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                     </TableCell>
                   </TableRow>
@@ -2288,6 +2375,13 @@ export const BankManagementPage: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal: View Bank Transaction Breakdown & Particulars */}
+      <AuditTransactionModal
+        open={isViewTxModalOpen}
+        onOpenChange={setIsViewTxModalOpen}
+        transaction={viewingBankTx}
+      />
     </div>
   )
 }

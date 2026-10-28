@@ -19,6 +19,7 @@ import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { AuditTransactionModal } from '@/components/dashboard/AuditTransactionModal'
 import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { getParticularsSummary } from '@/utils/particularsUtils'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 
 export type { DashboardTransactionItem as DashboardTransaction }
@@ -81,25 +82,24 @@ export const RecentTransactionsCard: React.FC<RecentTransactionsCardProps> = ({
         className
       )}
     >
-      {/* 1. Grey Header Banner matching the Sales Table with View All Button */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-slate-100/80 border border-slate-200/60 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* 1. Clean Header with Red View All Button */}
+      <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-sm sm:text-base font-bold text-focus leading-tight">
+          <h2 className="text-base sm:text-lg font-bold text-focus leading-tight">
             Recent Transactions
           </h2>
-          <p className="text-xs text-muted-fg font-normal mt-0.5">
+          <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5">
             Here's the summary of recent transactions in {displayedTitle}.
           </p>
         </div>
 
         <Button
           type="button"
-          variant="outline"
           onClick={() => navigate('/transaction')}
-          className="h-9 px-4 rounded-xl border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-focus shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+          className="h-9 px-4 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer transition-colors"
         >
           <span>View All</span>
-          <ArrowRight className="h-3.5 w-3.5 text-muted-fg" />
+          <ArrowRight className="h-3.5 w-3.5 text-white" />
         </Button>
       </div>
 
@@ -109,7 +109,7 @@ export const RecentTransactionsCard: React.FC<RecentTransactionsCardProps> = ({
       <div className="overflow-x-auto rounded-xl border border-slate-100">
         <Table>
           <TableHeader>
-            <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+            <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
               <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
                 DATE
               </TableHead>
@@ -153,7 +153,7 @@ export const RecentTransactionsCard: React.FC<RecentTransactionsCardProps> = ({
                     key={tx.id}
                     onClick={() => handleOpenAudit(tx)}
                     title="Click to view complete details"
-                    className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors cursor-pointer"
+                    className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors cursor-pointer text-xs"
                   >
                     {/* 1. Date */}
                     <TableCell className="px-4 py-3.5 text-xs font-medium text-focus whitespace-nowrap">
@@ -166,8 +166,21 @@ export const RecentTransactionsCard: React.FC<RecentTransactionsCardProps> = ({
                     </TableCell>
 
                     {/* 3. Particulars */}
-                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-xs">
-                      <span className="line-clamp-1">{tx.particulars || tx.description}</span>
+                    <TableCell className="px-4 py-3.5 text-xs text-focus/90 font-normal max-w-xs" title={tx.particulars || tx.description}>
+                      {(() => {
+                        const summary = getParticularsSummary(tx.particulars || tx.description, tx.items)
+                        if (summary.count > 1) {
+                          return (
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="truncate block font-medium">{summary.firstItemName}</span>
+                              <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                +{summary.count - 1} more
+                              </span>
+                            </div>
+                          )
+                        }
+                        return <span className="truncate block font-medium">{summary.firstItemName}</span>
+                      })()}
                     </TableCell>
 
                     {/* 4. Withdrawal */}

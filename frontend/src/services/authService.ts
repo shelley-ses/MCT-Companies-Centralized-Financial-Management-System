@@ -397,6 +397,31 @@ export const authService = {
   },
 
   /**
+  /**
+   * Updates user session properties in memory, sessionStorage, and localStorage.
+   */
+  updateSessionUser(partial: Partial<User>): User | null {
+    if (inMemorySessionUser) {
+      inMemorySessionUser = { ...inMemorySessionUser, ...partial }
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(inMemorySessionUser))
+        } catch { }
+      }
+    }
+    if (typeof window !== 'undefined' && partial.avatarUrl !== undefined) {
+      try {
+        if (partial.avatarUrl) {
+          localStorage.setItem('mct_user_avatar', partial.avatarUrl)
+        } else {
+          localStorage.removeItem('mct_user_avatar')
+        }
+      } catch { }
+    }
+    return inMemorySessionUser
+  },
+
+  /**
    * Retrieves the current user session from memory or storage.
    */
   async getSession(): Promise<User | null> {
@@ -409,6 +434,14 @@ export const authService = {
       } catch {
         // ignore
       }
+    }
+    if (inMemorySessionUser && typeof window !== 'undefined') {
+      try {
+        const customAvatar = localStorage.getItem('mct_user_avatar')
+        if (customAvatar) {
+          inMemorySessionUser.avatarUrl = customAvatar
+        }
+      } catch { }
     }
     return inMemorySessionUser
   },

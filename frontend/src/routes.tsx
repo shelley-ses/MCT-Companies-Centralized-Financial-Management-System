@@ -214,6 +214,10 @@ export const router = createBrowserRouter([
         element: <BillsPage />,
       },
       {
+        path: '/bills/:billId',
+        element: <BillsPage />,
+      },
+      {
         path: '/loan/bills',
         element: <Navigate to="/bills" replace />,
       },

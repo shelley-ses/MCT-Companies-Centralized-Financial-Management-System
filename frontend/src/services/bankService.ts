@@ -1,3 +1,5 @@
+import { websocketService } from '@/services/websocketService'
+
 export interface BankTransaction {
   id: string
   bankAccountId?: string
@@ -164,7 +166,9 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 
   async updateAccount(id: string, input: Partial<NewBankAccountInput>, userRole?: string): Promise<BankAccount> {
@@ -187,7 +191,9 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 
   async deleteAccount(id: string, userRole?: string): Promise<void> {
@@ -196,6 +202,7 @@ export const bankService = {
       headers: backendHeaders(userRole),
     })
     if (!res.ok) throw await handleResponseError(res)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: id })
   },
 
   async deposit(id: string, input: DepositWithdrawInput, userRole?: string): Promise<BankAccount> {
@@ -214,7 +221,9 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 
   async withdraw(id: string, input: DepositWithdrawInput, userRole?: string): Promise<BankAccount> {
@@ -233,6 +242,8 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    return mapAccountFromBackend(data)
+    const mapped = mapAccountFromBackend(data)
+    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
+    return mapped
   },
 }

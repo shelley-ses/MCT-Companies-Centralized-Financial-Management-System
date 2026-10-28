@@ -48,6 +48,72 @@ export function formatParticularsString(items: ParticularItem[]): string {
 }
 
 /**
+ * Strips known operational prefixes from a particulars text string.
+ */
+export function stripParticularsPrefix(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(
+      /^(?:Sales\s+Collection|Expense\s+Disbursement|Deposit\s+Remittance|Withdrawal\s+Settlement|Sales|Expense|Deposit|Withdrawal)\s*:\s*/i,
+      ''
+    )
+    .trim()
+}
+
+/**
+ * Splits a particulars string by comma or semicolon when not inside parentheses
+ * and not between numerical digits (to preserve currency thousands separators like 1,000.00).
+ */
+export function splitParticularsItems(text: string): string[] {
+  if (!text || !text.trim()) return []
+  const trimmed = text.trim()
+
+  // If already multi-line, split by newline
+  if (trimmed.includes('\n')) {
+    return trimmed
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+  }
+
+  const results: string[] = []
+  let current = ''
+  let depth = 0
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const char = trimmed[i]
+    if (char === '(') {
+      depth++
+    } else if (char === ')') {
+      depth = Math.max(0, depth - 1)
+    }
+
+    if (depth === 0 && (char === ',' || char === ';')) {
+      const prevChar = i > 0 ? trimmed[i - 1] : ''
+      const nextChar = i < trimmed.length - 1 ? trimmed[i + 1] : ''
+      // Ignore commas in numbers like 1,000
+      if (/\d/.test(prevChar) && /\d/.test(nextChar)) {
+        current += char
+        continue
+      }
+      if (current.trim()) {
+        results.push(current.trim())
+      }
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  if (current.trim()) {
+    results.push(current.trim())
+  }
+
+  return results
+}
+
+/**
  * Parses raw particulars string or structured items into an array of ParticularItem objects.
  */
 export function parseParticulars(
@@ -63,16 +129,44 @@ export function parseParticulars(
     return []
   }
 
-  const trimmed = rawParticulars.trim()
+  // Strip operational prefixes if present
+  const cleanedPrefix = stripParticularsPrefix(rawParticulars.trim())
 
-  // Multi-line particulars (one item per line)
-  if (trimmed.includes('\n')) {
-    const lines = trimmed.split('\n').map((l) => l.trim()).filter(Boolean)
-    return lines.map((line, idx) => parseSingleParticularLine(line, idx))
+  // Check if string has explicit "+ N more" suffix from prior formatting
+  const plusMoreMatch = cleanedPrefix.match(/^(.+?)\s*\+(\d+)\s+more$/i)
+  if (plusMoreMatch) {
+    const baseName = plusMoreMatch[1].trim()
+    const moreCount = parseInt(plusMoreMatch[2], 10) || 0
+    const amt = typeof fallbackTotal === 'number' && fallbackTotal > 0 ? fallbackTotal : 0
+    const itemsList: ParticularItem[] = [
+      {
+        id: 'item-0',
+        particulars: baseName,
+        quantity: 1,
+        unitPrice: moreCount > 0 ? 0 : amt,
+        total: moreCount > 0 ? 0 : amt,
+      },
+    ]
+    for (let i = 1; i <= moreCount; i++) {
+      itemsList.push({
+        id: `item-${i}`,
+        particulars: `Additional Item #${i}`,
+        quantity: 1,
+        unitPrice: 0,
+        total: 0,
+      })
+    }
+    return itemsList
+  }
+
+  // Split lines or delimiters (commas / semicolons)
+  const segments = splitParticularsItems(cleanedPrefix)
+  if (segments.length > 1) {
+    return segments.map((seg, idx) => parseSingleParticularLine(seg, idx))
   }
 
   // Single line: check if it has parentheses with qty / price
-  const parsedSingle = parseSingleParticularLine(trimmed, 0)
+  const parsedSingle = parseSingleParticularLine(cleanedPrefix, 0)
   if (parsedSingle.quantity > 1 || parsedSingle.unitPrice > 0 || parsedSingle.status) {
     return [parsedSingle]
   }
@@ -81,7 +175,7 @@ export function parseParticulars(
   return [
     {
       id: `item-0`,
-      particulars: trimmed,
+      particulars: cleanedPrefix,
       quantity: 1,
       unitPrice: amt,
       total: amt,
@@ -136,6 +230,7 @@ function parseSingleParticularLine(line: string, index: number): ParticularItem 
 
 /**
  * Returns summary information for table row display.
+ * Shows clean first item name and total count (e.g. "Dinuguan" + 3 more).
  */
 export function getParticularsSummary(
   rawParticulars?: string | null,
@@ -143,10 +238,13 @@ export function getParticularsSummary(
 ): { firstItemName: string; count: number } {
   const items = parseParticulars(rawParticulars, explicitItems)
   if (items.length === 0) {
-    return { firstItemName: rawParticulars || '—', count: 0 }
+    const fallback = stripParticularsPrefix(rawParticulars || '') || '—'
+    return { firstItemName: fallback, count: 0 }
   }
+
+  const cleanFirstName = stripParticularsPrefix(items[0].particulars)
   return {
-    firstItemName: items[0].particulars,
+    firstItemName: cleanFirstName || items[0].particulars,
     count: items.length,
   }
 }
