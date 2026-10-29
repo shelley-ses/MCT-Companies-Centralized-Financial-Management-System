@@ -26,6 +26,9 @@ import {
 } from '@/services/dashboardService'
 import { pettyCashService } from '@/services/pettyCashService'
 import { loanService } from '@/services/loanService'
+import { salesService } from '@/services/salesService'
+import { expenseService } from '@/services/expenseService'
+import { websocketService } from '@/services/websocketService'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { isCompanyMatch } from '@/utils/companyUtils'
@@ -90,6 +93,7 @@ export const DashboardPage: React.FC = () => {
 
   const [loading, setLoading] = React.useState<boolean>(true)
   const [data, setData] = React.useState<DashboardData | null>(null)
+  const [loadError, setLoadError] = React.useState<string>('')
 
   // Fetch initial dashboard data
   React.useEffect(() => {
@@ -103,9 +107,13 @@ export const DashboardPage: React.FC = () => {
         })
         if (isMounted) {
           setData(result)
+          setLoadError('')
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err)
+        if (isMounted) {
+          setLoadError(err instanceof Error ? err.message : 'The dashboard data could not be loaded.')
+        }
       } finally {
         if (isMounted) {
           setLoading(false)
@@ -117,6 +125,38 @@ export const DashboardPage: React.FC = () => {
 
     return () => {
       isMounted = false
+    }
+  }, [filters.company])
+
+  // Realtime: reload quietly when another user changes data (spec 0018). Each service keeps a short
+  // cache, so the caches are cleared first to read what the database has now.
+  React.useEffect(() => {
+    let mounted = true
+    let timer: number | null = null
+    const reload = () => {
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(async () => {
+        dashboardService.invalidateCache()
+        salesService.invalidateCache()
+        expenseService.invalidateCache()
+        try {
+          const result = await dashboardService.getDashboardData({ company: filters.company })
+          if (mounted) {
+            setData(result)
+            setLoadError('')
+          }
+        } catch {
+          // keep what is on screen; the next full load shows the error
+        }
+      }, 400)
+    }
+    const unsubs = (['AUDIT_UPDATED', 'LOANS_UPDATED', 'PETTY_CASH_UPDATED', 'BANK_UPDATED', 'TENANTS_UPDATED'] as const).map(
+      (event) => websocketService.subscribe(event, reload)
+    )
+    return () => {
+      mounted = false
+      if (timer) window.clearTimeout(timer)
+      unsubs.forEach((off) => off())
     }
   }, [filters.company])
 
@@ -248,6 +288,18 @@ export const DashboardPage: React.FC = () => {
           isCompanyScoped={isCompanyScoped}
         />
       </div>
+
+      {loadError && (
+        <div
+          className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-xs text-rose-700"
+          role="alert"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+          <span>
+            The dashboard data could not be loaded. {loadError} The figures below may be incomplete.
+          </span>
+        </div>
+      )}
 
       {/* 3. KPI Cards (Admin, Finance, and Audit):
           1. Total Expenses

@@ -366,6 +366,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   // Real-time synchronization across all tabs and clients
   React.useEffect(() => {
     const unsubscribe = websocketService.subscribe('LOANS_UPDATED', () => {
+      // Another user (for example Audit) changed a loan: drop the 30 second cache so the reload is real
+      loanService.invalidateCache()
       loadLoans()
     })
     return () => unsubscribe()

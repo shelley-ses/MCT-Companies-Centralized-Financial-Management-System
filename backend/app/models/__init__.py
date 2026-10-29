@@ -6,6 +6,7 @@ from app.models.loan import Loan, LoanRepayment
 from app.models.staff_credit import StaffCredit, StaffCreditRepayment
 from app.models.bills import Bill, BillPayment
 from app.models.lending import LendingFacility, LendingTransaction
+from app.models.tenant import TenantLease, TenantLeasePayment
 
 __all__ = [
     "Company",
@@ -24,4 +25,6 @@ __all__ = [
     "BillPayment",
     "LendingFacility",
     "LendingTransaction",
+    "TenantLease",
+    "TenantLeasePayment",
 ]

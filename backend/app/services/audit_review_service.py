@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import AuthenticatedUser, check_company_access
+from app.core.websocket import ws_manager
 from app.db.supabase import get_supabase_admin_client
 from app.models.user import User
 from app.schemas.audit_review import PENDING_AUDIT, AuditReviewIn
@@ -93,3 +94,13 @@ def apply_audit_review(
 
     if not remote_saved and not local_saved:
         raise HTTPException(status_code=500, detail="Could not save the audit status. Please try again.")
+
+    # Tell every connected Finance, Audit and company screen to reload (spec 0016, AC-4).
+
+    try:
+        ws_manager.broadcast_sync({
+            "type": "AUDIT_UPDATED",
+            "payload": {"resource": supabase_table, "id": record_id},
+        })
+    except Exception as e:
+        print(f"Audit websocket broadcast error: {e}")

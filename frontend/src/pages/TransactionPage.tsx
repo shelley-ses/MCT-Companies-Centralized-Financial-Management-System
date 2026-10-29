@@ -41,6 +41,8 @@ import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { getParticularsSummary } from '@/utils/particularsUtils'
 import { getPaidDepositForSale, getPaidDisbursementForExpense } from '@/utils/cashLedgerUtils'
 import { reportAuditSaveFailure } from '@/services/auditReviewApi'
+import { websocketService } from '@/services/websocketService'
+import { escapeHtml, csvCell } from '@/utils/exportSafety'
 import { cn } from '@/lib/utils'
 
 // ── Loan and petty cash rows (spec 0013) ─────────────────────────────────────────────────────
@@ -373,6 +375,33 @@ export const TransactionPage: React.FC = () => {
     fetchAllTransactions()
   }, [fetchAllTransactions])
 
+  // Realtime: an Audit review of a sale or expense, or an Audit approval of a loan or petty cash
+  // top up, reloads the ledger for everyone (Finance, Audit and company users). Reloads are
+  // silent (no loading skeleton) and bunched together when several messages arrive at once.
+  React.useEffect(() => {
+    let timer: number | null = null
+    const reload = () => {
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        // Each service keeps a 30 second cache. Clear them so the reload shows what the server has now.
+        salesService.invalidateCache()
+        expenseService.invalidateCache()
+        loanService.invalidateCache()
+        pettyCashService.invalidateCache()
+        void fetchAllTransactions()
+      }, 250)
+    }
+    const unsubs = [
+      websocketService.subscribe('AUDIT_UPDATED', reload),
+      websocketService.subscribe('LOANS_UPDATED', reload),
+      websocketService.subscribe('PETTY_CASH_UPDATED', reload),
+    ]
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      unsubs.forEach((off) => off())
+    }
+  }, [fetchAllTransactions])
+
   const handleRefresh = async () => {
     setIsRefreshing(true)
     await fetchAllTransactions()
@@ -381,16 +410,18 @@ export const TransactionPage: React.FC = () => {
   // 1. FILTERED CASH LEDGER
   //    Deposits    = paid sales, plus money a company receives from a loan or petty cash top up
   //    Withdrawals = paid expenses, plus money a company funds out for a loan or petty cash top up
-  //    Loan and petty cash rows appear from Finance endorsement (marked pending until Audit
-  //    approves) and are removed if the record is rejected (spec 0013).
-  const filteredDepositTransactions = React.useMemo(() => {
+  //    Loan and petty cash rows appear once Audit approves them and are removed if the record is
+  //    rejected (spec 0013, narrowed by spec 0016).
+  //    Spec 0016: loans and petty cash top ups still waiting for Audit are not money movement yet, so
+  //    they are kept off this tab. They stay on the All tab, marked pending.
+  const depositBaseList = React.useMemo(() => {
     // Spec 0013 AC-10: a sale or expense is listed when any part of it is paid, and the row shows
     // only the paid amount (same rule as the Sales Deposit tab and the Expense Withdraw tab).
     let list = transactions
       .filter((t) =>
         t.type === 'Sales' || t.type === 'Expense'
           ? (t.paidAmount || 0) > 0
-          : t.type === 'Loan' || t.type === 'Petty Cash'
+          : (t.type === 'Loan' || t.type === 'Petty Cash') && !t.awaitingAudit
       )
       .map((t): DashboardTransactionItem => {
         const paid = t.paidAmount || 0
@@ -409,6 +440,31 @@ export const TransactionPage: React.FC = () => {
         (t) => (t.company || '').toLowerCase().trim() === activeCompany.toLowerCase().trim()
       )
     }
+    return list
+  }, [transactions, isCompanyScoped, assignedCompany, activeCompany])
+
+  // Running balance per company (deposits minus withdrawals, oldest first). It is worked out over
+  // the whole company scoped ledger, before the search, direction and date filters, so a filter
+  // never restarts it. Keyed by record type and id.
+  const depositBalanceByKey = React.useMemo(() => {
+    const ordered = [...depositBaseList].sort((a, b) => {
+      const byDate = normalizeDateToYYYYMMDD(a.date).localeCompare(normalizeDateToYYYYMMDD(b.date))
+      if (byDate !== 0) return byDate
+      return (a.createdAt || a.id).localeCompare(b.createdAt || b.id)
+    })
+    const running = new Map<string, number>()
+    const balances = new Map<string, number>()
+    ordered.forEach((t) => {
+      const companyKey = (t.company || '').toLowerCase().trim()
+      const next = Math.round(((running.get(companyKey) || 0) + (t.deposit || 0) - (t.withdrawal || 0)) * 100) / 100
+      running.set(companyKey, next)
+      balances.set(`${t.type}:${t.id}`, next)
+    })
+    return balances
+  }, [depositBaseList])
+
+  const filteredDepositTransactions = React.useMemo(() => {
+    let list = depositBaseList
 
     // Direction filter: All | Deposits (money in) | Withdrawals (money out)
     if (depositDirectionFilter === 'Deposits') {
@@ -452,10 +508,7 @@ export const TransactionPage: React.FC = () => {
 
     return list
   }, [
-    transactions,
-    isCompanyScoped,
-    assignedCompany,
-    activeCompany,
+    depositBaseList,
     depositDirectionFilter,
     depositSearchQuery,
     depositDateRange,
@@ -604,6 +657,20 @@ export const TransactionPage: React.FC = () => {
     []
   )
 
+  // Totals of the rows that match the current filters on the active tab (spec 0016)
+  const activeTotals = React.useMemo(() => {
+    let deposits = 0
+    let withdrawals = 0
+    activeDataset.forEach((t) => {
+      const { deposit, withdrawal } = getRowAmounts(t)
+      deposits += deposit || 0
+      withdrawals += withdrawal || 0
+    })
+    deposits = Math.round(deposits * 100) / 100
+    withdrawals = Math.round(withdrawals * 100) / 100
+    return { deposits, withdrawals, net: Math.round((deposits - withdrawals) * 100) / 100 }
+  }, [activeDataset, getRowAmounts])
+
   const handleRowClick = (tx: DashboardTransactionItem) => {
     // Mirror rows show the other side of a record (the lender's loan row, petty cash rows).
     // They are read only here: the record is reviewed on its own page (spec 0013, AC-9).
@@ -661,34 +728,37 @@ export const TransactionPage: React.FC = () => {
   const handleExportCsv = () => {
     const isDeposit = activeTab === 'deposit'
     const headers = isDeposit
-      ? ['DATE', 'COMPANY', 'CHEQUE NO.', 'PARTICULARS', 'CATEGORY', 'DEPOSIT', 'WITHDRAWAL', 'AUDIT STATUS']
-      : ['DATE', 'COMPANY', 'TYPE', 'REF NO.', 'PARTICULARS', 'PAYMENT METHOD', 'DEPOSIT', 'WITHDRAWAL', 'STATUS', 'AUDIT STATUS']
+      ? ['DATE', 'COMPANY', 'TYPE', 'CHEQUE NO.', 'PARTICULARS', 'CATEGORY', 'DEPOSIT', 'WITHDRAWAL', 'BALANCE', 'AUDIT STATUS']
+      : ['DATE', 'COMPANY', 'TYPE', 'REF NO.', 'PARTICULARS', 'PAYMENT METHOD', 'DEPOSIT', 'WITHDRAWAL', 'NET AMOUNT', 'STATUS', 'AUDIT STATUS']
 
     const rows = (isDeposit ? filteredDepositTransactions : filteredSalesTransactions).map((t) => {
       const { deposit, withdrawal } = getRowAmounts(t)
       if (isDeposit) {
         return [
-          `"${t.date}"`,
-          `"${(t.company || '').replace(/"/g, '""')}"`,
-          `"${t.chequeNo || '—'}"`,
-          `"${(t.particulars || t.description).replace(/"/g, '""')}"`,
-          `"${t.category}"`,
+          csvCell(t.date),
+          csvCell(t.company),
+          csvCell(t.type),
+          csvCell(t.chequeNo || '—'),
+          csvCell(t.particulars || t.description),
+          csvCell(t.category),
           deposit || 0,
           withdrawal || 0,
-          `"${t.auditStatus || 'Pending Audit'}"`,
+          depositBalanceByKey.get(`${t.type}:${t.id}`) ?? 0,
+          csvCell(t.auditStatus || 'Pending Audit'),
         ]
       }
       return [
-        `"${t.date}"`,
-        `"${(t.company || '').replace(/"/g, '""')}"`,
-        `"${t.type}"`,
-        `"${t.refNo || '—'}"`,
-        `"${(t.particulars || t.description).replace(/"/g, '""')}"`,
-        `"${t.paymentMethod || 'Cash'}"`,
+        csvCell(t.date),
+        csvCell(t.company),
+        csvCell(t.type),
+        csvCell(t.refNo || '—'),
+        csvCell(t.particulars || t.description),
+        csvCell(t.paymentMethod || 'Cash'),
         deposit || 0,
         withdrawal || 0,
-        `"${t.status || 'Paid'}"`,
-        `"${t.auditStatus || 'Pending Audit'}"`,
+        Math.round(((deposit || 0) - (withdrawal || 0)) * 100) / 100,
+        csvCell(t.status || 'Paid'),
+        csvCell(t.auditStatus || 'Pending Audit'),
       ]
     })
 
@@ -718,38 +788,44 @@ export const TransactionPage: React.FC = () => {
 
     const fmtAmt = (n: number) =>
       n > 0 ? `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'
+    // Signed amount for the Balance and Net Amount columns (zero and negative values still show)
+    const fmtSigned = (n: number) =>
+      `${n < 0 ? '-' : ''}₱${Math.abs(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 
     const rowsHtml =
       records.length === 0
-        ? `<tr><td colspan="${isDeposit ? 8 : 10}" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No ${isDeposit ? 'deposit' : 'transaction'} records found for this selection.</td></tr>`
+        ? `<tr><td colspan="${isDeposit ? 10 : 11}" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No ${isDeposit ? 'deposit' : 'transaction'} records found for this selection.</td></tr>`
         : records
             .map((tx) => {
               const { deposit, withdrawal } = getRowAmounts(tx)
               if (isDeposit) {
                 return `
         <tr>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.date}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${tx.company || '—'}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${tx.chequeNo || '—'}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.particulars || tx.description}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.category}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.date)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${escapeHtml(tx.company || '—')}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.type)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${escapeHtml(tx.chequeNo || '—')}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.particulars || tx.description)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.category)}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #16a34a; font-weight: 700;">${fmtAmt(deposit)}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #dc2626; font-weight: 700;">${fmtAmt(withdrawal)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">${fmtSigned(depositBalanceByKey.get(`${escapeHtml(tx.type)}:${tx.id}`) ?? 0)}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.auditStatus === 'Verified' ? 'Audited' : 'Pending Audit'}</td>
         </tr>
       `
               }
               return `
         <tr>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.date}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${tx.company || '—'}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.type}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${tx.refNo || '—'}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.particulars || tx.description}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.paymentMethod || 'Cash'}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.date)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${escapeHtml(tx.company || '—')}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.type)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${escapeHtml(tx.refNo || '—')}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.particulars || tx.description)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(tx.paymentMethod || 'Cash')}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #16a34a; font-weight: 700;">${fmtAmt(deposit)}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; color: #dc2626; font-weight: 700;">${fmtAmt(withdrawal)}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${tx.status || 'Paid'}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 700;">${fmtSigned(Math.round((deposit - withdrawal) * 100) / 100)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${escapeHtml(tx.status || 'Paid')}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${tx.auditStatus === 'Verified' ? 'Audited' : 'Pending Audit'}</td>
         </tr>
       `
@@ -788,12 +864,13 @@ export const TransactionPage: React.FC = () => {
               <tr>
                 <th>Date</th>
                 <th>Company</th>
-                ${!isDeposit ? '<th>Type</th>' : ''}
+                <th>Type</th>
                 <th>${isDeposit ? 'Cheque No.' : 'Ref No.'}</th>
                 <th>Particulars</th>
                 <th>${isDeposit ? 'Category' : 'Payment Method'}</th>
                 <th style="text-align: right;">Deposit</th>
                 <th style="text-align: right;">Withdrawal</th>
+                <th style="text-align: right;">${isDeposit ? 'Balance' : 'Net Amount'}</th>
                 ${!isDeposit ? '<th>Status</th>' : ''}
                 <th>Audit Status</th>
               </tr>
@@ -1267,11 +1344,10 @@ export const TransactionPage: React.FC = () => {
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
                   COMPANY
                 </TableHead>
-                {activeTab === 'all' && (
-                  <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
-                    TYPE
-                  </TableHead>
-                )}
+                {/* Type (Sales, Expense, Loan, Petty Cash) shows on both tabs */}
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
+                  TYPE
+                </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg">
                   {activeTab === 'deposit' ? 'CHEQUE NO.' : 'REF NO.'}
                 </TableHead>
@@ -1286,6 +1362,9 @@ export const TransactionPage: React.FC = () => {
                 </TableHead>
                 <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
                   WITHDRAWAL
+                </TableHead>
+                <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                  {activeTab === 'deposit' ? 'BALANCE' : 'NET AMOUNT'}
                 </TableHead>
                 {activeTab === 'all' && (
                   <TableHead className="px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
@@ -1309,12 +1388,11 @@ export const TransactionPage: React.FC = () => {
                   <TableRow key={i}>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-28 rounded-md" /></TableCell>
-                    {activeTab === 'all' && (
-                      <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-16 rounded-md" /></TableCell>
-                    )}
+                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-16 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-24 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-48 rounded-md" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md" /></TableCell>
+                    <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
                     <TableCell className="px-4 py-3.5"><Skeleton className="h-4 w-20 rounded-md ml-auto" /></TableCell>
                     {activeTab === 'all' && (
@@ -1331,7 +1409,7 @@ export const TransactionPage: React.FC = () => {
               ) : (activeTab === 'deposit' ? displayedDepositTransactions : displayedSalesTransactions).length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === 'all' ? (isAdmin ? 11 : 10) : (isAdmin ? 9 : 8)}
+                    colSpan={activeTab === 'all' ? (isAdmin ? 12 : 11) : (isAdmin ? 11 : 10)}
                     className="py-12 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     No {activeTab === 'deposit' ? 'deposit records' : 'transaction records'} found for the selected filter criteria.
@@ -1363,27 +1441,25 @@ export const TransactionPage: React.FC = () => {
                         </span>
                       </TableCell>
 
-                      {/* 2b. Type (All Transactions tab only) */}
-                      {activeTab === 'all' && (
-                        <TableCell className="px-4 py-3.5 whitespace-nowrap">
-                          <span
-                            className={cn(
-                              'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border',
-                              tx.type === 'Sales'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : tx.type === 'Expense'
-                                ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                : tx.type === 'Loan'
-                                ? 'bg-sky-50 text-sky-700 border-sky-200'
-                                : tx.type === 'Petty Cash'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-slate-100 text-slate-700 border-slate-200'
-                            )}
-                          >
-                            {tx.type}
-                          </span>
-                        </TableCell>
-                      )}
+                      {/* 2b. Type (both tabs): Sales, Expense, Loan or Petty Cash */}
+                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
+                        <span
+                          className={cn(
+                            'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border',
+                            tx.type === 'Sales'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : tx.type === 'Expense'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : tx.type === 'Loan'
+                              ? 'bg-sky-50 text-sky-700 border-sky-200'
+                              : tx.type === 'Petty Cash'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-slate-100 text-slate-700 border-slate-200'
+                          )}
+                        >
+                          {tx.type}
+                        </span>
+                      </TableCell>
 
                       {/* 3. Cheque No / Ref No */}
                       <TableCell className="px-4 py-3.5 text-xs text-focus/90 whitespace-nowrap font-mono">
@@ -1404,7 +1480,8 @@ export const TransactionPage: React.FC = () => {
                               </div>
                             )
                           }
-                          if (activeTab === 'deposit' && tx.awaitingAudit) {
+                          if (tx.awaitingAudit) {
+                            // Only reachable on the All tab: Finance endorsed it, Audit has not approved yet
                             return (
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <span className="truncate block font-medium">{summary.firstItemName}</span>
@@ -1435,6 +1512,24 @@ export const TransactionPage: React.FC = () => {
                       <TableCell className="px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap text-rose-600">
                         {withdrawalAmt > 0 ? formatPHP(withdrawalAmt) : <span className="text-muted-fg/50 font-normal">—</span>}
                       </TableCell>
+
+                      {/* 7b. Balance (Deposit tab: running total per company) or Net Amount (All tab: deposit minus withdrawal) */}
+                      {(() => {
+                        const shown =
+                          activeTab === 'deposit'
+                            ? depositBalanceByKey.get(`${escapeHtml(tx.type)}:${tx.id}`) ?? 0
+                            : Math.round((depositAmt - withdrawalAmt) * 100) / 100
+                        return (
+                          <TableCell
+                            className={cn(
+                              'px-4 py-3.5 text-xs font-bold text-right tabular-nums whitespace-nowrap',
+                              shown < 0 ? 'text-rose-600' : 'text-focus'
+                            )}
+                          >
+                            {shown < 0 ? `-${formatPHP(Math.abs(shown))}` : formatPHP(shown)}
+                          </TableCell>
+                        )
+                      })()}
 
                       {/* 8. Status (All Transactions tab only: Paid, Unpaid, Pending, On hold) */}
                       {activeTab === 'all' && (
@@ -1517,6 +1612,33 @@ export const TransactionPage: React.FC = () => {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* 4b. Totals for the rows that match the current filters (spec 0016) */}
+        <div
+          className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs"
+          aria-label="Totals for the filtered rows"
+          data-testid="ledger-totals"
+        >
+          <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-emerald-200/70 bg-emerald-50/60">
+            <span className="font-semibold text-emerald-800">Total Deposits</span>
+            <span className="font-bold tabular-nums text-emerald-700">{formatPHP(activeTotals.deposits)}</span>
+          </div>
+          <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-rose-200/70 bg-rose-50/60">
+            <span className="font-semibold text-rose-800">Total Withdrawals</span>
+            <span className="font-bold tabular-nums text-rose-700">{formatPHP(activeTotals.withdrawals)}</span>
+          </div>
+          <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50">
+            <span className="font-semibold text-focus">Net Amount</span>
+            <span
+              className={cn(
+                'font-bold tabular-nums',
+                activeTotals.net < 0 ? 'text-rose-600' : 'text-focus'
+              )}
+            >
+              {activeTotals.net < 0 ? `-${formatPHP(Math.abs(activeTotals.net))}` : formatPHP(activeTotals.net)}
+            </span>
+          </div>
         </div>
 
         {/* 5. Pagination Footer */}

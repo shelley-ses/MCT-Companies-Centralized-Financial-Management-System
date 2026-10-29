@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from enum import Enum
 from typing import Any, Optional
 
@@ -117,6 +118,15 @@ class AuditAction(str, Enum):
     PETTY_CASH_TOPUP_DELETED = "PETTY_CASH_TOPUP_DELETED"
     PETTY_CASH_WALLET_UPDATED = "PETTY_CASH_WALLET_UPDATED"
 
+    # ── Tenant leases (spec 0017) ────────────────────────────────────────────
+    TENANT_LEASE_CREATED   = "TENANT_LEASE_CREATED"
+    TENANT_LEASE_UPDATED   = "TENANT_LEASE_UPDATED"
+    TENANT_LEASE_DELETED   = "TENANT_LEASE_DELETED"
+    TENANT_PAYMENT_RECORDED = "TENANT_PAYMENT_RECORDED"
+    TENANT_PAYMENT_UPDATED = "TENANT_PAYMENT_UPDATED"
+    TENANT_PAYMENT_REMOVED = "TENANT_PAYMENT_REMOVED"
+    TENANT_AUDIT_REVIEWED  = "TENANT_AUDIT_REVIEWED"
+
     # ── Categories ───────────────────────────────────────────────────────────
     CATEGORY_CREATED    = "CATEGORY_CREATED"
     CATEGORY_UPDATED    = "CATEGORY_UPDATED"
@@ -190,6 +200,13 @@ _ACTION_CATEGORY_MAP: dict[str, str] = {
     "PETTY_CASH_TOPUP_CREATED": "PETTY_CASH",
     "PETTY_CASH_TOPUP_DELETED": "PETTY_CASH",
     "PETTY_CASH_WALLET_UPDATED": "PETTY_CASH",
+    "TENANT_LEASE_CREATED": "TENANT",
+    "TENANT_LEASE_UPDATED": "TENANT",
+    "TENANT_LEASE_DELETED": "TENANT",
+    "TENANT_PAYMENT_RECORDED": "TENANT",
+    "TENANT_PAYMENT_UPDATED": "TENANT",
+    "TENANT_PAYMENT_REMOVED": "TENANT",
+    "TENANT_AUDIT_REVIEWED": "TENANT",
     "CATEGORY_CREATED": "CATEGORY",
     "CATEGORY_UPDATED": "CATEGORY",
     "CATEGORY_DELETED": "CATEGORY",
@@ -259,6 +276,13 @@ _ACTION_DESCRIPTION_MAP: dict[str, str] = {
     "PETTY_CASH_TOPUP_CREATED": "Petty cash topped up from sales",
     "PETTY_CASH_TOPUP_DELETED": "Petty cash top-up removed",
     "PETTY_CASH_WALLET_UPDATED": "Petty cash wallet settings updated",
+    "TENANT_LEASE_CREATED":    "Tenant lease created",
+    "TENANT_LEASE_UPDATED":    "Tenant lease updated",
+    "TENANT_LEASE_DELETED":    "Tenant lease deleted",
+    "TENANT_PAYMENT_RECORDED": "Tenant payment recorded",
+    "TENANT_PAYMENT_UPDATED":  "Tenant payment edited",
+    "TENANT_PAYMENT_REMOVED":  "Tenant payment removed",
+    "TENANT_AUDIT_REVIEWED":   "Tenant lease audit review saved",
     "CATEGORY_CREATED":        "New category created",
     "CATEGORY_UPDATED":        "Category updated",
     "CATEGORY_DELETED":        "Category deleted",

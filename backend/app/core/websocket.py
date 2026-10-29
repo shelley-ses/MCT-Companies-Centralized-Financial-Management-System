@@ -36,15 +36,31 @@ class ConnectionManager:
             self.disconnect(dead)
 
     def broadcast_sync(self, message: dict[str, Any]) -> None:
-        """Thread-safe and synchronous-friendly broadcast caller."""
+        """
+        Thread-safe and synchronous-friendly broadcast caller.
+        """
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self.broadcast(message))
+            return
         except RuntimeError:
+            pass
+
+        server_loop = self._loop
+        if server_loop is not None and server_loop.is_running():
             try:
-                asyncio.run(self.broadcast(message))
+                asyncio.run_coroutine_threadsafe(self.broadcast(message), server_loop)
+                return
             except Exception:
                 pass
+
+        # No client has ever connected (so there is nothing to send to), or the loop is gone.
+        if not self.active_connections:
+            return
+        try:
+            asyncio.run(self.broadcast(message))
+        except Exception:
+            pass
 
 
 ws_manager = ConnectionManager()

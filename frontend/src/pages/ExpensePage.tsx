@@ -71,6 +71,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { loanService } from '@/services/loanService'
+import { websocketService } from '@/services/websocketService'
 import { useCompany } from '@/context/CompanyContext'
 
 const DEFAULT_COMPANY_LIST = ['All Companies']
@@ -276,9 +277,10 @@ export const ExpensePage: React.FC = () => {
     }
   }
 
-  const loadExpenses = React.useCallback(async () => {
+  // `silent` reloads without the loading skeleton (used by realtime updates).
+  const loadExpenses = React.useCallback(async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const targetCompany = isCompanyScoped
         ? assignedCompany
         : selectedCompany === 'All Companies'
@@ -297,6 +299,23 @@ export const ExpensePage: React.FC = () => {
 
   React.useEffect(() => {
     loadExpenses()
+  }, [loadExpenses])
+
+  // Realtime: when Audit saves a review (or any client changes an expense), reload the real values
+  React.useEffect(() => {
+    let timer: number | null = null
+    const reload = () => {
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        expenseService.invalidateCache()
+        void loadExpenses(true)
+      }, 250)
+    }
+    const unsubAudit = websocketService.subscribe('AUDIT_UPDATED', reload)
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      unsubAudit()
+    }
   }, [loadExpenses])
 
   React.useEffect(() => {

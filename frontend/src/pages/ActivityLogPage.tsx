@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DateRangeFilter, type DateRange } from '@/components/employee/DateRangeFilter'
 import { employeeService, type ActivityLogItem } from '@/services/employeeService'
+import { escapeHtml, csvCell } from '@/utils/exportSafety'
 
 // Helper to parse date string like "Oct 6, 2026 · 9:15 AM" or "2026-10-05 08:14"
 function parseDateForFilter(dateStr: string): Date | null {
@@ -27,9 +28,11 @@ function parseDateForFilter(dateStr: string): Date | null {
   return null
 }
 
+// Log values come from the database
 export const ActivityLogPage: React.FC = () => {
   const [logs, setLogs] = React.useState<ActivityLogItem[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState('')
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [dateRange, setDateRange] = React.useState<DateRange>({
@@ -64,6 +67,10 @@ export const ActivityLogPage: React.FC = () => {
     try {
       const data = await employeeService.getActivityLogs()
       setLogs(data)
+      setLoadError('')
+    } catch (err) {
+      // Never show an empty list that looks like "nothing happened" when the real log could not be read
+      setLoadError(err instanceof Error ? err.message : 'Could not load the activity log.')
     } finally {
       setLoading(false)
       setIsRefreshing(false)
@@ -90,6 +97,7 @@ export const ActivityLogPage: React.FC = () => {
       result = result.filter(
         (l) =>
           l.company.toLowerCase().includes(q) ||
+          l.user.toLowerCase().includes(q) ||
           l.action.toLowerCase().includes(q) ||
           l.module.toLowerCase().includes(q) ||
           l.target.toLowerCase().includes(q) ||
@@ -130,13 +138,14 @@ export const ActivityLogPage: React.FC = () => {
 
   // Export CSV handler
   const handleExportCsv = () => {
-    const headers = ['Company', 'Action', 'Module', 'Target', 'Time']
+    const headers = ['Company', 'User', 'Action', 'Module', 'Target', 'Time']
     const rows = filteredLogs.map((l) => [
-      `"${l.company.replace(/"/g, '""')}"`,
-      `"${l.action.replace(/"/g, '""')}"`,
-      `"${l.module.replace(/"/g, '""')}"`,
-      `"${l.target.replace(/"/g, '""')}"`,
-      `"${l.time.replace(/"/g, '""')}"`,
+      csvCell(l.company),
+      csvCell(l.user),
+      csvCell(l.action),
+      csvCell(l.module),
+      csvCell(l.target),
+      csvCell(l.time),
     ])
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
@@ -162,16 +171,17 @@ export const ActivityLogPage: React.FC = () => {
 
     const rowsHtml =
       filteredLogs.length === 0
-        ? `<tr><td colspan="5" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No activity logs found for this selection.</td></tr>`
+        ? `<tr><td colspan="6" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No activity logs found for this selection.</td></tr>`
         : filteredLogs
             .map(
               (l) => `
         <tr>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${l.company}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${l.action}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${l.module}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-family: monospace;">${l.target}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748B;">${l.time}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${escapeHtml(l.company)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(l.user)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(l.action)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${escapeHtml(l.module)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-family: monospace;">${escapeHtml(l.target)}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748B;">${escapeHtml(l.time)}</td>
         </tr>
       `
             )
@@ -202,6 +212,7 @@ export const ActivityLogPage: React.FC = () => {
             <thead>
               <tr>
                 <th>Company</th>
+                <th>User</th>
                 <th>Action</th>
                 <th>Module</th>
                 <th>Target</th>
@@ -409,7 +420,9 @@ export const ActivityLogPage: React.FC = () => {
                       </div>
                       <p className="font-semibold text-focus">No activity logs found</p>
                       <p className="text-xs text-muted-fg max-w-sm">
-                        {hasActiveFilters
+                        {loadError
+                          ? `The activity log could not be loaded. ${loadError}`
+                          : hasActiveFilters
                           ? 'No activity logs matched your current search and filter criteria. Try adjusting your query or date range.'
                           : 'No recent system activity records have been recorded yet.'}
                       </p>
@@ -437,7 +450,8 @@ export const ActivityLogPage: React.FC = () => {
 
                     {/* ACTION */}
                     <td className="py-4 px-6 text-sm text-focus/90 whitespace-nowrap">
-                      {log.action}
+                      <div>{log.action}</div>
+                      <div className="text-[11px] text-muted-fg">by {log.user}</div>
                     </td>
 
                     {/* MODULE */}

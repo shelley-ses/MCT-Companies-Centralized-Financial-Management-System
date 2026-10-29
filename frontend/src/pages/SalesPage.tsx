@@ -72,6 +72,7 @@ import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '@/context/CompanyContext'
 import { loanService } from '@/services/loanService'
+import { websocketService } from '@/services/websocketService'
 
 const DEFAULT_COMPANY_LIST = ['All Companies']
 
@@ -343,9 +344,9 @@ export const SalesPage: React.FC = () => {
   const [sales, setSales] = React.useState<SalesItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
-  // Load sales data
-  const loadSales = React.useCallback(async () => {
-    setLoading(true)
+  // Load sales data. `silent` reloads without the loading skeleton (used by realtime updates).
+  const loadSales = React.useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const targetCompany = isCompanyScoped
         ? assignedCompany
@@ -363,6 +364,23 @@ export const SalesPage: React.FC = () => {
 
   React.useEffect(() => {
     loadSales()
+  }, [loadSales])
+
+  // Realtime: when Audit saves a review (or any client changes a sale), reload the real values
+  React.useEffect(() => {
+    let timer: number | null = null
+    const reload = () => {
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        salesService.invalidateCache()
+        void loadSales(true)
+      }, 250)
+    }
+    const unsubAudit = websocketService.subscribe('AUDIT_UPDATED', reload)
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      unsubAudit()
+    }
   }, [loadSales])
 
   // Click-outside listeners for dropdowns

@@ -254,6 +254,8 @@ export const PettyCashPage: React.FC = () => {
   // Realtime multi-tab WebSocket synchronization
   React.useEffect(() => {
     const unsubscribe = websocketService.subscribe('PETTY_CASH_UPDATED', () => {
+      // Another user (for example Audit) changed a top up: drop the 30 second cache so the reload is real
+      pettyCashService.invalidateCache()
       loadData()
     })
     return () => {
