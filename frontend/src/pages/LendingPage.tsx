@@ -254,8 +254,8 @@ export const LendingPage: React.FC = () => {
     notes: '',
   })
 
-  // Status filter and pagination for Payment History in Lending Information View
-  const [historyStatusFilter, setHistoryStatusFilter] = React.useState<'all' | 'paid' | 'pending'>('paid')
+  // Search query and pagination for Payment History in Lending Information View
+  const [historySearchQuery, setHistorySearchQuery] = React.useState('')
   const [historyCurrentPage, setHistoryCurrentPage] = React.useState(1)
 
   // Form state for Update Payment Modal
@@ -367,13 +367,14 @@ export const LendingPage: React.FC = () => {
         return false
       }
 
-      // 3. Search query filter (Loan ID, Borrower Name, Notes)
+      // 3. Search query filter (Loan ID, Reference No, Borrower Name, Notes)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
-        const matchesLoanId = item.loanId.toLowerCase().includes(q)
-        const matchesBorrower = item.borrowerName.toLowerCase().includes(q)
-        const matchesNotes = item.notes?.toLowerCase().includes(q) || false
-        if (!matchesLoanId && !matchesBorrower && !matchesNotes) return false
+        const matchesLoanId = String(item.loanId ?? '').toLowerCase().includes(q)
+        const matchesLoanRefNo = String(item.loanRefNo ?? '').toLowerCase().includes(q)
+        const matchesBorrower = String(item.borrowerName ?? '').toLowerCase().includes(q)
+        const matchesNotes = String(item.notes ?? '').toLowerCase().includes(q)
+        if (!matchesLoanId && !matchesLoanRefNo && !matchesBorrower && !matchesNotes) return false
       }
 
       // 4. Date Range filter (matches either dateBorrowed or dueDate)
@@ -954,107 +955,34 @@ export const LendingPage: React.FC = () => {
   // Open Complete Information page on row click
   const handleRowClick = (facility: LendingFacility) => {
     setActiveFacility(facility)
-    setHistoryStatusFilter('paid')
+    setHistorySearchQuery('')
     setHistoryCurrentPage(1)
     setViewMode('details')
   }
 
   // Filtered payment records for Lending Details View (Payment Log of the borrower)
+  // Only shows actual paid transactions made by the user
   const filteredHistoryPayments = React.useMemo(() => {
     if (!activeFacility) return []
     const baseList = activeFacility.dailyPayments || []
+    const paidList = baseList.filter(
+      (p) => !p.status || p.status === 'Paid' || p.status === 'Advance Paid' || p.status === 'Completed'
+    )
+    const query = historySearchQuery.trim().toLowerCase()
+    if (!query) return paidList
+    return paidList.filter((p) => {
+      const dateMatch = (p.date || '').toLowerCase().includes(query)
+      const notesMatch = (p.notes || '').toLowerCase().includes(query)
+      const refMatch = (p.referenceNo || '').toLowerCase().includes(query)
+      const methodMatch = (p.method || '').toLowerCase().includes(query)
+      return dateMatch || notesMatch || refMatch || methodMatch
+    })
+  }, [activeFacility, historySearchQuery])
 
-    // Build any scheduled pending installment entries when remainingBalance > 0
-    const generatedPending: DailyPaymentRecord[] = []
-    if (activeFacility.remainingBalance > 0) {
-      const freq = activeFacility.paymentFrequency || 'Daily'
-      const termDays = activeFacility.termDays || (freq === 'Daily' ? 40 : 60)
-      const targetAmt = getFacilityDailyTarget(activeFacility)
-      const recordedDates = new Set(baseList.map((p) => p.date))
-      const start = new Date(activeFacility.dateBorrowed)
-
-      if (!isNaN(start.getTime())) {
-        if (freq === 'Daily') {
-          let rem = activeFacility.remainingBalance
-          for (let d = 1; d <= termDays && rem > 0.005; d++) {
-            const cur = new Date(start)
-            cur.setDate(start.getDate() + d)
-            const dStr = formatToYYYYMMDD(cur)
-            if (!recordedDates.has(dStr)) {
-              const dueAmt = Math.min(rem, targetAmt)
-              generatedPending.push({
-                id: `sched-${activeFacility.id}-${dStr}`,
-                date: dStr,
-                amount: dueAmt,
-                method: '-',
-                referenceNo: '-',
-                notes: 'Scheduled installment due',
-                status: 'Pending',
-                timestamp: dStr,
-                isLocked: false,
-              })
-              rem = Math.max(0, Math.round((rem - dueAmt) * 100) / 100)
-            }
-          }
-        } else {
-          const totalCycles = Math.max(1, Math.round(termDays / 30))
-          const cycleTarget = Math.round((activeFacility.totalAmountPayable / totalCycles) * 100) / 100
-          let rem = activeFacility.remainingBalance
-          for (let m = 1; m <= totalCycles && rem > 0.005; m++) {
-            const hasPaidCycle = baseList.some((p) => p.monthIndex === m && p.status === 'Paid')
-            if (!hasPaidCycle) {
-              const cur = new Date(start)
-              cur.setDate(start.getDate() + m * 30)
-              const dStr = formatToYYYYMMDD(cur)
-              if (!recordedDates.has(dStr)) {
-                const dueAmt = Math.min(rem, cycleTarget)
-                generatedPending.push({
-                  id: `sched-${activeFacility.id}-m${m}`,
-                  date: dStr,
-                  amount: dueAmt,
-                  method: '-',
-                  referenceNo: '-',
-                  notes: `Month ${m} scheduled installment`,
-                  status: 'Pending',
-                  periodLabel: `Month ${m}`,
-                  monthIndex: m,
-                  timestamp: dStr,
-                  isLocked: false,
-                })
-                rem = Math.max(0, Math.round((rem - dueAmt) * 100) / 100)
-              }
-            }
-          }
-        }
-      }
-    }
-
-    const combinedList = [...baseList, ...generatedPending]
-
-    if (historyStatusFilter === 'paid') {
-      return combinedList.filter(
-        (p) => !p.status || p.status === 'Paid' || p.status === 'Advance Paid'
-      )
-    }
-
-    if (historyStatusFilter === 'pending') {
-      return combinedList.filter(
-        (p) =>
-          p.status === 'Pending' ||
-          p.status === 'Scheduled' ||
-          p.status === 'Partial' ||
-          p.status === 'Partially Paid' ||
-          p.status === 'Missed'
-      )
-    }
-
-    return combinedList
-  }, [activeFacility, historyStatusFilter, getFacilityDailyTarget])
-
-  // Reset history page when status filter or active facility changes
+  // Reset history page when search query or active facility changes
   React.useEffect(() => {
     setHistoryCurrentPage(1)
-  }, [historyStatusFilter, activeFacility?.id])
+  }, [historySearchQuery, activeFacility?.id])
 
   // Dedicated Full Screen Details Page View
   const renderDetailsPage = () => {
@@ -1077,7 +1005,7 @@ export const LendingPage: React.FC = () => {
             className="h-10 px-4 rounded-xl font-semibold text-xs sm:text-sm border border-stroke/60 bg-white text-focus hover:bg-surface flex items-center gap-2 cursor-pointer shadow-2xs self-start"
           >
             <ChevronLeft className="h-4 w-4" />
-            <span>Back to Lending Facilities</span>
+            <span>Back to Borrowers</span>
           </Button>
         </div>
 
@@ -1275,37 +1203,31 @@ export const LendingPage: React.FC = () => {
                 </h3>
               </div>
 
-              {/* Status Filter Toggle (Paid / Pending) matching Deposit/Expense Record toggle */}
-              <div className="inline-flex items-center p-1 rounded-full bg-slate-100 border border-stroke/40 shadow-2xs self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setHistoryStatusFilter((prev) => (prev === 'paid' ? 'all' : 'paid'))}
-                  className={cn(
-                    'h-9 px-4 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
-                    historyStatusFilter === 'paid'
-                      ? 'bg-[#960C01] text-white shadow-xs'
-                      : 'text-muted-fg hover:text-focus'
-                  )}
-                >
-                  Paid
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHistoryStatusFilter((prev) => (prev === 'pending' ? 'all' : 'pending'))}
-                  className={cn(
-                    'h-9 px-4 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
-                    historyStatusFilter === 'pending'
-                      ? 'bg-[#960C01] text-white shadow-xs'
-                      : 'text-muted-fg hover:text-focus'
-                  )}
-                >
-                  Pending
-                </button>
+              {/* Payment Search Bar (filter dates or remarks) */}
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-fg pointer-events-none" />
+                <Input
+                  type="text"
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  placeholder="Search dates or remarks..."
+                  className="pl-9 pr-8 h-9 text-xs rounded-xl bg-slate-50 border-stroke/60 focus:bg-white"
+                />
+                {historySearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setHistorySearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus text-xs p-0.5 cursor-pointer"
+                    title="Clear search"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Payment Schedule & History Table or Empty State */}
-            {(activeFacility.dailyPayments || []).length === 0 && filteredHistoryPayments.length === 0 ? (
+            {(activeFacility.dailyPayments || []).length === 0 ? (
               <div className="py-16 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-center">
                 <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-3 text-emerald-600 shadow-2xs">
                   <Coins className="w-7 h-7" />
@@ -1347,7 +1269,7 @@ export const LendingPage: React.FC = () => {
                             <div className="flex flex-col items-center justify-center">
                               <Coins className="w-6 h-6 text-muted-fg/40 mb-2" />
                               <p className="font-semibold text-focus">
-                                No {historyStatusFilter === 'all' ? '' : `${historyStatusFilter} `}payment records found
+                                No payment records matching &quot;{historySearchQuery}&quot;
                               </p>
                             </div>
                           </td>
@@ -1355,20 +1277,12 @@ export const LendingPage: React.FC = () => {
                       ) : (
                         paginatedHistoryPayments.map((p) => {
                           const isAdvancePaid = p.status === 'Advance Paid'
-                          const isPending =
-                            p.status === 'Pending' ||
-                            p.status === 'Scheduled' ||
-                            p.status === 'Missed'
-                          const isPartial =
-                            p.status === 'Partial' ||
-                            p.status === 'Partially Paid'
                           return (
                             <tr
                               key={p.id}
                               className={cn(
                                 'hover:bg-slate-50/70 transition-colors',
-                                isAdvancePaid && 'bg-sky-50/20',
-                                (isPartial || isPending) && 'bg-amber-50/20'
+                                isAdvancePaid && 'bg-sky-50/20'
                               )}
                             >
                               <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap font-medium">
@@ -1380,41 +1294,24 @@ export const LendingPage: React.FC = () => {
                                     <Lock className="w-2.5 h-2.5 text-sky-600" />
                                     <span>Advance Paid</span>
                                   </span>
-                                ) : isPending ? (
-                                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                    {p.periodLabel ? `${p.periodLabel} (Pending)` : 'Pending'}
-                                  </span>
-                                ) : isPartial ? (
-                                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                    {p.periodLabel ? `${p.periodLabel} (Partially Paid)` : 'Partially Paid'}
-                                  </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                     <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                    <span>{p.periodLabel ? `${p.periodLabel} (Paid)` : (p.status || 'Paid')}</span>
+                                    <span>{p.status || 'Paid'}</span>
                                   </span>
                                 )}
                               </td>
-                              <td
-                                className={cn(
-                                  'py-2.5 px-3.5 font-bold whitespace-nowrap',
-                                  isAdvancePaid
-                                    ? 'text-sky-600'
-                                    : isPending || isPartial
-                                    ? 'text-amber-700'
-                                    : 'text-emerald-600'
-                                )}
-                              >
-                                {isAdvancePaid ? 'Covered' : formatPHP(p.amount)}
+                              <td className="py-2.5 px-3.5 font-bold whitespace-nowrap text-emerald-600">
+                                {formatPHP(p.amount)}
                               </td>
                               <td className="py-2.5 px-3.5 text-focus whitespace-nowrap">
-                                {isAdvancePaid ? 'Advance Credit' : isPending ? '-' : p.method || 'Cash'}
+                                {p.method || 'Cash'}
                               </td>
                               <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap">
-                                {isAdvancePaid ? 'ADVANCE' : p.referenceNo || '-'}
+                                {p.referenceNo || '-'}
                               </td>
-                              <td className="py-2.5 px-3.5 text-muted-fg truncate max-w-[240px]" title={isAdvancePaid ? 'Covered by advance payment' : p.notes || '-'}>
-                                {isAdvancePaid ? 'Covered by advance payment' : p.notes || '-'}
+                              <td className="py-2.5 px-3.5 text-muted-fg truncate max-w-[240px]" title={p.notes || '-'}>
+                                {p.notes || '-'}
                               </td>
                             </tr>
                           )
@@ -1552,7 +1449,7 @@ export const LendingPage: React.FC = () => {
                 className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
               >
                 <Plus className="h-4 w-4 shrink-0" />
-                <span>New Lending Facility</span>
+                <span>New Borrower</span>
               </Button>
             )}
           </div>
@@ -1745,9 +1642,9 @@ export const LendingPage: React.FC = () => {
                   <TableCell colSpan={9} className="h-44 text-center py-8">
                     <div className="flex flex-col items-center justify-center text-muted-fg">
                       <CreditCard className="h-8 w-8 text-muted-fg/40 mb-2" />
-                      <p className="text-sm font-semibold">No lending facilities found</p>
+                      <p className="text-sm font-semibold">No borrowers found</p>
                       <p className="text-xs text-muted-fg/70 mt-0.5">
-                        Try adjusting your search, status, or date range filter, or click "New Lending Facility".
+                        Try adjusting your search, status, or date range filter, or click &quot;New Borrower&quot;.
                       </p>
                     </div>
                   </TableCell>
@@ -1778,13 +1675,9 @@ export const LendingPage: React.FC = () => {
                         <div className="font-semibold text-xs text-focus truncate max-w-[200px]" title={facility.borrowerName}>
                           {facility.borrowerName}
                         </div>
-                        {facility.borrowerContact ? (
+                        {facility.borrowerContact && (
                           <div className="text-[10.5px] text-muted-fg truncate max-w-[200px]">
                             {facility.borrowerContact}
-                          </div>
-                        ) : (
-                          <div className="text-[10.5px] text-slate-400 font-mono truncate max-w-[200px]">
-                            {facility.loanId}
                           </div>
                         )}
                       </TableCell>
@@ -2106,7 +1999,7 @@ export const LendingPage: React.FC = () => {
         <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-focus">
-              New Lending Facility
+              New Borrower
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg">
               Enter the borrower and loan details to disburse a new credit agreement.
@@ -2302,10 +2195,10 @@ export const LendingPage: React.FC = () => {
               )
             })()}
 
-            {/* Optional Facility Purpose / Notes */}
+            {/* Optional Loan Purpose / Notes */}
             <div>
               <label className="text-xs font-semibold text-focus block mb-1">
-                Facility Purpose / Notes (Optional)
+                Loan Purpose / Notes (Optional)
               </label>
               <Input
                 value={formData.notes}
@@ -2329,7 +2222,7 @@ export const LendingPage: React.FC = () => {
                 type="submit"
                 className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer"
               >
-                Create Lending Facility
+                Create Borrower
               </Button>
             </div>
           </form>
@@ -2910,16 +2803,16 @@ export const LendingPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* 6. Modal: Edit Facility Details */}
+      {/* 6. Modal: Edit Borrower Details */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-focus">
-              Edit Lending Facility
+              Edit Borrower
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg">
-              Update terms and facility records for{' '}
-              <strong className="text-focus">{activeFacility?.loanId}</strong>.
+              Update terms and loan records for{' '}
+              <strong className="text-focus">{activeFacility?.borrowerName}</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -3120,18 +3013,17 @@ export const LendingPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* 7. Modal: Delete Facility Confirmation */}
+      {/* 7. Modal: Delete Borrower Confirmation */}
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-rose-600 flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-rose-600" />
-              <span>Delete Lending Facility</span>
+              <span>Delete Borrower</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg mt-1">
-              Are you sure you want to delete lending agreement{' '}
-              <strong className="text-focus">{activeFacility?.loanId}</strong> for{' '}
-              <strong className="text-focus">{activeFacility?.borrowerName}</strong>? This action will remove all recorded daily payment history and cannot be undone.
+              Are you sure you want to delete the record for{' '}
+              <strong className="text-focus">{activeFacility?.borrowerName}</strong>? This action will remove all recorded payment history and cannot be undone.
             </DialogDescription>
           </DialogHeader>
 
@@ -3149,7 +3041,7 @@ export const LendingPage: React.FC = () => {
               onClick={handleConfirmDelete}
               className="h-10 px-5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
             >
-              Delete Facility
+              Delete Borrower
             </Button>
           </div>
         </DialogContent>

@@ -4,16 +4,15 @@ from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 
-class LendingFacility(Base):
+class Borrower(Base):
     """
-    Dedicated table for micro-lending facilities / borrower accounts.
-    Borrowers are external individuals, not companies.
+    Dedicated table for micro-lending borrowers.
     Tracks borrower details, loan terms, and active repayment status.
     """
-    __tablename__ = "lending_facilities"
+    __tablename__ = "borrowers"
 
-    facility_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
-    facility_ref_no = Column(String(100), unique=True, nullable=True, index=True)
+    borrower_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    borrower_ref_no = Column(String(100), unique=True, nullable=True, index=True)
     borrower_name = Column(String(255), nullable=False, index=True)
     principal_amount = Column(Numeric(15, 2), nullable=False)
     interest_rate = Column(Numeric(5, 2), nullable=False, default=20.00)
@@ -29,7 +28,7 @@ class LendingFacility(Base):
 
     transactions = relationship(
         "LendingTransaction",
-        back_populates="facility",
+        back_populates="borrower",
         cascade="all, delete-orphan",
         order_by="desc(LendingTransaction.payment_date), desc(LendingTransaction.created_at)",
     )
@@ -42,9 +41,9 @@ class LendingTransaction(Base):
     __tablename__ = "lending_transactions"
 
     transaction_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
-    facility_id = Column(
+    borrower_id = Column(
         BigInteger,
-        ForeignKey("lending_facilities.facility_id", ondelete="CASCADE"),
+        ForeignKey("borrowers.borrower_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -64,4 +63,5 @@ class LendingTransaction(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    facility = relationship("LendingFacility", back_populates="transactions")
+    borrower = relationship("Borrower", back_populates="transactions")
+

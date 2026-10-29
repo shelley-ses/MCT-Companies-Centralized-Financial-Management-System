@@ -17,7 +17,8 @@ export interface DailyPaymentRecord {
 
 export interface LendingFacility {
   id: string
-  loanId: string
+  loanId: string | number
+  loanRefNo?: string
   borrowerName: string
   borrowerContact?: string
   borrowerAddress?: string
@@ -45,6 +46,9 @@ export interface LendingFacility {
   auditDate?: string
   auditedBy?: string
 }
+
+export type Borrower = LendingFacility
+export type BorrowerCreatePayload = LendingCreateFacilityPayload
 
 export interface LendingCalculateParams {
   principal: number
@@ -391,12 +395,12 @@ class LendingServiceGateway {
   }
 
   /**
-   * Fetch facilities list from backend with localStorage fallback.
+   * Fetch borrowers list from backend with localStorage fallback.
    */
   async getFacilities(companyId?: number): Promise<LendingFacility[]> {
     try {
       const query = companyId ? `?company_id=${companyId}` : ''
-      const res = await fetch(`/api/v1/lending/facilities${query}`)
+      const res = await fetch(`/api/v1/lending/borrowers${query}`)
       if (res.ok) {
         const data = await res.json()
         if (Array.isArray(data) && data.length > 0) {
@@ -411,12 +415,12 @@ class LendingServiceGateway {
   }
 
   /**
-   * Create a new lending facility via backend, with local cache update.
+   * Create a new borrower via backend, with local cache update.
    */
   async createFacility(payload: LendingCreateFacilityPayload): Promise<LendingFacility> {
     const termDays = payload.termDays || (payload.paymentFrequency === 'Daily' ? 40 : 60)
     try {
-      const res = await fetch('/api/v1/lending/facilities', {
+      const res = await fetch('/api/v1/lending/borrowers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -509,7 +513,7 @@ class LendingServiceGateway {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            facility_id: numId,
+            borrower_id: numId,
             payment_date: payload.paymentDate,
             amount: payload.amount,
             method: payload.method,
@@ -532,12 +536,12 @@ class LendingServiceGateway {
   }
 
   /**
-   * Retrieve all lending transactions from the database with optional facility filter.
+   * Retrieve all lending transactions from the database with optional borrower filter.
    */
-  async getTransactions(facilityId?: number | string): Promise<LendingTransactionRecord[]> {
+  async getTransactions(borrowerId?: number | string): Promise<LendingTransactionRecord[]> {
     try {
-      const numId = facilityId ? parseInt(String(facilityId).replace(/\D/g, ''), 10) : undefined
-      const query = numId && !isNaN(numId) ? `?facility_id=${numId}` : ''
+      const numId = borrowerId ? parseInt(String(borrowerId).replace(/\D/g, ''), 10) : undefined
+      const query = numId && !isNaN(numId) ? `?borrower_id=${numId}` : ''
       const res = await fetch(`/api/v1/lending/transactions${query}`)
       if (res.ok) {
         return await res.json()

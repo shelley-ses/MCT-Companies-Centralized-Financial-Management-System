@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 from app.models.loan import Loan, LoanRepayment
 from app.models.company import Company
-from app.models.lending import LendingFacility, LendingTransaction
+from app.models.lending import Borrower, LendingTransaction
 
 
 def quantize(value: Decimal | float | int | str) -> Decimal:
@@ -37,7 +37,7 @@ class LendingService:
     """
     Centralized lending business logic service.
     Contains pure calculations, schedule generators, period locking rules,
-    and database persistence operations for lending facilities.
+    and database persistence operations for borrowers.
     """
 
     # -------------------------------------------------------------------------
@@ -118,7 +118,7 @@ class LendingService:
         return final_due.isoformat() if final_due else borrowed.isoformat()
 
     @classmethod
-    def calculate_facility(
+    def calculate_terms(
         cls,
         principal: Decimal | float | int,
         interest_rate: Decimal | float | int = Decimal("20.00"),
@@ -193,7 +193,7 @@ class LendingService:
         term_days: int = 60,
     ) -> Dict[str, Any]:
         """
-        Calculate installment breakdown, forward advance crediting, and flat 5% penalties for monthly facilities.
+        Calculate installment breakdown, forward advance crediting, and flat 5% penalties for monthly loans.
         """
         total_months = max(1, term_days // 30) if term_days else cls.get_months_between(date_borrowed_val, due_date_val)
         payable_dec = quantize(total_payable)
@@ -520,7 +520,7 @@ class LendingService:
     # -------------------------------------------------------------------------
 
     @classmethod
-    def parse_facility_description(cls, desc_str: Optional[str]) -> Dict[str, Any]:
+    def parse_loan_description(cls, desc_str: Optional[str]) -> Dict[str, Any]:
         """Extract structured JSON metadata from loan description if present."""
         if not desc_str:
             return {"borrower_name": "Unknown", "frequency": "Daily", "term_days": 40, "penalty_rate": 5.0, "notes": ""}
@@ -538,7 +538,7 @@ class LendingService:
         return {"borrower_name": desc_str.strip(), "frequency": "Daily", "term_days": 40, "penalty_rate": 5.0, "notes": desc_str}
 
     @classmethod
-    def serialize_facility_description(
+    def serialize_loan_description(
         cls,
         borrower_name: str,
         frequency: str,
@@ -546,7 +546,7 @@ class LendingService:
         term_days: int = 40,
         penalty_rate: float = 5.0,
     ) -> str:
-        """Serialize facility metadata into description JSON string."""
+        """Serialize loan metadata into description JSON string."""
         data = {
             "borrower_name": borrower_name.strip(),
             "frequency": frequency.strip().capitalize(),
@@ -557,24 +557,24 @@ class LendingService:
         return json.dumps(data)
 
     @classmethod
-    def get_facilities(cls, db: Session, borrower_query: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieve lending facilities with calculated summary balances, accrued penalties, and schedules."""
-        fac_query = db.query(LendingFacility)
+    def get_borrowers(cls, db: Session, borrower_query: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieve borrowers with calculated summary balances, accrued penalties, and schedules."""
+        b_query = db.query(Borrower)
         if borrower_query and str(borrower_query).strip():
-            fac_query = fac_query.filter(LendingFacility.borrower_name.ilike(f"%{str(borrower_query).strip()}%"))
-        facilities = fac_query.order_by(LendingFacility.created_at.desc()).all()
+            b_query = b_query.filter(Borrower.borrower_name.ilike(f"%{str(borrower_query).strip()}%"))
+        borrowers = b_query.order_by(Borrower.created_at.desc()).all()
 
         results = []
 
-        if facilities:
-            for fac in facilities:
-                freq = fac.payment_frequency or "Daily"
-                borrower_name = fac.borrower_name
-                term_days = fac.term_days or (40 if freq == "Daily" else 60)
+        if borrowers:
+            for b in borrowers:
+                freq = b.payment_frequency or "Daily"
+                borrower_name = b.borrower_name
+                term_days = b.term_days or (40 if freq == "Daily" else 60)
 
                 txs = (
                     db.query(LendingTransaction)
-                    .filter(LendingTransaction.facility_id == fac.facility_id)
+                    .filter(LendingTransaction.borrower_id == b.borrower_id)
                     .order_by(LendingTransaction.payment_date.desc(), LendingTransaction.created_at.desc())
                     .all()
                 )
@@ -594,12 +594,12 @@ class LendingService:
                     for t in txs
                 ]
 
-                terms = cls.calculate_facility(
-                    principal=fac.principal_amount,
-                    interest_rate=fac.interest_rate or Decimal("20.00"),
+                terms = cls.calculate_terms(
+                    principal=b.principal_amount,
+                    interest_rate=b.interest_rate or Decimal("20.00"),
                     frequency=freq,
-                    start_date_val=fac.date_borrowed,
-                    due_date_val=fac.due_date,
+                    start_date_val=b.date_borrowed,
+                    due_date_val=b.due_date,
                     term_days_val=term_days,
                 )
 
@@ -607,8 +607,8 @@ class LendingService:
 
                 if freq == "Daily":
                     _, ledger_meta = cls.build_daily_ledger(
-                        fac.date_borrowed,
-                        fac.due_date,
+                        b.date_borrowed,
+                        b.due_date,
                         repayment_dicts,
                         term_days=terms["term_days"],
                         installment_target=terms["installment_target"],
@@ -620,8 +620,8 @@ class LendingService:
                     missed_cycles_count = ledger_meta["missed_cycles_count"]
                 else:
                     progress = cls.get_monthly_progress(
-                        fac.date_borrowed,
-                        fac.due_date,
+                        b.date_borrowed,
+                        b.due_date,
                         terms["total_payable"],
                         repayment_dicts,
                         term_days=terms["term_days"],
@@ -635,28 +635,30 @@ class LendingService:
                 remaining_balance = max(Decimal("0.00"), total_payable_with_penalties - total_paid)
 
                 today_iso = date.today().isoformat()
-                due_iso = fac.due_date.isoformat() if fac.due_date else ""
+                due_iso = b.due_date.isoformat() if b.due_date else ""
                 if remaining_balance <= Decimal("0.00"):
                     derived_status = "Completed"
                 elif compliance_status == "Delinquent" or (due_iso and today_iso > due_iso):
                     derived_status = "Overdue"
                 else:
-                    derived_status = fac.status or "Active"
+                    derived_status = b.status or "Active"
 
                 results.append({
-                    "id": str(fac.facility_id),
-                    "loanId": fac.facility_id,
-                    "loanRefNo": fac.facility_ref_no or f"FAC-{fac.facility_id}",
+                    "id": str(b.borrower_id),
+                    "borrower_id": b.borrower_id,
+                    "borrower_ref_no": b.borrower_ref_no or f"BOR-{b.borrower_id}",
+                    "loanId": b.borrower_id,
+                    "loanRefNo": b.borrower_ref_no or f"BOR-{b.borrower_id}",
                     "borrowerName": borrower_name,
                     "borrowerContact": "",
                     "borrowerAddress": "",
-                    "loanAmount": float(fac.principal_amount),
+                    "loanAmount": float(b.principal_amount),
                     "interestRate": float(terms["interest_rate"]),
                     "interestAmount": terms["interest"],
                     "totalAmountPayable": float(total_payable_with_penalties),
                     "amountPaid": float(total_paid),
                     "remainingBalance": float(remaining_balance),
-                    "dateBorrowed": fac.date_borrowed.isoformat() if fac.date_borrowed else "",
+                    "dateBorrowed": b.date_borrowed.isoformat() if b.date_borrowed else "",
                     "dueDate": due_iso,
                     "status": derived_status,
                     "paymentFrequency": freq,
@@ -668,19 +670,19 @@ class LendingService:
                     "installmentTarget": terms["installment_target"],
                     "complianceStatus": compliance_status,
                     "missedCyclesCount": missed_cycles_count,
-                    "notes": fac.notes or "",
+                    "notes": b.notes or "",
                     "dailyPayments": repayment_dicts,
                 })
             return results
 
-        # Legacy fallback query for loans table if lending_facilities is empty
+        # Legacy fallback query for loans table if borrowers is empty
         query = db.query(Loan)
         if company_id:
             query = query.filter(Loan.borrower == company_id)
 
         loans = query.order_by(Loan.created_at.desc()).all()
         for loan in loans:
-            meta = cls.parse_facility_description(loan.description)
+            meta = cls.parse_loan_description(loan.description)
             freq = meta.get("frequency", "Daily")
             borrower_name = meta.get("borrower_name") or f"Borrower #{loan.borrower}"
             term_days = meta.get("term_days", 40 if freq == "Daily" else 60)
@@ -707,7 +709,7 @@ class LendingService:
                 for r in repayments
             ]
 
-            terms = cls.calculate_facility(
+            terms = cls.calculate_terms(
                 principal=loan.principal_amount,
                 interest_rate=loan.interest_rate or Decimal("20.00"),
                 frequency=freq,
@@ -786,32 +788,32 @@ class LendingService:
         return results
 
     @classmethod
-    def get_facility(cls, db: Session, facility_id: int) -> Dict[str, Any]:
-        """Fetch single facility details by ID."""
-        fac = db.query(LendingFacility).filter(LendingFacility.facility_id == facility_id).first()
-        if fac:
-            res = cls.get_facilities(db)
+    def get_borrower(cls, db: Session, borrower_id: int) -> Dict[str, Any]:
+        """Fetch single borrower details by ID."""
+        b = db.query(Borrower).filter(Borrower.borrower_id == borrower_id).first()
+        if b:
+            res = cls.get_borrowers(db)
             for item in res:
-                if str(item["id"]) == str(facility_id):
+                if str(item["id"]) == str(borrower_id) or str(item.get("borrower_id")) == str(borrower_id):
                     return item
         # Fallback to legacy loan
-        res = cls.get_facilities(db)
+        res = cls.get_borrowers(db)
         for item in res:
-            if str(item["id"]) == str(facility_id):
+            if str(item["id"]) == str(borrower_id) or str(item.get("borrower_id")) == str(borrower_id):
                 return item
-        raise HTTPException(status_code=404, detail="Lending facility not found.")
+        raise HTTPException(status_code=404, detail="Borrower not found.")
 
     @classmethod
-    def get_facility_ledger(cls, db: Session, loan_id: int) -> Dict[str, Any]:
-        """Fetch facility details and generate its complete schedule ledger."""
-        fac = db.query(LendingFacility).filter(LendingFacility.facility_id == loan_id).first()
-        if fac:
-            freq = fac.payment_frequency or "Daily"
-            term_days = fac.term_days or (40 if freq == "Daily" else 60)
+    def get_borrower_ledger(cls, db: Session, borrower_id: int) -> Dict[str, Any]:
+        """Fetch borrower details and generate its complete schedule ledger."""
+        b = db.query(Borrower).filter(Borrower.borrower_id == borrower_id).first()
+        if b:
+            freq = b.payment_frequency or "Daily"
+            term_days = b.term_days or (40 if freq == "Daily" else 60)
 
             txs = (
                 db.query(LendingTransaction)
-                .filter(LendingTransaction.facility_id == fac.facility_id)
+                .filter(LendingTransaction.borrower_id == b.borrower_id)
                 .order_by(LendingTransaction.payment_date.desc(), LendingTransaction.created_at.desc())
                 .all()
             )
@@ -830,12 +832,12 @@ class LendingService:
                 for t in txs
             ]
 
-            terms = cls.calculate_facility(
-                principal=fac.principal_amount,
-                interest_rate=fac.interest_rate or Decimal("20.00"),
+            terms = cls.calculate_terms(
+                principal=b.principal_amount,
+                interest_rate=b.interest_rate or Decimal("20.00"),
                 frequency=freq,
-                start_date_val=fac.date_borrowed,
-                due_date_val=fac.due_date,
+                start_date_val=b.date_borrowed,
+                due_date_val=b.due_date,
                 term_days_val=term_days,
             )
 
@@ -843,8 +845,8 @@ class LendingService:
 
             if freq == "Daily":
                 ledger_items, ledger_meta = cls.build_daily_ledger(
-                    fac.date_borrowed,
-                    fac.due_date,
+                    b.date_borrowed,
+                    b.due_date,
                     repayment_dicts,
                     term_days=terms["term_days"],
                     installment_target=terms["installment_target"],
@@ -859,8 +861,8 @@ class LendingService:
             else:
                 ledger_items = repayment_dicts
                 monthly_progress = cls.get_monthly_progress(
-                    fac.date_borrowed,
-                    fac.due_date,
+                    b.date_borrowed,
+                    b.due_date,
                     terms["total_payable"],
                     repayment_dicts,
                     term_days=terms["term_days"],
@@ -872,26 +874,27 @@ class LendingService:
 
                 total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
                 next_installment = cls.get_next_installment_info(
-                    fac.date_borrowed, fac.due_date, freq, total_payable_with_penalties, total_paid
+                    b.date_borrowed, b.due_date, freq, total_payable_with_penalties, total_paid
                 )
 
             total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
             remaining_balance = max(Decimal("0.00"), total_payable_with_penalties - total_paid)
 
             return {
-                "facility_id": str(fac.facility_id),
-                "loan_ref_no": fac.facility_ref_no or f"FAC-{fac.facility_id}",
-                "borrower_name": fac.borrower_name,
+                "borrower_id": str(b.borrower_id),
+                "borrower_ref_no": b.borrower_ref_no or f"BOR-{b.borrower_id}",
+                "loan_ref_no": b.borrower_ref_no or f"BOR-{b.borrower_id}",
+                "borrower_name": b.borrower_name,
                 "borrower_contact": "",
                 "borrower_address": "",
                 "payment_frequency": freq,
-                "principal": float(fac.principal_amount),
+                "principal": float(b.principal_amount),
                 "interest_rate": float(terms["interest_rate"]),
                 "total_payable": float(total_payable_with_penalties),
                 "amount_paid": float(total_paid),
                 "remaining_balance": float(remaining_balance),
-                "date_borrowed": fac.date_borrowed.isoformat() if fac.date_borrowed else "",
-                "due_date": fac.due_date.isoformat() if fac.due_date else "",
+                "date_borrowed": b.date_borrowed.isoformat() if b.date_borrowed else "",
+                "due_date": b.due_date.isoformat() if b.due_date else "",
                 "term_days": terms["term_days"],
                 "penalty_rate": terms["penalty_rate"],
                 "penalty_per_cycle": terms["penalty_per_cycle"],
@@ -908,9 +911,9 @@ class LendingService:
         # Fallback to legacy loan
         loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
         if not loan:
-            raise HTTPException(status_code=404, detail="Lending facility not found.")
+            raise HTTPException(status_code=404, detail="Borrower not found.")
 
-        meta = cls.parse_facility_description(loan.description)
+        meta = cls.parse_loan_description(loan.description)
         freq = meta.get("frequency", "Daily")
         term_days = meta.get("term_days", 40 if freq == "Daily" else 60)
 
@@ -936,7 +939,7 @@ class LendingService:
             for r in repayments
         ]
 
-        terms = cls.calculate_facility(
+        terms = cls.calculate_terms(
             principal=loan.principal_amount,
             interest_rate=loan.interest_rate or Decimal("20.00"),
             frequency=freq,
@@ -985,8 +988,9 @@ class LendingService:
         remaining_balance = max(Decimal("0.00"), total_payable_with_penalties - total_paid)
 
         return {
-            "facility_id": str(loan.loan_id),
-            "loan_ref_no": loan.loan_ref_no or f"FAC-{loan.loan_id}",
+            "borrower_id": str(loan.loan_id),
+            "borrower_ref_no": loan.loan_ref_no or f"BOR-{loan.loan_id}",
+            "loan_ref_no": loan.loan_ref_no or f"BOR-{loan.loan_id}",
             "borrower_name": meta.get("borrower_name") or f"Borrower #{loan.borrower}",
             "payment_frequency": freq,
             "principal": float(loan.principal_amount),
@@ -1010,7 +1014,7 @@ class LendingService:
         }
 
     @classmethod
-    def create_facility(
+    def create_borrower(
         cls,
         db: Session,
         borrower_name: str,
@@ -1025,7 +1029,7 @@ class LendingService:
         notes: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        """Create a new lending facility record in the lending_facilities database table."""
+        """Create a new borrower record in the borrowers database table."""
         p = quantize(principal_amount)
         if p < Decimal("1.00"):
             raise HTTPException(status_code=400, detail="Principal amount must be at least 1.00.")
@@ -1035,12 +1039,12 @@ class LendingService:
         term_days = int(term_days_val) if term_days_val and int(term_days_val) > 0 else (40 if freq == "Daily" else 60)
         due = parse_date(due_date_val) or (start + timedelta(days=term_days))
 
-        terms = cls.calculate_facility(p, interest_rate, freq, start, due, term_days)
+        terms = cls.calculate_terms(p, interest_rate, freq, start, due, term_days)
 
         ref_no = f"LN-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() % 10000):04d}"
 
-        new_facility = LendingFacility(
-            facility_ref_no=ref_no,
+        new_borrower = Borrower(
+            borrower_ref_no=ref_no,
             borrower_name=borrower_name.strip(),
             principal_amount=p,
             interest_rate=Decimal(str(terms["interest_rate"])),
@@ -1052,15 +1056,17 @@ class LendingService:
             status="Active",
             notes=(notes or "").strip(),
         )
-        db.add(new_facility)
+        db.add(new_borrower)
         db.commit()
-        db.refresh(new_facility)
+        db.refresh(new_borrower)
 
         return {
-            "id": str(new_facility.facility_id),
-            "loanId": new_facility.facility_id,
-            "loanRefNo": new_facility.facility_ref_no,
-            "borrowerName": new_facility.borrower_name,
+            "id": str(new_borrower.borrower_id),
+            "borrower_id": new_borrower.borrower_id,
+            "borrower_ref_no": new_borrower.borrower_ref_no,
+            "loanId": new_borrower.borrower_id,
+            "loanRefNo": new_borrower.borrower_ref_no,
+            "borrowerName": new_borrower.borrower_name,
             "borrowerContact": "",
             "borrowerAddress": "",
             "loanAmount": float(p),
@@ -1089,7 +1095,7 @@ class LendingService:
     def record_payment(
         cls,
         db: Session,
-        loan_id: int,
+        borrower_id: int,
         payment_date_val: Any,
         amount_val: Decimal | float,
         method: str,
@@ -1101,15 +1107,15 @@ class LendingService:
         """
         Record a payment remittance in the lending_transactions table with period settlement locking.
         """
-        fac = db.query(LendingFacility).filter(LendingFacility.facility_id == loan_id).first()
+        b = db.query(Borrower).filter(Borrower.borrower_id == borrower_id).first()
 
-        if fac:
-            freq = fac.payment_frequency or "Daily"
-            term_days = fac.term_days or (40 if freq == "Daily" else 60)
+        if b:
+            freq = b.payment_frequency or "Daily"
+            term_days = b.term_days or (40 if freq == "Daily" else 60)
 
             existing_txs = (
                 db.query(LendingTransaction)
-                .filter(LendingTransaction.facility_id == fac.facility_id)
+                .filter(LendingTransaction.borrower_id == b.borrower_id)
                 .order_by(LendingTransaction.payment_date.desc())
                 .all()
             )
@@ -1123,12 +1129,12 @@ class LendingService:
             ]
 
             # 1. Terms & current balances
-            terms = cls.calculate_facility(
-                fac.principal_amount,
-                fac.interest_rate or Decimal("20.00"),
+            terms = cls.calculate_terms(
+                b.principal_amount,
+                b.interest_rate or Decimal("20.00"),
                 freq,
-                fac.date_borrowed,
-                fac.due_date,
+                b.date_borrowed,
+                b.due_date,
                 term_days,
             )
 
@@ -1149,8 +1155,8 @@ class LendingService:
 
             if freq == "Daily":
                 _, ledger_meta = cls.build_daily_ledger(
-                    fac.date_borrowed,
-                    fac.due_date,
+                    b.date_borrowed,
+                    b.due_date,
                     repayment_dicts,
                     term_days=terms["term_days"],
                     installment_target=terms["installment_target"],
@@ -1159,8 +1165,8 @@ class LendingService:
                 total_penalties = Decimal(str(ledger_meta["total_penalties"]))
             else:
                 progress = cls.get_monthly_progress(
-                    fac.date_borrowed,
-                    fac.due_date,
+                    b.date_borrowed,
+                    b.due_date,
                     terms["total_payable"],
                     repayment_dicts,
                     term_days=terms["term_days"],
@@ -1179,8 +1185,8 @@ class LendingService:
             tx_ref = f"TX-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() % 10000):04d}"
 
             # Calculate principal and interest portion breakdown
-            total_pay = Decimal(str(fac.total_payable)) if fac.total_payable else Decimal("0.00")
-            princ_amt = Decimal(str(fac.principal_amount)) if fac.principal_amount else Decimal("0.00")
+            total_pay = Decimal(str(b.total_payable)) if b.total_payable else Decimal("0.00")
+            princ_amt = Decimal(str(b.principal_amount)) if b.principal_amount else Decimal("0.00")
             if total_pay > Decimal("0.00"):
                 principal_ratio = princ_amt / total_pay
                 p_portion = quantize(payment_amount * principal_ratio)
@@ -1209,11 +1215,11 @@ class LendingService:
             tx_out_status = "Paid" if is_period_settled else "Partially Paid"
 
             new_tx = LendingTransaction(
-                facility_id=fac.facility_id,
+                borrower_id=b.borrower_id,
                 transaction_ref_no=tx_ref,
                 transaction_type=transaction_type or "Repayment",
                 payment_date=pay_date,
-                due_date=fac.due_date,
+                due_date=b.due_date,
                 amount=payment_amount,
                 principal_portion=p_portion,
                 interest_portion=i_portion,
@@ -1232,10 +1238,10 @@ class LendingService:
                     if prev_tx.payment_date == pay_date and prev_tx.status == "Partially Paid":
                         prev_tx.status = "Completed"
 
-            # 4. Update facility status if fully paid
+            # 4. Update borrower status if fully paid
             updated_remaining = remaining_before - payment_amount
             if updated_remaining <= Decimal("0.00"):
-                fac.status = "Fully Paid"
+                b.status = "Fully Paid"
 
             db.commit()
             db.refresh(new_tx)
@@ -1243,8 +1249,8 @@ class LendingService:
             return {
                 "transaction_id": new_tx.transaction_id,
                 "repayment_id": new_tx.transaction_id,
-                "facility_id": fac.facility_id,
-                "loan_id": fac.facility_id,
+                "borrower_id": b.borrower_id,
+                "loan_id": b.borrower_id,
                 "payment_date": pay_date.isoformat(),
                 "amount": float(payment_amount),
                 "remaining_balance": float(updated_remaining),
@@ -1255,11 +1261,11 @@ class LendingService:
             }
 
         # Fallback to legacy loan table
-        loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
+        loan = db.query(Loan).filter(Loan.loan_id == borrower_id).first()
         if not loan:
-            raise HTTPException(status_code=404, detail="Lending facility not found.")
+            raise HTTPException(status_code=404, detail="Borrower not found.")
 
-        meta = cls.parse_facility_description(loan.description)
+        meta = cls.parse_loan_description(loan.description)
         freq = meta.get("frequency", "Daily")
         term_days = meta.get("term_days", 40 if freq == "Daily" else 60)
 
@@ -1285,7 +1291,7 @@ class LendingService:
                 detail=lock_reason or "Period or date is already fully settled and locked.",
             )
 
-        terms = cls.calculate_facility(
+        terms = cls.calculate_terms(
             loan.principal_amount,
             loan.interest_rate or Decimal("20.00"),
             freq,
@@ -1347,7 +1353,7 @@ class LendingService:
         return {
             "transaction_id": new_repayment.loan_repayment_id,
             "repayment_id": new_repayment.loan_repayment_id,
-            "facility_id": loan.loan_id,
+            "borrower_id": loan.loan_id,
             "loan_id": loan.loan_id,
             "payment_date": pay_date.isoformat(),
             "amount": float(payment_amount),
@@ -1362,7 +1368,7 @@ class LendingService:
     def get_transactions(
         cls,
         db: Session,
-        facility_id: Optional[int] = None,
+        borrower_id: Optional[int] = None,
         transaction_type: Optional[str] = None,
         payment_method: Optional[str] = None,
         date_from: Optional[str] = None,
@@ -1370,8 +1376,8 @@ class LendingService:
     ) -> List[Dict[str, Any]]:
         """Query and filter lending transactions from the lending_transactions table."""
         query = db.query(LendingTransaction)
-        if facility_id:
-            query = query.filter(LendingTransaction.facility_id == facility_id)
+        if borrower_id:
+            query = query.filter(LendingTransaction.borrower_id == borrower_id)
         if transaction_type:
             query = query.filter(LendingTransaction.transaction_type == transaction_type)
         if payment_method:
@@ -1389,7 +1395,7 @@ class LendingService:
         return [
             {
                 "transaction_id": t.transaction_id,
-                "facility_id": t.facility_id,
+                "borrower_id": t.borrower_id,
                 "transaction_ref_no": t.transaction_ref_no,
                 "transaction_type": t.transaction_type,
                 "payment_date": t.payment_date.isoformat() if t.payment_date else "",
@@ -1417,7 +1423,7 @@ class LendingService:
             raise HTTPException(status_code=404, detail="Lending transaction not found.")
         return {
             "transaction_id": t.transaction_id,
-            "facility_id": t.facility_id,
+            "borrower_id": t.borrower_id,
             "transaction_ref_no": t.transaction_ref_no,
             "transaction_type": t.transaction_type,
             "payment_date": t.payment_date.isoformat() if t.payment_date else "",
