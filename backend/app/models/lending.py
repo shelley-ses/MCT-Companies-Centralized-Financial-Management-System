@@ -52,8 +52,6 @@ class LendingTransaction(Base):
     payment_date = Column(Date, nullable=False, index=True)
     due_date = Column(Date, nullable=True)
     amount = Column(Numeric(15, 2), nullable=False)
-    principal_portion = Column(Numeric(15, 2), default=0.00)
-    interest_portion = Column(Numeric(15, 2), default=0.00)
     penalty_portion = Column(Numeric(15, 2), default=0.00)
     remaining_balance = Column(Numeric(15, 2), nullable=True)
     payment_method = Column(String(50), nullable=False, default="Cash")  # Cash, GCash, Bank Transfer, Cheque

@@ -67,8 +67,6 @@ class LendingTransactionOut(BaseModel):
     payment_date: str
     due_date: Optional[str] = None
     amount: float
-    principal_portion: float = 0.0
-    interest_portion: float = 0.0
     penalty_portion: float = 0.0
     remaining_balance: Optional[float] = None
     payment_method: str = "Cash"
@@ -83,6 +81,8 @@ class LendingTransactionOut(BaseModel):
 
 class DailyPaymentRecordOut(BaseModel):
     id: str
+    transaction_ref_no: Optional[str] = None
+    transactionRefNo: Optional[str] = None
     date: str
     amount: float
     method: str
@@ -98,6 +98,7 @@ class BorrowerOut(BaseModel):
     id: str
     borrower_id: int
     borrower_ref_no: Optional[str] = None
+    borrowerRefNo: Optional[str] = None
     loanId: int
     loanRefNo: str
     borrowerName: str

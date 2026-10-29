@@ -228,15 +228,13 @@ class LendingService:
             available_funds = direct_paid + available_credit
             cycle_due = cls.get_cycle_due_date(date_borrowed_val, due_date_val, "Monthly", m, total_months)
 
-            if available_funds >= expected and expected > 0:
-                available_credit = available_funds - expected
+            if direct_paid >= expected and expected > 0:
                 rem = Decimal("0.00")
-                status_str = "Paid" if direct_paid > 0 else "Advance Paid"
+                status_str = "Paid"
                 is_settled = True
                 is_overdue = False
-            elif available_funds > 0:
-                rem = expected - available_funds
-                available_credit = Decimal("0.00")
+            elif direct_paid > 0:
+                rem = expected - direct_paid
                 is_settled = False
                 is_overdue = today_iso > cycle_due
                 status_str = "Partially Paid"
@@ -281,7 +279,7 @@ class LendingService:
             "monthDetails": month_details,
             "activeMonth": active_month,
             "totalPenalties": 0.0,
-            "advanceAmount": float(available_credit),
+            "advanceAmount": 0.0,
             "complianceStatus": "Active",
             "missedCyclesCount": 0,
         }
@@ -375,20 +373,12 @@ class LendingService:
             iso = cur.isoformat()
             payments_today = day_payments.get(iso, [])
             paid_today = sum((Decimal(str(p.get("amount", 0))) for p in payments_today), Decimal("0.00"))
-            available_funds = paid_today + available_credit
 
-            if available_funds >= target_dec and target_dec > Decimal("0.00"):
-                available_credit = available_funds - target_dec
-                if paid_today > Decimal("0.00"):
-                    status_str = "Paid"
-                    method_str = payments_today[0].get("method", "Cash") if payments_today else "Cash"
-                    ref_str = payments_today[0].get("referenceNo", "-") if payments_today else "-"
-                    notes_str = payments_today[0].get("notes", "-") if payments_today else "-"
-                else:
-                    status_str = "Advance Paid"
-                    method_str = "Advance Credit"
-                    ref_str = "ADVANCE"
-                    notes_str = "Covered by advance payment"
+            if paid_today >= target_dec and target_dec > Decimal("0.00"):
+                status_str = "Paid"
+                method_str = payments_today[0].get("method", "Cash") if payments_today else "Cash"
+                ref_str = payments_today[0].get("referenceNo", "-") if payments_today else "-"
+                notes_str = payments_today[0].get("notes", "-") if payments_today else "-"
 
                 ledger_rows.append({
                     "id": f"day-{iso}",
@@ -403,8 +393,7 @@ class LendingService:
                     "timestamp": iso,
                     "isLocked": True,
                 })
-            elif paid_today > Decimal("0.00") and available_funds > Decimal("0.00"):
-                available_credit = Decimal("0.00")
+            elif paid_today > Decimal("0.00"):
                 status_str = "Partially Paid"
 
                 method_str = payments_today[0].get("method", "Cash") if payments_today else "Cash"
@@ -452,7 +441,7 @@ class LendingService:
 
         meta = {
             "total_penalties": 0.0,
-            "advance_amount": float(available_credit),
+            "advance_amount": 0.0,
             "compliance_status": "Active",
             "missed_cycles_count": missed_count,
         }
@@ -582,6 +571,9 @@ class LendingService:
                 repayment_dicts = [
                     {
                         "id": str(t.transaction_id),
+                        "transaction_id": t.transaction_id,
+                        "transaction_ref_no": t.transaction_ref_no or f"TX-{t.transaction_id}",
+                        "transactionRefNo": t.transaction_ref_no or f"TX-{t.transaction_id}",
                         "payment_date": t.payment_date.isoformat() if t.payment_date else "",
                         "date": t.payment_date.isoformat() if t.payment_date else "",
                         "amount": float(t.amount or 0),
@@ -647,6 +639,7 @@ class LendingService:
                     "id": str(b.borrower_id),
                     "borrower_id": b.borrower_id,
                     "borrower_ref_no": b.borrower_ref_no or f"BOR-{b.borrower_id}",
+                    "borrowerRefNo": b.borrower_ref_no or f"BOR-{b.borrower_id}",
                     "loanId": b.borrower_id,
                     "loanRefNo": b.borrower_ref_no or f"BOR-{b.borrower_id}",
                     "borrowerName": borrower_name,
@@ -820,6 +813,9 @@ class LendingService:
             repayment_dicts = [
                 {
                     "id": str(t.transaction_id),
+                    "transaction_id": t.transaction_id,
+                    "transaction_ref_no": t.transaction_ref_no or f"TX-{t.transaction_id}",
+                    "transactionRefNo": t.transaction_ref_no or f"TX-{t.transaction_id}",
                     "date": t.payment_date.isoformat() if t.payment_date else "",
                     "payment_date": t.payment_date.isoformat() if t.payment_date else "",
                     "amount": float(t.amount or 0),
@@ -1184,17 +1180,6 @@ class LendingService:
             ref_clean = reference_no.strip() if reference_no and reference_no.strip() else f"TX-{int(datetime.now().timestamp() % 100000):05d}"
             tx_ref = f"TX-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() % 10000):04d}"
 
-            # Calculate principal and interest portion breakdown
-            total_pay = Decimal(str(b.total_payable)) if b.total_payable else Decimal("0.00")
-            princ_amt = Decimal(str(b.principal_amount)) if b.principal_amount else Decimal("0.00")
-            if total_pay > Decimal("0.00"):
-                principal_ratio = princ_amt / total_pay
-                p_portion = quantize(payment_amount * principal_ratio)
-                i_portion = quantize(payment_amount - p_portion)
-            else:
-                p_portion = payment_amount
-                i_portion = Decimal("0.00")
-
             rem_bal = max(Decimal("0.00"), remaining_before - payment_amount)
 
             # Determine if this payment fully settles the period/date target or is Partially Paid
@@ -1221,8 +1206,6 @@ class LendingService:
                 payment_date=pay_date,
                 due_date=b.due_date,
                 amount=payment_amount,
-                principal_portion=p_portion,
-                interest_portion=i_portion,
                 penalty_portion=Decimal("0.00"),
                 remaining_balance=rem_bal,
                 payment_method=method.strip() if method else "Cash",
@@ -1248,6 +1231,8 @@ class LendingService:
 
             return {
                 "transaction_id": new_tx.transaction_id,
+                "transaction_ref_no": new_tx.transaction_ref_no,
+                "transactionRefNo": new_tx.transaction_ref_no,
                 "repayment_id": new_tx.transaction_id,
                 "borrower_id": b.borrower_id,
                 "loan_id": b.borrower_id,
@@ -1401,8 +1386,6 @@ class LendingService:
                 "payment_date": t.payment_date.isoformat() if t.payment_date else "",
                 "due_date": t.due_date.isoformat() if t.due_date else "",
                 "amount": float(t.amount or 0),
-                "principal_portion": float(t.principal_portion or 0),
-                "interest_portion": float(t.interest_portion or 0),
                 "penalty_portion": float(t.penalty_portion or 0),
                 "remaining_balance": float(t.remaining_balance) if t.remaining_balance is not None else None,
                 "payment_method": t.payment_method or "Cash",
@@ -1429,8 +1412,6 @@ class LendingService:
             "payment_date": t.payment_date.isoformat() if t.payment_date else "",
             "due_date": t.due_date.isoformat() if t.due_date else "",
             "amount": float(t.amount or 0),
-            "principal_portion": float(t.principal_portion or 0),
-            "interest_portion": float(t.interest_portion or 0),
             "penalty_portion": float(t.penalty_portion or 0),
             "remaining_balance": float(t.remaining_balance) if t.remaining_balance is not None else None,
             "payment_method": t.payment_method or "Cash",

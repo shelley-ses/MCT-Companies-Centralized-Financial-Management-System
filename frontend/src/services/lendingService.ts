@@ -1,5 +1,7 @@
 export interface DailyPaymentRecord {
   id: string
+  transactionRefNo?: string
+  transaction_ref_no?: string
   date: string
   amount: number
   method: string
@@ -17,6 +19,10 @@ export interface DailyPaymentRecord {
 
 export interface LendingFacility {
   id: string
+  borrower_id?: number
+  borrowerId?: number
+  borrower_ref_no?: string
+  borrowerRefNo?: string
   loanId: string | number
   loanRefNo?: string
   borrowerName: string
@@ -104,8 +110,6 @@ export interface LendingTransactionRecord {
   payment_date: string
   due_date?: string
   amount: number
-  principal_portion?: number
-  interest_portion?: number
   penalty_portion?: number
   remaining_balance?: number
   payment_method: string
@@ -415,6 +419,28 @@ class LendingServiceGateway {
   }
 
   /**
+   * Fetch single borrower by ID from backend with fallback to cached storage.
+   */
+  async getBorrower(borrowerId: string | number): Promise<LendingFacility | null> {
+    const numId = parseInt(String(borrowerId).replace(/\D/g, ''), 10)
+    if (!isNaN(numId) && numId > 0) {
+      try {
+        const res = await fetch(`/api/v1/lending/borrowers/${numId}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.id) {
+            return data
+          }
+        }
+      } catch (err) {
+        console.warn('LendingServiceGateway.getBorrower backend request failed:', err)
+      }
+    }
+    const all = this.loadFromStorage()
+    return all.find((f) => String(f.id) === String(borrowerId)) || null
+  }
+
+  /**
    * Create a new borrower via backend, with local cache update.
    */
   async createFacility(payload: LendingCreateFacilityPayload): Promise<LendingFacility> {
@@ -505,7 +531,7 @@ class LendingServiceGateway {
   /**
    * Record payment remittance via backend service, with local storage fallback.
    */
-  async recordPayment(payload: LendingRecordPaymentPayload): Promise<{ success: boolean; message?: string }> {
+  async recordPayment(payload: LendingRecordPaymentPayload): Promise<{ success: boolean; message?: string; transaction?: any }> {
     const numId = parseInt(String(payload.facilityId).replace(/\D/g, ''), 10)
     if (!isNaN(numId) && numId > 0) {
       try {
@@ -526,7 +552,8 @@ class LendingServiceGateway {
           return { success: false, message: err.detail || 'This period is already settled and locked.' }
         }
         if (res.ok) {
-          return { success: true }
+          const data = await res.json()
+          return { success: true, transaction: data }
         }
       } catch (err) {
         console.warn('LendingServiceGateway.recordPayment backend call failed:', err)
@@ -668,14 +695,12 @@ export function getMonthlyProgress(facility: LendingFacility) {
     let isOverdue = false
     let monthPenalty = 0
 
-    if (availableFunds >= target && target > 0) {
-      availableCredit = availableFunds - target
+    if (directPaid >= target && target > 0) {
       remaining = 0
-      status = directPaid > 0 ? 'Paid' : 'Advance Paid'
+      status = 'Paid'
       isLocked = true
-    } else if (availableFunds > 0) {
-      remaining = target - availableFunds
-      availableCredit = 0
+    } else if (directPaid > 0) {
+      remaining = target - directPaid
       isOverdue = todayStr > cycleDueDate
       status = 'Partially Paid'
     } else {
@@ -704,7 +729,7 @@ export function getMonthlyProgress(facility: LendingFacility) {
     months,
     activeMonth,
     totalPenalties: 0,
-    advanceAmount: availableCredit,
+    advanceAmount: 0,
     complianceStatus: 'Compliant' as const,
     missedCyclesCount: 0,
   }
@@ -813,27 +838,23 @@ export function buildDailyLedger(facility: LendingFacility): DailyPaymentRecord[
     const dateStr = formatToYYYYMMDD(cur)
     const list = dayPayments.get(dateStr) || []
     const paidToday = list.reduce((sum, item) => sum + (item.amount || 0), 0)
-    const availableFunds = paidToday + availableCredit
 
-    if (availableFunds >= target && target > 0) {
-      availableCredit = availableFunds - target
-      const isDirectPaid = paidToday > 0
+    if (paidToday >= target && target > 0) {
       const first = list[0]
       rows.push({
         id: first?.id || `day-${dateStr}`,
         date: dateStr,
         amount: paidToday,
         target,
-        method: isDirectPaid ? (first?.method || 'Cash') : 'Advance Credit',
-        referenceNo: isDirectPaid ? (first?.referenceNo || '-') : 'ADVANCE',
-        notes: isDirectPaid ? (first?.notes || '-') : 'Covered by advance payment',
-        status: isDirectPaid ? 'Paid' : 'Advance Paid',
+        method: first?.method || 'Cash',
+        referenceNo: first?.referenceNo || '-',
+        notes: first?.notes || '-',
+        status: 'Paid',
         penalty: 0,
         timestamp: first?.timestamp || `${dateStr}T10:00:00Z`,
         isLocked: true,
       })
-    } else if (paidToday > 0 && availableFunds > 0) {
-      availableCredit = 0
+    } else if (paidToday > 0) {
       const first = list[0]
       rows.push({
         id: first?.id || `day-${dateStr}`,
