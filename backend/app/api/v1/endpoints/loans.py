@@ -8,6 +8,9 @@ from sqlalchemy import or_, func
 from app.db.session import get_db
 from app.db.supabase import get_supabase_admin_client
 from app.models.loan import Loan, LoanRepayment
+from app.models.bank import BankAccount
+from app.services.bank_service import BankService
+from app.schemas.bank import BankDepositWithdrawRequest
 from app.models.company import Company
 from app.schemas.loan import (
     LoanCreate,
@@ -78,6 +81,16 @@ def resolve_company_id(
         if comp:
             return comp.company_id
     return None
+
+
+def forbid_audit_edit(current_user: AuthenticatedUser) -> None:
+    """Internal Audit can review loans but never edit them."""
+    role = str(current_user.get("role") or "").strip().lower()
+    if role in ("audit", "auditor"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Internal Audit users cannot edit loans.",
+        )
 
 
 def _company_loan_query(
@@ -449,6 +462,7 @@ def get_loans(
                     audit_reviewed_by=r.get("audit_reviewed_by"),
                     audit_reviewed_at=r.get("audit_reviewed_at"),
                     audit_remark=r.get("audit_remark"),
+                    bank_account_id=r.get("bank_account_id"),
                     created_at=r.get("created_at"),
                     updated_at=r.get("updated_at"),
                 )
@@ -526,6 +540,7 @@ def get_loans(
                 audit_reviewed_by=getattr(l, "audit_reviewed_by", None),
                 audit_reviewed_at=getattr(l, "audit_reviewed_at", None),
                 audit_remark=getattr(l, "audit_remark", None),
+                bank_account_id=getattr(l, "bank_account_id", None),
                 created_at=l.created_at,
                 updated_at=l.updated_at,
             )
@@ -667,6 +682,7 @@ def update_loan(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    forbid_audit_edit(current_user)
 
     client = None
     try:
@@ -840,13 +856,28 @@ def endorse_loan(
     now_ts = datetime.now()
 
     if action_norm == "endorse":
-        new_lender_id = None
-        if endorse_in.lender or endorse_in.lender_company:
-            new_lender_id = resolve_company_id(endorse_in.lender, endorse_in.lender_company, name_to_id, db)
-        current_lender = (existing_row.get("lender") if existing_row else None) or (sql_loan.lender if sql_loan else None)
-        final_lender_id = new_lender_id or current_lender
-        if not final_lender_id:
-            raise HTTPException(status_code=400, detail="A lending company must be selected by Finance to endorse this loan.")
+        # The funding bank is the only thing Finance must choose. The lender company
+        # is whoever owns that bank account.
+        funding_bank_id = (
+            endorse_in.bank_account_id
+            or (existing_row.get("bank_account_id") if existing_row else None)
+            or (sql_loan.bank_account_id if sql_loan else None)
+        )
+        if not funding_bank_id:
+            raise HTTPException(status_code=400, detail="Please choose a bank account to disburse this loan.")
+
+        funding_bank_account = db.query(BankAccount).filter(BankAccount.id == funding_bank_id).first()
+        if not funding_bank_account:
+            raise HTTPException(status_code=400, detail="The selected bank account was not found.")
+
+        final_lender_id = funding_bank_account.company_id or resolve_company_id(
+            None, funding_bank_account.company_name, name_to_id, db
+        )
+        if final_lender_id is None:
+            # The bank has no company we can match; keep whatever lender the loan already has.
+            final_lender_id = (existing_row.get("lender") if existing_row else None) or (sql_loan.lender if sql_loan else None)
+        if not endorse_in.bank_account_id:
+            endorse_in.bank_account_id = funding_bank_id
         if borrower_id and final_lender_id == borrower_id:
             raise HTTPException(status_code=400, detail="Lender company cannot be the same as the borrower company.")
 
@@ -864,6 +895,8 @@ def endorse_loan(
     }
     if final_lender_id:
         update_payload["lender"] = final_lender_id
+    if endorse_in.bank_account_id:
+        update_payload["bank_account_id"] = endorse_in.bank_account_id
     if endorse_in.interest_rate is not None:
         update_payload["interest_rate"] = float(endorse_in.interest_rate)
     if endorse_in.due_date is not None:
@@ -885,6 +918,8 @@ def endorse_loan(
         sql_loan.finance_remark = remark_text
         if final_lender_id:
             sql_loan.lender = final_lender_id
+        if endorse_in.bank_account_id:
+            sql_loan.bank_account_id = endorse_in.bank_account_id
         if endorse_in.interest_rate is not None:
             sql_loan.interest_rate = Decimal(str(endorse_in.interest_rate))
         if endorse_in.due_date is not None:
@@ -938,6 +973,7 @@ def endorse_loan(
         audit_reviewed_by=final_source.get("audit_reviewed_by"),
         audit_reviewed_at=final_source.get("audit_reviewed_at"),
         audit_remark=final_source.get("audit_remark"),
+        bank_account_id=update_payload.get("bank_account_id") or final_source.get("bank_account_id") or (sql_loan.bank_account_id if sql_loan else None),
         created_at=final_source.get("created_at") or datetime.now(),
         updated_at=now_ts,
     )
@@ -1031,6 +1067,54 @@ def audit_review_loan(
     final_source = updated_row or (existing_row or {})
     p_amt = Decimal(str(final_source.get("principal_amount") or (sql_loan.principal_amount if sql_loan else 0.0)))
 
+    if action_norm == "approve" and p_amt > Decimal("0.00"):
+        loan_ref = final_source.get("loan_ref_no") or (sql_loan.loan_ref_no if sql_loan else str(loan_id))
+        funding_bank_id = (sql_loan.bank_account_id if sql_loan else None) or final_source.get("bank_account_id")
+        
+        bank_svc = BankService(db)
+        funding_acc = None
+        if funding_bank_id:
+            funding_acc = db.query(BankAccount).filter(BankAccount.id == funding_bank_id).first()
+        if not funding_acc and lender_id:
+            l_name_lookup = id_to_name.get(lender_id) or ""
+            funding_acc = bank_svc.find_account_for_company(l_name_lookup)
+
+        b_name_disp = id_to_name.get(borrower_id) or f"Company #{borrower_id}"
+        l_name_disp = id_to_name.get(lender_id) or "Corporate Treasury"
+
+        if funding_acc:
+            try:
+                w_req = BankDepositWithdrawRequest(
+                    amount=p_amt,
+                    date=datetime.now().strftime("%m/%d/%y"),
+                    particulars=f"Loan Disbursement to {b_name_disp} (Ref: {loan_ref})",
+                    category="Bank Transfer",
+                    reference_no=loan_ref,
+                )
+                bank_svc.withdraw(funding_acc.id, w_req)
+                ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": funding_acc.id}})
+            except Exception as exc:
+                print(f"Audit approval bank deduction error: {exc}")
+                raise HTTPException(status_code=400, detail=f"Bank deduction failed: {exc}")
+
+        # Deposit to supervisor/borrower account
+        borrower_acc = db.query(BankAccount).filter(BankAccount.company_id == borrower_id).first()
+        if not borrower_acc:
+            borrower_acc = bank_svc.find_account_for_company(b_name_disp)
+        if borrower_acc:
+            try:
+                d_req = BankDepositWithdrawRequest(
+                    amount=p_amt,
+                    date=datetime.now().strftime("%m/%d/%y"),
+                    particulars=f"Loan Proceeds from {l_name_disp} (Ref: {loan_ref})",
+                    category="Bank Transfer",
+                    reference_no=loan_ref,
+                )
+                bank_svc.deposit(borrower_acc.id, d_req)
+                ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": borrower_acc.id}})
+            except Exception as exc:
+                print(f"Audit approval borrower bank deposit error: {exc}")
+
     try:
         log_transaction(
             db, AuditAction.LOAN_UPDATED,
@@ -1067,6 +1151,7 @@ def audit_review_loan(
         audit_reviewed_by=reviewer_name,
         audit_reviewed_at=now_ts,
         audit_remark=remark_text,
+        bank_account_id=final_source.get("bank_account_id") or (sql_loan.bank_account_id if sql_loan else None),
         created_at=final_source.get("created_at") or datetime.now(),
         updated_at=now_ts,
     )
@@ -1219,6 +1304,7 @@ def delete_loan(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    forbid_audit_edit(current_user)
 
     client = None
     try:
@@ -1299,6 +1385,7 @@ def create_loan_repayment(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    forbid_audit_edit(current_user)
     loan = db.query(Loan).filter(Loan.loan_id == loan_id).first()
     if not loan:
         raise HTTPException(status_code=404, detail="Loan not found")

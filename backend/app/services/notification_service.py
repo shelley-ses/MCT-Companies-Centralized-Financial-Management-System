@@ -71,6 +71,15 @@ class NotificationType:
     LOAN_REPAYMENT_RECEIVED  = "LOAN_REPAYMENT_RECEIVED"   # lender sees this
     LOAN_REPAYMENT_SENT      = "LOAN_REPAYMENT_SENT"       # borrower sees this
     LOAN_FULLY_SETTLED       = "LOAN_FULLY_SETTLED"        # both parties
+    LOAN_REQUEST_FINANCE     = "LOAN_REQUEST_FINANCE"      # Finance: new loan request awaiting endorsement
+    LOAN_ENDORSED_AUDIT      = "LOAN_ENDORSED_AUDIT"       # Audit: loan endorsed by Finance awaiting compliance review
+    LOAN_APPROVED_SUPERVISOR = "LOAN_APPROVED_SUPERVISOR"  # Supervisor: loan approved by Audit
+    LOAN_REJECTED_SUPERVISOR = "LOAN_REJECTED_SUPERVISOR"  # Supervisor: loan rejected by Finance or Audit
+    PETTY_CASH_REQUEST       = "PETTY_CASH_REQUEST"        # Finance: new petty cash request awaiting endorsement
+    PETTY_CASH_AUDIT         = "PETTY_CASH_AUDIT"          # Audit: petty cash endorsed awaiting audit review
+    PETTY_CASH_APPROVED      = "PETTY_CASH_APPROVED"       # Supervisor: petty cash top-up approved
+    PETTY_CASH_REJECTED      = "PETTY_CASH_REJECTED"       # Supervisor: petty cash top-up rejected
+    DEPOSIT_VERIFIED         = "DEPOSIT_VERIFIED"          # Supervisor: deposit/sales audited or verified
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +163,7 @@ class NotificationService:
         self,
         *,
         company_id: Optional[int] = None,
+        user_role: Optional[str] = None,
         notification_type: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
@@ -166,6 +176,9 @@ class NotificationService:
         notifications.extend(self._pending_approval_notifications(company_id, name_map))
         notifications.extend(self._due_date_notifications(company_id, name_map, repayments_map))
         notifications.extend(self._repayment_notifications(company_id, name_map))
+        notifications.extend(self._loan_workflow_notifications(user_role, company_id, name_map))
+        notifications.extend(self._petty_cash_workflow_notifications(user_role, company_id, name_map))
+        notifications.extend(self._deposit_workflow_notifications(user_role, company_id, name_map))
 
         if notification_type:
             nt = notification_type.upper()
@@ -174,8 +187,8 @@ class NotificationService:
         notifications.sort(key=lambda n: _normalize_dt(n.created_at), reverse=True)
         return notifications[offset: offset + limit]
 
-    def get_unread_count(self, *, company_id: Optional[int] = None) -> int:
-        return len(self.get_notifications(company_id=company_id, limit=10_000))
+    def get_unread_count(self, *, company_id: Optional[int] = None, user_role: Optional[str] = None) -> int:
+        return len(self.get_notifications(company_id=company_id, user_role=user_role, limit=10_000))
 
     # ── Source A: due-date notifications (live loan data) ────────────────────
 
@@ -536,5 +549,265 @@ class NotificationService:
 
             except Exception as exc:
                 logger.warning("Repayment notification error for audit log %s: %s", row.audit_log_id, exc)
+
+        return results
+
+    # ── Source C: Role-based Loan Workflow Notifications ─────────────────────
+
+    def _loan_workflow_notifications(
+        self,
+        user_role: Optional[str],
+        company_id: Optional[int],
+        name_map: Optional[dict] = None,
+    ) -> list[NotificationOut]:
+        results: list[NotificationOut] = []
+        if name_map is None:
+            name_map = self._get_company_names_map()
+        role = (user_role or "").lower()
+
+        try:
+            # 1. Finance & Admin: New loan requests awaiting endorsement
+            if not role or role in ("finance", "admin"):
+                pending_finance = (
+                    self.db.query(Loan)
+                    .filter(Loan.status.in_(["Pending Finance Endorsement", "Pending Approval"]))
+                    .order_by(Loan.created_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                for loan in pending_finance:
+                    borrower_name = _company_name(self.db, loan.borrower, name_map)
+                    ref = loan.loan_ref_no or str(loan.loan_id)
+                    amt = loan.principal_amount or Decimal("0.00")
+                    results.append(NotificationOut(
+                        notification_id=_make_id(NotificationType.LOAN_REQUEST_FINANCE, loan.loan_id),
+                        notification_type=NotificationType.LOAN_REQUEST_FINANCE,
+                        title="New Loan Request (Finance Endorsement)",
+                        message=f"{borrower_name} requested a loan of ₱{amt:,.2f} (Ref: {ref}) awaiting your review and endorsement.",
+                        company_id=loan.borrower,
+                        reference_type="loan",
+                        reference_id=loan.loan_id,
+                        is_read=False,
+                        created_at=loan.created_at or datetime.now(timezone.utc),
+                    ))
+
+            # 2. Audit & Admin: Loans endorsed by Finance awaiting audit compliance review
+            if not role or role in ("audit", "auditor", "admin"):
+                pending_audit = (
+                    self.db.query(Loan)
+                    .filter(Loan.status == "Pending Audit Approval")
+                    .order_by(Loan.updated_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                for loan in pending_audit:
+                    borrower_name = _company_name(self.db, loan.borrower, name_map)
+                    lender_name = _company_name(self.db, loan.lender, name_map) if loan.lender else "Corporate Treasury"
+                    ref = loan.loan_ref_no or str(loan.loan_id)
+                    amt = loan.principal_amount or Decimal("0.00")
+                    results.append(NotificationOut(
+                        notification_id=_make_id(NotificationType.LOAN_ENDORSED_AUDIT, loan.loan_id),
+                        notification_type=NotificationType.LOAN_ENDORSED_AUDIT,
+                        title="Loan Endorsed for Audit Review",
+                        message=f"Loan request of ₱{amt:,.2f} for {borrower_name} from {lender_name} (Ref: {ref}) was endorsed by Finance and awaits compliance approval.",
+                        company_id=loan.borrower,
+                        reference_type="loan",
+                        reference_id=loan.loan_id,
+                        is_read=False,
+                        created_at=loan.endorsed_at or loan.updated_at or datetime.now(timezone.utc),
+                    ))
+
+            # 3. Supervisor / Borrower Company: Approved or Disapproved loans
+            if not role or role in ("supervisor", "company", "admin"):
+                q_sup = self.db.query(Loan).filter(
+                    Loan.status.in_(["Approved", "Disapproved by Audit", "Rejected by Finance"])
+                )
+                if company_id:
+                    q_sup = q_sup.filter(Loan.borrower == company_id)
+                supervisor_loans = q_sup.order_by(Loan.updated_at.desc()).limit(20).all()
+                for loan in supervisor_loans:
+                    lender_name = _company_name(self.db, loan.lender, name_map) if loan.lender else "Corporate Treasury"
+                    ref = loan.loan_ref_no or str(loan.loan_id)
+                    amt = loan.principal_amount or Decimal("0.00")
+                    is_approved = loan.status == "Approved"
+                    ntype = NotificationType.LOAN_APPROVED_SUPERVISOR if is_approved else NotificationType.LOAN_REJECTED_SUPERVISOR
+                    title = "Loan Request Approved" if is_approved else f"Loan Request {loan.status}"
+                    if is_approved:
+                        msg = f"Your loan request of ₱{amt:,.2f} from {lender_name} (Ref: {ref}) has been approved by Internal Audit. Funds disbursed to your account."
+                    else:
+                        reason = loan.audit_remark or loan.finance_remark or "Request declined."
+                        msg = f"Your loan request (Ref: {ref}) of ₱{amt:,.2f} was {loan.status.lower()}: {reason}"
+                    results.append(NotificationOut(
+                        notification_id=_make_id(ntype, loan.loan_id, loan.status.replace(" ", "_")),
+                        notification_type=ntype,
+                        title=title,
+                        message=msg,
+                        company_id=loan.borrower,
+                        reference_type="loan",
+                        reference_id=loan.loan_id,
+                        is_read=False,
+                        created_at=loan.audit_reviewed_at or loan.endorsed_at or loan.updated_at or datetime.now(timezone.utc),
+                    ))
+        except Exception as exc:
+            logger.warning("Error computing loan workflow notifications: %s", exc)
+
+        return results
+
+    # ── Source D: Role-based Petty Cash Workflow Notifications ────────────────
+
+    def _petty_cash_workflow_notifications(
+        self,
+        user_role: Optional[str],
+        company_id: Optional[int],
+        name_map: Optional[dict] = None,
+    ) -> list[NotificationOut]:
+        results: list[NotificationOut] = []
+        if name_map is None:
+            name_map = self._get_company_names_map()
+        role = (user_role or "").lower()
+
+        try:
+            from app.models.petty_cash import PettyCashTopUp
+
+            # 1. Finance & Admin: Petty cash requests awaiting endorsement
+            if not role or role in ("finance", "admin"):
+                pending_finance = (
+                    self.db.query(PettyCashTopUp)
+                    .filter(PettyCashTopUp.status == "Pending Finance Endorsement")
+                    .order_by(PettyCashTopUp.created_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                for topup in pending_finance:
+                    cname = _company_name(self.db, topup.company_id, name_map)
+                    ref = topup.reference_no or str(topup.topup_id)
+                    amt = topup.amount or Decimal("0.00")
+                    results.append(NotificationOut(
+                        notification_id=_make_id(NotificationType.PETTY_CASH_REQUEST, topup.topup_id),
+                        notification_type=NotificationType.PETTY_CASH_REQUEST,
+                        title="Petty Cash Request (Finance Endorsement)",
+                        message=f"{cname} requested a petty cash top-up of ₱{amt:,.2f} (Ref: {ref}) awaiting your review and endorsement.",
+                        company_id=topup.company_id,
+                        reference_type="petty_cash",
+                        reference_id=topup.topup_id,
+                        is_read=False,
+                        created_at=topup.created_at or datetime.now(timezone.utc),
+                    ))
+
+            # 2. Audit & Admin: Petty cash requests awaiting compliance approval
+            if not role or role in ("audit", "auditor", "admin"):
+                pending_audit = (
+                    self.db.query(PettyCashTopUp)
+                    .filter(PettyCashTopUp.status == "Pending Audit Approval")
+                    .order_by(PettyCashTopUp.updated_at.desc() if hasattr(PettyCashTopUp, 'updated_at') else PettyCashTopUp.created_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                for topup in pending_audit:
+                    cname = _company_name(self.db, topup.company_id, name_map)
+                    ref = topup.reference_no or str(topup.topup_id)
+                    amt = topup.amount or Decimal("0.00")
+                    results.append(NotificationOut(
+                        notification_id=_make_id(NotificationType.PETTY_CASH_AUDIT, topup.topup_id),
+                        notification_type=NotificationType.PETTY_CASH_AUDIT,
+                        title="Petty Cash Audit Compliance Required",
+                        message=f"Petty cash top-up of ₱{amt:,.2f} for {cname} (Ref: {ref}) was endorsed by Finance and awaits Audit approval.",
+                        company_id=topup.company_id,
+                        reference_type="petty_cash",
+                        reference_id=topup.topup_id,
+                        is_read=False,
+                        created_at=topup.endorsed_at or topup.created_at or datetime.now(timezone.utc),
+                    ))
+
+            # 3. Supervisor: Petty cash requests approved or rejected
+            if not role or role in ("supervisor", "company", "admin"):
+                q_sup = self.db.query(PettyCashTopUp).filter(
+                    PettyCashTopUp.status.in_(["Approved", "Rejected by Finance", "Disapproved by Audit", "Disapproved"])
+                )
+                if company_id:
+                    q_sup = q_sup.filter(PettyCashTopUp.company_id == company_id)
+                topup_rows = q_sup.order_by(PettyCashTopUp.created_at.desc()).limit(20).all()
+                for topup in topup_rows:
+                    ref = topup.reference_no or str(topup.topup_id)
+                    amt = topup.amount or Decimal("0.00")
+                    is_approved = topup.status == "Approved"
+                    ntype = NotificationType.PETTY_CASH_APPROVED if is_approved else NotificationType.PETTY_CASH_REJECTED
+                    title = "Petty Cash Top-up Approved" if is_approved else f"Petty Cash {topup.status}"
+                    if is_approved:
+                        msg = f"Your petty cash top-up of ₱{amt:,.2f} (Ref: {ref}) has been approved by Audit and credited to your petty cash wallet."
+                    else:
+                        reason = topup.remark or topup.finance_remark or "Request declined."
+                        msg = f"Your petty cash top-up of ₱{amt:,.2f} (Ref: {ref}) was {topup.status.lower()}: {reason}"
+                    results.append(NotificationOut(
+                        notification_id=_make_id(ntype, topup.topup_id, topup.status.replace(" ", "_")),
+                        notification_type=ntype,
+                        title=title,
+                        message=msg,
+                        company_id=topup.company_id,
+                        reference_type="petty_cash",
+                        reference_id=topup.topup_id,
+                        is_read=False,
+                        created_at=topup.reviewed_at or topup.endorsed_at or topup.created_at or datetime.now(timezone.utc),
+                    ))
+        except Exception as exc:
+            logger.warning("Error computing petty cash workflow notifications: %s", exc)
+
+        return results
+
+    # ── Source E: Deposit & Sales Audit Notifications ─────────────────────────
+
+    def _deposit_workflow_notifications(
+        self,
+        user_role: Optional[str],
+        company_id: Optional[int],
+        name_map: Optional[dict] = None,
+    ) -> list[NotificationOut]:
+        results: list[NotificationOut] = []
+        if name_map is None:
+            name_map = self._get_company_names_map()
+        role = (user_role or "").lower()
+
+        # Only supervisor / company users (and admins) need deposit verified alerts
+        if role and role not in ("supervisor", "company", "admin"):
+            return results
+
+        try:
+            q = self.db.query(AuditLog).filter(
+                AuditLog.action.in_(["SALE_UPDATED", "SALE_CREATED"]),
+                AuditLog.details.isnot(None),
+            )
+            if company_id:
+                q = q.filter(AuditLog.company_id == company_id)
+
+            audit_rows = q.order_by(AuditLog.created_at.desc()).limit(30).all()
+            for row in audit_rows:
+                details = _parse_details(row.details)
+                # Check if it was audited / verified or deposit recorded
+                is_deposit_or_verified = (
+                    details.get("audit_status") in ("Verified", "Audited")
+                    or details.get("status") == "Paid"
+                    or details.get("record_type") in ("deposit", "sales_deposit")
+                )
+                if is_deposit_or_verified and row.record_id:
+                    cname = _company_name(self.db, row.company_id, name_map)
+                    amt = details.get("amount") or details.get("net_amount") or 0.0
+                    try:
+                        amt_num = float(amt)
+                    except Exception:
+                        amt_num = 0.0
+                    amt_str = f"₱{amt_num:,.2f}" if amt_num > 0 else ""
+                    results.append(NotificationOut(
+                        notification_id=_make_id(NotificationType.DEPOSIT_VERIFIED, row.audit_log_id),
+                        notification_type=NotificationType.DEPOSIT_VERIFIED,
+                        title="Deposit / Sales Verified by Audit",
+                        message=f"Deposit {amt_str} for {cname} has been verified and approved by Internal Audit.",
+                        company_id=row.company_id,
+                        reference_type="deposit",
+                        reference_id=row.record_id,
+                        is_read=False,
+                        created_at=row.created_at or datetime.now(timezone.utc),
+                    ))
+        except Exception as exc:
+            logger.warning("Error computing deposit workflow notifications: %s", exc)
 
         return results

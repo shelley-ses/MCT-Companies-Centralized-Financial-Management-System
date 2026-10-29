@@ -139,11 +139,17 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   }, [activeCompany, isCompanyScoped])
   const [statusFilter, setStatusFilter] = React.useState<string>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    preset: 'This Month',
-    label: 'This Month',
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
+  const [dateRange, setDateRange] = React.useState<DateRange>(() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      preset: 'This Month',
+      label: 'This Month',
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+    }
   })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [currentPage, setCurrentPage] = React.useState(1)
@@ -548,6 +554,10 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     const isPendingFinance =
       loan.status === 'Pending Finance Endorsement' || loan.status === 'Pending Approval'
     const isPendingAudit = loan.status === 'Pending Audit Approval'
+
+    // Internal Audit can only review loans waiting for audit. It can never edit
+    // a loan or record a payment, so every other row does nothing for Audit.
+    if (isAuditor && !isPendingAudit) return
 
     if (isPendingFinance) {
       if (canApprove) {
@@ -1100,9 +1110,9 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                     (!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit)
 
                   const isClickable =
-                    (isPendingFinance && (canApprove || loanType === 'Borrower')) ||
+                    (isPendingFinance && !isAuditor && (canApprove || loanType === 'Borrower')) ||
                     (isPendingAudit && isAuditor) ||
-                    (isApproved && loanType === 'Borrower')
+                    (isApproved && loanType === 'Borrower' && !isAuditor)
 
                   return (
                     <TableRow
@@ -1137,6 +1147,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                           ? 'Rejected by central finance'
                           : isDisapprovedAudit
                           ? 'Disapproved by internal audit'
+                          : isAuditor
+                          ? 'View only for Internal Audit'
                           : loanType === 'Borrower'
                           ? 'Click row to record payment or update'
                           : 'Lender financing record'
@@ -1229,25 +1241,78 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       <TableCell className="px-2 py-3 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           {isAuditor ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                const rect = e.currentTarget.getBoundingClientRect()
-                                setMenuPosition({
-                                  top: rect.bottom + window.scrollY + 4,
-                                  left: Math.min(window.innerWidth - 180, Math.max(10, rect.right + window.scrollX - 160)),
-                                })
-                                setActiveMenuLoan(loan)
-                                setOpenMenuLoanId(openMenuLoanId === loan.id ? null : loan.id)
-                              }}
-                              className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
-                              title="Audit Actions"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* Status Badges for Auditor */}
+                              {isPendingAudit && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-xs font-semibold shadow-2xs">
+                                  <Clock className="w-3 h-3 text-indigo-600" />
+                                  <span>Pending Audit</span>
+                                </span>
+                              )}
+                              {isDisapprovedAudit && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
+                                  title={loan.auditRemark || 'Disapproved by audit'}
+                                >
+                                  <X className="w-3 h-3 text-rose-600" />
+                                  <span>Disapproved</span>
+                                </span>
+                              )}
+                              {isRejectedFinance && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
+                                  title={loan.financeRemark || 'Rejected by finance'}
+                                >
+                                  <X className="w-3 h-3 text-rose-600" />
+                                  <span>Rejected (Finance)</span>
+                                </span>
+                              )}
+                              {isPendingFinance && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-xs font-semibold shadow-2xs">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  <span>Pending Finance</span>
+                                </span>
+                              )}
+                              {!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit && (
+                                loan.status === 'Paid' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Paid</span>
+                                  </span>
+                                ) : loan.status === 'Partially Paid' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-xs font-semibold shadow-2xs">
+                                    <Clock className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>Partially Paid</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Approved</span>
+                                  </span>
+                                )
+                              )}
+
+                              {/* Audit Actions Menu Button */}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const rect = e.currentTarget.getBoundingClientRect()
+                                  setMenuPosition({
+                                    top: rect.bottom + window.scrollY + 4,
+                                    left: Math.min(window.innerWidth - 180, Math.max(10, rect.right + window.scrollX - 160)),
+                                  })
+                                  setActiveMenuLoan(loan)
+                                  setOpenMenuLoanId(openMenuLoanId === loan.id ? null : loan.id)
+                                }}
+                                className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
+                                title="Audit Actions"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </div>
                           ) : (
                             <>
                               {/* 1. Pending Finance Endorsement */}

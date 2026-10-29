@@ -32,6 +32,7 @@ export interface LoanItem {
   borrower: string // Borrower company name
   lenderId?: number
   lender: string // Lender company name
+  bankAccountId?: string
   company: string // Selected context company
   status: string
   endorsedBy?: string
@@ -195,6 +196,7 @@ function mapBackendLoanToItem(l: any): LoanItem {
     borrower: bName,
     lenderId: l.lender,
     lender: lName,
+    bankAccountId: l.bank_account_id || l.bankAccountId,
     company: bName,
     status: l.status || finalStatus,
     endorsedBy: l.endorsed_by,
@@ -697,6 +699,7 @@ export const loanService = {
     id: string,
     payload: {
       action: 'endorse' | 'reject'
+      bankAccountId?: string
       lenderCompany?: string
       interestRate?: number
       dueDate?: string
@@ -731,6 +734,7 @@ export const loanService = {
       },
       body: JSON.stringify({
         action: payload.action,
+        bank_account_id: payload.bankAccountId || null,
         lender_company: payload.lenderCompany,
         interest_rate: payload.interestRate,
         due_date: payload.dueDate || null,

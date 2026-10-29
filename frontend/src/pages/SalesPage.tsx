@@ -99,7 +99,7 @@ function getPaidDepositForSale(sale: SalesItem): number {
 export const SalesPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const { activeCompany, setActiveCompany } = useCompany()
+  const { activeCompany, setActiveCompany, allCompanies } = useCompany()
   const userRole = (user?.role || '').toLowerCase()
   const isAudit = userRole === 'audit' || userRole.includes('auditor')
   const isCompanyUser =
@@ -112,8 +112,17 @@ export const SalesPage: React.FC = () => {
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
   // Dynamic company list loaded strictly from the database
-  const [companyList, setCompanyList] =
-    React.useState<string[]>(DEFAULT_COMPANY_LIST)
+  const [companyList, setCompanyList] = React.useState<string[]>(() => {
+    if (allCompanies && allCompanies.length > 0) return allCompanies
+    return DEFAULT_COMPANY_LIST
+  })
+
+  // Keep in sync with dynamic companies from CompanyContext
+  React.useEffect(() => {
+    if (allCompanies && allCompanies.length > 0) {
+      setCompanyList(allCompanies)
+    }
+  }, [allCompanies])
 
   React.useEffect(() => {
     let mounted = true
@@ -127,7 +136,7 @@ export const SalesPage: React.FC = () => {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [user])
 
   // Filter state
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
@@ -159,11 +168,17 @@ export const SalesPage: React.FC = () => {
     }
   }, [activeCompany, isCompanyScoped])
 
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-    label: 'Last 30 Days',
-    preset: 'Last 30 Days',
+  const [dateRange, setDateRange] = React.useState<DateRange>(() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+      label: 'This Month',
+      preset: 'This Month',
+    }
   })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<

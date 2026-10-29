@@ -12,16 +12,20 @@ export interface CompanyContextValue {
 
 export const ALL_COMPANIES_LIST = [
   'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'FilCap Prime Holdings Corp.',
-  'Golden Sunburst Ventures',
+  'MCTolentino Hospitality Business Corporation',
+  'JK Global Printing Service',
+  'Speedfire Construction & Trading Corporation',
+  'JK Property and Ventures Corporation',
+  'Golden Jupiter Property Ventures Corporation',
+  'FILCAP Prime Holdings Corp.',
+  'MEDSYS Uni Horizon Pharma Corporation | Arcade',
+  'Far East Asia Trading Corporation',
+  'M.C Tolentino College Foundation, Incorporation',
+  'Bagong Bansa May Pag Asa Movement, Incorporation',
+  'Bookworld Systems Solutions & Technologies Corporation',
+  'MEDSYS Uni Horizon Pharma Corporation | Sapamanai',
+  'MEDSYS Uni Horizon Pharma Corporation | Regalado',
+  'MyCity.Kitchen Corporation',
 ]
 
 const COMPANY_STORAGE_KEY = 'mct_selected_company'
@@ -84,7 +88,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       mounted = false
     }
-  }, [])
+  }, [user])
 
   const allCompanies = React.useMemo(() => {
     if (dynamicCompanies.length > 0) return dynamicCompanies

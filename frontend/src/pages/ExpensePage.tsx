@@ -169,11 +169,17 @@ export const ExpensePage: React.FC = () => {
   >('All')
   const [selectedPeriod, setSelectedPeriod] =
     React.useState<PeriodOption>('Monthly')
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    preset: 'this_month',
-    label: 'This Month',
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
+  const [dateRange, setDateRange] = React.useState<DateRange>(() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      preset: 'this_month',
+      label: 'This Month',
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+    }
   })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [currentPage, setCurrentPage] = React.useState(1)

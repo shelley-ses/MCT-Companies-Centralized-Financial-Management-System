@@ -95,11 +95,18 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
     startDate: string | null
     endDate: string | null
     label: string
-  }>({
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-    label: 'This Month',
-  })
+  }>((() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+      label: 'This Month',
+      preset: 'This Month',
+    }
+  })())
   const [searchQuery, setSearchQuery] = React.useState('')
   const [currentPage, setCurrentPage] = React.useState(1)
 

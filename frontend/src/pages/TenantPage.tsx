@@ -240,12 +240,18 @@ export const TenantPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedStatus, setSelectedStatus] = React.useState<string>('All')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-    label: 'This Month',
-    preset: 'This Month',
-  })
+  const [dateRange, setDateRange] = React.useState<DateRange>((() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+      label: 'This Month',
+      preset: 'This Month',
+    }
+  })())
 
   // Pagination states
   const [currentPage, setCurrentPage] = React.useState(1)
