@@ -84,6 +84,8 @@ export interface DashboardTransactionItem {
   isMirrorRow?: boolean
   /** Endorsed by Finance but not yet approved by Internal Audit. */
   awaitingAudit?: boolean
+  /** The paid part of a sale or expense (spec 0013, AC-10). Used by the cash ledger tab. */
+  paidAmount?: number
 }
 
 export interface DashboardData {

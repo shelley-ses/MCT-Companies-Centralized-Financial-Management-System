@@ -67,7 +67,6 @@ import {
   getParticularsSummary,
   matchesParticularsStatusFilter,
   normalizeParticularStatus,
-  parseParticulars,
 } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
@@ -79,24 +78,10 @@ const DEFAULT_COMPANY_LIST = ['All Companies']
 const PERIOD_OPTIONS = ['Daily', 'Monthly', 'Quarterly', 'Annually'] as const
 type PeriodOption = (typeof PERIOD_OPTIONS)[number]
 
-const ITEMS_PER_PAGE = 10
+import { getPaidDisbursementForExpense } from '@/utils/cashLedgerUtils'
+import { reportAuditSaveFailure } from '@/services/auditReviewApi'
 
-function getPaidDisbursementForExpense(exp: ExpenseItem): number {
-  const items = parseParticulars(exp.particulars, exp.items, exp.withdrawal)
-  if (items.length > 0) {
-    const fallback = normalizeParticularStatus(exp.status, 'Paid')
-    const paidFromItems = items.reduce((sum, it) => {
-      const st = normalizeParticularStatus(it.status, fallback)
-      return st === 'Paid' ? sum + (Number(it.total) || 0) : sum
-    }, 0)
-    if (exp.totalPaid && exp.totalPaid > paidFromItems) return exp.totalPaid
-    return paidFromItems
-  }
-  if (exp.totalPaid && exp.totalPaid > 0) return exp.totalPaid
-  return normalizeParticularStatus(exp.status, 'Paid') === 'Paid'
-    ? exp.withdrawal || 0
-    : 0
-}
+const ITEMS_PER_PAGE = 10
 
 export const ExpensePage: React.FC = () => {
   const navigate = useNavigate()
@@ -615,7 +600,11 @@ export const ExpensePage: React.FC = () => {
     setExpenses((prev) =>
       prev.map((item) => (item.id === expense.id ? updated : item))
     )
-    expenseService.updateExpenseAuditStatus(expense.id, status, auditorName)
+    expenseService.updateExpenseAuditStatus(expense.id, status, auditorName).catch((err) => {
+      // Spec 0014: show the real status again when the server did not save it.
+      reportAuditSaveFailure(err)
+      loadExpenses()
+    })
     setOpenMenuExpenseId(null)
     setMenuPosition(null)
     setActiveMenuExpense(null)

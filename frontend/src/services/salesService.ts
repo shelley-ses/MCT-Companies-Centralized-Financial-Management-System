@@ -1,5 +1,6 @@
 import type { DashboardTransactionItem } from './dashboardService'
-import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { formatCreatedAt, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { removeLegacyAuditStorage, saveAuditReview } from './auditReviewApi'
 import {
   type ParticularItem,
   parseParticulars,
@@ -44,39 +45,7 @@ export interface NewSalesInput {
   bankAccountId?: string
 }
 
-interface StoredAuditMetadata {
-  auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
-  auditedBy?: string
-  auditDate?: string
-  auditNotes?: string
-}
-
-const SALES_AUDIT_MAP_KEY = 'mct_sales_audit_status_v1'
-
-function loadSalesAuditMap(): Record<string, StoredAuditMetadata> {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = localStorage.getItem(SALES_AUDIT_MAP_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed === 'object') return parsed
-    }
-  } catch {
-    // ignore storage errors
-  }
-  return {}
-}
-
-function saveSalesAuditEntry(id: string, meta: StoredAuditMetadata): void {
-  if (typeof window === 'undefined') return
-  try {
-    const map = loadSalesAuditMap()
-    map[String(id)] = meta
-    localStorage.setItem(SALES_AUDIT_MAP_KEY, JSON.stringify(map))
-  } catch {
-    // ignore storage errors
-  }
-}
+removeLegacyAuditStorage()
 
 let inMemorySales: SalesItem[] = []
 
@@ -100,13 +69,8 @@ function mapBackendSaleToItem(b: any): SalesItem {
   const derivedStatus = deriveRecordStatusFromParticulars(parsedItems, 'Paid')
 
   const saleId = String(b.sales_id)
-  const auditMap = loadSalesAuditMap()
-  const storedAudit = auditMap[saleId]
   const resolvedAuditStatus: 'Verified' | 'Pending Audit' | 'Flagged' =
-    storedAudit?.auditStatus ||
-    (b.audit_status === 'Verified' || b.audit_status === 'Flagged'
-      ? b.audit_status
-      : 'Pending Audit')
+    b.audit_status === 'Verified' || b.audit_status === 'Flagged' ? b.audit_status : 'Pending Audit'
 
   return {
     id: saleId,
@@ -124,9 +88,9 @@ function mapBackendSaleToItem(b: any): SalesItem {
     items: parsedItems,
     status: derivedStatus,
     auditStatus: resolvedAuditStatus,
-    auditedBy: storedAudit?.auditedBy || b.audited_by || undefined,
-    auditDate: storedAudit?.auditDate || b.audited_at || undefined,
-    auditNotes: storedAudit?.auditNotes || b.audit_remarks || undefined,
+    auditedBy: b.audited_by || undefined,
+    auditDate: b.audited_at ? formatCreatedAt(b.audited_at) : undefined,
+    auditNotes: b.audit_remarks || undefined,
     createdBy: b.created_by || 'Company Staff',
     createdAt: b.created_at || new Date().toISOString(),
     type: 'Sales',
@@ -432,32 +396,29 @@ export const salesService = {
     auditedBy?: string,
     auditNotes?: string
   ): Promise<SalesItem | null> {
-    const today = new Date().toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: '2-digit',
-    })
-    const meta: StoredAuditMetadata = {
-      auditStatus,
-      auditedBy: auditStatus === 'Verified' || auditStatus === 'Flagged' ? auditedBy || 'Auditor' : undefined,
-      auditDate: auditStatus === 'Verified' || auditStatus === 'Flagged' ? today : undefined,
-      auditNotes,
+    // Spec 0014: the server saves the status and stamps who audited and when.
+    // `auditedBy` is kept in the signature for existing callers; the server ignores it.
+    void auditedBy
+    try {
+      const saved = await saveAuditReview('sales', id, auditStatus, auditNotes)
+      const mapped = mapBackendSaleToItem(saved)
+      inMemorySales = inMemorySales.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              auditStatus: mapped.auditStatus,
+              auditedBy: mapped.auditedBy,
+              auditDate: mapped.auditDate,
+              auditNotes: mapped.auditNotes,
+              updatedAt: new Date().toISOString(),
+            }
+          : s
+      )
+      return inMemorySales.find((s) => s.id === id) || mapped
+    } finally {
+      // Success or failure, the next read must come from the server.
+      this.invalidateCache()
     }
-    saveSalesAuditEntry(id, meta)
-    this.invalidateCache()
-
-    inMemorySales = inMemorySales.map((s) => {
-      if (s.id !== id) return s
-      return {
-        ...s,
-        auditStatus,
-        auditedBy: meta.auditedBy,
-        auditDate: meta.auditDate,
-        auditNotes: meta.auditNotes ?? s.auditNotes,
-        updatedAt: new Date().toISOString(),
-      }
-    })
-    return inMemorySales.find((s) => s.id === id) || null
   },
 
   exportCsv(items: SalesItem[], filename = 'sales_report.csv') {

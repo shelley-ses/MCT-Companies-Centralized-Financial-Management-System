@@ -123,3 +123,10 @@ class PettyCashLedgerEntry(BaseModel):
     reviewed_by: Optional[str] = None
     reviewed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    # Funding bank chosen by Finance (spec 0012), shown to the reader (spec 0014).
+    # The account number is deliberately not included.
+    funding_bank_id: Optional[str] = None
+    funding_bank_name: Optional[str] = None
+    funding_account_name: Optional[str] = None
+    funding_company_name: Optional[str] = None
+    is_own_account: bool = False

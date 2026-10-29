@@ -262,12 +262,23 @@ class PettyCashService:
 
         expenses = self._petty_cash_expenses(company_id)
 
+        # Funding bank for each top up that has one (spec 0014).
+        name_to_id = {(name or "").strip().lower(): cid for cid, name in comp_map.items()}
+        banks = self._banks_by_id({t.bank_account_id for t in topups})
+
         entries = []
         for t in topups:
             status_val = t.status or "Approved"
             is_approved = status_val.lower() == "approved"
             amt = _to_decimal(t.amount)
+            funding = self._resolve_funding(t, banks, comp_map, name_to_id)
+            funding_bank = funding["bank"] if funding else None
             entries.append({
+                "funding_bank_id": funding_bank.id if funding_bank else None,
+                "funding_bank_name": funding_bank.bank_name if funding_bank else None,
+                "funding_account_name": funding_bank.account_name if funding_bank else None,
+                "funding_company_name": funding["company_name"] if funding else None,
+                "is_own_account": bool(funding and funding["is_own_account"]),
                 "entry_id": f"topup-{t.topup_id}",
                 "entry_type": "topup" if is_approved else "request",
                 "record_id": t.topup_id,
@@ -332,6 +343,43 @@ class PettyCashService:
         system_cache.set(cache_key, result, ttl=60, tags=["petty_cash"])
         return result
 
+    def _banks_by_id(self, bank_ids) -> Dict[str, BankAccount]:
+        ids = {(b or "").strip() for b in bank_ids if (b or "").strip()}
+        if not ids:
+            return {}
+        return {b.id: b for b in self.db.query(BankAccount).filter(BankAccount.id.in_(ids)).all()}
+
+    @staticmethod
+    def _resolve_funding(topup, banks: Dict[str, BankAccount], comp_names: Dict[int, str], name_to_id: Dict[str, int]):
+        """
+        Who funds a top up (specs 0012, 0013, 0014). Returns None when the top up has no funding
+        bank or the bank cannot be found. The funding company is the bank's `company_id`, else the
+        company matched by the bank's `company_name`. "Own account" means the funding company is
+        the requesting company.
+        """
+        bank = banks.get((topup.bank_account_id or "").strip())
+        if bank is None:
+            return None
+
+        funding_company_id = bank.company_id
+        if funding_company_id is None:
+            funding_company_id = name_to_id.get((bank.company_name or "").strip().lower())
+        funding_company_name = (
+            comp_names.get(funding_company_id) if funding_company_id is not None else None
+        ) or bank.company_name
+
+        requesting_name = comp_names.get(topup.company_id)
+        is_own_account = funding_company_id == topup.company_id
+        if not is_own_account and funding_company_id is None and requesting_name:
+            is_own_account = (bank.company_name or "").strip().lower() == requesting_name.strip().lower()
+
+        return {
+            "bank": bank,
+            "company_id": funding_company_id,
+            "company_name": funding_company_name,
+            "is_own_account": is_own_account,
+        }
+
     def list_movements(self, company: Optional[Company] = None) -> List[PettyCashMovementOut]:
         """
         Top-ups for the Transaction page ledger 
@@ -347,32 +395,20 @@ class PettyCashService:
         comp_names = {c.company_id: c.company_name for c in self.db.query(Company).all()}
         name_to_id = {(name or "").strip().lower(): cid for cid, name in comp_names.items()}
 
-        bank_ids = {t.bank_account_id.strip() for t in topups}
-        banks = {
-            b.id: b
-            for b in self.db.query(BankAccount).filter(BankAccount.id.in_(bank_ids)).all()
-        }
+        banks = self._banks_by_id({t.bank_account_id for t in topups})
 
         movements: List[PettyCashMovementOut] = []
         for t in topups:
-            bank = banks.get(t.bank_account_id.strip())
-            if bank is None:
+            funding = self._resolve_funding(t, banks, comp_names, name_to_id)
+            if funding is None:
                 # Funding bank cannot be found: nothing reliable to show for either side.
                 continue
 
-            funding_company_id = bank.company_id
-            if funding_company_id is None:
-                funding_company_id = name_to_id.get((bank.company_name or "").strip().lower())
-            funding_company_name = (
-                comp_names.get(funding_company_id) if funding_company_id is not None else None
-            ) or bank.company_name
-
+            bank = funding["bank"]
+            funding_company_id = funding["company_id"]
+            funding_company_name = funding["company_name"]
             requesting_name = comp_names.get(t.company_id)
-            is_own_account = funding_company_id == t.company_id
-            if not is_own_account and funding_company_id is None and requesting_name:
-                is_own_account = (
-                    (bank.company_name or "").strip().lower() == requesting_name.strip().lower()
-                )
+            is_own_account = funding["is_own_account"]
 
             if company is not None and company.company_id not in (t.company_id, funding_company_id):
                 continue

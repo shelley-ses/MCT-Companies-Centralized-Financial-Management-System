@@ -1,4 +1,6 @@
 import type { DashboardTransactionItem } from './dashboardService'
+import { formatCreatedAt } from '@/utils/dateUtils'
+import { removeLegacyAuditStorage, saveAuditReview } from './auditReviewApi'
 import {
   type ParticularItem,
   parseParticulars,
@@ -64,44 +66,8 @@ export interface NewExpenseInput {
   bankAccountId?: string
 }
 
-interface StoredAuditMetadata {
-  auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
-  auditedBy?: string
-  auditDate?: string
-  auditNotes?: string
-}
-
 const EXPENSES_STORAGE_KEY = 'mct_expense_records_v1'
-const EXPENSE_AUDIT_MAP_KEY = 'mct_expense_audit_status_v1'
-
-function loadExpenseAuditMap(): Record<string, StoredAuditMetadata> {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = localStorage.getItem(EXPENSE_AUDIT_MAP_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed === 'object') return parsed
-    }
-  } catch {
-    // ignore
-  }
-  return {}
-}
-
-function saveExpenseAuditEntry(id: string, meta: StoredAuditMetadata): void {
-  if (typeof window === 'undefined') return
-  try {
-    const map = loadExpenseAuditMap()
-    const cleanId = String(id)
-    map[cleanId] = meta
-    if (!cleanId.startsWith('exp_')) {
-      map[`exp_${cleanId}`] = meta
-    }
-    localStorage.setItem(EXPENSE_AUDIT_MAP_KEY, JSON.stringify(map))
-  } catch {
-    // ignore
-  }
-}
+removeLegacyAuditStorage()
 
 function loadStoredExpenses(): ExpenseItem[] {
   if (typeof window !== 'undefined') {
@@ -156,13 +122,8 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
   const derivedStatus = deriveRecordStatusFromParticulars(parsedItems, fallbackStatus)
 
   const expId = `exp_${exp.expense_id || exp.id}`
-  const auditMap = loadExpenseAuditMap()
-  const storedAudit = auditMap[expId] || auditMap[String(exp.expense_id || exp.id)]
   const resolvedAuditStatus: 'Verified' | 'Pending Audit' | 'Flagged' =
-    storedAudit?.auditStatus ||
-    (exp.audit_status === 'Verified' || exp.audit_status === 'Flagged'
-      ? exp.audit_status
-      : 'Pending Audit')
+    exp.audit_status === 'Verified' || exp.audit_status === 'Flagged' ? exp.audit_status : 'Pending Audit'
 
   return {
     id: expId,
@@ -179,9 +140,9 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
     items: parsedItems,
     status: derivedStatus,
     auditStatus: resolvedAuditStatus,
-    auditedBy: storedAudit?.auditedBy || exp.audited_by || undefined,
-    auditDate: storedAudit?.auditDate || exp.audited_at || undefined,
-    auditNotes: storedAudit?.auditNotes || exp.audit_remarks || undefined,
+    auditedBy: exp.audited_by || undefined,
+    auditDate: exp.audited_at ? formatCreatedAt(exp.audited_at) : undefined,
+    auditNotes: exp.audit_remarks || undefined,
     type: 'Expense',
     createdAt: exp.created_at || new Date().toISOString(),
     updatedAt: exp.updated_at || new Date().toISOString(),
@@ -671,41 +632,32 @@ export const expenseService = {
     auditedBy?: string,
     auditNotes?: string
   ): Promise<ExpenseItem | null> {
-    const today = new Date().toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: '2-digit',
-    })
-    const meta: StoredAuditMetadata = {
-      auditStatus,
-      auditedBy:
-        auditStatus === 'Verified' || auditStatus === 'Flagged'
-          ? auditedBy || 'Auditor'
-          : undefined,
-      auditDate:
-        auditStatus === 'Verified' || auditStatus === 'Flagged' ? today : undefined,
-      auditNotes,
+    // Spec 0014: the server saves the status and stamps who audited and when.
+    // `auditedBy` is kept in the signature for existing callers; the server ignores it.
+    void auditedBy
+    try {
+      const numericId = id.replace(/^exp_/, '')
+      const saved = await saveAuditReview('expenses', numericId, auditStatus, auditNotes)
+      const mapped = mapBackendExpenseToItem(saved)
+      const index = inMemoryExpenses.findIndex(
+        (e) => e.id === id || e.id === `exp_${numericId}`
+      )
+      if (index === -1) return mapped
+      const updated: ExpenseItem = {
+        ...inMemoryExpenses[index],
+        auditStatus: mapped.auditStatus,
+        auditedBy: mapped.auditedBy,
+        auditDate: mapped.auditDate,
+        auditNotes: mapped.auditNotes,
+        updatedAt: new Date().toISOString(),
+      }
+      inMemoryExpenses[index] = updated
+      saveStoredExpenses(inMemoryExpenses)
+      return updated
+    } finally {
+      // Success or failure, the next read must come from the server.
+      this.invalidateCache()
     }
-    saveExpenseAuditEntry(id, meta)
-    this.invalidateCache()
-
-    const numericId = id.replace(/^exp_/, '')
-    const index = inMemoryExpenses.findIndex(
-      (e) => e.id === id || e.id === `exp_${numericId}`
-    )
-    if (index === -1) return null
-    const exp = inMemoryExpenses[index]
-    const updated: ExpenseItem = {
-      ...exp,
-      auditStatus,
-      auditedBy: meta.auditedBy,
-      auditDate: meta.auditDate,
-      auditNotes: meta.auditNotes ?? exp.auditNotes,
-      updatedAt: new Date().toISOString(),
-    }
-    inMemoryExpenses[index] = updated
-    saveStoredExpenses(inMemoryExpenses)
-    return updated
   },
 
   exportCsv(items: ExpenseItem[], filename = 'expense_report.csv') {

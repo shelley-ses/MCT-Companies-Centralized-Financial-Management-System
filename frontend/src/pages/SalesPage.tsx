@@ -67,7 +67,6 @@ import {
   getParticularsSummary,
   matchesParticularsStatusFilter,
   normalizeParticularStatus,
-  parseParticulars,
 } from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
@@ -80,21 +79,10 @@ const DEFAULT_COMPANY_LIST = ['All Companies']
 const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
 type PeriodType = (typeof PERIOD_OPTIONS)[number]
 
-const ITEMS_PER_PAGE = 10
+import { getPaidDepositForSale } from '@/utils/cashLedgerUtils'
+import { reportAuditSaveFailure } from '@/services/auditReviewApi'
 
-function getPaidDepositForSale(sale: SalesItem): number {
-  const items = parseParticulars(sale.particulars, sale.items, sale.deposit)
-  if (items.length > 0) {
-    const fallback = normalizeParticularStatus(sale.status, 'Paid')
-    return items.reduce((sum, it) => {
-      const st = normalizeParticularStatus(it.status, fallback)
-      return st === 'Paid' ? sum + (Number(it.total) || 0) : sum
-    }, 0)
-  }
-  return normalizeParticularStatus(sale.status, 'Paid') === 'Paid'
-    ? sale.deposit || 0
-    : 0
-}
+const ITEMS_PER_PAGE = 10
 
 export const SalesPage: React.FC = () => {
   const navigate = useNavigate()
@@ -338,7 +326,11 @@ export const SalesPage: React.FC = () => {
       auditDate: timestamp,
     }
     setSales((prev) => prev.map((s) => (s.id === sale.id ? updated : s)))
-    salesService.updateSaleAuditStatus(sale.id, status, auditorName)
+    salesService.updateSaleAuditStatus(sale.id, status, auditorName).catch((err) => {
+      // Spec 0014: show the real status again when the server did not save it.
+      reportAuditSaveFailure(err)
+      loadSales()
+    })
     setOpenMenuSaleId(null)
     setMenuPosition(null)
     setActiveMenuSale(null)

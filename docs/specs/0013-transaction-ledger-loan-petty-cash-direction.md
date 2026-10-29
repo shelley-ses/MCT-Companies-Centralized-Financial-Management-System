@@ -32,6 +32,8 @@ Two facts about the existing data limit the design. The loans list already retur
 - **AC-7**: A company scoped user (and an admin who picks one company) sees only that company's side of each record. In All Companies, both sides are listed as two separate rows.
 - **AC-8**: This feature only reads data. Bank balances, petty cash wallet balances, loans, sales and expenses are not changed by it.
 - **AC-9**: The Audit verify action is not offered on rows that mirror another record's other side (the lender row of a loan, and all petty cash rows), so a verification is never saved against the wrong company.
+- **AC-10** (added 2026-10-30): On the cash ledger tab, a sale or expense appears when any part of it is paid, and its row shows only the paid amount (a Deposit for a sale, a Withdrawal for an expense). This is the same rule the Sales page Deposit tab and the Expense page Withdraw tab already use, so the totals agree. Records with nothing paid yet do not appear. The All tab keeps showing every record at its full amount.
+- **AC-11** (added 2026-10-30): Petty cash top ups that were approved before Finance started choosing a funding bank (spec 0012) have no funding bank and show no rows, as AC-4 says. They are not deleted and still count in the petty cash wallet.
 
 ## Options considered
 
@@ -143,6 +145,7 @@ The endpoint returns only top ups in an eligible status that have a resolvable f
 5. `TransactionPage.tsx`: replace the single loan row with the borrower Deposit row and the lender Withdrawal row, applying the eligible status filter and the row status mapping. Satisfies **AC-1, AC-2, AC-5**.
 6. `TransactionPage.tsx`: fetch petty cash movements with the company filter and turn them into rows by the row rules table. Satisfies **AC-3, AC-4, AC-7**.
 7. `TransactionPage.tsx`: let the cash ledger tab include these rows (today it keeps only paid sales and paid expenses), change its direction filter to use the Deposit and Withdrawal amount instead of the record type, add a Petty Cash option to the All tab type filter, and add a small "Pending Audit" tag on pending rows in the cash ledger tab. Correct the stale comment that says loans are recorded as expenses. Satisfies **AC-5, AC-6**.
+7a. (added 2026-10-30) Move the paid amount rule out of `SalesPage.tsx` (`getPaidDepositForSale`) and `ExpensePage.tsx` (`getPaidDisbursementForExpense`) into one shared helper. `TransactionPage.tsx` uses it so the cash ledger tab lists any sale or expense with a paid part, showing the paid amount. Satisfies **AC-10**.
 8. `TransactionPage.tsx`: hide the Audit verify action and make row click read only for lender loan rows and petty cash rows, and make sure the verify handler cannot receive a suffixed id. Satisfies **AC-9**.
 9. Verify end to end with one outside funded loan, one outside funded top up, one own account top up, and one rejected record, in both a single company view and All Companies. Satisfies **AC-1 to AC-9**.
 

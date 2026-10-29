@@ -8,11 +8,13 @@ from app.db.supabase import get_supabase_admin_client
 from app.models.finance import Sale, Category
 from app.models.company import Company
 from app.schemas.sale import SaleCreate, SaleOut, SaleUpdate
+from app.schemas.audit_review import AuditReviewIn, audit_fields
+from app.services.audit_review_service import apply_audit_review
 from app.services.audit_service import AuditAction, log_transaction
 
 router = APIRouter()
 
-from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access
+from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access, require_audit_or_admin_user
 from app.core.company_resolver import resolve_company, normalize_company_id
 from app.core.cache import get_cached, set_cached
 
@@ -113,7 +115,8 @@ def get_sales(
                 amount=row.get("amount") or 0.0,
                 particulars=row.get("particulars") or row.get("description") or "",
                 created_at=row.get("created_at"),
-                updated_at=row.get("updated_at")
+                updated_at=row.get("updated_at"),
+                **audit_fields(row)
             )
             for row in rows
         ]
@@ -155,7 +158,8 @@ def get_sales(
                 amount=sale.amount,
                 particulars=sale.particulars or "",
                 created_at=sale.created_at,
-                updated_at=sale.updated_at
+                updated_at=sale.updated_at,
+                **audit_fields(sale)
             )
             for sale, c_name, cat_name in rows
         ]
@@ -304,7 +308,8 @@ def create_sale(
             amount=created_row.get("amount"),
             particulars=created_row.get("particulars"),
             created_at=created_row.get("created_at"),
-            updated_at=created_row.get("updated_at")
+            updated_at=created_row.get("updated_at"),
+            **audit_fields(created_row)
         )
 
     except HTTPException:
@@ -371,7 +376,8 @@ def create_sale(
             amount=sale.amount,
             particulars=sale.particulars,
             created_at=sale.created_at,
-            updated_at=sale.updated_at
+            updated_at=sale.updated_at,
+            **audit_fields(sale)
         )
 
 
@@ -401,7 +407,8 @@ def get_sale(
                 amount=row.get("amount") or 0.0,
                 particulars=row.get("particulars") or "",
                 created_at=row.get("created_at"),
-                updated_at=row.get("updated_at")
+                updated_at=row.get("updated_at"),
+                **audit_fields(row)
             )
     except HTTPException:
         raise
@@ -435,7 +442,8 @@ def get_sale(
         amount=sale.amount,
         particulars=sale.particulars or "",
         created_at=sale.created_at,
-        updated_at=sale.updated_at
+        updated_at=sale.updated_at,
+        **audit_fields(sale)
     )
 
 @router.put("/{sales_id}", response_model=SaleOut, summary="Update an existing sale")
@@ -556,7 +564,8 @@ def update_sale(
             amount=updated_row.get("amount"),
             particulars=updated_row.get("particulars"),
             created_at=updated_row.get("created_at"),
-            updated_at=updated_row.get("updated_at")
+            updated_at=updated_row.get("updated_at"),
+            **audit_fields(updated_row)
         )
 
     if not sale:
@@ -583,9 +592,31 @@ def update_sale(
         amount=sale.amount,
         particulars=sale.particulars,
         created_at=sale.created_at,
-        updated_at=sale.updated_at
+        updated_at=sale.updated_at,
+        **audit_fields(sale)
     )
 
+@router.patch("/{sales_id}/audit", response_model=SaleOut, summary="Save the audit review of a sale (Audit or Admin only)")
+def review_sale_audit(
+    sales_id: int,
+    review_in: AuditReviewIn,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_audit_or_admin_user),
+    db: Session = Depends(get_db)
+):
+    apply_audit_review(
+        db, current_user,
+        model=Sale, pk_column="sales_id", supabase_table="sales",
+        record_id=sales_id, payload=review_in, not_found="Sale not found",
+    )
+    log_transaction(
+        db, AuditAction.SALE_UPDATED,
+        user_id=current_user.get("user_id"), company_id=None,
+        ip_address=request.client.host if request.client else "unknown",
+        record_id=sales_id, record_type="sale_audit_review",
+        extra={"audit_status": review_in.audit_status},
+    )
+    return get_sale(sales_id, current_user, db)
 @router.delete("/{sales_id}", status_code=status.HTTP_200_OK, summary="Delete a sale")
 def delete_sale(
     sales_id: int,

@@ -902,12 +902,13 @@ export const PettyCashPage: React.FC = () => {
           <Table className="w-full table-fixed min-w-[1000px]">
             <colgroup>
               <col style={{ width: '9%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '22%' }} />
               <col style={{ width: '11%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '9%' }} />
               <col style={{ width: '9%' }} />
-              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
               <col style={{ width: '10%' }} />
               <col style={{ width: '8%' }} />
             </colgroup>
@@ -921,6 +922,9 @@ export const PettyCashPage: React.FC = () => {
                 </TableHead>
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
+                </TableHead>
+                <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  FUNDING BANK
                 </TableHead>
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
                   AMOUNT REQUESTED
@@ -950,6 +954,7 @@ export const PettyCashPage: React.FC = () => {
                     <TableCell className="px-3 py-3.5"><div className="h-4 w-16 bg-slate-200 rounded" /></TableCell>
                     <TableCell className="px-3 py-3.5"><div className="h-4 w-28 bg-slate-200 rounded" /></TableCell>
                     <TableCell className="px-3 py-3.5"><div className="h-4 w-44 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-3 py-3.5"><div className="h-4 w-24 bg-slate-200 rounded" /></TableCell>
                     <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-20 bg-slate-200 rounded ml-auto" /></TableCell>
                     <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-16 bg-slate-200 rounded ml-auto" /></TableCell>
                     <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-16 bg-slate-200 rounded ml-auto" /></TableCell>
@@ -960,7 +965,7 @@ export const PettyCashPage: React.FC = () => {
                 ))
               ) : paginatedLedger.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
+                  <TableCell colSpan={10} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
                     <Wallet className="w-8 h-8 text-muted-fg/40 mx-auto mb-2" />
                     No petty cash transactions found for the selected criteria.
                   </TableCell>
@@ -1051,6 +1056,20 @@ export const PettyCashPage: React.FC = () => {
                         )}
                         {entry.category && !entry.remark && !entry.financeRemark && (
                           <div className="text-[11px] text-muted-fg line-clamp-1">{entry.category}</div>
+                        )}
+                      </TableCell>
+
+                      {/* 3b. Funding Bank (spec 0014): the bank Finance chose and the company that owns it */}
+                      <TableCell className="px-3 py-3.5">
+                        {entry.fundingBankName ? (
+                          <div className="min-w-0" title={`${entry.fundingBankName} · ${entry.fundingAccountName || ''} (${entry.fundingCompanyName || ''})`}>
+                            <div className="font-semibold text-xs text-focus truncate">{entry.fundingBankName}</div>
+                            <div className="text-[11px] text-muted-fg truncate">
+                              {entry.isOwnAccount ? 'Own account' : entry.fundingCompanyName || ''}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-fg/60 text-xs">—</span>
                         )}
                       </TableCell>
 
@@ -1293,6 +1312,37 @@ export const PettyCashPage: React.FC = () => {
                   <div className="font-bold text-focus mt-0.5">{formatPHP(targetEntry.runningBalance)}</div>
                 </div>
               </div>
+
+              {/* Funding bank chosen by Finance (spec 0014). Top ups and requests only, never the account number. */}
+              {targetEntry.type !== 'expense' && (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-stroke/30 space-y-1 text-xs">
+                  <span className="text-[11px] font-bold text-muted-fg uppercase tracking-wider block">
+                    Funding Bank
+                  </span>
+                  {targetEntry.fundingBankName ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-[11px] text-muted-fg">Bank</span>
+                        <div className="font-semibold text-focus mt-0.5">{targetEntry.fundingBankName}</div>
+                        {targetEntry.fundingAccountName && (
+                          <div className="text-[11px] text-slate-500">{targetEntry.fundingAccountName}</div>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-muted-fg">Bank Owner Company</span>
+                        <div className="font-semibold text-focus mt-0.5">
+                          {targetEntry.fundingCompanyName || '—'}
+                        </div>
+                        {targetEntry.isOwnAccount && (
+                          <div className="text-[11px] text-emerald-700 font-medium">Own account</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-muted-fg italic">Not assigned yet</div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1 text-xs">
                 <span className="font-semibold text-focus">Particulars / Description</span>

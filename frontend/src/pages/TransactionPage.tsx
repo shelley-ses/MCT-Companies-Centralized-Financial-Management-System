@@ -39,6 +39,8 @@ import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { getParticularsSummary } from '@/utils/particularsUtils'
+import { getPaidDepositForSale, getPaidDisbursementForExpense } from '@/utils/cashLedgerUtils'
+import { reportAuditSaveFailure } from '@/services/auditReviewApi'
 import { cn } from '@/lib/utils'
 
 // ── Loan and petty cash rows (spec 0013) ─────────────────────────────────────────────────────
@@ -324,6 +326,7 @@ export const TransactionPage: React.FC = () => {
         updatedAt: s.updatedAt,
         attachments: [],
         items: s.items,
+        paidAmount: getPaidDepositForSale(s),
       }))
 
       const unifiedExpenses: DashboardTransactionItem[] = expenseData.map((e) => ({
@@ -350,6 +353,7 @@ export const TransactionPage: React.FC = () => {
         updatedAt: e.updatedAt,
         attachments: [],
         items: e.items,
+        paidAmount: getPaidDisbursementForExpense(e),
       }))
 
       // Spec 0013: each loan and petty cash top up shows each company's own side of the money.
@@ -380,13 +384,20 @@ export const TransactionPage: React.FC = () => {
   //    Loan and petty cash rows appear from Finance endorsement (marked pending until Audit
   //    approves) and are removed if the record is rejected (spec 0013).
   const filteredDepositTransactions = React.useMemo(() => {
-    let list = transactions.filter(
-      (t) =>
-        (t.type === 'Sales' && t.status === 'Paid') ||
-        (t.type === 'Expense' && t.status === 'Paid') ||
-        t.type === 'Loan' ||
-        t.type === 'Petty Cash'
-    )
+    // Spec 0013 AC-10: a sale or expense is listed when any part of it is paid, and the row shows
+    // only the paid amount (same rule as the Sales Deposit tab and the Expense Withdraw tab).
+    let list = transactions
+      .filter((t) =>
+        t.type === 'Sales' || t.type === 'Expense'
+          ? (t.paidAmount || 0) > 0
+          : t.type === 'Loan' || t.type === 'Petty Cash'
+      )
+      .map((t): DashboardTransactionItem => {
+        const paid = t.paidAmount || 0
+        if (t.type === 'Sales') return { ...t, amount: paid, deposit: paid, withdrawal: 0 }
+        if (t.type === 'Expense') return { ...t, amount: paid, deposit: 0, withdrawal: paid }
+        return t
+      })
 
     // Company scope
     if (isCompanyScoped) {
@@ -597,14 +608,17 @@ export const TransactionPage: React.FC = () => {
     // Mirror rows show the other side of a record (the lender's loan row, petty cash rows).
     // They are read only here: the record is reviewed on its own page (spec 0013, AC-9).
     if (tx.isMirrorRow) return
-    setSelectedTx(tx)
+    // The cash ledger tab shows only the paid part of a record. The detail window needs the full record.
+    const fullRecord = transactions.find((t) => t.id === tx.id && t.type === tx.type) || tx
+    setSelectedTx(fullRecord)
     setIsModalOpen(true)
   }
 
   const handleMarkTxAudited = (tx: DashboardTransactionItem, e: React.MouseEvent) => {
     e.stopPropagation()
-    // Never save a verification against a mirrored row (it could land on the wrong company).
-    if (tx.isMirrorRow) return
+    // Never save a verification against a mirrored row (it could land on the wrong company),
+    // and loans are audited by Audit's approval (spec 0014, AC-8).
+    if (tx.isMirrorRow || tx.type === 'Loan') return
     const today = new Date().toLocaleDateString('en-US', {
       month: '2-digit',
       day: '2-digit',
@@ -623,16 +637,16 @@ export const TransactionPage: React.FC = () => {
       prev.map((t) => (t.id === tx.id ? updatedTx : t))
     )
 
+    // Spec 0014: the server saves the review. If it fails, tell the user and reload the real status.
+    // Loans and petty cash are audited by Audit's approval, so they have no verify button here.
+    const failed = (err: unknown) => {
+      reportAuditSaveFailure(err)
+      fetchAllTransactions()
+    }
     if (tx.type === 'Sales') {
-      salesService.updateSaleAuditStatus(tx.id, 'Verified', auditorName)
+      salesService.updateSaleAuditStatus(tx.id, 'Verified', auditorName).catch(failed)
     } else if (tx.type === 'Expense') {
-      expenseService.updateExpenseAuditStatus(tx.id, 'Verified', auditorName)
-    } else if (tx.type === 'Loan') {
-      loanService.updateLoan(tx.id, {
-        auditStatus: 'Verified',
-        auditedBy: auditorName,
-        auditDate: today,
-      })
+      expenseService.updateExpenseAuditStatus(tx.id, 'Verified', auditorName).catch(failed)
     }
   }
 
@@ -1468,7 +1482,7 @@ export const TransactionPage: React.FC = () => {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center justify-center">
-                            {tx.isMirrorRow ? (
+                            {tx.isMirrorRow || tx.type === 'Loan' ? (
                               <span className="text-muted-fg/50 font-normal text-xs">—</span>
                             ) : tx.auditStatus === 'Verified' ? (
                               <Button

@@ -9,12 +9,14 @@ from app.db.supabase import get_supabase_admin_client
 from app.models.finance import Expense, Category
 from app.models.company import Company
 from app.schemas.expense import ExpenseCreate, ExpenseOut, ExpenseUpdate
+from app.schemas.audit_review import AuditReviewIn, audit_fields
+from app.services.audit_review_service import apply_audit_review
 from app.services.audit_service import AuditAction, log_transaction
 from app.services.petty_cash_service import PettyCashService
 
 router = APIRouter()
 
-from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access
+from app.core.dependencies import AuthenticatedUser, get_current_user, check_company_access, require_audit_or_admin_user
 from app.core.company_resolver import resolve_company, normalize_company_id
 from app.core.cache import get_cached, set_cached
 
@@ -155,7 +157,8 @@ def get_expenses(
                 particulars=row.get("description") or "",
                 description=row.get("description") or "",
                 created_at=row.get("created_at"),
-                updated_at=row.get("updated_at")
+                updated_at=row.get("updated_at"),
+                **audit_fields(row)
             )
             for row in rows
         ]
@@ -212,7 +215,8 @@ def get_expenses(
                 particulars=exp.description or "",
                 description=exp.description or "",
                 created_at=exp.created_at,
-                updated_at=exp.updated_at
+                updated_at=exp.updated_at,
+                **audit_fields(exp)
             )
             for exp, c_name, cat_name in rows
         ]
@@ -378,7 +382,8 @@ def create_expense(
             particulars=created_row.get("description"),
             description=created_row.get("description"),
             created_at=created_row.get("created_at"),
-            updated_at=created_row.get("updated_at")
+            updated_at=created_row.get("updated_at"),
+            **audit_fields(created_row)
         )
 
     except HTTPException:
@@ -457,7 +462,8 @@ def create_expense(
             particulars=expense.description,
             description=expense.description,
             created_at=expense.created_at,
-            updated_at=expense.updated_at
+            updated_at=expense.updated_at,
+            **audit_fields(expense)
         )
 
 @router.get("/{expense_id}", response_model=ExpenseOut, summary="Get expense details")
@@ -491,7 +497,8 @@ def get_expense(
                 particulars=row.get("description") or "",
                 description=row.get("description") or "",
                 created_at=row.get("created_at"),
-                updated_at=row.get("updated_at")
+                updated_at=row.get("updated_at"),
+                **audit_fields(row)
             )
     except HTTPException:
         raise
@@ -530,7 +537,8 @@ def get_expense(
         particulars=exp.description or "",
         description=exp.description or "",
         created_at=exp.created_at,
-        updated_at=exp.updated_at
+        updated_at=exp.updated_at,
+        **audit_fields(exp)
     )
 
 @router.put("/{expense_id}", response_model=ExpenseOut, summary="Update an existing expense")
@@ -668,7 +676,8 @@ def update_expense(
             particulars=updated_row.get("description"),
             description=updated_row.get("description"),
             created_at=updated_row.get("created_at"),
-            updated_at=updated_row.get("updated_at")
+            updated_at=updated_row.get("updated_at"),
+            **audit_fields(updated_row)
         )
 
     if not expense:
@@ -700,9 +709,31 @@ def update_expense(
         particulars=expense.description,
         description=expense.description,
         created_at=expense.created_at,
-        updated_at=expense.updated_at
+        updated_at=expense.updated_at,
+        **audit_fields(expense)
     )
 
+@router.patch("/{expense_id}/audit", response_model=ExpenseOut, summary="Save the audit review of an expense (Audit or Admin only)")
+def review_expense_audit(
+    expense_id: int,
+    review_in: AuditReviewIn,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_audit_or_admin_user),
+    db: Session = Depends(get_db)
+):
+    apply_audit_review(
+        db, current_user,
+        model=Expense, pk_column="expense_id", supabase_table="expenses",
+        record_id=expense_id, payload=review_in, not_found="Expense not found",
+    )
+    log_transaction(
+        db, AuditAction.EXPENSE_UPDATED,
+        user_id=current_user.get("user_id"), company_id=None,
+        ip_address=request.client.host if request.client else "unknown",
+        record_id=expense_id, record_type="expense_audit_review",
+        extra={"audit_status": review_in.audit_status},
+    )
+    return get_expense(expense_id, current_user, db)
 @router.delete("/{expense_id}", status_code=status.HTTP_200_OK, summary="Delete an expense")
 def delete_expense(
     expense_id: int,

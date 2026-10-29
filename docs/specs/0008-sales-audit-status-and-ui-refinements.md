@@ -1,6 +1,6 @@
 # 0008: Sales & Expense Audit Status, Particulars Status Filtering, Fast Bank Loading, and Local Created-At Timestamps
 
-**Status:** Approved  
+**Status:** Approved (section 2.1 audit storage in localStorage is replaced by spec 0014)  
 **Date:** 2026-10-28  
 **Owner:** Architect / Develop
 

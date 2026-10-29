@@ -48,6 +48,7 @@ import {
   type LoanItem,
 } from '@/services/loanService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
+import { reportAuditSaveFailure } from '@/services/auditReviewApi'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/hooks/useSession'
 
@@ -449,6 +450,12 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     activeLoan?.auditDate ||
     activeTx?.auditDate
 
+  // Spec 0014: when the server did not save an audit change, tell the user and show the old status.
+  const restoreAfterFailedSave = (err: unknown, restore: () => void) => {
+    reportAuditSaveFailure(err)
+    restore()
+  }
+
   const handleMarkAudit = () => {
     const today = new Date().toLocaleDateString('en-US', {
       month: '2-digit',
@@ -466,7 +473,13 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       }
       setCurrentSale(updated)
       setCurrentTx(salesService.toDashboardTransaction(updated))
-      salesService.updateSaleAuditStatus(updated.id, 'Verified', auditorName)
+      salesService.updateSaleAuditStatus(updated.id, 'Verified', auditorName).catch((err) => {
+        restoreAfterFailedSave(err, () => {
+          setCurrentSale(activeSale)
+          setCurrentTx(salesService.toDashboardTransaction(activeSale))
+          if (onSaleUpdated) onSaleUpdated(activeSale)
+        })
+      })
       if (onSaleUpdated) onSaleUpdated(updated)
     } else if (activeExpense) {
       const updated: ExpenseItem = {
@@ -477,11 +490,15 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       }
       setCurrentExpense(updated)
       setCurrentTx(expenseService.toDashboardTransaction(updated))
-      expenseService.updateExpenseAuditStatus(
-        updated.id,
-        'Verified',
-        auditorName
-      )
+      expenseService
+        .updateExpenseAuditStatus(updated.id, 'Verified', auditorName)
+        .catch((err) => {
+          restoreAfterFailedSave(err, () => {
+            setCurrentExpense(activeExpense)
+            setCurrentTx(expenseService.toDashboardTransaction(activeExpense))
+            if (onExpenseUpdated) onExpenseUpdated(activeExpense)
+          })
+        })
       if (onExpenseUpdated) onExpenseUpdated(updated)
     } else if (activeLoan) {
       const updated: LoanItem = {
@@ -506,14 +523,17 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
         auditDate: today,
       }
       setCurrentTx(updated)
+      const restoreTx = (err: unknown) =>
+        restoreAfterFailedSave(err, () => {
+          setCurrentTx(activeTx)
+          if (onTransactionUpdated) onTransactionUpdated(activeTx)
+        })
       if (activeTx.type === 'Sales') {
-        salesService.updateSaleAuditStatus(activeTx.id, 'Verified', auditorName)
+        salesService.updateSaleAuditStatus(activeTx.id, 'Verified', auditorName).catch(restoreTx)
       } else if (activeTx.type === 'Expense') {
-        expenseService.updateExpenseAuditStatus(
-          activeTx.id,
-          'Verified',
-          auditorName
-        )
+        expenseService
+          .updateExpenseAuditStatus(activeTx.id, 'Verified', auditorName)
+          .catch(restoreTx)
       } else if (activeTx.type === 'Loan') {
         loanService.updateLoan(activeTx.id, {
           auditStatus: 'Verified',
@@ -535,7 +555,13 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       }
       setCurrentSale(updated)
       setCurrentTx(salesService.toDashboardTransaction(updated))
-      salesService.updateSaleAuditStatus(updated.id, 'Pending Audit')
+      salesService.updateSaleAuditStatus(updated.id, 'Pending Audit').catch((err) => {
+        restoreAfterFailedSave(err, () => {
+          setCurrentSale(activeSale)
+          setCurrentTx(salesService.toDashboardTransaction(activeSale))
+          if (onSaleUpdated) onSaleUpdated(activeSale)
+        })
+      })
       if (onSaleUpdated) onSaleUpdated(updated)
     } else if (activeExpense) {
       const updated: ExpenseItem = {
@@ -546,7 +572,13 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       }
       setCurrentExpense(updated)
       setCurrentTx(expenseService.toDashboardTransaction(updated))
-      expenseService.updateExpenseAuditStatus(updated.id, 'Pending Audit')
+      expenseService.updateExpenseAuditStatus(updated.id, 'Pending Audit').catch((err) => {
+        restoreAfterFailedSave(err, () => {
+          setCurrentExpense(activeExpense)
+          setCurrentTx(expenseService.toDashboardTransaction(activeExpense))
+          if (onExpenseUpdated) onExpenseUpdated(activeExpense)
+        })
+      })
       if (onExpenseUpdated) onExpenseUpdated(updated)
     } else if (activeLoan) {
       const updated: LoanItem = {
@@ -571,10 +603,15 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
         auditDate: undefined,
       }
       setCurrentTx(updated)
+      const restoreTx = (err: unknown) =>
+        restoreAfterFailedSave(err, () => {
+          setCurrentTx(activeTx)
+          if (onTransactionUpdated) onTransactionUpdated(activeTx)
+        })
       if (activeTx.type === 'Sales') {
-        salesService.updateSaleAuditStatus(activeTx.id, 'Pending Audit')
+        salesService.updateSaleAuditStatus(activeTx.id, 'Pending Audit').catch(restoreTx)
       } else if (activeTx.type === 'Expense') {
-        expenseService.updateExpenseAuditStatus(activeTx.id, 'Pending Audit')
+        expenseService.updateExpenseAuditStatus(activeTx.id, 'Pending Audit').catch(restoreTx)
       } else if (activeTx.type === 'Loan') {
         loanService.updateLoan(activeTx.id, {
           auditStatus: 'Pending Audit',
@@ -1589,7 +1626,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
             </div>
 
             {/* Admin Audit Actions: Unmark as Audit / Mark as Audited */}
-            {isAdmin && (
+            {/* Loans are audited by Audit's loan approval, so they have no mark/unmark here (spec 0014). */}
+            {isAdmin && !isLoan && (
               <div className="flex items-center justify-between gap-2.5 pt-3 mt-2 border-t border-stroke/20">
                 <div className="text-[11px] text-muted-fg font-medium">
                   {currentAuditStatus === 'Verified' ? (

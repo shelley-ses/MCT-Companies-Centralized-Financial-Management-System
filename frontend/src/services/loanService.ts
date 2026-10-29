@@ -205,12 +205,17 @@ function mapBackendLoanToItem(l: any): LoanItem {
     auditReviewedBy: l.audit_reviewed_by,
     auditReviewedAt: l.audit_reviewed_at,
     auditRemark: l.audit_remark,
-    auditStatus: (l.status === 'Approved' || l.status === 'Paid') ? 'Verified' : 'Pending Audit',
+    // Audit's approval is the audit (spec 0014, AC-8). Every status after approval counts as audited.
+    auditStatus: AUDITED_LOAN_STATUSES.has((l.status || '').trim().toLowerCase()) ? 'Verified' : 'Pending Audit',
+    auditedBy: l.audit_reviewed_by || undefined,
     type: 'Loan',
     createdAt: l.created_at || new Date().toISOString(),
     updatedAt: l.updated_at || new Date().toISOString(),
   }
 }
+
+/** Loan statuses reached only after Internal Audit approved the loan. */
+const AUDITED_LOAN_STATUSES = new Set(['approved', 'paid', 'partially paid', 'overdue'])
 
 const loanCache = new Map<string, { data: any; timestamp: number }>()
 const LOAN_CACHE_TTL = 30000

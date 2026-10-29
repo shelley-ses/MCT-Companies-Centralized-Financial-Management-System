@@ -44,6 +44,13 @@ export interface PettyCashLedgerEntry {
   endorsedAt?: string | null
   financeRemark?: string | null
   createdAt?: string | null
+  /** Funding bank chosen by Finance at endorsement (spec 0014). No account number is sent. */
+  fundingBankId?: string | null
+  fundingBankName?: string | null
+  fundingAccountName?: string | null
+  fundingCompanyName?: string | null
+  /** The funding bank belongs to the requesting company itself. */
+  isOwnAccount?: boolean
   auditStatus?: 'Verified' | 'Pending Audit' | 'Flagged'
   auditDate?: string | null
   auditedBy?: string | null
@@ -133,6 +140,11 @@ interface BackendLedgerEntry {
   endorsed_at?: string | null
   finance_remark?: string | null
   created_at?: string | null
+  funding_bank_id?: string | null
+  funding_bank_name?: string | null
+  funding_account_name?: string | null
+  funding_company_name?: string | null
+  is_own_account?: boolean
 }
 
 function backendHeaders(): HeadersInit {
@@ -203,6 +215,11 @@ function mapLedgerEntry(data: BackendLedgerEntry): PettyCashLedgerEntry {
     endorsedAt: data.endorsed_at,
     financeRemark: data.finance_remark,
     createdAt: data.created_at,
+    fundingBankId: data.funding_bank_id,
+    fundingBankName: data.funding_bank_name,
+    fundingAccountName: data.funding_account_name,
+    fundingCompanyName: data.funding_company_name,
+    isOwnAccount: Boolean(data.is_own_account),
   }
 }
 
