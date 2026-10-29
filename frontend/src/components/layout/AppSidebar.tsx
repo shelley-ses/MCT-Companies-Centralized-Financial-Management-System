@@ -212,7 +212,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <div
               className={cn(
                 'flex flex-col justify-center items-start overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out',
-                isExpanded ? 'max-w-[160px] opacity-100 ml-2.5' : 'max-w-0 opacity-0 ml-0 pointer-events-none'
+                isExpanded ? 'max-w-[200px] opacity-100 ml-2.5' : 'max-w-0 opacity-0 ml-0 pointer-events-none'
               )}
             >
               <img

@@ -1,23 +1,15 @@
 import * as React from 'react'
 import {
-  Receipt,
-  CreditCard,
   CheckCircle2,
-  Clock,
-  Trash2,
   Pencil,
   ChevronLeft,
   ChevronRight,
   Check,
-  Building2,
-  Calendar,
   AlertCircle,
-  FileSpreadsheet,
-  ArrowLeft,
-  Tag,
+  FileText,
+  Coins,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import {
   Table,
   TableHeader,
@@ -31,10 +23,6 @@ import {
   getBillPaymentOptions,
   type BillItem,
 } from '@/services/billsService'
-import {
-  MONTH_NAMES,
-  MONTH_FULL_NAMES,
-} from '@/components/dashboard/RecordBillPaymentModal'
 import { cn } from '@/lib/utils'
 
 interface BillDetailPageViewProps {
@@ -47,589 +35,476 @@ interface BillDetailPageViewProps {
   isAudit: boolean
 }
 
-const HISTORY_PAGE_SIZE = 10
+const LEDGER_ITEMS_PER_PAGE = 5
 
 export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
   bill,
   onBack,
   onPay,
   onEdit,
-  onDelete,
   onMarkAudit,
   isAudit,
 }) => {
-  const [calendarYear, setCalendarYear] = React.useState<number>(() => {
-    const targetDate = bill.dueDate
-    const parsedYear = targetDate ? parseInt(targetDate.slice(0, 4), 10) : new Date().getFullYear()
-    return !isNaN(parsedYear) ? Math.max(2025, parsedYear) : Math.max(2025, new Date().getFullYear())
-  })
-  const [historyPage, setHistoryPage] = React.useState<number>(1)
+  const [ledgerStatusFilter, setLedgerStatusFilter] = React.useState<'All' | 'Paid' | 'Pending'>('All')
+  const [ledgerPage, setLedgerPage] = React.useState<number>(1)
 
-  const todayStr = new Date().toISOString().slice(0, 10)
-  const currentPeriodKey = todayStr.slice(0, 7)
-  const schedule = getBillPaymentOptions(bill).periods
+  React.useEffect(() => {
+    setLedgerPage(1)
+  }, [bill.id, ledgerStatusFilter])
+
+  const options = getBillPaymentOptions(bill)
+  const schedule = options.periods
+  const nextPayable = options.nextPayable
   const dueDay = bill.dueDayOfMonth || parseInt(bill.dueDate?.slice(8, 10) || '15', 10) || 15
 
   const payments = bill.payments || []
-  const totalHistoryPages = Math.max(1, Math.ceil(payments.length / HISTORY_PAGE_SIZE))
-  const paginatedPayments = payments.slice(
-    (historyPage - 1) * HISTORY_PAGE_SIZE,
-    historyPage * HISTORY_PAGE_SIZE
-  )
   const totalPaidAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0)
 
+  const currentRemainingDue =
+    bill.status === 'Paid'
+      ? 0
+      : nextPayable?.remainingAmount !== undefined
+      ? nextPayable.remainingAmount
+      : Math.max(0, bill.amount - (nextPayable?.paidAmount || 0))
+
+  // Build unified ledger entries combining recorded payments and scheduled pending/overdue periods
+  const ledgerRows = React.useMemo(() => {
+    const rows: Array<{
+      id: string
+      date: string
+      periodLabel?: string
+      status: 'Paid' | 'Partially Paid' | 'Pending'
+      amount: number
+      method: string
+      referenceNo: string
+      notes: string
+    }> = []
+
+    const recordedPeriodKeys = new Set<string>()
+    payments.forEach((p) => {
+      if (p.periodKey) recordedPeriodKeys.add(p.periodKey)
+      const matchedPeriod = schedule.find((sp) => sp.key === p.periodKey)
+      const isPartial = Boolean(matchedPeriod?.partiallyPaid || (p.amount > 0 && p.amount < bill.amount))
+      rows.push({
+        id: p.id,
+        date: p.paymentDate,
+        periodLabel: matchedPeriod?.label || p.periodKey,
+        status: isPartial ? 'Partially Paid' : 'Paid',
+        amount: p.amount,
+        method: p.paymentMethod || '—',
+        referenceNo: p.refNo || '—',
+        notes: p.notes || '—',
+      })
+    })
+
+    // Add unpaid scheduled periods so "Pending" filter displays upcoming/unpaid schedule rows
+    schedule.forEach((sp) => {
+      if (!sp.paid && !recordedPeriodKeys.has(sp.key)) {
+        rows.push({
+          id: `sched-${sp.key}`,
+          date: sp.periodDate || `${sp.key}-${String(dueDay).padStart(2, '0')}`,
+          periodLabel: sp.label,
+          status: 'Pending',
+          amount: 0,
+          method: '—',
+          referenceNo: '—',
+          notes: `Scheduled (${sp.label})`,
+        })
+      }
+    })
+
+    return rows
+  }, [payments, schedule, bill.amount, dueDay])
+
+  const filteredLedgerRows = React.useMemo(() => {
+    if (ledgerStatusFilter === 'All') return ledgerRows
+    if (ledgerStatusFilter === 'Paid') {
+      return ledgerRows.filter((r) => r.status === 'Paid' || r.status === 'Partially Paid')
+    }
+    return ledgerRows.filter((r) => r.status === 'Pending')
+  }, [ledgerRows, ledgerStatusFilter])
+
+  const totalLedgerPages = Math.max(1, Math.ceil(filteredLedgerRows.length / LEDGER_ITEMS_PER_PAGE))
+  const safeLedgerPage = Math.min(ledgerPage, totalLedgerPages)
+  const paginatedLedger = filteredLedgerRows.slice(
+    (safeLedgerPage - 1) * LEDGER_ITEMS_PER_PAGE,
+    safeLedgerPage * LEDGER_ITEMS_PER_PAGE
+  )
+
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-16 animate-in fade-in duration-200">
-      {/* Top Header Row with Back Button and Quick Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-5 pb-12 max-w-[1600px] mx-auto animate-in fade-in duration-200">
+      {/* Top Action & Navigation Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <Button
             type="button"
             variant="outline"
             onClick={onBack}
-            className="h-10 px-4 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all border border-stroke/50 bg-white text-focus hover:bg-surface"
+            className="h-10 px-4 rounded-xl border-stroke/60 bg-white hover:bg-slate-50 text-focus font-semibold text-xs flex items-center gap-2 shadow-2xs cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4 text-focus/70" />
+            <ChevronLeft className="h-4 w-4" />
             <span>Back to Bills</span>
           </Button>
-          <div className="flex items-center gap-2 text-xs text-muted-fg">
-            <span className="hover:text-focus cursor-pointer transition-colors" onClick={onBack}>
-              Monthly Bills
+        </div>
+      </div>
+
+      {/* Main Details Header (No container background, no status badge, buttons in same row as name) */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 px-1">
+        <div className="space-y-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-focus tracking-tight">
+            {bill.billerName}
+          </h1>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-fg">
+            <span>
+              Schedule: <strong className="text-focus font-semibold">{bill.billingCycle}</strong>
             </span>
-            <span>/</span>
-            <span className="font-semibold text-focus truncate max-w-[200px] sm:max-w-xs">
-              {bill.billerName}
+            <span>
+              Due Day: <strong className="text-focus font-semibold">Day {dueDay}</strong>
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        {/* Action Buttons in the same row as the Biller Name */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {!isAudit && (
             <>
               <Button
                 type="button"
                 onClick={onPay}
-                className="h-10 px-4 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer"
+                className="h-10 px-4 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
-                <CreditCard className="w-4 h-4" />
-                <span>Pay Bill</span>
+                <Coins className="h-4 w-4" />
+                <span>Record Payment</span>
               </Button>
-
               <Button
                 type="button"
                 variant="outline"
                 onClick={onEdit}
-                className="h-10 px-3.5 rounded-xl border border-stroke/50 bg-white text-focus hover:bg-surface text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="h-10 px-4 rounded-xl border-stroke/60 bg-white hover:bg-slate-50 text-focus font-semibold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
               >
-                <Pencil className="w-3.5 h-3.5 text-muted-fg" />
-                <span>Edit</span>
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onDelete}
-                className="h-10 px-3.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                <span>Delete</span>
+                <Pencil className="h-3.5 w-3.5" />
+                <span>Edit Terms</span>
               </Button>
             </>
           )}
 
           {isAudit && onMarkAudit && (
-            <div className="flex items-center gap-2">
+            <>
               <Button
                 type="button"
                 onClick={() => onMarkAudit('Verified')}
-                className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Mark as Audit</span>
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Mark as Audited</span>
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => onMarkAudit('Flagged')}
-                className="h-10 px-4 rounded-xl border-amber-300 text-amber-700 hover:bg-amber-50 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                className="h-10 px-4 rounded-xl border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
               >
-                <AlertCircle className="w-4 h-4 text-amber-600" />
-                <span>Mark as Discrepancy</span>
+                <AlertCircle className="h-4 w-4" />
+                <span>Flag Discrepancy</span>
               </Button>
-            </div>
+            </>
           )}
         </div>
       </div>
 
-      {/* Hero Bill Overview Card */}
-      <Card className="rounded-[24px] bg-white border border-stroke/30 p-6 sm:p-8 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 pb-6 border-b border-slate-100">
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-[#960C01] text-white flex items-center justify-center shrink-0 shadow-sm">
-              <Receipt className="w-7 h-7" />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl sm:text-3xl font-bold text-focus tracking-tight">
-                  {bill.billerName}
-                </h1>
-                {bill.status === 'Paid' ? (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Paid</span>
-                  </span>
-                ) : bill.status === 'Partially Paid' ? (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Partially Paid</span>
-                  </span>
-                ) : bill.status === 'Overdue' ? (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Overdue</span>
-                  </span>
-                ) : bill.status === 'Due Soon' ? (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Due Soon</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold">
-                    <Clock className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Unpaid</span>
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-fg flex-wrap">
-                <span className="font-semibold text-focus/90 flex items-center gap-1">
-                  <Building2 className="w-3.5 h-3.5 text-muted-fg" />
-                  {bill.company}
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Tag className="w-3.5 h-3.5 text-muted-fg" />
-                  {bill.category}
-                </span>
-                {bill.accountNo && (
-                  <>
-                    <span>•</span>
-                    <span className="font-mono text-focus/80">Account #{bill.accountNo}</span>
-                  </>
-                )}
-                <span>•</span>
-                <span className="font-medium text-slate-600">{bill.billingCycle} Recurring</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:text-right">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Monthly Obligation Amount
-            </span>
-            <span className="text-3xl sm:text-4xl font-extrabold text-[#960C01] tabular-nums tracking-tight block mt-0.5">
-              {formatPHP(bill.amount)}
-            </span>
-            <span className="text-xs text-muted-fg block mt-1">
-              Scheduled Due Date: <strong className="text-focus">{bill.dueDate}</strong> (Remind {bill.reminderDaysBefore}d before)
-            </span>
-          </div>
+      {/* 6 Financial Overview KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+            Bill Amount
+          </span>
+          <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+            {formatPHP(bill.amount)}
+          </span>
         </div>
 
-        {/* Quick Metrics Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-          <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-100 space-y-1">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Total Payments Made
-            </span>
-            <span className="text-xl font-bold text-emerald-700 tabular-nums block">
-              {formatPHP(totalPaidAmount)}
-            </span>
-            <span className="text-[11px] text-muted-fg block">
-              {payments.length} payment record{payments.length === 1 ? '' : 's'} recorded
-            </span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-100 space-y-1">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Due Day of Cycle
-            </span>
-            <span className="text-xl font-bold text-focus tabular-nums block">
-              Day {dueDay}
-            </span>
-            <span className="text-[11px] text-muted-fg block">
-              Every {bill.billingCycle.toLowerCase()} cycle
-            </span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-100 space-y-1">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Latest Settlement
-            </span>
-            <span className="text-xl font-bold text-focus truncate block">
-              {bill.lastPaidDate || 'None recorded'}
-            </span>
-            <span className="text-[11px] text-muted-fg block">
-              {bill.lastPaymentMethod ? `Via ${bill.lastPaymentMethod}` : 'Pending settlement'}
-            </span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-100 space-y-1">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Compliance & Audit
-            </span>
-            <span className={cn(
-              'text-xl font-bold truncate block',
-              bill.auditStatus === 'Verified'
-                ? 'text-emerald-700'
-                : bill.auditStatus === 'Flagged'
-                ? 'text-amber-700'
-                : 'text-slate-600'
-            )}>
-              {bill.auditStatus || 'Pending Audit'}
-            </span>
-            <span className="text-[11px] text-muted-fg block">
-              {bill.auditDate ? `Verified on ${bill.auditDate}` : 'Internal audit review'}
-            </span>
-          </div>
+        <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+            Billing Cycle
+          </span>
+          <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+            {bill.billingCycle}
+          </span>
         </div>
 
-        {bill.notes && (
-          <div className="mt-4 p-4 rounded-2xl bg-amber-50/50 border border-amber-200/60 text-xs">
-            <span className="font-bold text-amber-900 block mb-0.5">Notes & Particulars:</span>
-            <p className="text-amber-950 font-medium leading-relaxed">{bill.notes}</p>
-          </div>
-        )}
-      </Card>
+        <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+            Current Period Due
+          </span>
+          <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+            {formatPHP(bill.amount)}
+          </span>
+        </div>
 
-      {/* Payment Schedule Calendar Matrix */}
-      <Card className="rounded-[24px] bg-white border border-stroke/30 p-6 sm:p-7 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <Calendar className="w-5 h-5 text-[#960C01]" />
-            <div>
-              <h3 className="text-base font-bold text-focus">Payment Schedule Calendar</h3>
-              <p className="text-xs text-muted-fg">Annual schedule of paid obligations, upcoming due dates, and arrears</p>
+        <div className="bg-emerald-50/70 border border-emerald-200/70 rounded-2xl p-4 shadow-2xs">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-emerald-800 block">
+            Amount Paid
+          </span>
+          <span className="text-base sm:text-lg font-extrabold text-emerald-700 tabular-nums mt-1 block">
+            {formatPHP(totalPaidAmount)}
+          </span>
+        </div>
+
+        <div className="bg-amber-50/70 border border-amber-200/70 rounded-2xl p-4 shadow-2xs">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-amber-800 block">
+            Remaining Balance
+          </span>
+          <span className="text-base sm:text-lg font-extrabold text-amber-700 tabular-nums mt-1 block">
+            {formatPHP(currentRemainingDue)}
+          </span>
+        </div>
+
+        <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+            Next Due Date
+          </span>
+          <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+            {bill.dueDate}
+          </span>
+        </div>
+      </div>
+
+      {/* Split Section: Bill Agreement & Terms (Left) + Payment Schedule & History (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {/* Left 1 Column: Bill Agreement & Terms */}
+        <div className="lg:col-span-1 bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <FileText className="h-4 w-4 text-[#960C01]" />
+            <h2 className="text-sm font-bold text-focus">Bill Agreement & Terms</h2>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Biller Name</span>
+              <span className="font-bold text-focus text-right truncate max-w-[160px]">{bill.billerName}</span>
             </div>
-          </div>
-
-          {/* Year Navigator (Minimum 2025) */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 shadow-2xs self-start sm:self-auto">
-            <button
-              type="button"
-              disabled={calendarYear <= 2025}
-              onClick={() => setCalendarYear((y) => Math.max(2025, y - 1))}
-              className={cn(
-                'w-7 h-7 rounded-lg flex items-center justify-center text-focus transition-colors',
-                calendarYear <= 2025
-                  ? 'opacity-30 cursor-not-allowed'
-                  : 'hover:bg-white cursor-pointer'
-              )}
-              title="Previous Year (Minimum 2025)"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="font-bold text-sm text-focus px-3 font-mono tabular-nums">
-              {calendarYear}
-            </span>
-            <button
-              type="button"
-              onClick={() => setCalendarYear((y) => y + 1)}
-              className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-focus transition-colors cursor-pointer"
-              title="Next Year"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* 12-Month Calendar Grid */}
-        {bill.billingCycle === 'Monthly' ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {MONTH_NAMES.map((monthAbbr, idx) => {
-              const monthNum = idx + 1
-              const monthKey = `${calendarYear}-${String(monthNum).padStart(2, '0')}`
-              const lastDayOfMonth = new Date(calendarYear, monthNum, 0).getDate()
-              const effectiveDay = Math.min(dueDay, lastDayOfMonth)
-              const periodDateStr = `${monthKey}-${String(effectiveDay).padStart(2, '0')}`
-
-              const scheduledPeriod = schedule.find((p) => p.key === monthKey)
-              const isPaid = Boolean(scheduledPeriod?.paid && !scheduledPeriod?.partiallyPaid)
-              const isPartiallyPaid = Boolean(scheduledPeriod?.partiallyPaid)
-              const isOverdue =
-                !isPaid &&
-                !isPartiallyPaid &&
-                ((scheduledPeriod && !scheduledPeriod.isFuture && (scheduledPeriod.periodDate || '') < todayStr) ||
-                  (!scheduledPeriod && periodDateStr < todayStr))
-              const isDueCurrent =
-                !isPaid && !isPartiallyPaid && !isOverdue && monthKey === currentPeriodKey
-
-              const paidAmount = scheduledPeriod?.paidAmount || 0
-              const remainingAmount =
-                scheduledPeriod?.remainingAmount !== undefined
-                  ? scheduledPeriod.remainingAmount
-                  : Math.max(0, bill.amount - paidAmount)
-
-              return (
-                <div
-                  key={monthKey}
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Assigned Company</span>
+              <span className="font-semibold text-focus text-right truncate max-w-[160px]">{bill.company}</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Category</span>
+              <span className="font-semibold text-focus">{bill.category}</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Account No.</span>
+              <span className="font-mono font-semibold text-focus">{bill.accountNo || 'N/A'}</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Payment Frequency</span>
+              <span className="font-semibold text-focus">{bill.billingCycle}</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Due Day of Cycle</span>
+              <span className="font-mono font-semibold text-focus">Day {dueDay}</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Scheduled Due Date</span>
+              <span className="font-mono font-semibold text-focus">{bill.dueDate}</span>
+            </div>
+            <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+              <span className="text-muted-fg">Latest Settlement</span>
+              <span className="font-mono font-semibold text-focus">{bill.lastPaidDate || 'None'}</span>
+            </div>
+            {bill.auditStatus && (
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Audit Status</span>
+                <span
                   className={cn(
-                    'p-3 rounded-2xl border text-left transition-all relative flex flex-col justify-between min-h-[96px] select-none',
-                    isPaid
-                      ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950 shadow-2xs'
-                      : isPartiallyPaid
-                      ? 'border-amber-300 bg-amber-50/80 text-amber-950 shadow-2xs'
-                      : isOverdue
-                      ? 'border-rose-300 bg-rose-50/80 text-rose-950 shadow-2xs'
-                      : isDueCurrent
-                      ? 'border-blue-200 bg-blue-50/70 text-blue-950 shadow-2xs'
-                      : 'border-slate-200 bg-slate-50/50 text-slate-700'
+                    'px-2 py-0.5 rounded text-[10.5px] font-bold border',
+                    bill.auditStatus === 'Verified'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
                   )}
                 >
-                  <div>
-                    <div className="flex items-center justify-between w-full">
-                      <span className="text-xs font-bold truncate text-focus">
-                        {MONTH_FULL_NAMES[idx]}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-muted-fg font-medium truncate mt-0.5">
-                      Due: {monthAbbr} {effectiveDay}
-                    </div>
-                  </div>
-
-                  <div className="mt-2 pt-1.5 border-t border-slate-200/50 flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between">
-                      {isPaid ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                          <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                          <span>Paid</span>
-                        </span>
-                      ) : isPartiallyPaid ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700">
-                          <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                          <span>Partial</span>
-                        </span>
-                      ) : isOverdue ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700">
-                          <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
-                          <span>Overdue</span>
-                        </span>
-                      ) : isDueCurrent ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700">
-                          <Clock className="w-3 h-3 text-blue-600 shrink-0" />
-                          <span>Due Soon</span>
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 font-medium">Upcoming</span>
-                      )}
-
-                      {scheduledPeriod?.paymentDate && (
-                        <span className="text-[10px] text-emerald-600/90 font-mono truncate">
-                          {scheduledPeriod.paymentDate.slice(5)}
-                        </span>
-                      )}
-                    </div>
-
-                    {isPartiallyPaid && (
-                      <div className="text-[10px] text-amber-900 font-medium font-mono pt-1 border-t border-amber-200/50 flex flex-col">
-                        <span>Paid: {formatPHP(paidAmount)}</span>
-                        <span className="font-bold text-amber-800">
-                          Rem: {formatPHP(remainingAmount)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+                  {bill.auditStatus} {bill.auditDate ? `(${bill.auditDate})` : ''}
+                </span>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {schedule.map((period) => {
-              const isPaid = Boolean(period.paid && !period.partiallyPaid)
-              const isPartiallyPaid = Boolean(period.partiallyPaid)
-              const isOverdue =
-                !isPaid && !isPartiallyPaid && !period.isFuture && (period.periodDate || '') < todayStr
-              return (
-                <div
-                  key={period.key}
-                  className={cn(
-                    'p-3 rounded-2xl border text-left transition-all flex flex-col justify-between select-none',
-                    isPaid
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : isPartiallyPaid
-                      ? 'border-amber-200 bg-amber-50 text-amber-800'
-                      : isOverdue
-                      ? 'border-rose-200 bg-rose-50 text-rose-800'
-                      : 'border-slate-200 bg-white text-slate-600'
-                  )}
-                >
-                  <div className="font-bold text-xs truncate">{period.label}</div>
-                  <div className="text-[11px] mt-2 flex items-center gap-1">
-                    {isPaid ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="font-semibold">Paid</span>
-                      </>
-                    ) : isPartiallyPaid ? (
-                      <>
-                        <Clock className="w-3.5 h-3.5 text-amber-600" />
-                        <span className="font-semibold">Partially Paid</span>
-                      </>
-                    ) : isOverdue ? (
-                      <>
-                        <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                        <span className="font-semibold">Overdue</span>
-                      </>
-                    ) : (
-                      <span>Upcoming</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
 
-      {/* Full-Width Payment History Table Card */}
-      <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <FileSpreadsheet className="w-5 h-5 text-[#960C01]" />
-            <div>
-              <h3 className="text-base font-bold text-focus">Payment History</h3>
-              <p className="text-xs text-muted-fg">Detailed audit log of all remittances, settlement methods, and receipts</p>
+          <div className="pt-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg block mb-1.5">
+              Remarks & Notes
+            </span>
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs text-focus min-h-[64px] whitespace-pre-wrap">
+              {bill.notes || 'No additional remarks recorded for this bill.'}
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-mono">
-              {payments.length} Record{payments.length === 1 ? '' : 's'}
-            </span>
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
-              Total Paid: {formatPHP(totalPaidAmount)}
-            </span>
           </div>
         </div>
 
-        {/* Payment History Table */}
-        <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table className="w-full text-xs">
-            <TableHeader>
-              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
-                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[15%]">
-                  PERIOD
-                </TableHead>
-                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[18%]">
-                  PAYMENT DATE
-                </TableHead>
-                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-right w-[18%]">
-                  AMOUNT PAID
-                </TableHead>
-                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[18%]">
-                  PAYMENT METHOD
-                </TableHead>
-                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[16%]">
-                  REFERENCE NO.
-                </TableHead>
-                <TableHead className="px-4 py-3.5 font-bold text-muted-fg uppercase tracking-wider text-xs text-left w-[15%]">
-                  NOTES / REMARKS
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedPayments.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-12 text-center text-xs text-muted-fg">
-                    <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
-                      <Receipt className="w-8 h-8 text-slate-300" />
-                      <p className="font-semibold text-focus text-sm">No payment history records yet</p>
-                      <p className="text-xs text-muted-fg">
-                        Payments recorded through "Pay Bill" will be catalogued here with full audit trails.
-                      </p>
-                      {!isAudit && (
-                        <Button
-                          type="button"
-                          onClick={onPay}
-                          className="mt-2 h-9 px-4 rounded-xl bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold cursor-pointer"
-                        >
-                          + Record First Payment
-                        </Button>
+        {/* Right 3 Columns: Payment Schedule & History Table */}
+        <div className="lg:col-span-3 bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs flex flex-col justify-between space-y-4">
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-sm font-bold text-focus flex items-center gap-2">
+                  <Coins className="h-4 w-4 text-emerald-600" />
+                  <span>Payment Schedule & History</span>
+                </h2>
+                <p className="text-[11px] text-muted-fg mt-0.5">
+                  Showing 5 records per page • Filter by Paid or Pending status
+                </p>
+              </div>
+
+              {/* Status Filter Toggle (Paid / Pending) */}
+              <div className="inline-flex items-center p-1 rounded-full bg-slate-100 border border-stroke/40 shadow-2xs self-start sm:self-auto">
+                {(['All', 'Paid', 'Pending'] as const).map((statusOpt) => {
+                  const isActive = ledgerStatusFilter === statusOpt
+                  return (
+                    <button
+                      key={statusOpt}
+                      type="button"
+                      onClick={() => {
+                        setLedgerStatusFilter(statusOpt)
+                        setLedgerPage(1)
+                      }}
+                      className={cn(
+                        'px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer select-none',
+                        isActive
+                          ? 'bg-[#960C01] text-white shadow-xs'
+                          : 'text-muted-fg hover:text-focus'
                       )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paginatedPayments.map((p) => (
-                  <TableRow key={p.id} className="hover:bg-slate-50/60 transition-colors border-b border-slate-100">
-                    <TableCell className="px-4 py-3.5 font-bold text-[#960C01] font-mono text-xs">
-                      {p.periodKey ? `Period ${p.periodKey}` : 'Billing Period'}
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 font-medium text-focus text-xs">
-                      {p.paymentDate}
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 font-bold text-emerald-700 text-right tabular-nums text-xs">
-                      {formatPHP(p.amount)}
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 text-xs text-focus font-medium">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
-                        {p.paymentMethod}
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 text-xs font-mono text-focus/80">
-                      {p.refNo || '—'}
-                    </TableCell>
-                    <TableCell className="px-4 py-3.5 text-xs text-muted-fg">
-                      {p.notes || '—'}
-                    </TableCell>
+                    >
+                      {statusOpt}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-100">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                    <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                      Payment Date
+                    </TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3 text-center">
+                      Status
+                    </TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3 text-right">
+                      Amount Paid
+                    </TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                      Method
+                    </TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                      Reference No.
+                    </TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                      Remarks
+                    </TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {paginatedLedger.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-36 text-center text-xs text-muted-fg">
+                        No payment records match your filter.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedLedger.map((entry) => {
+                      const badgeStyle =
+                        entry.status === 'Paid'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : entry.status === 'Partially Paid'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-slate-100 text-slate-600 border-slate-200'
 
-        {/* Pagination Footer */}
-        {payments.length > 0 && (
-          <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
-            <span className="font-medium text-focus/80">
-              Showing {(historyPage - 1) * HISTORY_PAGE_SIZE + 1}-
-              {Math.min(historyPage * HISTORY_PAGE_SIZE, payments.length)} of {payments.length} records
-            </span>
+                      return (
+                        <TableRow key={entry.id} className="hover:bg-slate-50/60 border-b border-slate-100">
+                          <TableCell className="py-3 px-3 font-mono text-xs font-semibold text-focus whitespace-nowrap">
+                            {entry.date}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-center whitespace-nowrap">
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider',
+                                badgeStyle
+                              )}
+                            >
+                              {entry.status === 'Paid' && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+                              {entry.status}
+                            </span>
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-right font-bold text-xs tabular-nums whitespace-nowrap">
+                            {entry.amount > 0 ? (
+                              <span className="text-emerald-700">{formatPHP(entry.amount)}</span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-xs text-focus whitespace-nowrap">
+                            {entry.method || '—'}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 font-mono text-xs text-muted-fg whitespace-nowrap">
+                            {entry.referenceNo || '—'}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-xs text-muted-fg max-w-[220px] truncate" title={entry.notes}>
+                            {entry.notes || '—'}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <span className="text-xs text-muted-fg italic">
-                Page {historyPage} out of {totalHistoryPages}
-              </span>
+          {/* 5-Row Pagination Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-slate-100 text-xs text-muted-fg">
+            <div>
+              Showing{' '}
+              <span className="font-semibold text-focus">
+                {filteredLedgerRows.length === 0
+                  ? 0
+                  : (safeLedgerPage - 1) * LEDGER_ITEMS_PER_PAGE + 1}
+              </span>{' '}
+              to{' '}
+              <span className="font-semibold text-focus">
+                {Math.min(safeLedgerPage * LEDGER_ITEMS_PER_PAGE, filteredLedgerRows.length)}
+              </span>{' '}
+              of <span className="font-semibold text-focus">{filteredLedgerRows.length}</span> entries
+            </div>
 
+            <div className="flex items-center gap-1.5">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={historyPage <= 1}
-                onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                aria-label="Previous history page"
+                disabled={safeLedgerPage <= 1}
+                onClick={() => setLedgerPage((p) => Math.max(1, p - 1))}
+                className="h-8 px-2.5 rounded-lg text-xs cursor-pointer disabled:opacity-40"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                Prev
               </Button>
-
+              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-focus font-semibold text-xs">
+                Page {safeLedgerPage} of {totalLedgerPages}
+              </span>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={historyPage >= totalHistoryPages}
-                onClick={() => setHistoryPage((p) => Math.min(totalHistoryPages, p + 1))}
-                className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                aria-label="Next history page"
+                disabled={safeLedgerPage >= totalLedgerPages}
+                onClick={() => setLedgerPage((p) => Math.min(totalLedgerPages, p + 1))}
+                className="h-8 px-2.5 rounded-lg text-xs cursor-pointer disabled:opacity-40"
               >
-                <ChevronRight className="w-4 h-4" />
+                Next
+                <ChevronRight className="h-3.5 w-3.5 ml-1" />
               </Button>
             </div>
           </div>
-        )}
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

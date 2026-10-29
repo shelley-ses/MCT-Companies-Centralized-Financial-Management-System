@@ -44,7 +44,8 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
   companies: propsCompanies,
 }) => {
   const { user } = useSession()
-  const isCompanyUser = user?.role === 'Supervisor'
+  const isFinanceUser = (user?.role || '').toLowerCase() === 'finance'
+  const isCompanyUser = !isFinanceUser
 
   const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
 
@@ -463,10 +464,12 @@ export const AddLoanModal: React.FC<AddLoanModalProps> = ({
                 {formatPHP(parseFloat(amount.replace(/,/g, '')) || 0)}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-fg font-medium">Interest Rate:</span>
-              <span className="font-bold text-primary">{parseFloat(interestRate) || 0}%</span>
-            </div>
+            {isFinanceUser && (
+              <div className="flex justify-between">
+                <span className="text-muted-fg font-medium">Interest Rate:</span>
+                <span className="font-bold text-primary">{parseFloat(interestRate) || 0}%</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-fg font-medium">Date:</span>
               <span className="font-medium text-focus">{date}</span>

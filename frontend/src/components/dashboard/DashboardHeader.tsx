@@ -10,6 +10,8 @@ import {
   DateRangePicker,
   type DateRange,
 } from '@/components/ui/DateRangePicker'
+import { ALL_COMPANIES_LIST } from '@/context/CompanyContext'
+import { isCompanyMatch } from '@/utils/companyUtils'
 import { cn } from '@/lib/utils'
 
 export interface DashboardFilterState {
@@ -24,23 +26,10 @@ interface DashboardHeaderProps {
   isCompanyScoped?: boolean
 }
 
-const DEFAULT_COMPANIES = [
-  'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
-
 export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   filters,
   onFiltersChange,
-  companies = DEFAULT_COMPANIES,
+  companies = ALL_COMPANIES_LIST,
   isCompanyScoped = false,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false)
@@ -104,21 +93,18 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   }, [companies, searchQuery])
 
   return (
-    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 lg:gap-4">
-      {/* Title & Subtitle */}
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {/* Scope Subtitle */}
       <div className="min-w-0 shrink">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-focus tracking-tight whitespace-nowrap">
-          Financial Overview
-        </h1>
-        <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5 truncate max-w-md xl:max-w-xl">
+        <p className="text-xs sm:text-sm text-muted-fg font-normal truncate max-w-md xl:max-w-xl">
           {filters.company !== 'All Companies'
-            ? `Audit transactions and verify financial records for ${filters.company}.`
+            ? `Viewing financial records and transactions for ${filters.company}.`
             : "Here's the consolidated financial summary across all MCT Group of Companies."}
         </p>
       </div>
 
       {/* Uniform Filter Bar: Shared Date Picker + Company Scope */}
-      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap sm:flex-nowrap self-start lg:self-auto overflow-x-auto sm:overflow-visible max-w-full">
+      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap sm:flex-nowrap self-start sm:self-auto max-w-full">
         {/* 1. Global Custom Date Picker (Single date or Custom range, no presets) */}
         <DateRangePicker
           value={filters.dateRange}
@@ -127,7 +113,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           }}
         />
 
-        {/* 2. Company Scope: Dropdown for Admin/Finance, static assigned company pill for Supervisor */}
+        {/* 2. Company Scope: Dropdown for Finance/Audit/Admin, static assigned company pill for Supervisor */}
         {isCompanyScoped ? (
           <div className="inline-flex items-center gap-2 h-10 sm:h-11 px-3.5 sm:px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
             <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
@@ -146,6 +132,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
               )}
               aria-expanded={isOpen}
               aria-haspopup="listbox"
+              aria-label="Filter dashboard by company"
             >
               <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
               <span className="font-medium text-focus/90 truncate max-w-[240px] sm:max-w-[360px]">
@@ -195,7 +182,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     <button
                       type="button"
                       onClick={handleResetCompany}
-                      className="text-xs text-primary hover:underline font-semibold"
+                      className="text-xs text-primary hover:underline font-semibold cursor-pointer"
                     >
                       Clear Filter
                     </button>
@@ -232,7 +219,11 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                     </div>
                   ) : (
                     filteredCompanies.map((comp) => {
-                      const isSelected = filters.company === comp
+                      const isSelected =
+                        comp === 'All Companies'
+                          ? filters.company === 'All Companies'
+                          : filters.company !== 'All Companies' &&
+                            (filters.company === comp || isCompanyMatch(filters.company, comp))
                       return (
                         <button
                           key={comp}

@@ -56,7 +56,7 @@ def _get_application_user(*, email: str | None = None, user_id: int | None = Non
     # 1. Try Supabase with role
     try:
         query = get_supabase_admin_client().table("users").select(
-            "user_id,email,name,is_admin,role,company_id,created_at,updated_at,last_login_at"
+            "user_id,email,name,is_admin,role,company_id,photo_url,created_at,updated_at,last_login_at"
         )
         if email is not None:
             query = query.eq("email", email)
@@ -108,6 +108,7 @@ def _get_application_user(*, email: str | None = None, user_id: int | None = Non
                 "is_admin": bool(u.is_admin),
                 "role": u_role,
                 "company_id": u.company_id,
+                "photo_url": getattr(u, "photo_url", None),
                 "created_at": u.created_at.isoformat() if u.created_at else None,
                 "updated_at": u.updated_at.isoformat() if u.updated_at else None,
                 "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
@@ -147,6 +148,7 @@ def _update_application_user_login(user_id: int) -> None:
 def _application_user_response(user: dict[str, object]) -> UserResponse:
     company_name = None
     company_names: list[str] = []
+    company_logo_url: str | None = None
     company_id = user.get("company_id")
 
     from app.db.session import SessionLocal
@@ -160,6 +162,7 @@ def _application_user_response(user: dict[str, object]) -> UserResponse:
             if comp:
                 company_name = comp.company_name
                 company_names.append(comp.company_name)
+                company_logo_url = getattr(comp, "logo_url", None)
 
         uid = user.get("user_id")
         if uid:
@@ -170,12 +173,15 @@ def _application_user_response(user: dict[str, object]) -> UserResponse:
                     company_names.append(c.company_name)
                     if not company_name:
                         company_name = c.company_name
+                    if not company_logo_url and getattr(c, "logo_url", None):
+                        company_logo_url = getattr(c, "logo_url", None)
         db.close()
     except Exception:
         pass
 
     user_role = str(user.get("role") or ("admin" if user.get("is_admin") else "company")).lower()
     is_admin_flag = bool(user.get("is_admin", False))
+    resolved_photo_url = str(user.get("photo_url") or company_logo_url) if (user.get("photo_url") or company_logo_url) else None
 
     return UserResponse(
         user_id=int(user["user_id"]),
@@ -184,6 +190,7 @@ def _application_user_response(user: dict[str, object]) -> UserResponse:
         company_id=int(company_id) if company_id is not None else None,
         is_admin=is_admin_flag,
         role=user_role,
+        photo_url=resolved_photo_url,
         last_login_at=user.get("last_login_at"),
         created_at=user.get("created_at"),
         updated_at=user.get("updated_at"),

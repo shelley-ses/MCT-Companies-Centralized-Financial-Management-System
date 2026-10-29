@@ -35,31 +35,33 @@ export const CompanyContext = React.createContext<CompanyContextValue | undefine
 export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useSession()
 
+  const userRole = (user?.role || '').trim().toLowerCase()
   const isCompanyScoped = Boolean(
     user?.assignedCompany &&
       user.assignedCompany !== 'All Companies' &&
-      user?.role !== 'Admin' &&
-      user?.role !== 'Audit' &&
-      user?.role !== 'Finance'
+      userRole !== 'admin' &&
+      userRole !== 'audit' &&
+      !userRole.includes('auditor') &&
+      userRole !== 'finance'
   )
 
   const [activeCompany, setActiveCompanyState] = React.useState<string>(() => {
-    if (user?.assignedCompany && user.assignedCompany !== 'All Companies') {
+    if (isCompanyScoped && user?.assignedCompany && user.assignedCompany !== 'All Companies') {
       return user.assignedCompany
     }
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(COMPANY_STORAGE_KEY)
       if (saved) return saved
     }
-    return user?.assignedCompany || 'All Companies'
+    return (isCompanyScoped ? user?.assignedCompany : 'All Companies') || 'All Companies'
   })
 
   // Keep in sync when user session changes
   React.useEffect(() => {
-    if (user?.assignedCompany && user.assignedCompany !== 'All Companies') {
+    if (isCompanyScoped && user?.assignedCompany && user.assignedCompany !== 'All Companies') {
       setActiveCompanyState(user.assignedCompany)
     }
-  }, [user?.assignedCompany])
+  }, [isCompanyScoped, user?.assignedCompany])
 
   const [dynamicCompanies, setDynamicCompanies] = React.useState<string[]>([])
 

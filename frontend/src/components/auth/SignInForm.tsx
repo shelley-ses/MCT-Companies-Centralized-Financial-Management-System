@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -20,20 +20,9 @@ import { useSession } from '@/hooks/useSession'
 
 export const SignInForm: React.FC = () => {
   const navigate = useNavigate()
-  const location = useLocation()
   const { signIn } = useSession()
   const [serverError, setServerError] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(false)
-
-  // Compute safe remembered destination
-  const fromState = (location.state as { from?: string } | null)?.from
-  const safeRedirectPath =
-    fromState &&
-    fromState.startsWith('/') &&
-    !fromState.startsWith('//') &&
-    fromState !== '/login'
-      ? fromState
-      : '/dashboard'
 
   const form = useForm<SignInFormValues>({
     resolver: zodResolver(signInSchema),
@@ -53,24 +42,10 @@ export const SignInForm: React.FC = () => {
       const response = await signIn(values)
 
       if (response.status === 'authenticated') {
-        const isFinance = response.user.role?.toLowerCase() === 'finance'
-        const hasExplicitDeepRoute =
-          fromState &&
-          fromState.startsWith('/') &&
-          !fromState.startsWith('//') &&
-          fromState !== '/login' &&
-          fromState !== '/dashboard'
-
-        const destination = hasExplicitDeepRoute
-          ? fromState
-          : isFinance
-          ? '/centralized-auth'
-          : safeRedirectPath
-
-        navigate(destination, { replace: true })
+        navigate('/dashboard', { replace: true })
       } else if (response.status === '2fa_required') {
-        // Route to 2FA verification step, preserving return route
-        navigate('/verify-2fa', { state: { from: fromState, email: response.email } })
+        // Route to 2FA verification step
+        navigate('/verify-2fa', { state: { email: response.email } })
       }
     } catch (err: unknown) {
       // Generic server error for bad credentials; never reveal which field failed

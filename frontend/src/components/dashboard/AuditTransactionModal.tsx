@@ -118,14 +118,14 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   loan,
   onLoanUpdated,
   onTransactionUpdated,
-  onOpenUpdateLoanStatus,
+  onOpenUpdateLoanStatus: _onOpenUpdateLoanStatus,
   editable = false,
-  initialIsEditing = false,
-  statusFilter = 'All',
+  initialIsEditing: _initialIsEditing = false,
 }) => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
+  const roleLower = (user?.role || '').toLowerCase()
+  const isAdmin = roleLower === 'admin' || roleLower === 'audit'
 
   const [currentTx, setCurrentTx] =
     React.useState<DashboardTransactionItem | null>(transaction)
@@ -203,28 +203,10 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     setCurrentLoan(loan || null)
   }, [transaction, sale, expense, loan])
 
-  const activeTx = currentTx || transaction
-  const activeSale = currentSale || sale
-  const activeExpense = currentExpense || expense
-  const activeLoan = currentLoan || loan
-
-  const isExpense = Boolean(activeExpense || activeTx?.type === 'Expense')
-  const isLoan = Boolean(activeLoan || activeTx?.type === 'Loan')
-
-  const currentAuditStatus =
-    activeSale?.auditStatus ||
-    activeExpense?.auditStatus ||
-    activeLoan?.auditStatus ||
-    activeTx?.auditStatus ||
-    'Pending Audit'
-
-  const isAudited = currentAuditStatus === 'Verified'
-  const isEditable = Boolean(editable && !isAdmin && !isAudited)
-
-  // Reset or initialize edit fields when modal opens or target changes
+  // Reset or initialize edit fields when modal opens or target changes (always start in read-only View Mode)
   React.useEffect(() => {
     if (open) {
-      setIsEditing(Boolean(initialIsEditing && isEditable))
+      setIsEditing(false)
       setError('')
       setFieldErrors({})
 
@@ -1670,35 +1652,9 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               </div>
             )}
 
-            {/* View Mode Footer: Update Status & Edit Details Actions (Operational users) */}
+            {/* View Mode Footer: Strictly read-only until the user clicks the Edit button */}
             {isEditable && (
               <div className="flex items-center justify-end gap-2.5 pt-3 mt-2 border-t border-stroke/20">
-                {isLoan && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      if (onOpenUpdateLoanStatus) {
-                        onOpenUpdateLoanStatus(activeLoan || null)
-                      } else {
-                        setIsUpdateLoanStatusOpen(true)
-                      }
-                    }}
-                    className={cn(
-                      'h-9 px-4 text-xs font-semibold rounded-xl border-emerald-500/40 text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors',
-                      displayStatus === 'Paid' &&
-                        'border-slate-300 text-focus bg-slate-50 hover:bg-slate-100'
-                    )}
-                    title="Update repayment status (e.g. mark as Paid)"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>
-                      {displayStatus === 'Paid'
-                        ? 'Update Status'
-                        : 'Update (Mark as Paid)'}
-                    </span>
-                  </Button>
-                )}
                 {isLoan ? (
                   <Button
                     type="button"
@@ -1706,30 +1662,18 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     className="h-9 px-5 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
                   >
                     <Pencil className="w-3.5 h-3.5 text-white" />
-                    <span>Edit Details</span>
+                    <span>Edit</span>
                   </Button>
                 ) : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsEditing(true)}
-                      className="h-9 px-4 text-xs font-semibold rounded-xl border-stroke/60 text-focus hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                      title="Quick edit category, date, or payment method"
-                    >
-                      <Pencil className="w-3.5 h-3.5 text-focus" />
-                      <span>Edit Category & Details</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={handleEditInSheet}
-                      className="h-9 px-5 text-xs font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                      title="Edit transaction in Excel Sheet"
-                    >
-                      <Pencil className="w-3.5 h-3.5 text-white" />
-                      <span>Edit Particulars in Sheet</span>
-                    </Button>
-                  </>
+                  <Button
+                    type="button"
+                    onClick={handleEditInSheet}
+                    className="h-9 px-5 text-xs font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    title="Edit transaction in Excel Sheet"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-white" />
+                    <span>Edit</span>
+                  </Button>
                 )}
               </div>
             )}
