@@ -17,7 +17,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { useSession } from '@/hooks/useSession'
 import { useCountdown } from '@/hooks/useCountdown'
-import { authService } from '@/services/authService'
 
 interface TwoFactorDialogProps {
   open: boolean
@@ -34,18 +33,7 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const resendCountdown = useCountdown({ initialSeconds: 120 })
 
-  // Retrieve remembered path if available
-  const fromState = (location.state as { from?: string | { pathname?: string } })?.from
   const challengeEmail = (location.state as { email?: string })?.email
-  const fromPath = typeof fromState === 'string' ? fromState : fromState?.pathname
-  const safeRedirectPath =
-    fromPath &&
-    fromPath.startsWith('/') &&
-    !fromPath.startsWith('//') &&
-    fromPath !== '/login' &&
-    fromPath !== '/verify-2fa'
-      ? fromPath
-      : '/dashboard'
 
   const resetState = React.useCallback(() => {
     setCode('')
@@ -86,31 +74,15 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
 
   const handleContinue = async () => {
     await complete2FA()
-    const sessionUser = await authService.getSession()
-    const isFinance = sessionUser?.role?.toLowerCase() === 'finance'
-    const hasExplicitDeepRoute =
-      fromPath &&
-      fromPath.startsWith('/') &&
-      !fromPath.startsWith('//') &&
-      fromPath !== '/login' &&
-      fromPath !== '/verify-2fa' &&
-      fromPath !== '/dashboard'
-
-    const destination = hasExplicitDeepRoute
-      ? fromPath
-      : isFinance
-      ? '/centralized-auth'
-      : safeRedirectPath
-
     resetState()
-    navigate(destination, { replace: true })
+    navigate('/dashboard', { replace: true })
   }
 
   const isVerifyDisabled = code.length !== 6 || isLoading
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[480px] sm:max-w-[500px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl">
+      <DialogContent className="max-w-[480px] sm:max-w-[500px] rounded-[24px] p-6 sm:p-8 bg-white border border-slate-200/80 shadow-2xl outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0">
         {isSuccess ? (
           <div className="space-y-6 text-center py-2">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-surface border border-stroke/40 text-focus shadow-xs">

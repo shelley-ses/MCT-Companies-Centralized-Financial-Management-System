@@ -46,7 +46,7 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
 export const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user, status } = useSession()
+  const { status } = useSession()
 
   if (status === 'loading') {
     return (
@@ -57,9 +57,6 @@ export const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
   }
 
   if (status === 'authenticated') {
-    if (user?.role?.toLowerCase() === 'finance') {
-      return <Navigate to="/centralized-auth" replace />
-    }
     return <Navigate to="/dashboard" replace />
   }
 

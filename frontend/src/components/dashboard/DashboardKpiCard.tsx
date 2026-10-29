@@ -38,7 +38,7 @@ export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
         </span>
         <h3
           className={cn(
-            'text-lg sm:text-xl lg:text-2xl font-semibold text-focus mt-1 tabular-nums tracking-tight',
+            'text-lg sm:text-xl lg:text-1xl font-semibold text-focus mt-1 tabular-nums tracking-tight',
             valueClassName
           )}
         >
@@ -61,7 +61,7 @@ export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
 
       <div
         className={cn(
-          'h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-[#E5E5E5] flex items-center justify-center text-focus/70 shrink-0 shadow-2xs',
+          'h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-[#E5E5E5] flex items-center justify-center text-focus/40 shrink-0 shadow-2xs',
           iconContainerClassName
         )}
       >

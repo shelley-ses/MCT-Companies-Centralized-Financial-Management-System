@@ -4,7 +4,6 @@ import {
   Download,
   Plus,
   Search,
-  X,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -17,11 +16,12 @@ import {
   Trash2,
   MoreVertical,
   Store,
-  Ban,
   CheckCircle2,
   Eye,
   Building2,
   Calendar,
+  Coins,
+  Lock,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -273,15 +273,18 @@ export const TenantPage: React.FC = () => {
   } | null>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
 
-  // Modals state
+  // Modals & View Mode state
+  const [viewMode, setViewMode] = React.useState<'list' | 'details'>('list')
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = React.useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = React.useState(false)
   const [isUpdatePaymentModalOpen, setIsUpdatePaymentModalOpen] = React.useState(false)
-  const [isDetailModalOpen, setIsDetailModalOpen] = React.useState(false)
 
   // Active target tenant
   const [activeTenant, setActiveTenant] = React.useState<TenantLease | null>(null)
+  const [ledgerStatusFilter, setLedgerStatusFilter] = React.useState<'All' | 'Paid' | 'Pending'>('All')
+  const [ledgerPage, setLedgerPage] = React.useState(1)
+  const [paymentCalendarMonth, setPaymentCalendarMonth] = React.useState<Date>(() => new Date())
 
   // Form state for Add / Edit
   const [formData, setFormData] = React.useState<{
@@ -513,11 +516,14 @@ export const TenantPage: React.FC = () => {
   // Open Daily Payment Modal
   const handleOpenDailyPayment = (tenant: TenantLease, e?: React.MouseEvent) => {
     if (e) e.stopPropagation()
+    const todayStr = formatToYYYYMMDD(new Date())
     setActiveTenant(tenant)
-    setPaymentDate(formatToYYYYMMDD(new Date()))
-    setPaymentAmount('')
+    setPaymentDate(todayStr)
+    setPaymentCalendarMonth(new Date(`${todayStr.slice(0, 7)}-01T00:00:00`))
+    const dailyTarget = Math.max(500, Math.round(tenant.rentAmount / 30))
+    setPaymentAmount(String(Math.min(tenant.remainingBalance || dailyTarget, dailyTarget)))
     setPaymentMethod('Cash')
-    setPaymentRef(`OR-JK-${Math.floor(100 + Math.random() * 900)}`)
+    setPaymentRef('')
     setPaymentNotes('')
     setPaymentStatusType('Paid')
     setMissedReason('Stall closed for the day')
@@ -527,10 +533,13 @@ export const TenantPage: React.FC = () => {
     setIsUpdatePaymentModalOpen(true)
   }
 
-  // Open Row Detail Modal
+  // Open Row Details Page View (Like Lending Page)
   const handleOpenDetail = (tenant: TenantLease) => {
     setActiveTenant(tenant)
-    setIsDetailModalOpen(true)
+    setLedgerStatusFilter('All')
+    setLedgerPage(1)
+    setViewMode('details')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // Validate Add/Edit form
@@ -613,25 +622,23 @@ export const TenantPage: React.FC = () => {
     const payable = parseFloat(formData.totalAmountPayable || formData.rentAmount)
     const remaining = Math.max(0, payable - activeTenant.amountPaid)
 
+    const updatedTenant: TenantLease = {
+      ...activeTenant,
+      tenantName: formData.tenantName.trim(),
+      unitName: formData.unitName.trim(),
+      rentAmount: rent,
+      contractDate: formData.contractDate,
+      dueDate: formData.dueDate,
+      totalAmountPayable: payable,
+      remainingBalance: remaining,
+      status: formData.status,
+      notes: formData.notes.trim(),
+    }
+
     setTenants((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTenant.id) {
-          return {
-            ...t,
-            tenantName: formData.tenantName.trim(),
-            unitName: formData.unitName.trim(),
-            rentAmount: rent,
-            contractDate: formData.contractDate,
-            dueDate: formData.dueDate,
-            totalAmountPayable: payable,
-            remainingBalance: remaining,
-            status: formData.status,
-            notes: formData.notes.trim(),
-          }
-        }
-        return t
-      })
+      prev.map((t) => (t.id === activeTenant.id ? updatedTenant : t))
     )
+    setActiveTenant(updatedTenant)
     setIsEditModalOpen(false)
   }
 
@@ -641,6 +648,7 @@ export const TenantPage: React.FC = () => {
     setTenants((prev) => prev.filter((t) => t.id !== activeTenant.id))
     setIsDeleteModalOpen(false)
     setActiveTenant(null)
+    setViewMode('list')
   }
 
   // Submit Daily Payment / Missed Record
@@ -671,23 +679,21 @@ export const TenantPage: React.FC = () => {
         timestamp: new Date().toISOString(),
       }
 
+      const newAmountPaid = activeTenant.amountPaid + amt
+      const newRemaining = Math.max(0, activeTenant.totalAmountPayable - newAmountPaid)
+      const newStatus = newRemaining === 0 ? 'Completed' : activeTenant.status
+      const updatedTenant: TenantLease = {
+        ...activeTenant,
+        amountPaid: newAmountPaid,
+        remainingBalance: newRemaining,
+        status: newStatus,
+        dailyPayments: [newRecord, ...activeTenant.dailyPayments],
+      }
+
       setTenants((prev) =>
-        prev.map((t) => {
-          if (t.id === activeTenant.id) {
-            const newAmountPaid = t.amountPaid + amt
-            const newRemaining = Math.max(0, t.totalAmountPayable - newAmountPaid)
-            const newStatus = newRemaining === 0 ? 'Completed' : t.status
-            return {
-              ...t,
-              amountPaid: newAmountPaid,
-              remainingBalance: newRemaining,
-              status: newStatus,
-              dailyPayments: [newRecord, ...t.dailyPayments],
-            }
-          }
-          return t
-        })
+        prev.map((t) => (t.id === activeTenant.id ? updatedTenant : t))
       )
+      setActiveTenant(updatedTenant)
     } else {
       // Missed / Did Not Pay Today
       const newRecord: DailyRentRecord = {
@@ -702,17 +708,15 @@ export const TenantPage: React.FC = () => {
         timestamp: new Date().toISOString(),
       }
 
+      const updatedTenant: TenantLease = {
+        ...activeTenant,
+        dailyPayments: [newRecord, ...activeTenant.dailyPayments],
+      }
+
       setTenants((prev) =>
-        prev.map((t) => {
-          if (t.id === activeTenant.id) {
-            return {
-              ...t,
-              dailyPayments: [newRecord, ...t.dailyPayments],
-            }
-          }
-          return t
-        })
+        prev.map((t) => (t.id === activeTenant.id ? updatedTenant : t))
       )
+      setActiveTenant(updatedTenant)
     }
 
     setIsUpdatePaymentModalOpen(false)
@@ -849,9 +853,486 @@ export const TenantPage: React.FC = () => {
     printWindow.document.close()
   }
 
+  // Render Full-Page Tenant Details View (Matching Lending Page UI)
+  const renderDetailsPage = () => {
+    if (!activeTenant) return null
+
+    const LEDGER_ITEMS_PER_PAGE = 5
+    const dailyTarget = Math.max(500, Math.round(activeTenant.rentAmount / 30))
+
+    // Build unified ledger combining recorded payments and scheduled pending dates
+    const recordedDates = new Set<string>()
+    const ledgerRows: Array<{
+      id: string
+      date: string
+      status: 'Paid' | 'Pending'
+      amount: number
+      method: string
+      referenceNo: string
+      notes: string
+    }> = []
+
+    ;(activeTenant.dailyPayments || []).forEach((p) => {
+      if (p.date) recordedDates.add(p.date)
+      const isPaidRecord = p.status !== 'Missed' && (p.amount || 0) > 0
+      ledgerRows.push({
+        id: p.id,
+        date: p.date,
+        status: isPaidRecord ? 'Paid' : 'Pending',
+        amount: p.amount || 0,
+        method: p.method || '—',
+        referenceNo: p.referenceNo || '—',
+        notes: p.status === 'Missed' ? p.missedReason || p.notes || 'Unpaid' : p.notes || '—',
+      })
+    })
+
+    // Generate upcoming scheduled pending dates up to dueDate so Pending filter shows upcoming schedule
+    if (activeTenant.contractDate && activeTenant.dueDate && activeTenant.remainingBalance > 0) {
+      const start = new Date(`${activeTenant.contractDate}T00:00:00`)
+      const end = new Date(`${activeTenant.dueDate}T00:00:00`)
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        const cursor = new Date(start)
+        let count = 0
+        while (cursor <= end && count < 60) {
+          const dStr = formatToYYYYMMDD(cursor)
+          if (!recordedDates.has(dStr)) {
+            ledgerRows.push({
+              id: `sched-${dStr}`,
+              date: dStr,
+              status: 'Pending',
+              amount: 0,
+              method: '—',
+              referenceNo: '—',
+              notes: `Scheduled (${formatPHP(dailyTarget)})`,
+            })
+          }
+          cursor.setDate(cursor.getDate() + 1)
+          count++
+        }
+      }
+    }
+
+    const filteredLedger = ledgerRows.filter((r) => {
+      if (ledgerStatusFilter === 'All') return true
+      if (ledgerStatusFilter === 'Paid') return r.status === 'Paid'
+      return r.status === 'Pending'
+    })
+
+    const totalLedgerPages = Math.max(1, Math.ceil(filteredLedger.length / LEDGER_ITEMS_PER_PAGE))
+    const safeLedgerPage = Math.min(ledgerPage, totalLedgerPages)
+    const paginatedLedger = filteredLedger.slice(
+      (safeLedgerPage - 1) * LEDGER_ITEMS_PER_PAGE,
+      safeLedgerPage * LEDGER_ITEMS_PER_PAGE
+    )
+
+    return (
+      <div className="space-y-5 pb-12 max-w-[1600px] mx-auto animate-in fade-in duration-200">
+        {/* Top Action & Navigation Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setViewMode('list')}
+              className="h-10 px-4 rounded-xl border-stroke/60 bg-white hover:bg-slate-50 text-focus font-semibold text-xs flex items-center gap-2 shadow-2xs cursor-pointer"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span>Back to Tenants</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Main Details Header (No container background, no status badge, buttons in same row as name) */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 px-1">
+          <div className="space-y-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-focus tracking-tight">
+              {activeTenant.tenantName}
+            </h1>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-fg">
+              <span>
+                Unit / Stall: <strong className="text-focus font-semibold">{activeTenant.unitName}</strong>
+              </span>
+              <span>
+                Due Date: <strong className="text-focus font-semibold">{activeTenant.dueDate}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Action Buttons in the same row as the Tenant Name */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {!isAudit && (
+              <>
+                <Button
+                  type="button"
+                  onClick={(e) => handleOpenDailyPayment(activeTenant, e)}
+                  disabled={activeTenant.remainingBalance <= 0}
+                  className="h-10 px-4 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <Coins className="h-4 w-4" />
+                  <span>Record Payment</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={(e) => handleOpenEdit(activeTenant, e)}
+                  className="h-10 px-4 rounded-xl border-stroke/60 bg-white hover:bg-slate-50 text-focus font-semibold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span>Edit Terms</span>
+                </Button>
+              </>
+            )}
+
+            {isAudit && (
+              <>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const timestamp = new Date().toLocaleDateString('en-US', {
+                      month: '2-digit',
+                      day: '2-digit',
+                      year: '2-digit',
+                    })
+                    const updatedTenant = {
+                      ...activeTenant,
+                      auditStatus: 'Verified' as const,
+                      auditDate: timestamp,
+                      auditedBy: user?.fullName || 'Audit',
+                    }
+                    setTenants((prev) =>
+                      prev.map((item) => (item.id === activeTenant.id ? updatedTenant : item))
+                    )
+                    setActiveTenant(updatedTenant)
+                  }}
+                  className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Mark as Audited</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    const timestamp = new Date().toLocaleDateString('en-US', {
+                      month: '2-digit',
+                      day: '2-digit',
+                      year: '2-digit',
+                    })
+                    const updatedTenant = {
+                      ...activeTenant,
+                      auditStatus: 'Flagged' as const,
+                      auditDate: timestamp,
+                      auditedBy: user?.fullName || 'Audit',
+                    }
+                    setTenants((prev) =>
+                      prev.map((item) => (item.id === activeTenant.id ? updatedTenant : item))
+                    )
+                    setActiveTenant(updatedTenant)
+                  }}
+                  className="h-10 px-4 rounded-xl border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <AlertCircle className="h-4 w-4" />
+                  <span>Flag Discrepancy</span>
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 6 Financial Overview KPI Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+              Rental Rate
+            </span>
+            <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+              {formatPHP(activeTenant.rentAmount)}
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+              Daily Target
+            </span>
+            <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+              {formatPHP(dailyTarget)}
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+              Total Payable
+            </span>
+            <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+              {formatPHP(activeTenant.totalAmountPayable)}
+            </span>
+          </div>
+
+          <div className="bg-emerald-50/70 border border-emerald-200/70 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-emerald-800 block">
+              Amount Paid
+            </span>
+            <span className="text-base sm:text-lg font-extrabold text-emerald-700 tabular-nums mt-1 block">
+              {formatPHP(activeTenant.amountPaid)}
+            </span>
+          </div>
+
+          <div className="bg-amber-50/70 border border-amber-200/70 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-amber-800 block">
+              Remaining Balance
+            </span>
+            <span className="text-base sm:text-lg font-extrabold text-amber-700 tabular-nums mt-1 block">
+              {formatPHP(activeTenant.remainingBalance)}
+            </span>
+          </div>
+
+          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
+              Due Date
+            </span>
+            <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
+              {activeTenant.dueDate}
+            </span>
+          </div>
+        </div>
+
+        {/* Split Section: Lease Agreement & Terms (Left) + Payment Schedule & History (Right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Left 1 Column: Lease Agreement & Terms */}
+          <div className="lg:col-span-1 bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <FileText className="h-4 w-4 text-[#960C01]" />
+              <h2 className="text-sm font-bold text-focus">Lease Agreement & Terms</h2>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Tenant ID</span>
+                <span className="font-mono font-bold text-[#960C01]">{activeTenant.tenantId}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Tenant / Lessee</span>
+                <span className="font-semibold text-focus text-right truncate max-w-[160px]">{activeTenant.tenantName}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Leased Unit</span>
+                <span className="font-semibold text-focus text-right truncate max-w-[160px]">{activeTenant.unitName}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Date Contracted</span>
+                <span className="font-mono font-semibold text-focus">{activeTenant.contractDate}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Maturity / Due Date</span>
+                <span className="font-mono font-semibold text-focus">{activeTenant.dueDate}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                <span className="text-muted-fg">Assigned Company</span>
+                <span className="font-semibold text-focus text-right truncate max-w-[160px]">{activeTenant.companyName}</span>
+              </div>
+              {activeTenant.auditStatus && (
+                <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                  <span className="text-muted-fg">Audit Status</span>
+                  <span
+                    className={cn(
+                      'px-2 py-0.5 rounded text-[10.5px] font-bold border',
+                      activeTenant.auditStatus === 'Verified'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                    )}
+                  >
+                    {activeTenant.auditStatus} {activeTenant.auditDate ? `(${activeTenant.auditDate})` : ''}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg block mb-1.5">
+                Remarks & Notes
+              </span>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs text-focus min-h-[64px] whitespace-pre-wrap">
+                {activeTenant.notes || 'No additional remarks recorded for this tenant lease.'}
+              </div>
+            </div>
+          </div>
+
+          {/* Right 3 Columns: Payment Schedule & History Table */}
+          <div className="lg:col-span-3 bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs flex flex-col justify-between space-y-4">
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <h2 className="text-sm font-bold text-focus flex items-center gap-2">
+                    <Coins className="h-4 w-4 text-emerald-600" />
+                    <span>Payment Schedule & History</span>
+                  </h2>
+                  <p className="text-[11px] text-muted-fg mt-0.5">
+                    Showing 5 records per page • Filter by Paid or Pending status
+                  </p>
+                </div>
+
+                {/* Status Filter Toggle (All / Paid / Pending) */}
+                <div className="inline-flex items-center p-1 rounded-full bg-slate-100 border border-stroke/40 shadow-2xs self-start sm:self-auto">
+                  {(['All', 'Paid', 'Pending'] as const).map((statusOpt) => {
+                    const isActive = ledgerStatusFilter === statusOpt
+                    return (
+                      <button
+                        key={statusOpt}
+                        type="button"
+                        onClick={() => {
+                          setLedgerStatusFilter(statusOpt)
+                          setLedgerPage(1)
+                        }}
+                        className={cn(
+                          'px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer select-none',
+                          isActive
+                            ? 'bg-[#960C01] text-white shadow-xs'
+                            : 'text-muted-fg hover:text-focus'
+                        )}
+                      >
+                        {statusOpt}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                      <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                        Payment Date
+                      </TableHead>
+                      <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3 text-center">
+                        Status
+                      </TableHead>
+                      <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3 text-right">
+                        Amount Paid
+                      </TableHead>
+                      <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                        Method
+                      </TableHead>
+                      <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                        Reference No.
+                      </TableHead>
+                      <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                        Remarks
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedLedger.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-36 text-center text-xs text-muted-fg">
+                          No payment records match your filter.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedLedger.map((entry) => {
+                        const badgeStyle =
+                          entry.status === 'Paid'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+
+                        return (
+                          <TableRow key={entry.id} className="hover:bg-slate-50/60 border-b border-slate-100">
+                            <TableCell className="py-3 px-3 font-mono text-xs font-semibold text-focus whitespace-nowrap">
+                              {entry.date}
+                            </TableCell>
+                            <TableCell className="py-3 px-3 text-center whitespace-nowrap">
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider',
+                                  badgeStyle
+                                )}
+                              >
+                                {entry.status === 'Paid' && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+                                {entry.status}
+                              </span>
+                            </TableCell>
+                            <TableCell className="py-3 px-3 text-right font-bold text-xs tabular-nums whitespace-nowrap">
+                              {entry.amount > 0 ? (
+                                <span className="text-emerald-700">{formatPHP(entry.amount)}</span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-3 px-3 text-xs text-focus whitespace-nowrap">
+                              {entry.method || '—'}
+                            </TableCell>
+                            <TableCell className="py-3 px-3 font-mono text-xs text-muted-fg whitespace-nowrap">
+                              {entry.referenceNo || '—'}
+                            </TableCell>
+                            <TableCell className="py-3 px-3 text-xs text-muted-fg max-w-[220px] truncate" title={entry.notes}>
+                              {entry.notes || '—'}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* 5-Row Pagination Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2 border-t border-slate-100 text-xs text-muted-fg">
+              <div>
+                Showing{' '}
+                <span className="font-semibold text-focus">
+                  {filteredLedger.length === 0
+                    ? 0
+                    : (safeLedgerPage - 1) * LEDGER_ITEMS_PER_PAGE + 1}
+                </span>{' '}
+                to{' '}
+                <span className="font-semibold text-focus">
+                  {Math.min(safeLedgerPage * LEDGER_ITEMS_PER_PAGE, filteredLedger.length)}
+                </span>{' '}
+                of <span className="font-semibold text-focus">{filteredLedger.length}</span> entries
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeLedgerPage <= 1}
+                  onClick={() => setLedgerPage((p) => Math.max(1, p - 1))}
+                  className="h-8 px-2.5 rounded-lg text-xs cursor-pointer disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                  Prev
+                </Button>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-focus font-semibold text-xs">
+                  Page {safeLedgerPage} of {totalLedgerPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeLedgerPage >= totalLedgerPages}
+                  onClick={() => setLedgerPage((p) => Math.min(totalLedgerPages, p + 1))}
+                  className="h-8 px-2.5 rounded-lg text-xs cursor-pointer disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6 pb-10 max-w-[1600px] mx-auto animate-in fade-in duration-300">
-      {/* 1. Header & Controls (Matching Sales & Expense pages) */}
+      {viewMode === 'details' && activeTenant ? (
+        renderDetailsPage()
+      ) : (
+        <>
+          {/* 1. Header & Controls (Matching Sales & Expense pages) */}
       <div className="space-y-4">
         {/* Top Header Row: Page Title on Left, Action Buttons on Right */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -869,15 +1350,20 @@ export const TenantPage: React.FC = () => {
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant="outline"
+                variant={isAudit ? 'default' : 'outline'}
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                className={cn(
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  isAudit
+                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white'
+                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
+                )}
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 shrink-0 text-focus/70" />
+                <Download className={cn('h-4 w-4 shrink-0', isAudit ? 'text-white' : 'text-focus/70')} />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+                <ChevronDown className={cn('h-3.5 w-3.5 ml-0.5', isAudit ? 'text-white/90' : 'text-muted-fg')} />
               </Button>
 
               {isExportDropdownOpen && (
@@ -1402,6 +1888,19 @@ export const TenantPage: React.FC = () => {
               <>
                 <button
                   type="button"
+                  onClick={() => {
+                    const t = activeTenant
+                    setMenuOpenTenantId(null)
+                    setMenuPosition(null)
+                    if (t) handleOpenDetail(t)
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-focus/90 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                  <span>View Details</span>
+                </button>
+                <button
+                  type="button"
                   onClick={(e) => {
                     handleOpenDailyPayment(activeTenant, e)
                     setMenuOpenTenantId(null)
@@ -1441,6 +1940,8 @@ export const TenantPage: React.FC = () => {
           </div>,
           document.body
         )
+      )}
+        </>
       )}
 
       {/* MODAL 1: New Tenant Lease (Matching system modal UI) */}
@@ -1783,400 +2284,347 @@ export const TenantPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL 4: Update Rent Payment (Decreased height, compact & sleek) */}
+      {/* MODAL 4: Record Payment (Two-Column Layout Matching Lending Page) */}
       <Dialog open={isUpdatePaymentModalOpen} onOpenChange={setIsUpdatePaymentModalOpen}>
-        <DialogContent className="sm:max-w-[620px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader className="text-left pb-2.5 border-b border-stroke/20 pr-7">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
-                <CreditCard className="w-4 h-4 text-white" />
-              </div>
-              <DialogTitle className="text-base sm:text-lg font-bold text-focus leading-tight">
-                Update Rent Payment
-              </DialogTitle>
-            </div>
-            <DialogDescription className="text-[11px] text-muted-fg font-normal mt-0.5 truncate">
-              {activeTenant?.tenantName} • {activeTenant?.unitName}
+        <DialogContent className="sm:max-w-[860px] md:max-w-[920px] max-h-[88vh] overflow-y-auto bg-white rounded-[24px] p-6 sm:p-7 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-focus flex items-center gap-2">
+              <Coins className="h-5 w-5 text-emerald-600" />
+              <span>Record Payment</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-fg">
+              Record payment remittance for{' '}
+              <strong className="text-focus">{activeTenant?.tenantName}</strong> ({activeTenant?.unitName}).
             </DialogDescription>
           </DialogHeader>
 
-          {/* Compact 2-column info card */}
-          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 text-xs grid grid-cols-2 gap-2 mt-1">
-            <div className="truncate">
-              <span className="text-[10px] text-muted-fg uppercase font-medium block">Total Payable</span>
-              <span className="font-semibold text-focus truncate block">
-                {formatPHP(activeTenant?.totalAmountPayable || 0)}
-              </span>
-            </div>
-            <div className="truncate">
-              <span className="text-[10px] text-muted-fg uppercase font-medium block">Rental Rate</span>
-              <span className="font-semibold text-focus truncate block">
-                {formatPHP(activeTenant?.rentAmount || 0)}
-              </span>
-            </div>
-            <div className="truncate border-t border-slate-200/60 pt-1.5">
-              <span className="text-[10px] text-muted-fg uppercase font-medium block">Amount Paid</span>
-              <span className="font-bold text-emerald-600 truncate block">
-                {formatPHP(activeTenant?.amountPaid || 0)}
-              </span>
-            </div>
-            <div className="truncate border-t border-slate-200/60 pt-1.5">
-              <span className="text-[10px] text-muted-fg uppercase font-medium block">Remaining Balance</span>
-              <span className="font-bold text-amber-600 truncate block">
-                {formatPHP(activeTenant?.remainingBalance || 0)}
-              </span>
-            </div>
-          </div>
+          {activeTenant && (() => {
+            const dailyTarget = Math.max(500, Math.round(activeTenant.rentAmount / 30))
+            const maxAllowed = activeTenant.remainingBalance
+            const currentPaymentNum = parseFloat(paymentAmount)
+            const isAmountValid =
+              !isNaN(currentPaymentNum) &&
+              currentPaymentNum >= 1 &&
+              currentPaymentNum <= maxAllowed
 
-          <form onSubmit={handleSubmitDailyPayment} className="space-y-3 pt-1">
-            {/* Payment Status Toggle */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setPaymentStatusType('Paid')
-                  setPaymentError('')
-                }}
-                className={cn(
-                  'flex items-center justify-center gap-1.5 h-8 rounded-xl border text-xs font-semibold transition-all cursor-pointer',
-                  paymentStatusType === 'Paid'
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-1 ring-emerald-300'
-                    : 'border-stroke/50 bg-white text-muted-fg hover:bg-slate-50'
+            const alreadyPaidOnSelectedDate = (activeTenant.dailyPayments || [])
+              .filter((p) => p.date === paymentDate && p.status !== 'Missed')
+              .reduce((sum, p) => sum + (p.amount || 0), 0)
+
+            const isDateAlreadySettled =
+              alreadyPaidOnSelectedDate >= dailyTarget - 0.005 && dailyTarget > 0
+
+            const periodRemainingDue = Math.min(
+              maxAllowed,
+              Math.max(0, Math.round((dailyTarget - alreadyPaidOnSelectedDate) * 100) / 100)
+            )
+
+            const willBePartiallyPaid =
+              isAmountValid &&
+              currentPaymentNum < periodRemainingDue - 0.005 &&
+              maxAllowed - currentPaymentNum > 0.005
+
+            return (
+              <form onSubmit={handleSubmitDailyPayment} className="space-y-5 mt-2">
+                {paymentError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-xs text-rose-700">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <span>{paymentError}</span>
+                  </div>
                 )}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Paid Today</span>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setPaymentStatusType('Missed')
-                  setPaymentError('')
-                }}
-                className={cn(
-                  'flex items-center justify-center gap-1.5 h-8 rounded-xl border text-xs font-semibold transition-all cursor-pointer',
-                  paymentStatusType === 'Missed'
-                    ? 'bg-rose-50 border-rose-300 text-rose-700 ring-1 ring-rose-300'
-                    : 'border-stroke/50 bg-white text-muted-fg hover:bg-slate-50'
+                {isDateAlreadySettled && (
+                  <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl space-y-1 text-xs text-amber-900">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                      <Lock className="w-4 h-4 shrink-0 text-amber-600" />
+                      <span>Date Already Settled ({paymentDate})</span>
+                    </div>
+                    <p className="text-[11px] text-amber-700 leading-relaxed">
+                      Full rent payment for this calendar date has already been recorded and locked. Please select an unpaid or partially paid date from the calendar on the left.
+                    </p>
+                  </div>
                 )}
-              >
-                <Ban className="w-3.5 h-3.5 text-rose-600" />
-                <span>Did Not Pay Today</span>
-              </button>
-            </div>
 
-            {paymentStatusType === 'Paid' ? (
-              <>
-                {/* Compact grid: Date & Amount */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-focus block">
-                      Date <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="date"
-                      value={paymentDate}
-                      onChange={(e) => setPaymentDate(e.target.value)}
-                      className="h-9 text-xs rounded-xl border-stroke/50"
-                    />
+                {/* Two-Column Layout: Left = Calendar, Right = Payment Fields */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                  {/* Left Column: Interactive Calendar Date Picker */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-focus">
+                        Payment Date <span className="text-red-500">*</span>
+                      </label>
+                      <span className="text-[11px] font-mono font-bold text-focus">
+                        {paymentDate ? `Selected: ${paymentDate}` : 'Please select date'}
+                      </span>
+                    </div>
+
+                    <div className="border border-stroke/60 rounded-xl p-3.5 bg-white space-y-2.5">
+                      {/* Month Header & Controls */}
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-xs font-bold text-focus">
+                          {paymentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const prev = new Date(paymentCalendarMonth)
+                              prev.setMonth(prev.getMonth() - 1)
+                              setPaymentCalendarMonth(prev)
+                            }}
+                            className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
+                            aria-label="Previous month"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = new Date(paymentCalendarMonth)
+                              next.setMonth(next.getMonth() + 1)
+                              setPaymentCalendarMonth(next)
+                            }}
+                            className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
+                            aria-label="Next month"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Weekday labels */}
+                      <div className="grid grid-cols-7 gap-1 text-center text-[10.5px] font-bold text-muted-fg uppercase py-1 border-b border-slate-100">
+                        <span>Su</span>
+                        <span>Mo</span>
+                        <span>Tu</span>
+                        <span>We</span>
+                        <span>Th</span>
+                        <span>Fr</span>
+                        <span>Sa</span>
+                      </div>
+
+                      {/* Days Grid */}
+                      {(() => {
+                        const calYear = paymentCalendarMonth.getFullYear()
+                        const calMonth = paymentCalendarMonth.getMonth()
+                        const firstDay = new Date(calYear, calMonth, 1).getDay()
+                        const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
+
+                        const paidByDateMap = new Map<string, number>()
+                        ;(activeTenant.dailyPayments || []).forEach((p) => {
+                          if (!p.date || p.status === 'Missed') return
+                          paidByDateMap.set(p.date, (paidByDateMap.get(p.date) || 0) + (p.amount || 0))
+                        })
+
+                        const startContract = activeTenant.contractDate || ''
+
+                        return (
+                          <div className="grid grid-cols-7 gap-1 text-center">
+                            {Array.from({ length: firstDay }).map((_, i) => (
+                              <div key={`cal-empty-${i}`} className="h-9" />
+                            ))}
+
+                            {Array.from({ length: totalDays }).map((_, i) => {
+                              const d = i + 1
+                              const dStr = String(d).padStart(2, '0')
+                              const mStr = String(calMonth + 1).padStart(2, '0')
+                              const dateStr = `${calYear}-${mStr}-${dStr}`
+
+                              const isBefore = startContract ? dateStr < startContract : false
+                              const paidOnDate = paidByDateMap.get(dateStr) || 0
+                              const isPaid = paidOnDate >= dailyTarget - 0.005 && dailyTarget > 0
+                              const isPartial = !isPaid && paidOnDate > 0
+                              const isSelected = paymentDate === dateStr
+                              const isDisabled = isBefore || isPaid
+
+                              return (
+                                <button
+                                  key={dateStr}
+                                  type="button"
+                                  disabled={isDisabled}
+                                  onClick={() => {
+                                    if (!isDisabled) {
+                                      setPaymentError('')
+                                      setPaymentDate(dateStr)
+                                    }
+                                  }}
+                                  className={cn(
+                                    'h-9 rounded-lg text-xs font-medium flex flex-col items-center justify-center relative transition-all',
+                                    isSelected &&
+                                      'bg-[#960C01] text-white font-bold shadow-xs ring-2 ring-[#960C01]/30 z-10',
+                                    !isSelected &&
+                                      isPaid &&
+                                      'bg-emerald-50 text-emerald-700 border border-emerald-200/80 cursor-not-allowed opacity-90',
+                                    !isSelected &&
+                                      isPartial &&
+                                      'bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer font-semibold',
+                                    !isSelected &&
+                                      isBefore &&
+                                      'text-slate-300 cursor-not-allowed bg-slate-50/50',
+                                    !isSelected &&
+                                      !isPaid &&
+                                      !isPartial &&
+                                      !isBefore &&
+                                      'hover:bg-slate-100 text-focus cursor-pointer hover:font-bold border border-transparent'
+                                  )}
+                                  title={
+                                    isPaid
+                                      ? `${dateStr}: Fully Paid & Locked`
+                                      : isBefore
+                                      ? `${dateStr}: Prior to contract date`
+                                      : isPartial
+                                      ? `${dateStr}: Partially Paid (${formatPHP(paidOnDate)})`
+                                      : `Select ${dateStr}`
+                                  }
+                                >
+                                  <span>{d}</span>
+                                  {isPaid && <Check className="h-2.5 w-2.5 text-emerald-600 -mt-0.5" />}
+                                  {isPartial && !isSelected && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 absolute bottom-1" />
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
+
+                      {/* Calendar Legend */}
+                      <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-fg pt-2 border-t border-slate-100 gap-1.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex items-center gap-1 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Paid (Locked)
+                          </span>
+                          <span className="flex items-center gap-1 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Selected
+                          </span>
+                          <span className="flex items-center gap-1 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Partially Paid
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-focus block">
-                      Remittance Amount (₱) <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="number"
-                      step="any"
-                      placeholder="1000"
-                      value={paymentAmount}
-                      onChange={(e) => {
-                        setPaymentAmount(e.target.value)
-                        setPaymentError('')
-                      }}
-                      className={cn('h-9 text-xs rounded-xl border-stroke/50', paymentError && 'border-red-500')}
-                    />
-                  </div>
-                </div>
-
-                {/* Compact grid: Method & Ref No */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-focus block">Payment Method</label>
-                    <select
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-full h-9 px-2.5 rounded-xl border border-stroke/50 bg-white text-xs text-focus focus:outline-none focus:ring-1 focus:ring-focus"
-                    >
-                      <option value="Cash">Cash</option>
-                      <option value="GCash">GCash</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
-                      <option value="Cheque">Cheque</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-focus block">OR / Reference No</label>
-                    <Input
-                      type="text"
-                      value={paymentRef}
-                      onChange={(e) => setPaymentRef(e.target.value)}
-                      className="h-9 text-xs rounded-xl border-stroke/50"
-                      placeholder="OR-JK-101"
-                    />
-                  </div>
-                </div>
-              </>
-            ) : (
-              /* Missed Day Options */
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-focus block">
-                    Date <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="h-9 text-xs rounded-xl border-stroke/50"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-rose-600 block">
-                    Reason for Non-Payment
-                  </label>
-                  <select
-                    value={missedReason}
-                    onChange={(e) => setMissedReason(e.target.value)}
-                    className="w-full h-9 px-2.5 rounded-xl border border-rose-300 bg-rose-50/50 text-xs text-focus focus:outline-none"
-                  >
-                    <option value="Stall closed for the day">Stall closed for the day</option>
-                    <option value="Severe weather / Typhoon">Severe weather / Typhoon</option>
-                    <option value="Delayed sales remittance">Delayed sales remittance</option>
-                    <option value="Stall renovation / Maintenance">Stall renovation / Maintenance</option>
-                    <option value="Official Holiday">Official Holiday</option>
-                    <option value="Other / Tenant absent">Other / Tenant absent</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {paymentError && <p className="text-[10px] text-red-600 font-medium">{paymentError}</p>}
-
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-focus block">Notes / Remarks</label>
-              <Input
-                type="text"
-                placeholder="Optional collection notes..."
-                value={paymentNotes}
-                onChange={(e) => setPaymentNotes(e.target.value)}
-                className="h-9 text-xs rounded-xl border-stroke/50"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stroke/20">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsUpdatePaymentModalOpen(false)}
-                className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 hover:bg-slate-50 text-focus cursor-pointer"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                className={cn(
-                  'h-9 px-5 text-xs font-semibold rounded-xl text-white shadow-xs cursor-pointer',
-                  paymentStatusType === 'Paid'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-rose-600 hover:bg-rose-700'
-                )}
-              >
-                {paymentStatusType === 'Paid' ? 'Record Rent Payment' : 'Log Missed Day'}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* MODAL 5: Full Tenant Details & Payment History Modal */}
-      <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-        <DialogContent className="sm:max-w-[780px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl">
-          <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-7">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <FileText className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <DialogTitle className="text-base sm:text-lg font-bold text-focus leading-tight">
-                    Tenant Lease Details
-                  </DialogTitle>
-                  <DialogDescription className="text-[11px] text-muted-fg font-normal mt-0.5">
-                    Tenant ID: <span className="font-mono font-semibold text-focus">{activeTenant?.tenantId}</span> • {activeTenant?.companyName}
-                  </DialogDescription>
-                </div>
-              </div>
-
-              {activeTenant && (
-                <span
-                  className={cn(
-                    'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider',
-                    activeTenant.status === 'Active' && 'bg-blue-50 text-blue-700 border border-blue-200',
-                    activeTenant.status === 'Completed' && 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-                    activeTenant.status === 'Overdue' && 'bg-rose-50 text-rose-700 border border-rose-200',
-                    activeTenant.status === 'Pending' && 'bg-amber-50 text-amber-700 border border-amber-200'
-                  )}
-                >
-                  {activeTenant.status}
-                </span>
-              )}
-            </div>
-          </DialogHeader>
-
-          {activeTenant && (
-            <div className="space-y-4 pt-2">
-              {/* Overview Details Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-slate-50/80 border border-slate-200/60">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Tenant / Lessee</span>
-                  <div className="font-semibold text-xs text-focus mt-0.5">{activeTenant.tenantName}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Leased Stall / Unit</span>
-                  <div className="font-semibold text-xs text-focus mt-0.5">{activeTenant.unitName}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Rental Rate</span>
-                  <div className="font-semibold text-xs text-focus mt-0.5">{formatPHP(activeTenant.rentAmount)}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Contract Date</span>
-                  <div className="font-semibold text-xs text-focus mt-0.5">{activeTenant.contractDate}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Due Date</span>
-                  <div className="font-semibold text-xs text-focus mt-0.5">{activeTenant.dueDate}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Collection Progress</span>
-                  <div className="font-semibold text-xs text-focus mt-0.5">
-                    {activeTenant.totalAmountPayable > 0
-                      ? `${Math.round((activeTenant.amountPaid / activeTenant.totalAmountPayable) * 100)}%`
-                      : '0%'}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Total Payable</span>
-                  <div className="font-bold text-xs text-focus mt-0.5">{formatPHP(activeTenant.totalAmountPayable)}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Amount Paid</span>
-                  <div className="font-bold text-xs text-emerald-600 mt-0.5">{formatPHP(activeTenant.amountPaid)}</div>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-fg block">Remaining Balance</span>
-                  <div className="font-bold text-xs text-amber-600 mt-0.5">{formatPHP(activeTenant.remainingBalance)}</div>
-                </div>
-              </div>
-
-              {activeTenant.notes && (
-                <div className="p-3 rounded-xl bg-slate-50/70 border border-slate-200/50 text-xs">
-                  <span className="font-semibold text-focus">Notes: </span>
-                  <span className="text-muted-fg">{activeTenant.notes}</span>
-                </div>
-              )}
-
-              {/* Daily Rent Payment History */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-focus uppercase tracking-wider">
-                    Payment Ledger ({activeTenant.dailyPayments.length})
-                  </h4>
-                  {!isAudit && (
-                    <Button
-                      size="sm"
-                      onClick={(e) => {
-                        setIsDetailModalOpen(false)
-                        handleOpenDailyPayment(activeTenant, e)
-                      }}
-                      className="h-8 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 mr-1" />
-                      Record Daily Rent
-                    </Button>
-                  )}
-                </div>
-
-                <div className="border border-slate-200/80 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
-                  <Table>
-                    <TableHeader className="bg-slate-50">
-                      <TableRow className="border-b border-slate-200">
-                        <TableHead className="text-[10px] font-bold py-2.5 uppercase text-muted-fg">Date</TableHead>
-                        <TableHead className="text-[10px] font-bold py-2.5 uppercase text-muted-fg">Status</TableHead>
-                        <TableHead className="text-right text-[10px] font-bold py-2.5 uppercase text-muted-fg">Amount</TableHead>
-                        <TableHead className="text-[10px] font-bold py-2.5 uppercase text-muted-fg">Method</TableHead>
-                        <TableHead className="text-[10px] font-bold py-2.5 uppercase text-muted-fg">Reference No</TableHead>
-                        <TableHead className="text-[10px] font-bold py-2.5 uppercase text-muted-fg">Notes / Reason</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {activeTenant.dailyPayments.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center text-xs text-muted-fg py-6">
-                            No payment records recorded yet.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        activeTenant.dailyPayments.map((p) => (
-                          <TableRow key={p.id} className="border-b border-slate-100 text-xs">
-                            <TableCell className="py-2.5 font-medium text-focus">{p.date}</TableCell>
-                            <TableCell className="py-2.5">
-                              {p.status === 'Missed' ? (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
-                                  Missed
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                                  Paid
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell className="py-2.5 text-right font-semibold text-focus">
-                              {p.status === 'Missed' ? '₱0.00' : formatPHP(p.amount)}
-                            </TableCell>
-                            <TableCell className="py-2.5 text-muted-fg">{p.method}</TableCell>
-                            <TableCell className="py-2.5 font-mono text-[11px] text-muted-fg">
-                              {p.referenceNo || '—'}
-                            </TableCell>
-                            <TableCell className="py-2.5 text-muted-fg">
-                              {p.status === 'Missed' ? p.missedReason || p.notes : p.notes || '—'}
-                            </TableCell>
-                          </TableRow>
-                        ))
+                  {/* Right Column: Payment Amount, Payment Method, Receipt No., Remarks/Notes */}
+                  <div className="space-y-3.5">
+                    {/* Payment Amount Input */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-focus">
+                          Payment Amount (₱) <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[11px] text-muted-fg font-medium">
+                          Target: {formatPHP(periodRemainingDue)} • Max: {formatPHP(maxAllowed)}
+                        </span>
+                      </div>
+                      <Input
+                        required
+                        type="number"
+                        min="1"
+                        max={maxAllowed}
+                        step="any"
+                        value={paymentAmount}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onChange={(e) => {
+                          setPaymentError('')
+                          setPaymentStatusType('Paid')
+                          setPaymentAmount(e.target.value)
+                        }}
+                        placeholder="Enter payment amount"
+                        className="h-10 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      {paymentAmount && !isAmountValid && (
+                        <p className="text-[11px] text-rose-600 mt-1">
+                          {currentPaymentNum < 1
+                            ? 'Payment amount cannot be lower than ₱1.00.'
+                            : `Payment amount cannot exceed ${formatPHP(maxAllowed)}.`}
+                        </p>
                       )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
+                      {isAmountValid && (
+                        <div className="mt-2 flex items-center justify-between px-3 py-2 rounded-xl border text-xs bg-slate-50/80 border-slate-200/80">
+                          <span className="text-muted-fg font-medium">Transaction Status Tag:</span>
+                          {willBePartiallyPaid ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              Partially Paid ({formatPHP(Math.max(0, periodRemainingDue - currentPaymentNum))} short of target)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span>Paid</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-              {!isAudit && (
-                <div className="flex justify-end pt-2 border-t border-stroke/20">
+                    {/* Payment Method */}
+                    <div>
+                      <label className="text-xs font-semibold text-focus block mb-1">
+                        Payment Method
+                      </label>
+                      <select
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value)}
+                        className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+                      >
+                        <option value="Cash">Cash</option>
+                        <option value="GCash">GCash</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                        <option value="Cheque">Cheque</option>
+                      </select>
+                    </div>
+
+                    {/* Receipt / Ref No. */}
+                    <div>
+                      <label className="text-xs font-semibold text-focus block mb-1">
+                        Receipt / Ref No.
+                      </label>
+                      <Input
+                        value={paymentRef}
+                        onChange={(e) => setPaymentRef(e.target.value)}
+                        placeholder="e.g. OR-JK-101"
+                        className="h-10 text-xs sm:text-sm rounded-xl font-mono"
+                      />
+                    </div>
+
+                    {/* Remarks / Notes */}
+                    <div>
+                      <label className="text-xs font-semibold text-focus block mb-1">
+                        Remarks / Notes
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={paymentNotes}
+                        onChange={(e) => setPaymentNotes(e.target.value)}
+                        placeholder="Enter payment remarks or notes..."
+                        className="w-full p-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20 resize-none transition-all placeholder:text-muted-fg/60"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                   <Button
+                    type="button"
                     variant="outline"
-                    size="sm"
-                    onClick={() => setIsDetailModalOpen(false)}
-                    className="h-9 px-4 text-xs font-medium rounded-xl border-stroke/50 hover:bg-slate-50 text-focus cursor-pointer"
+                    onClick={() => setIsUpdatePaymentModalOpen(false)}
+                    className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
                   >
-                    Close
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={!isAmountValid || isDateAlreadySettled || !paymentDate}
+                    className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+                  >
+                    Review & Confirm Payment
                   </Button>
                 </div>
-              )}
-            </div>
-          )}
+              </form>
+            )
+          })()}
         </DialogContent>
       </Dialog>
     </div>

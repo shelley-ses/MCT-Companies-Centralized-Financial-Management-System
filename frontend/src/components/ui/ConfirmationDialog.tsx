@@ -78,7 +78,7 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent overlayClassName="z-[60]" className="sm:max-w-[500px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl text-center z-[70]">
+      <DialogContent overlayClassName="z-[60]" className="sm:max-w-[500px] rounded-[24px] p-6 sm:p-8 bg-white border border-slate-200/80 shadow-2xl text-center z-[70] outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0">
         <div className="flex flex-col items-center space-y-4 pt-1">
           {getIcon()}
 

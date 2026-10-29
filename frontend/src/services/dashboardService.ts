@@ -1,4 +1,5 @@
 import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { isCompanyMatch } from '@/utils/companyUtils'
 import { salesService } from './salesService'
 import { expenseService } from './expenseService'
 import { generateDashboardDummyTransactions } from './dashboardDummyData'
@@ -738,8 +739,6 @@ export const dashboardService = {
     }
 
     const isCompanySpecific = filters?.company && filters.company !== 'All Companies'
-    const targetComp = filters?.company?.toLowerCase().trim()
-
     // 1. Real sales and expenses from the database (starts at 0 if no records entered yet)
     let realTransactions: DashboardTransactionItem[] = []
     try {
@@ -754,7 +753,7 @@ export const dashboardService = {
       ]
       if (isCompanySpecific) {
         realTransactions = realTransactions.filter(
-          (t) => t.company?.toLowerCase().trim() === targetComp
+          (t) => isCompanyMatch(t.company, filters?.company)
         )
       }
     } catch {

@@ -277,17 +277,16 @@ export const ActivityLogPage: React.FC = () => {
           <div ref={exportDropdownRef} className="relative inline-block">
             <Button
               type="button"
-              variant="outline"
               disabled={filteredLogs.length === 0}
               onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface disabled:opacity-50"
+              className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white disabled:opacity-50"
               aria-haspopup="true"
               aria-expanded={isExportDropdownOpen}
               aria-label="Export activity logs"
             >
-              <Download className="h-4 w-4 shrink-0 text-focus/70" />
+              <Download className="h-4 w-4 shrink-0 text-white" />
               <span>Export</span>
-              <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+              <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-white/90" />
             </Button>
 
             {isExportDropdownOpen && (
