@@ -21,6 +21,8 @@ import {
   type LoanItem,
 } from '@/services/loanService'
 import { formatPHP } from '@/lib/format'
+import { formatCreatedAt } from '@/utils/dateUtils'
+import { Clock } from 'lucide-react'
 
 interface AuditReviewLoanModalProps {
   open: boolean
@@ -128,6 +130,15 @@ export const AuditReviewLoanModal: React.FC<AuditReviewLoanModalProps> = ({
                 {loan.interestRate || 0}% • {loan.dueDate || 'No due date'}
               </span>
             </div>
+            {loan.createdAt && (
+              <div className="flex justify-between items-center">
+                <span className="text-muted-fg font-medium">Created At:</span>
+                <span className="text-[11px] text-slate-600 font-normal flex items-center gap-1">
+                  <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                  <span>{formatCreatedAt(loan.createdAt)}</span>
+                </span>
+              </div>
+            )}
             <div className="pt-2 border-t border-slate-200/60">
               <span className="text-muted-fg block mb-0.5">Loan Particulars:</span>
               <p className="font-medium text-focus italic">{loan.particulars}</p>

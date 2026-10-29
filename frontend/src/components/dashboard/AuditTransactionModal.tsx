@@ -13,7 +13,14 @@ import {
   Lock,
 } from 'lucide-react'
 import { UpdateLoanStatusModal } from './UpdateLoanStatusModal'
-import { parseParticulars } from '@/utils/particularsUtils'
+import {
+  parseParticulars,
+  formatParticularsString,
+  filterParticularsByStatus,
+  normalizeParticularStatus,
+  deriveRecordStatusFromParticulars,
+  type ParticularItem,
+} from '@/utils/particularsUtils'
 import {
   Dialog,
   DialogContent,
@@ -25,8 +32,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatPHP } from '@/lib/format'
-import { CATEGORY_COLORS } from '@/utils/categoryConstants'
-import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { CATEGORY_COLORS, SALES_CATEGORY_LIST } from '@/utils/categoryConstants'
+import { normalizeDateToYYYYMMDD, formatCreatedAt } from '@/utils/dateUtils'
 import {
   salesService,
   type SalesItem,
@@ -58,6 +65,7 @@ interface AuditTransactionModalProps {
   onOpenUpdateLoanStatus?: (loan: LoanItem | null) => void
   editable?: boolean
   initialIsEditing?: boolean
+  statusFilter?: string
 }
 
 const SALES_PAYMENT_METHODS = [
@@ -112,17 +120,26 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   onOpenUpdateLoanStatus,
   editable = false,
   initialIsEditing = false,
+  statusFilter = 'All',
 }) => {
   const navigate = useNavigate()
   const { user } = useSession()
   const isAdmin = user?.role === 'Admin' || user?.role === 'Audit'
 
-  const [currentTx, setCurrentTx] = React.useState<DashboardTransactionItem | null>(transaction)
-  const [currentSale, setCurrentSale] = React.useState<SalesItem | null>(sale || null)
-  const [currentExpense, setCurrentExpense] = React.useState<ExpenseItem | null>(expense || null)
-  const [currentLoan, setCurrentLoan] = React.useState<LoanItem | null>(loan || null)
+  const [currentTx, setCurrentTx] =
+    React.useState<DashboardTransactionItem | null>(transaction)
+  const [currentSale, setCurrentSale] = React.useState<SalesItem | null>(
+    sale || null
+  )
+  const [currentExpense, setCurrentExpense] = React.useState<ExpenseItem | null>(
+    expense || null
+  )
+  const [currentLoan, setCurrentLoan] = React.useState<LoanItem | null>(
+    loan || null
+  )
   const [isEditing, setIsEditing] = React.useState(false)
-  const [isUpdateLoanStatusOpen, setIsUpdateLoanStatusOpen] = React.useState(false)
+  const [isUpdateLoanStatusOpen, setIsUpdateLoanStatusOpen] =
+    React.useState(false)
 
   // Form states for editing
   const [date, setDate] = React.useState('')
@@ -131,13 +148,16 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
   const [amount, setAmount] = React.useState('')
   const [paymentMethod, setPaymentMethod] = React.useState('Cash')
   const [category, setCategory] = React.useState('General')
-  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(DEFAULT_SPECIFIC_CATEGORIES)
+  const [categoryOptions, setCategoryOptions] = React.useState<string[]>(
+    DEFAULT_SPECIFIC_CATEGORIES
+  )
   const [isCategoryOpen, setIsCategoryOpen] = React.useState(false)
   const [newCategoryName, setNewCategoryName] = React.useState('')
   const [isCreatingCategory, setIsCreatingCategory] = React.useState(false)
   const categoryContainerRef = React.useRef<HTMLDivElement>(null)
 
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [isUpdatingItemStatus, setIsUpdatingItemStatus] = React.useState(false)
   const [error, setError] = React.useState('')
   const [fieldErrors, setFieldErrors] = React.useState<{
     date?: string
@@ -155,7 +175,13 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       try {
         const cats = await expenseService.getCategories()
         if (isMounted && cats && cats.length > 0) {
-          const names = Array.from(new Set([...DEFAULT_SPECIFIC_CATEGORIES, ...cats.map((c) => c.name)]))
+          const names = Array.from(
+            new Set([
+              ...DEFAULT_SPECIFIC_CATEGORIES,
+              ...SALES_CATEGORY_LIST,
+              ...cats.map((c) => c.name),
+            ])
+          )
           setCategoryOptions(names)
         }
       } catch (err) {
@@ -176,6 +202,24 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     setCurrentLoan(loan || null)
   }, [transaction, sale, expense, loan])
 
+  const activeTx = currentTx || transaction
+  const activeSale = currentSale || sale
+  const activeExpense = currentExpense || expense
+  const activeLoan = currentLoan || loan
+
+  const isExpense = Boolean(activeExpense || activeTx?.type === 'Expense')
+  const isLoan = Boolean(activeLoan || activeTx?.type === 'Loan')
+
+  const currentAuditStatus =
+    activeSale?.auditStatus ||
+    activeExpense?.auditStatus ||
+    activeLoan?.auditStatus ||
+    activeTx?.auditStatus ||
+    'Pending Audit'
+
+  const isAudited = currentAuditStatus === 'Verified'
+  const isEditable = Boolean(editable && !isAdmin && !isAudited)
+
   // Reset or initialize edit fields when modal opens or target changes
   React.useEffect(() => {
     if (open) {
@@ -183,24 +227,25 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       setError('')
       setFieldErrors({})
 
-      const activeSale = sale || currentSale
-      const activeExpense = expense || currentExpense
-      const activeLoan = loan || currentLoan
-      const activeTx = transaction || currentTx
-
       if (activeSale) {
         setDate(activeSale.rawDate || normalizeDateToYYYYMMDD(activeSale.date))
         setChequeNo(activeSale.chequeNo || '')
         setParticulars(activeSale.particulars || '')
         setAmount(String(activeSale.deposit || activeSale.netAmount || ''))
-        setCategory(activeSale.category || 'General')
+        setCategory(
+          activeSale.category && activeSale.category !== 'None'
+            ? activeSale.category
+            : SALES_CATEGORY_LIST[0]
+        )
         setPaymentMethod(activeSale.paymentMethod || 'Cash')
       } else if (activeExpense) {
-        setDate(activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date))
+        setDate(
+          activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date)
+        )
         setChequeNo(activeExpense.chequeNo || '')
         setParticulars(activeExpense.particulars || '')
         setAmount(String(activeExpense.withdrawal || activeExpense.netAmount || ''))
-        setCategory(activeExpense.category || 'General')
+        setCategory(activeExpense.category || 'Rendered Fee')
         setPaymentMethod(activeExpense.paymentMethod || 'Cash')
       } else if (activeLoan) {
         setDate(activeLoan.rawDate || normalizeDateToYYYYMMDD(activeLoan.date))
@@ -217,8 +262,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
           activeTx.type === 'Expense'
             ? activeTx.withdrawal || activeTx.amount || ''
             : activeTx.type === 'Loan'
-            ? activeTx.amount || activeTx.withdrawal || ''
-            : activeTx.deposit || activeTx.amount || ''
+              ? activeTx.amount || activeTx.withdrawal || ''
+              : activeTx.deposit || activeTx.amount || ''
         setAmount(String(txAmount))
         setCategory(activeTx.category || 'General')
         setPaymentMethod(activeTx.paymentMethod || 'Cash')
@@ -228,7 +273,19 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       setError('')
       setFieldErrors({})
     }
-  }, [open, sale, expense, loan, transaction, currentSale, currentExpense, currentLoan, currentTx])
+  }, [
+    open,
+    sale,
+    expense,
+    loan,
+    transaction,
+    currentSale,
+    currentExpense,
+    currentLoan,
+    currentTx,
+    initialIsEditing,
+    isEditable,
+  ])
 
   // Click outside category dropdown
   React.useEffect(() => {
@@ -244,11 +301,18 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  const availableCategoryList = React.useMemo(() => {
+    if (!isExpense && !isLoan) {
+      return Array.from(new Set([...SALES_CATEGORY_LIST, ...categoryOptions]))
+    }
+    return categoryOptions
+  }, [isExpense, isLoan, categoryOptions])
+
   const filteredCategoryOptions = React.useMemo(() => {
     const q = category.trim().toLowerCase()
-    if (!q) return categoryOptions
-    return categoryOptions.filter((opt) => opt.toLowerCase().includes(q))
-  }, [category, categoryOptions])
+    if (!q) return availableCategoryList
+    return availableCategoryList.filter((opt) => opt.toLowerCase().includes(q))
+  }, [category, availableCategoryList])
 
   const handleAddNewCategory = async () => {
     const trimmed = newCategoryName.trim()
@@ -269,61 +333,90 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     }
   }
 
-  const activeTx = currentTx || transaction
-  const activeSale = currentSale || sale
-  const activeExpense = currentExpense || expense
-  const activeLoan = currentLoan || loan
-
-  const isExpense = Boolean(activeExpense || activeTx?.type === 'Expense')
-  const isLoan = Boolean(activeLoan || activeTx?.type === 'Loan')
-
   const displayRefNo =
-    activeSale?.refNo || activeExpense?.refNo || activeLoan?.refNo || activeTx?.refNo || '—'
+    activeSale?.refNo ||
+    activeExpense?.refNo ||
+    activeLoan?.refNo ||
+    activeTx?.refNo ||
+    '—'
   const displayCompany =
-    activeSale?.company || activeExpense?.company || activeLoan?.company || activeTx?.company || '—'
-  const displayCategory = isEditing
+    activeSale?.company ||
+    activeExpense?.company ||
+    activeLoan?.company ||
+    activeTx?.company ||
+    '—'
+  const rawCategory = isEditing
     ? category
-    : activeSale?.category || activeExpense?.category || activeLoan?.category || activeTx?.category || 'General'
+    : activeSale?.category ||
+      activeExpense?.category ||
+      activeLoan?.category ||
+      activeTx?.category ||
+      'General'
+  const displayCategory =
+    rawCategory && rawCategory !== 'None'
+      ? rawCategory
+      : isExpense
+        ? 'Rendered Fee'
+        : SALES_CATEGORY_LIST[0]
   const displayPaymentMethod = isEditing
     ? paymentMethod
-    : activeSale?.paymentMethod || activeExpense?.paymentMethod || activeTx?.paymentMethod || 'Cash'
+    : activeSale?.paymentMethod ||
+      activeExpense?.paymentMethod ||
+      activeTx?.paymentMethod ||
+      'Cash'
   const categoryColor =
     CATEGORY_COLORS[displayCategory as keyof typeof CATEGORY_COLORS] || '#475569'
 
   const displayDate =
-    activeSale?.date || activeExpense?.date || activeLoan?.date || activeTx?.date || '—'
+    activeSale?.date ||
+    activeExpense?.date ||
+    activeLoan?.date ||
+    activeTx?.date ||
+    '—'
   const displayChequeNo =
-    activeSale?.chequeNo || activeExpense?.chequeNo || activeLoan?.chequeNo || activeTx?.chequeNo || '—'
+    activeSale?.chequeNo ||
+    activeExpense?.chequeNo ||
+    activeLoan?.chequeNo ||
+    activeTx?.chequeNo ||
+    '—'
   const displayParticulars =
-    activeSale?.particulars || activeExpense?.particulars || activeLoan?.particulars || activeTx?.particulars || activeTx?.description || '—'
-  const displayStatus = isExpense
-    ? 'Paid'
-    : (activeSale?.status || activeExpense?.status || activeLoan?.status || activeTx?.status || '—')
-  const displayCreatedAt =
-    activeSale?.createdAt || activeExpense?.createdAt || activeLoan?.createdAt || activeTx?.createdAt
+    activeSale?.particulars ||
+    activeExpense?.particulars ||
+    activeLoan?.particulars ||
+    activeTx?.particulars ||
+    activeTx?.description ||
+    '—'
+  const displayStatus =
+    activeSale?.status ||
+    activeExpense?.status ||
+    activeLoan?.status ||
+    activeTx?.status ||
+    'Paid'
+  const rawCreatedAt =
+    activeSale?.createdAt ||
+    activeExpense?.createdAt ||
+    activeLoan?.createdAt ||
+    activeTx?.createdAt
+  const formattedCreatedAt = React.useMemo(
+    () => formatCreatedAt(rawCreatedAt),
+    [rawCreatedAt]
+  )
 
   const withdrawalVal = isExpense
     ? (activeExpense?.withdrawal ?? activeTx?.withdrawal ?? 0)
     : (activeSale?.withdrawal ?? activeTx?.withdrawal ?? 0)
-  const depositVal = isExpense || isLoan
-    ? 0
-    : (activeSale?.deposit ?? activeTx?.deposit ?? (activeTx?.amount || 0))
-  const loanVal = activeLoan?.amount ?? (isLoan ? (activeTx?.amount || activeTx?.withdrawal || 0) : 0)
+  const depositVal =
+    isExpense || isLoan
+      ? 0
+      : (activeSale?.deposit ?? activeTx?.deposit ?? (activeTx?.amount || 0))
+  const loanVal =
+    activeLoan?.amount ??
+    (isLoan ? activeTx?.amount || activeTx?.withdrawal || 0 : 0)
   const netAmount = isLoan
     ? loanVal
     : isExpense
-    ? (activeExpense?.netAmount ?? withdrawalVal)
-    : ((depositVal || 0) - (withdrawalVal || 0))
-
-  const currentAuditStatus =
-    activeSale?.auditStatus ||
-    activeExpense?.auditStatus ||
-    activeLoan?.auditStatus ||
-    activeTx?.auditStatus ||
-    'Pending Audit'
-
-  const isAudited = currentAuditStatus === 'Verified'
-  const isEditable = Boolean(editable && !isAdmin && !isAudited)
+      ? (activeExpense?.netAmount ?? withdrawalVal)
+      : (depositVal || 0) - (withdrawalVal || 0)
 
   const handleEditInSheet = () => {
     if (isAudited) return
@@ -331,7 +424,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     if (isExpense) {
       navigate('/expense/add', {
         state: {
-          editExpense: activeExpense || (activeTx?.type === 'Expense' ? activeTx : null),
+          editExpense:
+            activeExpense || (activeTx?.type === 'Expense' ? activeTx : null),
         },
       })
     } else {
@@ -361,7 +455,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       day: '2-digit',
       year: '2-digit',
     })
-    const auditorName = user?.fullName || 'Admin'
+    const auditorName = user?.fullName || 'Auditor'
 
     if (activeSale) {
       const updated: SalesItem = {
@@ -383,7 +477,11 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       }
       setCurrentExpense(updated)
       setCurrentTx(expenseService.toDashboardTransaction(updated))
-      expenseService.updateExpenseAuditStatus(updated.id, 'Verified', auditorName)
+      expenseService.updateExpenseAuditStatus(
+        updated.id,
+        'Verified',
+        auditorName
+      )
       if (onExpenseUpdated) onExpenseUpdated(updated)
     } else if (activeLoan) {
       const updated: LoanItem = {
@@ -394,7 +492,11 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       }
       setCurrentLoan(updated)
       setCurrentTx(loanService.toDashboardTransaction(updated))
-      loanService.updateLoan(updated.id, { auditStatus: 'Verified', auditedBy: auditorName, auditDate: today })
+      loanService.updateLoan(updated.id, {
+        auditStatus: 'Verified',
+        auditedBy: auditorName,
+        auditDate: today,
+      })
       if (onLoanUpdated) onLoanUpdated(updated)
     } else if (activeTx) {
       const updated: DashboardTransactionItem = {
@@ -407,9 +509,17 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       if (activeTx.type === 'Sales') {
         salesService.updateSaleAuditStatus(activeTx.id, 'Verified', auditorName)
       } else if (activeTx.type === 'Expense') {
-        expenseService.updateExpenseAuditStatus(activeTx.id, 'Verified', auditorName)
+        expenseService.updateExpenseAuditStatus(
+          activeTx.id,
+          'Verified',
+          auditorName
+        )
       } else if (activeTx.type === 'Loan') {
-        loanService.updateLoan(activeTx.id, { auditStatus: 'Verified', auditedBy: auditorName, auditDate: today })
+        loanService.updateLoan(activeTx.id, {
+          auditStatus: 'Verified',
+          auditedBy: auditorName,
+          auditDate: today,
+        })
       }
       if (onTransactionUpdated) onTransactionUpdated(updated)
     }
@@ -447,7 +557,11 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       }
       setCurrentLoan(updated)
       setCurrentTx(loanService.toDashboardTransaction(updated))
-      loanService.updateLoan(updated.id, { auditStatus: 'Pending Audit', auditedBy: undefined, auditDate: undefined })
+      loanService.updateLoan(updated.id, {
+        auditStatus: 'Pending Audit',
+        auditedBy: undefined,
+        auditDate: undefined,
+      })
       if (onLoanUpdated) onLoanUpdated(updated)
     } else if (activeTx) {
       const updated: DashboardTransactionItem = {
@@ -462,32 +576,140 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       } else if (activeTx.type === 'Expense') {
         expenseService.updateExpenseAuditStatus(activeTx.id, 'Pending Audit')
       } else if (activeTx.type === 'Loan') {
-        loanService.updateLoan(activeTx.id, { auditStatus: 'Pending Audit', auditedBy: undefined, auditDate: undefined })
+        loanService.updateLoan(activeTx.id, {
+          auditStatus: 'Pending Audit',
+          auditedBy: undefined,
+          auditDate: undefined,
+        })
       }
       if (onTransactionUpdated) onTransactionUpdated(updated)
     }
   }
 
-  // Itemized particulars parsing (for transactions with 1, 3, or >5 particulars)
+  // Itemized particulars parsing and status filtering
   const rawItems = activeSale?.items || activeExpense?.items || activeTx?.items
   const rawParticularsText = displayParticulars
-  const parsedParticularItems = React.useMemo(() => {
-    return parseParticulars(
+  const fallbackRecordStatus = normalizeParticularStatus(displayStatus, 'Paid')
+
+  const allParticularItems = React.useMemo(() => {
+    const parsed = parseParticulars(
       rawParticularsText,
       rawItems,
-      isLoan ? loanVal : isExpense ? (withdrawalVal || netAmount) : (depositVal || netAmount)
+      isLoan
+        ? loanVal
+        : isExpense
+          ? withdrawalVal || netAmount
+          : depositVal || netAmount
     )
-  }, [rawParticularsText, rawItems, isLoan, isExpense, loanVal, withdrawalVal, depositVal, netAmount])
+    return parsed.map((it, idx) => ({
+      ...it,
+      id: it.id || `item-${idx}`,
+      status: normalizeParticularStatus(it.status, fallbackRecordStatus),
+    }))
+  }, [
+    rawParticularsText,
+    rawItems,
+    isLoan,
+    isExpense,
+    loanVal,
+    withdrawalVal,
+    depositVal,
+    netAmount,
+    fallbackRecordStatus,
+  ])
 
-  const hasMultipleParticulars = parsedParticularItems.length > 1
+  const parsedParticularItems = React.useMemo(() => {
+    return filterParticularsByStatus(
+      allParticularItems,
+      statusFilter,
+      fallbackRecordStatus
+    )
+  }, [allParticularItems, statusFilter, fallbackRecordStatus])
+
+  // Always show the Itemized Particulars table for Sales and Expense so each particular's status badge is visible
+  const showItemizedParticulars =
+    (!isLoan && parsedParticularItems.length >= 1) ||
+    parsedParticularItems.length > 1
 
   const totalItemQuantity = React.useMemo(() => {
-    return parsedParticularItems.reduce((sum, item) => sum + (item.quantity || 1), 0)
+    return parsedParticularItems.reduce(
+      (sum, item) => sum + (item.quantity || 1),
+      0
+    )
   }, [parsedParticularItems])
 
   const totalItemAmount = React.useMemo(() => {
-    return parsedParticularItems.reduce((sum, item) => sum + (item.total || 0), 0)
+    return parsedParticularItems.reduce(
+      (sum, item) => sum + (item.total || 0),
+      0
+    )
   }, [parsedParticularItems])
+
+  // Allow operational user to directly change an individual particular's status (Paid / Pending / Unpaid)
+  // without auto-auditing the transaction
+  const handleParticularStatusChange = async (
+    itemIdOrIndex: string | number,
+    newStatus: 'Paid' | 'Pending' | 'Unpaid'
+  ) => {
+    if (!isEditable || isUpdatingItemStatus) return
+    setIsUpdatingItemStatus(true)
+    setError('')
+
+    try {
+      const updatedItems: ParticularItem[] = allParticularItems.map((it, idx) => {
+        const matches =
+          typeof itemIdOrIndex === 'string'
+            ? (it.id || `item-${idx}`) === itemIdOrIndex
+            : idx === itemIdOrIndex
+        if (!matches) return it
+        return {
+          ...it,
+          status: newStatus,
+        }
+      })
+
+      const formattedParticulars = formatParticularsString(updatedItems)
+      const newOverallStatus = deriveRecordStatusFromParticulars(
+        updatedItems,
+        newStatus
+      )
+      const targetId =
+        activeSale?.id || activeExpense?.id || activeTx?.id
+      if (!targetId) return
+
+      if (isExpense) {
+        const updatedExp = await expenseService.updateExpense(targetId, {
+          particulars: formattedParticulars,
+          items: updatedItems,
+          status: newOverallStatus,
+        })
+        if (updatedExp) {
+          setCurrentExpense(updatedExp)
+          const tx = expenseService.toDashboardTransaction(updatedExp)
+          setCurrentTx(tx)
+          if (onExpenseUpdated) onExpenseUpdated(updatedExp)
+          if (onTransactionUpdated) onTransactionUpdated(tx)
+        }
+      } else if (!isLoan) {
+        const updatedSale = await salesService.updateSale(targetId, {
+          particulars: formattedParticulars,
+          items: updatedItems,
+          status: newOverallStatus,
+        })
+        if (updatedSale) {
+          setCurrentSale(updatedSale)
+          const tx = salesService.toDashboardTransaction(updatedSale)
+          setCurrentTx(tx)
+          if (onSaleUpdated) onSaleUpdated(updatedSale)
+          if (onTransactionUpdated) onTransactionUpdated(tx)
+        }
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update particular status.')
+    } finally {
+      setIsUpdatingItemStatus(false)
+    }
+  }
 
   const handleCancel = () => {
     if (activeSale) {
@@ -495,14 +717,20 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       setChequeNo(activeSale.chequeNo || '')
       setParticulars(activeSale.particulars || '')
       setAmount(String(activeSale.deposit || activeSale.netAmount || ''))
-      setCategory(activeSale.category || 'General')
+      setCategory(
+        activeSale.category && activeSale.category !== 'None'
+          ? activeSale.category
+          : SALES_CATEGORY_LIST[0]
+      )
       setPaymentMethod(activeSale.paymentMethod || 'Cash')
     } else if (activeExpense) {
-      setDate(activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date))
+      setDate(
+        activeExpense.rawDate || normalizeDateToYYYYMMDD(activeExpense.date)
+      )
       setChequeNo(activeExpense.chequeNo || '')
       setParticulars(activeExpense.particulars || '')
       setAmount(String(activeExpense.withdrawal || activeExpense.netAmount || ''))
-      setCategory(activeExpense.category || 'General')
+      setCategory(activeExpense.category || 'Rendered Fee')
       setPaymentMethod(activeExpense.paymentMethod || 'Cash')
     } else if (activeLoan) {
       setDate(activeLoan.rawDate || normalizeDateToYYYYMMDD(activeLoan.date))
@@ -519,8 +747,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
         activeTx.type === 'Expense'
           ? activeTx.withdrawal || activeTx.amount || ''
           : activeTx.type === 'Loan'
-          ? activeTx.amount || activeTx.withdrawal || ''
-          : activeTx.deposit || activeTx.amount || ''
+            ? activeTx.amount || activeTx.withdrawal || ''
+            : activeTx.deposit || activeTx.amount || ''
       setAmount(String(txAmount))
       setCategory(activeTx.category || 'General')
       setPaymentMethod(activeTx.paymentMethod || 'Cash')
@@ -534,7 +762,12 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     if (e) e.preventDefault()
     if (!isEditable) return
     setError('')
-    const errors: { date?: string; particulars?: string; amount?: string; category?: string } = {}
+    const errors: {
+      date?: string
+      particulars?: string
+      amount?: string
+      category?: string
+    } = {}
 
     const todayIso = new Date().toISOString().split('T')[0]
     if (!date.trim()) {
@@ -550,7 +783,10 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
     const cleanAmount = amount.trim().replace(/,/g, '')
     if (!cleanAmount) {
       errors.amount = 'Amount is required.'
-    } else if (/[a-zA-Z]/.test(cleanAmount) || !/^\d+(\.\d{1,2})?$/.test(cleanAmount)) {
+    } else if (
+      /[a-zA-Z]/.test(cleanAmount) ||
+      !/^\d+(\.\d{1,2})?$/.test(cleanAmount)
+    ) {
       errors.amount = 'Amount must be a valid positive number without letters.'
     } else {
       const parsedAmount = parseFloat(cleanAmount)
@@ -583,16 +819,20 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
           withdrawal: parsedAmount,
           netAmount: parsedAmount,
           paymentMethod: paymentMethod.trim() || 'Cash',
-          category: category.trim() || 'General',
+          category: category.trim() || 'Rendered Fee',
         })
         if (!updatedExpenseItem) throw new Error('Expense item not found.')
-        const updatedTxItem = expenseService.toDashboardTransaction(updatedExpenseItem)
+        const updatedTxItem =
+          expenseService.toDashboardTransaction(updatedExpenseItem)
 
         setCurrentExpense(updatedExpenseItem)
         setCurrentTx(updatedTxItem)
 
         if (onExpenseUpdated) {
           onExpenseUpdated(updatedExpenseItem)
+        }
+        if (onTransactionUpdated) {
+          onTransactionUpdated(updatedTxItem)
         }
       } else if (isLoan) {
         const updatedLoanItem = await loanService.updateLoan(targetId, {
@@ -611,6 +851,9 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
         if (onLoanUpdated) {
           onLoanUpdated(updatedLoanItem)
         }
+        if (onTransactionUpdated) {
+          onTransactionUpdated(updatedTxItem)
+        }
       } else {
         const payload: Partial<NewSalesInput> = {
           date: date.trim(),
@@ -618,17 +861,21 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
           particulars: particulars.trim(),
           amount: parsedAmount,
           paymentMethod: paymentMethod.trim() || 'Cash',
-          category: category.trim() || 'General',
+          category: category.trim() || SALES_CATEGORY_LIST[0],
         }
 
         const updatedSaleItem = await salesService.updateSale(targetId, payload)
-        const updatedTxItem = salesService.toDashboardTransaction(updatedSaleItem)
+        const updatedTxItem =
+          salesService.toDashboardTransaction(updatedSaleItem)
 
         setCurrentSale(updatedSaleItem)
         setCurrentTx(updatedTxItem)
 
         if (onSaleUpdated) {
           onSaleUpdated(updatedSaleItem)
+        }
+        if (onTransactionUpdated) {
+          onTransactionUpdated(updatedTxItem)
         }
       }
 
@@ -657,7 +904,11 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
       <DialogContent
         className={cn(
           'rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl transition-all duration-200 max-h-[85vh] overflow-y-auto',
-          isEditing ? 'sm:max-w-[640px]' : (hasMultipleParticulars ? 'sm:max-w-[740px]' : 'sm:max-w-[580px]')
+          isEditing
+            ? 'sm:max-w-[640px]'
+            : showItemizedParticulars
+              ? 'sm:max-w-[740px]'
+              : 'sm:max-w-[580px]'
         )}
       >
         {/* Header */}
@@ -672,14 +923,20 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
             </div>
             <div>
               <DialogTitle className="text-base sm:text-lg font-bold text-focus leading-tight">
-                {isEditing ? 'Edit Transaction Details' : (isAdmin ? 'Audit Transaction Details' : 'Transaction Details')}
+                {isEditing
+                  ? 'Edit Transaction Details'
+                  : isAdmin
+                    ? 'Audit Transaction Details'
+                    : 'Transaction Details'}
               </DialogTitle>
             </div>
           </div>
           <DialogDescription className="text-[11px] text-muted-fg font-normal mt-1">
             {isEditing
               ? 'Update the transaction details directly below, then save changes'
-              : (isAdmin ? 'Complete audit record and transaction details' : 'Complete transaction record')}
+              : isAdmin
+                ? 'Complete audit record and transaction details'
+                : 'Complete transaction record'}
           </DialogDescription>
         </DialogHeader>
 
@@ -694,7 +951,7 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               </div>
             )}
 
-            {/* Date & Cheque No: date field width exact to the end of date icon, cheque no extended */}
+            {/* Date & Cheque No */}
             <div className="flex items-start gap-3">
               <div className="w-[126px] shrink-0 space-y-1">
                 <Label className="text-xs font-semibold text-focus block">
@@ -712,11 +969,14 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                   }}
                   className={cn(
                     'h-9 px-2 text-xs font-medium rounded-xl border-stroke/50',
-                    fieldErrors.date && 'border-red-500 focus-visible:ring-red-200'
+                    fieldErrors.date &&
+                      'border-red-500 focus-visible:ring-red-200'
                   )}
                 />
                 {fieldErrors.date && (
-                  <p className="text-[10px] text-red-600 font-medium leading-tight">{fieldErrors.date}</p>
+                  <p className="text-[10px] text-red-600 font-medium leading-tight">
+                    {fieldErrors.date}
+                  </p>
                 )}
               </div>
 
@@ -741,21 +1001,33 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               </Label>
               <Input
                 type="text"
-                placeholder={isExpense ? "e.g. Office Supplies" : isLoan ? "e.g. Loan Commitment" : "e.g. Catering Deposit"}
+                placeholder={
+                  isExpense
+                    ? 'e.g. Office Supplies'
+                    : isLoan
+                      ? 'e.g. Loan Commitment'
+                      : 'e.g. Catering Deposit'
+                }
                 value={particulars}
                 onChange={(e) => {
                   setParticulars(e.target.value)
                   if (fieldErrors.particulars) {
-                    setFieldErrors((prev) => ({ ...prev, particulars: undefined }))
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      particulars: undefined,
+                    }))
                   }
                 }}
                 className={cn(
                   'h-9 rounded-xl border-stroke/50 text-xs',
-                  fieldErrors.particulars && 'border-red-500 focus-visible:ring-red-200'
+                  fieldErrors.particulars &&
+                    'border-red-500 focus-visible:ring-red-200'
                 )}
               />
               {fieldErrors.particulars && (
-                <p className="text-[10px] text-red-600 font-medium">{fieldErrors.particulars}</p>
+                <p className="text-[10px] text-red-600 font-medium">
+                  {fieldErrors.particulars}
+                </p>
               )}
             </div>
 
@@ -780,17 +1052,23 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
                       setAmount(val)
                       if (fieldErrors.amount) {
-                        setFieldErrors((prev) => ({ ...prev, amount: undefined }))
+                        setFieldErrors((prev) => ({
+                          ...prev,
+                          amount: undefined,
+                        }))
                       }
                     }
                   }}
                   className={cn(
                     'h-9 rounded-xl border-stroke/50 text-xs font-semibold tabular-nums',
-                    fieldErrors.amount && 'border-red-500 focus-visible:ring-red-200'
+                    fieldErrors.amount &&
+                      'border-red-500 focus-visible:ring-red-200'
                   )}
                 />
                 {fieldErrors.amount && (
-                  <p className="text-[10px] text-red-600 font-medium">{fieldErrors.amount}</p>
+                  <p className="text-[10px] text-red-600 font-medium">
+                    {fieldErrors.amount}
+                  </p>
                 )}
               </div>
 
@@ -803,7 +1081,10 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                   onChange={(e) => setPaymentMethod(e.target.value)}
                   className="h-9 w-full rounded-xl border border-stroke/50 text-xs px-2.5 font-medium bg-white focus:outline-none focus:ring-1 focus:ring-focus text-focus cursor-pointer"
                 >
-                  {(isExpense ? EXPENSE_PAYMENT_METHODS : SALES_PAYMENT_METHODS).map((pm) => (
+                  {(isExpense
+                    ? EXPENSE_PAYMENT_METHODS
+                    : SALES_PAYMENT_METHODS
+                  ).map((pm) => (
                     <option key={pm} value={pm}>
                       {pm}
                     </option>
@@ -812,107 +1093,113 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               </div>
             </div>
 
-            {/* Category (Specific Category with Search and Add Specific Category) - Expense Only */}
-            {isExpense && (
+            {/* Category (Sales and Expense) */}
+            {!isLoan && (
               <div className="space-y-1" ref={categoryContainerRef}>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold text-focus block">
-                  Category (Specific)
-                </Label>
-                <span className="text-[10px] text-muted-fg">Configurable dropdown</span>
-              </div>
-              <div className="relative">
-                <Input
-                  type="text"
-                  value={category}
-                  onChange={(e) => {
-                    setCategory(e.target.value)
-                    setIsCategoryOpen(true)
-                  }}
-                  onFocus={() => setIsCategoryOpen(true)}
-                  placeholder="Select or enter category…"
-                  className="h-9 rounded-xl border-stroke/50 text-xs pr-8 font-medium bg-white"
-                />
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onClick={() => setIsCategoryOpen((prev) => !prev)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded cursor-pointer"
-                >
-                  <ChevronDown
-                    className={cn(
-                      'w-3.5 h-3.5 transition-transform duration-200',
-                      isCategoryOpen && 'rotate-180'
-                    )}
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-focus block">
+                    Category
+                  </Label>
+                  <span className="text-[10px] text-muted-fg">
+                    Configurable dropdown
+                  </span>
+                </div>
+                <div className="relative">
+                  <Input
+                    type="text"
+                    value={category}
+                    onChange={(e) => {
+                      setCategory(e.target.value)
+                      setIsCategoryOpen(true)
+                    }}
+                    onFocus={() => setIsCategoryOpen(true)}
+                    placeholder="Select or enter category…"
+                    className="h-9 rounded-xl border-stroke/50 text-xs pr-8 font-medium bg-white"
                   />
-                </button>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setIsCategoryOpen((prev) => !prev)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus p-0.5 rounded cursor-pointer"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        'w-3.5 h-3.5 transition-transform duration-200',
+                        isCategoryOpen && 'rotate-180'
+                      )}
+                    />
+                  </button>
 
-                {isCategoryOpen && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-stroke/30 shadow-2xl p-1.5 z-50 max-h-56 overflow-y-auto">
-                    <div className="space-y-0.5">
-                      {filteredCategoryOptions.map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => {
-                            setCategory(opt)
-                            setIsCategoryOpen(false)
-                          }}
-                          className={cn(
-                            'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer',
-                            category.toLowerCase() === opt.toLowerCase()
-                              ? 'bg-primary/10 text-primary font-semibold'
-                              : 'text-focus/80 hover:bg-slate-50'
-                          )}
-                        >
-                          <span>{opt}</span>
-                          {category.toLowerCase() === opt.toLowerCase() && (
-                            <Check className="w-3.5 h-3.5 text-primary" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                  {isCategoryOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-stroke/30 shadow-2xl p-1.5 z-50 max-h-56 overflow-y-auto">
+                      <div className="space-y-0.5">
+                        {filteredCategoryOptions.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => {
+                              setCategory(opt)
+                              setIsCategoryOpen(false)
+                            }}
+                            className={cn(
+                              'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer',
+                              category.toLowerCase() === opt.toLowerCase()
+                                ? 'bg-primary/10 text-primary font-semibold'
+                                : 'text-focus/80 hover:bg-slate-50'
+                            )}
+                          >
+                            <span>{opt}</span>
+                            {category.toLowerCase() === opt.toLowerCase() && (
+                              <Check className="w-3.5 h-3.5 text-primary" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
 
-                    {/* Quick Add Custom Specific Category */}
-                    <div className="pt-2 mt-1.5 border-t border-stroke/20 px-1">
-                      <div className="flex items-center gap-1.5">
-                        <Input
-                          type="text"
-                          placeholder="+ Add specific category…"
-                          value={newCategoryName}
-                          onChange={(e) => setNewCategoryName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              handleAddNewCategory()
+                      {/* Quick Add Custom Specific Category */}
+                      <div className="pt-2 mt-1.5 border-t border-stroke/20 px-1">
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            type="text"
+                            placeholder="+ Add specific category…"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                handleAddNewCategory()
+                              }
+                            }}
+                            className="h-7 text-xs rounded-lg px-2 border-stroke/50"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                              !newCategoryName.trim() || isCreatingCategory
                             }
-                          }}
-                          className="h-7 text-xs rounded-lg px-2 border-stroke/50"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={!newCategoryName.trim() || isCreatingCategory}
-                          onClick={handleAddNewCategory}
-                          className="h-7 px-2.5 text-[11px] rounded-lg bg-primary text-white hover:bg-primary/90 shrink-0 cursor-pointer"
-                        >
-                          {isCreatingCategory ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            'Add'
-                          )}
-                        </Button>
+                            onClick={handleAddNewCategory}
+                            className="h-7 px-2.5 text-[11px] rounded-lg bg-primary text-white hover:bg-primary/90 shrink-0 cursor-pointer"
+                          >
+                            {isCreatingCategory ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              'Add'
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
             )}
 
             {/* Read-only Context (Company) */}
             <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
-              <span className="text-[11px] font-medium text-muted-fg">Company:</span>
+              <span className="text-[11px] font-medium text-muted-fg">
+                Company:
+              </span>
               <span className="font-semibold text-focus">{displayCompany}</span>
             </div>
 
@@ -946,6 +1233,13 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
         ) : (
           /* ================= VIEW MODE ================= */
           <div className="space-y-3 pt-3">
+            {error && (
+              <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
             {/* Outflow vs Inflow Amount Summary Card */}
             {isLoan ? (
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
@@ -1015,15 +1309,33 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               </div>
 
               {/* 3. Particulars Section */}
-              {hasMultipleParticulars ? (
+              {showItemizedParticulars ? (
                 <div className="py-2.5 border-b border-stroke/10 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5 text-xs font-bold text-focus">
                       <Receipt className="w-3.5 h-3.5 text-[#960C01]" />
                       <span>Itemized Particulars</span>
+                      {statusFilter && statusFilter !== 'All' && (
+                        <span
+                          className={cn(
+                            'px-2 py-0.5 rounded-full text-[10px] font-bold border',
+                            statusFilter === 'Paid'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : statusFilter === 'Pending'
+                                ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                          )}
+                        >
+                          Showing: {statusFilter}
+                        </span>
+                      )}
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
-                      {parsedParticularItems.length} particulars recorded
+                      {parsedParticularItems.length}{' '}
+                      {parsedParticularItems.length === 1
+                        ? 'particular'
+                        : 'particulars'}{' '}
+                      recorded
                     </span>
                   </div>
 
@@ -1032,77 +1344,100 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     <div className="max-h-[220px] sm:max-h-[260px] overflow-y-auto divide-y divide-slate-100">
                       <table className="w-full text-left text-xs table-fixed">
                         <colgroup>
-                          {parsedParticularItems.some((it) => Boolean(it.status)) ? (
-                            <>
-                              <col style={{ width: '7%' }} />
-                              <col style={{ width: '37%' }} />
-                              <col style={{ width: '16%' }} />
-                              <col style={{ width: '10%' }} />
-                              <col style={{ width: '15%' }} />
-                              <col style={{ width: '15%' }} />
-                            </>
-                          ) : (
-                            <>
-                              <col style={{ width: '8%' }} />
-                              <col style={{ width: '46%' }} />
-                              <col style={{ width: '14%' }} />
-                              <col style={{ width: '16%' }} />
-                              <col style={{ width: '16%' }} />
-                            </>
-                          )}
+                          <col style={{ width: '7%' }} />
+                          <col style={{ width: '35%' }} />
+                          <col style={{ width: '18%' }} />
+                          <col style={{ width: '10%' }} />
+                          <col style={{ width: '15%' }} />
+                          <col style={{ width: '15%' }} />
                         </colgroup>
                         <thead className="bg-slate-100/90 sticky top-0 text-[10px] uppercase font-bold text-muted-fg border-b border-slate-200/80 z-10">
                           <tr>
                             <th className="py-2 px-2 text-center">#</th>
                             <th className="py-2 px-2">Particulars / Item</th>
-                            {parsedParticularItems.some((it) => Boolean(it.status)) && (
-                              <th className="py-2 px-2 text-center">Status</th>
-                            )}
+                            <th className="py-2 px-2 text-center">Status</th>
                             <th className="py-2 px-2 text-center">Qty</th>
                             <th className="py-2 px-2 text-right">Price</th>
                             <th className="py-2 px-2 text-right">Total</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
-                          {parsedParticularItems.map((item, idx) => (
-                            <tr key={item.id || idx} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="py-2 px-2 text-center font-mono text-[11px] text-muted-fg">
-                                {idx + 1}
-                              </td>
-                              <td className="py-2 px-2 font-medium text-focus break-words leading-tight" title={item.particulars}>
-                                {item.particulars}
-                              </td>
-                              {parsedParticularItems.some((it) => Boolean(it.status)) && (
-                                <td className="py-2 px-2 text-center">
-                                  {item.status ? (
+                          {parsedParticularItems.map((item, idx) => {
+                            const normalizedStatus = normalizeParticularStatus(
+                              item.status,
+                              fallbackRecordStatus
+                            )
+                            return (
+                              <tr
+                                key={item.id || idx}
+                                className="hover:bg-slate-50/70 transition-colors"
+                              >
+                                <td className="py-2 px-2 text-center font-mono text-[11px] text-muted-fg">
+                                  {idx + 1}
+                                </td>
+                                <td
+                                  className="py-2 px-2 font-medium text-focus break-words leading-tight"
+                                  title={item.particulars}
+                                >
+                                  {item.particulars}
+                                </td>
+                                <td className="py-2 px-1.5 text-center">
+                                  {isEditable ? (
+                                    <select
+                                      value={normalizedStatus}
+                                      disabled={isUpdatingItemStatus}
+                                      onChange={(e) =>
+                                        handleParticularStatusChange(
+                                          item.id || idx,
+                                          e.target.value as
+                                            | 'Paid'
+                                            | 'Pending'
+                                            | 'Unpaid'
+                                        )
+                                      }
+                                      className={cn(
+                                        'h-6 px-1.5 rounded-full text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-1 transition-colors',
+                                        normalizedStatus === 'Paid'
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 focus:ring-emerald-500'
+                                          : normalizedStatus === 'Pending'
+                                            ? 'bg-yellow-100 text-yellow-800 border-yellow-300 focus:ring-yellow-500'
+                                            : 'bg-rose-50 text-rose-700 border-rose-200 focus:ring-rose-500'
+                                      )}
+                                      title="Change item status (does not auto-audit)"
+                                    >
+                                      <option value="Paid">Paid</option>
+                                      <option value="Pending">Pending</option>
+                                      <option value="Unpaid">Unpaid</option>
+                                    </select>
+                                  ) : (
                                     <span
                                       className={cn(
                                         'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border',
-                                        item.status === 'Paid'
+                                        normalizedStatus === 'Paid'
                                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                          : item.status === 'On hold'
-                                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                                          : normalizedStatus === 'Pending'
+                                            ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                            : 'bg-rose-50 text-rose-700 border-rose-200'
                                       )}
                                     >
-                                      {item.status}
+                                      {normalizedStatus}
                                     </span>
-                                  ) : (
-                                    <span className="text-[10px] text-muted-fg">—</span>
                                   )}
                                 </td>
-                              )}
-                              <td className="py-2 px-2 text-center font-semibold text-focus/80 tabular-nums">
-                                {item.quantity}
-                              </td>
-                              <td className="py-2 px-2 text-right text-muted-fg tabular-nums whitespace-nowrap text-[11px]">
-                                {item.unitPrice > 0 ? formatPHP(item.unitPrice) : '—'}
-                              </td>
-                              <td className="py-2 px-2 text-right font-bold text-focus tabular-nums whitespace-nowrap">
-                                {formatPHP(item.total)}
-                              </td>
-                            </tr>
-                          ))}
+                                <td className="py-2 px-2 text-center font-semibold text-focus/80 tabular-nums">
+                                  {item.quantity}
+                                </td>
+                                <td className="py-2 px-2 text-right text-muted-fg tabular-nums whitespace-nowrap text-[11px]">
+                                  {item.unitPrice > 0
+                                    ? formatPHP(item.unitPrice)
+                                    : '—'}
+                                </td>
+                                <td className="py-2 px-2 text-right font-bold text-focus tabular-nums whitespace-nowrap">
+                                  {formatPHP(item.total)}
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1110,12 +1445,23 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     {/* Summary row */}
                     <div className="bg-slate-100/95 border-t border-slate-200 px-3 py-2 flex items-center justify-between text-xs">
                       <span className="text-muted-fg font-medium">
-                        Total items: <strong className="text-focus">{parsedParticularItems.length}</strong> ({totalItemQuantity} units)
+                        Total items:{' '}
+                        <strong className="text-focus">
+                          {parsedParticularItems.length}
+                        </strong>{' '}
+                        ({totalItemQuantity} units)
                       </span>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] uppercase font-bold text-muted-fg">Sum:</span>
+                        <span className="text-[10px] uppercase font-bold text-muted-fg">
+                          Sum:
+                        </span>
                         <span className="font-bold text-focus text-sm tabular-nums">
-                          {formatPHP(totalItemAmount || (depositVal || withdrawalVal || loanVal))}
+                          {formatPHP(
+                            totalItemAmount ||
+                              depositVal ||
+                              withdrawalVal ||
+                              loanVal
+                          )}
                         </span>
                       </div>
                     </div>
@@ -1142,27 +1488,27 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                 </span>
               </div>
 
-              {/* 4. Category (Expense only) */}
-              {isExpense && (
+              {/* 4. Category (Sales & Expense) */}
+              {!isLoan && (
                 <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-                <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                  Category:
-                </span>
-                <span
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold select-none"
-                  style={{
-                    backgroundColor: `${categoryColor}15`,
-                    color: categoryColor,
-                    border: `1px solid ${categoryColor}35`,
-                  }}
-                >
+                  <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                    Category:
+                  </span>
                   <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: categoryColor }}
-                  />
-                  {displayCategory}
-                </span>
-              </div>
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold select-none"
+                    style={{
+                      backgroundColor: `${categoryColor}15`,
+                      color: categoryColor,
+                      border: `1px solid ${categoryColor}35`,
+                    }}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: categoryColor }}
+                    />
+                    {displayCategory}
+                  </span>
+                </div>
               )}
 
               {/* 5. Company */}
@@ -1175,15 +1521,17 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                 </span>
               </div>
 
-              {/* 6. Payment Status */}
-              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
-                <span className="text-[11px] font-medium text-muted-fg shrink-0">
-                  Payment Status:
-                </span>
-                <span className="text-xs font-semibold text-focus text-right">
-                  {displayStatus}
-                </span>
-              </div>
+              {/* 6. Payment Status (Loans only; removed for Sales & Expense since status is in Particulars) */}
+              {isLoan && (
+                <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
+                  <span className="text-[11px] font-medium text-muted-fg shrink-0">
+                    Payment Status:
+                  </span>
+                  <span className="text-xs font-semibold text-focus text-right">
+                    {displayStatus}
+                  </span>
+                </div>
+              )}
 
               {/* 7. Amount / Net Amount */}
               <div className="flex items-center justify-between gap-3 py-1.5 border-b border-stroke/10">
@@ -1191,7 +1539,13 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                   {isLoan ? 'Loan Amount:' : 'Net Amount:'}
                 </span>
                 <span className="text-xs sm:text-sm font-bold text-focus text-right tabular-nums">
-                  {formatPHP(isLoan ? loanVal : netAmount)}
+                  {formatPHP(
+                    isLoan
+                      ? loanVal
+                      : statusFilter && statusFilter !== 'All' && totalItemAmount > 0
+                        ? totalItemAmount
+                        : netAmount
+                  )}
                 </span>
               </div>
 
@@ -1207,27 +1561,28 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                       <span>Audited</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs">
-                      <AlertCircle className="w-3 h-3 text-amber-600" />
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-2xs">
+                      <AlertCircle className="w-3 h-3 text-yellow-700" />
                       <span>Pending Audit</span>
                     </span>
                   )}
                   {displayAuditedBy && currentAuditStatus === 'Verified' && (
                     <span className="text-[10px] text-muted-fg italic">
-                      by {displayAuditedBy} {displayAuditDate ? `(${displayAuditDate})` : ''}
+                      by {displayAuditedBy}{' '}
+                      {displayAuditDate ? `(${displayAuditDate})` : ''}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* 8. Created At (if present) */}
-              {displayCreatedAt && (
+              {/* 8. Created At (formatted in local timezone) */}
+              {formattedCreatedAt && (
                 <div className="flex items-center justify-between gap-3 py-1.5">
                   <span className="text-[11px] font-medium text-muted-fg shrink-0">
                     Created At:
                   </span>
                   <span className="font-mono text-focus text-right text-[11px]">
-                    {displayCreatedAt}
+                    {formattedCreatedAt}
                   </span>
                 </div>
               )}
@@ -1243,8 +1598,8 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                       Verified and marked as Audited
                     </span>
                   ) : (
-                    <span className="text-amber-700 font-medium flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="text-yellow-700 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-yellow-600 shrink-0" />
                       Pending Audit Review
                     </span>
                   )}
@@ -1256,10 +1611,10 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                       type="button"
                       variant="outline"
                       onClick={handleUnmarkAudit}
-                      className="h-9 px-3.5 text-xs font-semibold rounded-xl border-amber-300 bg-amber-50/70 text-amber-800 hover:bg-amber-100 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                      className="h-9 px-3.5 text-xs font-semibold rounded-xl border-yellow-300 bg-yellow-50/70 text-yellow-800 hover:bg-yellow-100 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
                       title="Unmark as audit"
                     >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                      <RotateCcw className="w-3.5 h-3.5 text-yellow-700" />
                       <span>Unmark as Audit</span>
                     </Button>
                   ) : (
@@ -1293,12 +1648,17 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     }}
                     className={cn(
                       'h-9 px-4 text-xs font-semibold rounded-xl border-emerald-500/40 text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors',
-                      displayStatus === 'Paid' && 'border-slate-300 text-focus bg-slate-50 hover:bg-slate-100'
+                      displayStatus === 'Paid' &&
+                        'border-slate-300 text-focus bg-slate-50 hover:bg-slate-100'
                     )}
                     title="Update repayment status (e.g. mark as Paid)"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{displayStatus === 'Paid' ? 'Update Status' : 'Update (Mark as Paid)'}</span>
+                    <span>
+                      {displayStatus === 'Paid'
+                        ? 'Update Status'
+                        : 'Update (Mark as Paid)'}
+                    </span>
                   </Button>
                 )}
                 {isLoan ? (
@@ -1311,15 +1671,27 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
                     <span>Edit Details</span>
                   </Button>
                 ) : (
-                  <Button
-                    type="button"
-                    onClick={handleEditInSheet}
-                    className="h-9 px-5 text-xs font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                    title="Edit transaction in Excel Sheet"
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-white" />
-                    <span>Edit Particulars in Sheet</span>
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsEditing(true)}
+                      className="h-9 px-4 text-xs font-semibold rounded-xl border-stroke/60 text-focus hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                      title="Quick edit category, date, or payment method"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-focus" />
+                      <span>Edit Category & Details</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleEditInSheet}
+                      className="h-9 px-5 text-xs font-semibold rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                      title="Edit transaction in Excel Sheet"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-white" />
+                      <span>Edit Particulars in Sheet</span>
+                    </Button>
+                  </>
                 )}
               </div>
             )}
@@ -1329,7 +1701,10 @@ export const AuditTransactionModal: React.FC<AuditTransactionModalProps> = ({
               <div className="flex items-center justify-end gap-2 pt-3 mt-2 border-t border-stroke/20">
                 <span className="text-xs font-medium text-muted-fg bg-slate-100/90 px-3.5 py-2 rounded-xl flex items-center gap-2 border border-stroke/30">
                   <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>This transaction has already been audited and can no longer be edited.</span>
+                  <span>
+                    This transaction has already been audited and can no longer be
+                    edited.
+                  </span>
                 </span>
               </div>
             )}

@@ -55,7 +55,7 @@ import { useSession } from '@/hooks/useSession'
 import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { isDateInRange } from '@/utils/dateUtils'
+import { isDateInRange, formatCreatedAt } from '@/utils/dateUtils'
 import { isCompanyMatch } from '@/utils/companyUtils'
 import { loanService } from '@/services/loanService'
 import {
@@ -928,6 +928,12 @@ export const PettyCashPage: React.FC = () => {
                       <TableCell className="px-3 py-3.5 text-xs text-muted-fg tabular-nums font-medium">
                         <div className="flex flex-col gap-0.5">
                           <span>{entry.date}</span>
+                          {entry.createdAt && (
+                            <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1" title={`Created at: ${formatCreatedAt(entry.createdAt)}`}>
+                              <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span className="tabular-nums">{formatCreatedAt(entry.createdAt, { timeOnly: true })}</span>
+                            </span>
+                          )}
                           {entry.auditDate && (
                             <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1" title={`Audited at: ${entry.auditDate}`}>
                               <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
@@ -1180,6 +1186,12 @@ export const PettyCashPage: React.FC = () => {
                 <div>
                   <span className="text-[11px] text-muted-fg">Transaction Date</span>
                   <div className="font-semibold text-focus mt-0.5">{targetEntry.date}</div>
+                  {targetEntry.createdAt && (
+                    <div className="text-[11px] text-slate-500 font-normal mt-0.5 flex items-center gap-1">
+                      <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                      <span>Created: {formatCreatedAt(targetEntry.createdAt)}</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <span className="text-[11px] text-muted-fg">Subsidiary / Company</span>

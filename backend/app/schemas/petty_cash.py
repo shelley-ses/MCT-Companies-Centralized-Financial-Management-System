@@ -97,4 +97,4 @@ class PettyCashLedgerEntry(BaseModel):
     remark: Optional[str] = None
     reviewed_by: Optional[str] = None
     reviewed_at: Optional[datetime] = None
-
+    created_at: Optional[datetime] = None

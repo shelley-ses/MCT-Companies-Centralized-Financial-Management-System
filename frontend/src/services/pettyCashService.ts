@@ -43,6 +43,7 @@ export interface PettyCashLedgerEntry {
   endorsedBy?: string | null
   endorsedAt?: string | null
   financeRemark?: string | null
+  createdAt?: string | null
   auditStatus?: 'Verified' | 'Pending Audit' | 'Flagged'
   auditDate?: string | null
   auditedBy?: string | null
@@ -94,6 +95,7 @@ interface BackendLedgerEntry {
   endorsed_by?: string | null
   endorsed_at?: string | null
   finance_remark?: string | null
+  created_at?: string | null
 }
 
 function backendHeaders(): HeadersInit {
@@ -163,6 +165,7 @@ function mapLedgerEntry(data: BackendLedgerEntry): PettyCashLedgerEntry {
     endorsedBy: data.endorsed_by,
     endorsedAt: data.endorsed_at,
     financeRemark: data.finance_remark,
+    createdAt: data.created_at,
   }
 }
 

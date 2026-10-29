@@ -140,3 +140,68 @@ export function formatToMMDDYYYY(iso: string | null | undefined): string {
   }
   return iso
 }
+
+/**
+ * Parses a timestamp (including naive UTC strings from SQLite/PostgreSQL or ISO strings)
+ * and formats it into the user's local timezone as "MM/DD/YY, hh:mm AM/PM"
+ * (or "hh:mm AM/PM" if timeOnly is true).
+ */
+export function formatCreatedAt(
+  dateInput: string | Date | null | undefined,
+  options?: { timeOnly?: boolean }
+): string {
+  if (!dateInput) return ''
+
+  let parsedDate: Date | null = null
+
+  if (dateInput instanceof Date) {
+    parsedDate = isNaN(dateInput.getTime()) ? null : dateInput
+  } else {
+    const str = String(dateInput).trim()
+    if (!str) return ''
+
+    // If string is date-only YYYY-MM-DD or MM/DD/YY without time component
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str) || /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(str)) {
+      if (options?.timeOnly) return ''
+      return str
+    }
+
+    // Check if it looks like an ISO or SQLite timestamp without timezone offset
+    // e.g. "2026-10-28 07:47:55" or "2026-10-28T07:47:55.123456"
+    const hasExplicitTz = /([zZ]|[+-]\d{2}:?\d{2})$/.test(str)
+    const isIsoLike = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(str)
+
+    const normalizedIso =
+      isIsoLike && !hasExplicitTz ? `${str.replace(' ', 'T')}Z` : str
+
+    const d = new Date(normalizedIso)
+    if (!isNaN(d.getTime())) {
+      parsedDate = d
+    } else {
+      const fallback = new Date(str)
+      if (!isNaN(fallback.getTime())) {
+        parsedDate = fallback
+      }
+    }
+  }
+
+  if (!parsedDate) {
+    return typeof dateInput === 'string' ? dateInput : ''
+  }
+
+  const timeFormatted = parsedDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  })
+
+  if (options?.timeOnly) {
+    return timeFormatted
+  }
+
+  const month = String(parsedDate.getMonth() + 1).padStart(2, '0')
+  const day = String(parsedDate.getDate()).padStart(2, '0')
+  const year = String(parsedDate.getFullYear()).slice(-2)
+
+  return `${month}/${day}/${year}, ${timeFormatted}`
+}

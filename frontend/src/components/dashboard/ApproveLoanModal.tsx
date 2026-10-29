@@ -23,6 +23,8 @@ import {
   type CompanyOption,
 } from '@/services/loanService'
 import { formatPHP } from '@/lib/format'
+import { formatCreatedAt } from '@/utils/dateUtils'
+import { Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ApproveLoanModalProps {
@@ -225,7 +227,15 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-muted-fg font-medium">Request Date:</span>
-              <span className="font-medium text-focus">{loan.date}</span>
+              <div className="text-right">
+                <span className="font-medium text-focus">{loan.date}</span>
+                {loan.createdAt && (
+                  <span className="text-[11px] text-slate-500 font-normal flex items-center justify-end gap-1 mt-0.5">
+                    <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                    <span>Created: {formatCreatedAt(loan.createdAt)}</span>
+                  </span>
+                )}
+              </div>
             </div>
             <div className="pt-2 border-t border-slate-200/60">
               <span className="text-muted-fg block mb-0.5">Purpose / Particulars:</span>

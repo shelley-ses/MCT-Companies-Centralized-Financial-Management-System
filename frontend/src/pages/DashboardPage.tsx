@@ -157,17 +157,26 @@ export const DashboardPage: React.FC = () => {
       })
   }, [data?.recentTransactions, isCompanyScoped, assignedCompany, filters.company, filters.dateRange])
 
-  // Dynamic KPI calculations responding to filtered transactions
+  // Dynamic KPI calculations responding to filtered transactions:
+  // Total Cash: actual cash inflow/deposits collected from sales
+  // Total Cash Expense: actual cash outflow/withdrawals disbursed from expenses
+  // Net Income: Total Cash - Total Cash Expense
   const { totalExpenses, totalIncome, netIncome, overdueCount, dueSoonCount } =
     React.useMemo(() => {
-      const expenses = filteredTransactions.reduce(
-        (sum, tx) => sum + (tx.withdrawal || 0),
-        0
-      )
-      const income = filteredTransactions.reduce(
-        (sum, tx) => sum + (tx.deposit || 0),
-        0
-      )
+      const expenses = filteredTransactions.reduce((sum, tx) => {
+        if (tx.type === 'Expense') {
+          return sum + (tx.withdrawal || tx.amount || 0)
+        }
+        return sum
+      }, 0)
+
+      const income = filteredTransactions.reduce((sum, tx) => {
+        if (tx.type === 'Sales' || tx.type === 'Income') {
+          return sum + (tx.deposit || tx.amount || 0)
+        }
+        return sum
+      }, 0)
+
       const net = income - expenses
 
       const overdue = filteredTransactions.filter(
@@ -207,21 +216,21 @@ export const DashboardPage: React.FC = () => {
       */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <DashboardKpiCard
-          label="Total Income"
+          label="Total Cash"
           value={formatPHP(totalIncome)}
           icon={TrendingUp}
           valueClassName="text-emerald-600"
           iconContainerClassName="bg-emerald-50 text-emerald-600 border border-emerald-200/60"
         />
         <DashboardKpiCard
-          label="Total Expenses"
+          label="Total Cash Expense"
           value={formatPHP(totalExpenses)}
           icon={TrendingDown}
           valueClassName="text-rose-600"
           iconContainerClassName="bg-rose-50 text-rose-600 border border-rose-200/60"
         />
         <DashboardKpiCard
-          label="Net Income (Income - Expenses)"
+          label="Net Income (Total Cash - Cash Expense)"
           value={formatPHP(netIncome)}
           icon={Landmark}
           valueClassName={netIncome >= 0 ? 'text-emerald-600' : 'text-rose-600'}

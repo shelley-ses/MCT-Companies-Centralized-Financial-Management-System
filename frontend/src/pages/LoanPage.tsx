@@ -61,7 +61,7 @@ import {
 } from '@/services/loanService'
 import { websocketService } from '@/services/websocketService'
 import { useLocation } from 'react-router-dom'
-import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
+import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD, formatCreatedAt } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
 import { useCompany } from '@/context/CompanyContext'
 
@@ -1161,6 +1161,12 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                               </span>
                             )}
                           </div>
+                          {loan.createdAt && (
+                            <span className="text-[10px] text-muted-fg font-normal flex items-center gap-1" title={`Created at: ${formatCreatedAt(loan.createdAt)}`}>
+                              <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span className="tabular-nums">{formatCreatedAt(loan.createdAt, { timeOnly: true })}</span>
+                            </span>
+                          )}
                           {loan.auditDate && (
                             <span className="text-[10px] text-muted-fg font-normal flex items-center gap-1" title={`Audited at: ${loan.auditDate}`}>
                               <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />

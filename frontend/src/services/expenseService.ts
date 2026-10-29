@@ -1,5 +1,9 @@
 import type { DashboardTransactionItem } from './dashboardService'
-import { type ParticularItem, parseParticulars } from '@/utils/particularsUtils'
+import {
+  type ParticularItem,
+  parseParticulars,
+  deriveRecordStatusFromParticulars,
+} from '@/utils/particularsUtils'
 
 export class ExpenseValidationError extends Error {
   constructor(message: string) {
@@ -60,7 +64,44 @@ export interface NewExpenseInput {
   bankAccountId?: string
 }
 
+interface StoredAuditMetadata {
+  auditStatus: 'Verified' | 'Pending Audit' | 'Flagged'
+  auditedBy?: string
+  auditDate?: string
+  auditNotes?: string
+}
+
 const EXPENSES_STORAGE_KEY = 'mct_expense_records_v1'
+const EXPENSE_AUDIT_MAP_KEY = 'mct_expense_audit_status_v1'
+
+function loadExpenseAuditMap(): Record<string, StoredAuditMetadata> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(EXPENSE_AUDIT_MAP_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') return parsed
+    }
+  } catch {
+    // ignore
+  }
+  return {}
+}
+
+function saveExpenseAuditEntry(id: string, meta: StoredAuditMetadata): void {
+  if (typeof window === 'undefined') return
+  try {
+    const map = loadExpenseAuditMap()
+    const cleanId = String(id)
+    map[cleanId] = meta
+    if (!cleanId.startsWith('exp_')) {
+      map[`exp_${cleanId}`] = meta
+    }
+    localStorage.setItem(EXPENSE_AUDIT_MAP_KEY, JSON.stringify(map))
+  } catch {
+    // ignore
+  }
+}
 
 function loadStoredExpenses(): ExpenseItem[] {
   if (typeof window !== 'undefined') {
@@ -102,12 +143,29 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
   }
 
   const amt = Number(exp.amount || exp.withdrawal || 0)
-  const isPending = (exp.unpaid_balance !== undefined && Number(exp.unpaid_balance) > 0) || exp.status === 'Pending'
+  const isPending =
+    (exp.unpaid_balance !== undefined && Number(exp.unpaid_balance) > 0) ||
+    exp.status === 'Pending'
+  const fallbackStatus: 'Paid' | 'Pending' | 'Unpaid' = isPending
+    ? 'Pending'
+    : exp.status === 'Unpaid'
+      ? 'Unpaid'
+      : 'Paid'
   const partText = exp.particulars || exp.description || 'Expense Outflow'
   const parsedItems = parseParticulars(partText, null, amt)
+  const derivedStatus = deriveRecordStatusFromParticulars(parsedItems, fallbackStatus)
+
+  const expId = `exp_${exp.expense_id || exp.id}`
+  const auditMap = loadExpenseAuditMap()
+  const storedAudit = auditMap[expId] || auditMap[String(exp.expense_id || exp.id)]
+  const resolvedAuditStatus: 'Verified' | 'Pending Audit' | 'Flagged' =
+    storedAudit?.auditStatus ||
+    (exp.audit_status === 'Verified' || exp.audit_status === 'Flagged'
+      ? exp.audit_status
+      : 'Pending Audit')
 
   return {
-    id: `exp_${exp.expense_id || exp.id}`,
+    id: expId,
     refNo: exp.reference_no || exp.ref_no || `REF-${exp.expense_id || '001'}`,
     chequeNo: exp.cheque_no || exp.cheque_number || '',
     date: displayDate,
@@ -119,8 +177,11 @@ function mapBackendExpenseToItem(exp: any): ExpenseItem {
     paymentMethod: exp.payment_method || undefined,
     company: exp.company_name || exp.company || 'MCT Kitchen',
     items: parsedItems,
-    status: isPending ? 'Pending' : 'Paid',
-    auditStatus: 'Verified',
+    status: derivedStatus,
+    auditStatus: resolvedAuditStatus,
+    auditedBy: storedAudit?.auditedBy || exp.audited_by || undefined,
+    auditDate: storedAudit?.auditDate || exp.audited_at || undefined,
+    auditNotes: storedAudit?.auditNotes || exp.audit_remarks || undefined,
     type: 'Expense',
     createdAt: exp.created_at || new Date().toISOString(),
     updatedAt: exp.updated_at || new Date().toISOString(),
@@ -172,7 +233,10 @@ export const expenseService = {
     ]
   },
 
-  async createCategory(name: string, description?: string): Promise<{ category_id: number; name: string }> {
+  async createCategory(
+    name: string,
+    description?: string
+  ): Promise<{ category_id: number; name: string }> {
     const cleaned = name.trim()
     if (!cleaned) throw new Error('Category name cannot be empty')
     try {
@@ -264,6 +328,7 @@ export const expenseService = {
   },
 
   async addExpense(input: NewExpenseInput): Promise<ExpenseItem> {
+    this.invalidateCache()
     const rawDate = input.date
     const parts = rawDate.split('-')
     const formattedDate =
@@ -307,9 +372,18 @@ export const expenseService = {
         const mapped = mapBackendExpenseToItem(created)
         if (input.items && input.items.length > 0) {
           mapped.items = input.items
+          mapped.status = deriveRecordStatusFromParticulars(
+            input.items,
+            input.status === 'Unpaid'
+              ? 'Unpaid'
+              : input.status === 'Pending' || input.status === 'On hold'
+                ? 'Pending'
+                : 'Paid'
+          )
         }
         inMemoryExpenses = [mapped, ...inMemoryExpenses]
         saveStoredExpenses(inMemoryExpenses)
+        this.invalidateCache()
         return mapped
       } else {
         const errData = await res.json().catch(() => ({}))
@@ -325,6 +399,9 @@ export const expenseService = {
       console.warn('Backend POST /expenses failed, creating local record:', err)
     }
 
+    const parsedItems =
+      input.items || parseParticulars(input.particulars, null, input.amount)
+
     const newExpense: ExpenseItem = {
       id: `exp_${Date.now()}`,
       refNo,
@@ -337,32 +414,45 @@ export const expenseService = {
       category: input.category,
       paymentMethod: input.paymentMethod,
       company: input.company,
-      items: input.items || parseParticulars(input.particulars, null, input.amount),
-      status: input.status,
+      items: parsedItems,
+      status: deriveRecordStatusFromParticulars(
+        parsedItems,
+        input.status === 'Unpaid'
+          ? 'Unpaid'
+          : input.status === 'Pending' || input.status === 'On hold'
+            ? 'Pending'
+            : 'Paid'
+      ),
       auditStatus: 'Pending Audit',
       auditNotes: 'Newly recorded expense transaction.',
-      createdBy: 'Finance Auditor',
-      createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      createdBy: 'Finance Staff',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       type: 'Expense',
     }
 
     inMemoryExpenses = [newExpense, ...inMemoryExpenses]
     saveStoredExpenses(inMemoryExpenses)
+    this.invalidateCache()
     return newExpense
   },
 
   async updateExpense(
     id: string,
-    updates: Partial<ExpenseItem> & { amount?: number; particulars?: string; chequeNo?: string }
+    updates: Partial<ExpenseItem> & {
+      amount?: number
+      particulars?: string
+      chequeNo?: string
+    }
   ): Promise<ExpenseItem | null> {
+    this.invalidateCache()
     const numericId = id.replace(/^exp_/, '')
     const withdrawalVal =
       updates.withdrawal !== undefined
         ? updates.withdrawal
         : updates.amount !== undefined
-        ? updates.amount
-        : undefined
+          ? updates.amount
+          : undefined
 
     const payload: Record<string, any> = {}
     if (updates.rawDate || (updates.date && updates.date.includes('-'))) {
@@ -403,14 +493,31 @@ export const expenseService = {
       if (res.ok) {
         const updated = await res.json()
         const mapped = mapBackendExpenseToItem(updated)
-        inMemoryExpenses = inMemoryExpenses.map((e) => (e.id === id || e.id === `exp_${numericId}` ? mapped : e))
+        if (updates.items && updates.items.length > 0) {
+          mapped.items = updates.items
+          mapped.status = deriveRecordStatusFromParticulars(
+            updates.items,
+            mapped.status === 'Unpaid'
+              ? 'Unpaid'
+              : mapped.status === 'Pending'
+                ? 'Pending'
+                : 'Paid'
+          )
+        } else if (updates.status) {
+          mapped.status = updates.status
+        }
+        inMemoryExpenses = inMemoryExpenses.map((e) =>
+          e.id === id || e.id === `exp_${numericId}` ? mapped : e
+        )
         saveStoredExpenses(inMemoryExpenses)
+        this.invalidateCache()
         return mapped
       } else if (res.status === 400) {
-        // Validation errors (e.g. insufficient petty cash) must not be applied locally
         const errData = await res.json().catch(() => ({}))
         throw new ExpenseValidationError(
-          typeof errData.detail === 'string' ? errData.detail : 'Failed to update expense entry.'
+          typeof errData.detail === 'string'
+            ? errData.detail
+            : 'Failed to update expense entry.'
         )
       }
     } catch (err) {
@@ -418,7 +525,9 @@ export const expenseService = {
       console.warn('Backend PUT /expenses failed, updating locally:', err)
     }
 
-    const index = inMemoryExpenses.findIndex((e) => e.id === id || e.id === `exp_${numericId}`)
+    const index = inMemoryExpenses.findIndex(
+      (e) => e.id === id || e.id === `exp_${numericId}`
+    )
     if (index === -1) return null
 
     const existing = inMemoryExpenses[index]
@@ -434,19 +543,38 @@ export const expenseService = {
       displayDate = updates.date
     }
 
-    const finalWithdrawal = withdrawalVal !== undefined ? withdrawalVal : existing.withdrawal
+    const finalWithdrawal =
+      withdrawalVal !== undefined ? withdrawalVal : existing.withdrawal
+    const updatedParticulars = updates.particulars || existing.particulars
+    const updatedItems =
+      updates.items ||
+      parseParticulars(updatedParticulars, existing.items, finalWithdrawal)
+
     const updated: ExpenseItem = {
       ...existing,
       ...updates,
+      particulars: updatedParticulars,
+      items: updatedItems,
+      status:
+        updates.status ||
+        deriveRecordStatusFromParticulars(
+          updatedItems,
+          existing.status === 'Unpaid'
+            ? 'Unpaid'
+            : existing.status === 'Pending'
+              ? 'Pending'
+              : 'Paid'
+        ),
       date: displayDate,
       rawDate: rawDate,
       withdrawal: finalWithdrawal,
       netAmount: finalWithdrawal,
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      updatedAt: new Date().toISOString(),
     }
 
     inMemoryExpenses[index] = updated
     saveStoredExpenses(inMemoryExpenses)
+    this.invalidateCache()
     return updated
   },
 
@@ -460,8 +588,11 @@ export const expenseService = {
       notes?: string
     }
   ): Promise<ExpenseItem> {
+    this.invalidateCache()
     const numericId = id.replace(/^exp_/, '')
-    const index = inMemoryExpenses.findIndex((e) => e.id === id || e.id === `exp_${numericId}`)
+    const index = inMemoryExpenses.findIndex(
+      (e) => e.id === id || e.id === `exp_${numericId}`
+    )
     if (index === -1) {
       throw new Error('Expense record not found.')
     }
@@ -489,15 +620,17 @@ export const expenseService = {
       outstandingBalance: newRemaining,
       status: newStatus,
       repayments: [repRecord, ...(exp.repayments || [])],
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      updatedAt: new Date().toISOString(),
     }
 
     inMemoryExpenses[index] = updated
     saveStoredExpenses(inMemoryExpenses)
+    this.invalidateCache()
     return updated
   },
 
   async deleteExpense(id: string): Promise<boolean> {
+    this.invalidateCache()
     const numericId = id.replace(/^exp_/, '')
     try {
       const token =
@@ -513,38 +646,62 @@ export const expenseService = {
         },
       })
       if (res.ok) {
-        inMemoryExpenses = inMemoryExpenses.filter((e) => e.id !== id && e.id !== `exp_${numericId}`)
+        inMemoryExpenses = inMemoryExpenses.filter(
+          (e) => e.id !== id && e.id !== `exp_${numericId}`
+        )
         saveStoredExpenses(inMemoryExpenses)
+        this.invalidateCache()
         return true
       }
     } catch (err) {
       console.warn('Backend DELETE /expenses failed, deleting locally:', err)
     }
 
-    inMemoryExpenses = inMemoryExpenses.filter((e) => e.id !== id && e.id !== `exp_${numericId}`)
+    inMemoryExpenses = inMemoryExpenses.filter(
+      (e) => e.id !== id && e.id !== `exp_${numericId}`
+    )
     saveStoredExpenses(inMemoryExpenses)
+    this.invalidateCache()
     return true
   },
 
   async updateExpenseAuditStatus(
     id: string,
     auditStatus: 'Verified' | 'Pending Audit' | 'Flagged',
-    auditedBy?: string
+    auditedBy?: string,
+    auditNotes?: string
   ): Promise<ExpenseItem | null> {
     const today = new Date().toLocaleDateString('en-US', {
       month: '2-digit',
       day: '2-digit',
       year: '2-digit',
     })
-    const index = inMemoryExpenses.findIndex((e) => e.id === id)
+    const meta: StoredAuditMetadata = {
+      auditStatus,
+      auditedBy:
+        auditStatus === 'Verified' || auditStatus === 'Flagged'
+          ? auditedBy || 'Auditor'
+          : undefined,
+      auditDate:
+        auditStatus === 'Verified' || auditStatus === 'Flagged' ? today : undefined,
+      auditNotes,
+    }
+    saveExpenseAuditEntry(id, meta)
+    this.invalidateCache()
+
+    const numericId = id.replace(/^exp_/, '')
+    const index = inMemoryExpenses.findIndex(
+      (e) => e.id === id || e.id === `exp_${numericId}`
+    )
     if (index === -1) return null
     const exp = inMemoryExpenses[index]
     const updated: ExpenseItem = {
       ...exp,
       auditStatus,
-      auditedBy: auditStatus === 'Verified' ? (auditedBy || 'Admin') : undefined,
-      auditDate: auditStatus === 'Verified' ? today : undefined,
-      updatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      auditedBy: meta.auditedBy,
+      auditDate: meta.auditDate,
+      auditNotes: meta.auditNotes ?? exp.auditNotes,
+      updatedAt: new Date().toISOString(),
     }
     inMemoryExpenses[index] = updated
     saveStoredExpenses(inMemoryExpenses)
@@ -688,7 +845,13 @@ export const expenseService = {
       createdAt: expense.createdAt,
       updatedAt: expense.updatedAt,
       attachments: [],
-      items: expense.items || parseParticulars(expense.particulars, null, expense.withdrawal || expense.netAmount),
+      items:
+        expense.items ||
+        parseParticulars(
+          expense.particulars,
+          null,
+          expense.withdrawal || expense.netAmount
+        ),
     }
   },
 }

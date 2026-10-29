@@ -84,7 +84,7 @@ class PettyCashService:
 
             query = (
                 client.table("expenses")
-                .select("expense_id, company_id, category_id, expense_date, amount, description, reference_no, payment_method")
+                .select("expense_id, company_id, category_id, expense_date, amount, description, reference_no, payment_method, created_at")
             )
             if company_id:
                 query = query.eq("company_id", company_id)
@@ -108,6 +108,7 @@ class PettyCashService:
                     "description": row.get("description") or "",
                     "category": cat_map.get(row.get("category_id")) or "Petty Cash",
                     "reference_no": row.get("reference_no"),
+                    "created_at": row.get("created_at"),
                 }
                 for row in rows
             ]
@@ -135,6 +136,7 @@ class PettyCashService:
                     "description": exp.description or "",
                     "category": cat_name or "Petty Cash",
                     "reference_no": exp.reference_no,
+                    "created_at": exp.created_at,
                 }
                 for exp, cat_name in query.all()
             ]
@@ -283,6 +285,7 @@ class PettyCashService:
                 "remark": t.remark,
                 "reviewed_by": t.reviewed_by,
                 "reviewed_at": t.reviewed_at,
+                "created_at": t.created_at,
             })
 
         for e in expenses:
@@ -309,6 +312,7 @@ class PettyCashService:
                 "remark": None,
                 "reviewed_by": None,
                 "reviewed_at": None,
+                "created_at": e.get("created_at"),
             })
 
         # Running balance is computed over the full history chronologically
@@ -488,4 +492,3 @@ class PettyCashService:
             (_to_decimal(t.amount) for t in self._topups(company_id) if _in_period(t.topup_date, start, end)),
             ZERO,
         )
-
