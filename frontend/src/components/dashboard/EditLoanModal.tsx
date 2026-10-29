@@ -21,6 +21,7 @@ import {
   type LoanItem,
   type CompanyOption,
 } from '@/services/loanService'
+import { useSession } from '@/hooks/useSession'
 import { cn } from '@/lib/utils'
 
 interface EditLoanModalProps {
@@ -38,6 +39,8 @@ export const EditLoanModal: React.FC<EditLoanModalProps> = ({
   onSuccess,
   companies: initialCompanies,
 }) => {
+  const { user } = useSession()
+  const isFinanceUser = (user?.role || '').toLowerCase() === 'finance'
   const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
   const [date, setDate] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
@@ -269,7 +272,7 @@ export const EditLoanModal: React.FC<EditLoanModalProps> = ({
             </div>
 
             {/* 4. Amount */}
-            <div className="space-y-1.5">
+            <div className={cn('space-y-1.5', !isFinanceUser && 'sm:col-span-2')}>
               <Label className="text-xs font-semibold text-focus block">
                 Principal Amount (₱) <span className="text-red-500">*</span>
               </Label>
@@ -299,26 +302,28 @@ export const EditLoanModal: React.FC<EditLoanModalProps> = ({
               {fieldErrors.amount && <p className="text-2xs text-red-500">{fieldErrors.amount}</p>}
             </div>
 
-            {/* 5. Interest Rate */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus block">
-                Interest Rate (%)
-              </Label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  placeholder="0.0"
-                  value={interestRate}
-                  onChange={(e) => setInterestRate(e.target.value)}
-                  className="pr-7 h-10 text-xs sm:text-sm rounded-xl tabular-nums"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg text-xs font-bold pointer-events-none">
-                  %
-                </span>
+            {/* 5. Interest Rate (Finance only) */}
+            {isFinanceUser && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Interest Rate (%)
+                </Label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0.0"
+                    value={interestRate}
+                    onChange={(e) => setInterestRate(e.target.value)}
+                    className="pr-7 h-10 text-xs sm:text-sm rounded-xl tabular-nums"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-fg text-xs font-bold pointer-events-none">
+                    %
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* 6. Particulars */}
             <div className="space-y-1.5 sm:col-span-2">

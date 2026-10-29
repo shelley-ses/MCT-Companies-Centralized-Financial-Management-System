@@ -700,50 +700,18 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             <span>Back to {isSales ? 'Sales' : 'Expense'}</span>
           </Button>
 
-          <div className="flex items-center gap-3 mt-1">
-            <div
-              className={cn(
-                'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-xs',
-                isSales
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-rose-50 text-rose-700 border border-rose-200'
-              )}
-            >
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-focus tracking-tight">
-                {isEditMode ? `Edit ${transactionType}` : `Add ${transactionType}`}
-              </h1>
-              <p className="text-xs sm:text-sm text-muted-fg font-normal">
-                {isEditMode
-                  ? `Editing particulars for ${editItem?.refNo || 'transaction'}. You can adjust particulars, unit prices, quantities, and status.`
-                  : isSales
-                  ? 'Excel-style spreadsheet entry for sales particulars, unit pricing, and deposit calculations.'
-                  : 'Excel-style spreadsheet entry for operational expense particulars, unit pricing, and withdrawal calculations.'}
-              </p>
-            </div>
+          <div className="mt-1">
+            <h1 className="text-2xl sm:text-3xl font-bold text-focus tracking-tight">
+              {isEditMode ? `Edit ${transactionType}` : `Add ${transactionType}`}
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-fg font-normal mt-0.5">
+              {isEditMode
+                ? `Editing particulars for ${editItem?.refNo || 'transaction'}. You can adjust particulars, unit prices, quantities, and status.`
+                : isSales
+                ? 'Excel-style spreadsheet entry for sales particulars, unit pricing, and deposit calculations.'
+                : 'Excel-style spreadsheet entry for operational expense particulars, unit pricing, and withdrawal calculations.'}
+            </p>
           </div>
-        </div>
-
-        {/* Transaction Type Indicator Badge */}
-        <div className="self-start sm:self-auto">
-          <span
-            className={cn(
-              'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border shadow-2xs',
-              isSales
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
-                : 'bg-rose-50 text-rose-700 border-rose-200/80'
-            )}
-          >
-            <span
-              className={cn(
-                'w-2 h-2 rounded-full',
-                isSales ? 'bg-emerald-500' : 'bg-rose-500'
-              )}
-            />
-            <span>{isSales ? 'Sales Deposit Entry' : 'Expense Withdrawal Entry'}</span>
-          </span>
         </div>
       </div>
 
@@ -1236,7 +1204,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             </span>
             <span
               className={cn(
-                'text-2xl sm:text-3xl font-extrabold tracking-tight mt-0.5 block tabular-nums',
+                'text-lg sm:text-xl font-bold mt-0.5 block tabular-nums',
                 isSales ? 'text-emerald-600' : 'text-rose-600'
               )}
             >

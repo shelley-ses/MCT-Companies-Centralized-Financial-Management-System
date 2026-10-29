@@ -25,17 +25,40 @@ import {
   type DashboardData,
 } from '@/services/dashboardService'
 import { pettyCashService } from '@/services/pettyCashService'
+import { loanService } from '@/services/loanService'
 import { formatPHP } from '@/lib/format'
-import { cn } from '@/lib/utils'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { isCompanyMatch } from '@/utils/companyUtils'
 import { useSession } from '@/hooks/useSession'
-import { useCompany } from '@/context/CompanyContext'
+import { useCompany, ALL_COMPANIES_LIST } from '@/context/CompanyContext'
 
 export const DashboardPage: React.FC = () => {
   const { user } = useSession()
   const { activeCompany, setActiveCompany } = useCompany()
-  const isCompanyScoped = user?.role === 'Supervisor'
+
+  const userRole = (user?.role || '').trim().toLowerCase()
+  const isFinance = userRole === 'finance'
+  const isAudit = userRole === 'audit' || userRole.includes('auditor')
+  const isAdmin = userRole === 'admin'
+  const isCompanyScoped = !isFinance && !isAudit && !isAdmin
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
+
+  // Dynamic companies list populated from database with fallback to ALL_COMPANIES_LIST
+  const [companyList, setCompanyList] = React.useState<string[]>(ALL_COMPANIES_LIST)
+
+  React.useEffect(() => {
+    let mounted = true
+    loanService.getCompanies().then((companies) => {
+      if (mounted && companies.length > 0) {
+        const names = companies.map((c) => c.company_name).filter(Boolean)
+        const combined = Array.from(new Set(['All Companies', ...names]))
+        setCompanyList(combined)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const [filters, setFilters] = React.useState<DashboardFilterState>(() => ({
     dateRange: {
@@ -130,6 +153,7 @@ export const DashboardPage: React.FC = () => {
       isMounted = false
     }
   }, [filters.company, isCompanyScoped, assignedCompany])
+
   // Filter transactions strictly on client side by company and date range, sorted latest first
   const filteredTransactions = React.useMemo(() => {
     if (!data?.recentTransactions) return []
@@ -141,7 +165,7 @@ export const DashboardPage: React.FC = () => {
         // 1. Company filter
         if (
           targetCompany !== 'All Companies' &&
-          (tx.company || '').toLowerCase().trim() !== targetCompany.toLowerCase().trim()
+          !isCompanyMatch(tx.company, targetCompany)
         ) {
           return false
         }
@@ -200,15 +224,29 @@ export const DashboardPage: React.FC = () => {
       {/* Visually hidden h1 for accessibility compliance */}
       <h1 className="sr-only">MCT Centralized Financial Dashboard</h1>
 
-      {/* 1. Sleek Compact Welcome Greeting Banner */}
-      <WelcomeBanner />
-      {/* 3. KPI Cards (Admin and Company Auditor):
+      {/* 1. Sleek Compact Welcome Greeting Banner & Company/Date Filter Bar */}
+      <div className="space-y-3">
+        <WelcomeBanner />
+        <DashboardHeader
+          filters={filters}
+          companies={companyList}
+          onFiltersChange={(newFilters) => {
+            setFilters(newFilters)
+            if (!isCompanyScoped && newFilters.company !== filters.company) {
+              setActiveCompany(newFilters.company)
+            }
+          }}
+          isCompanyScoped={isCompanyScoped}
+        />
+      </div>
+
+      {/* 3. KPI Cards (Admin, Finance, and Audit):
           1. Total Expenses
           2. Total Income
           3. Net Income (Income - Expenses)
           4. Overdue / Due Soon
           5. Petty Cash Balance (current wallet balance, not date-filtered)
-          All other values respond dynamically to the selected date range.
+          All other values respond dynamically to the selected company and date range.
       */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <DashboardKpiCard

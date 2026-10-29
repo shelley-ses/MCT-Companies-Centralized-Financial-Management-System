@@ -138,6 +138,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
     }
   }, [activeCompany, isCompanyScoped])
   const [statusFilter, setStatusFilter] = React.useState<string>('All')
+  const [approvalTab, setApprovalTab] = React.useState<'Approve' | 'Pending'>('Approve')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
   const [dateRange, setDateRange] = React.useState<DateRange>({
     preset: 'This Month',
@@ -163,6 +164,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
   // Modals & Action state
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
+  const [viewLoanItem, setViewLoanItem] = React.useState<LoanItem | null>(null)
   const [editLoan, setEditLoan] = React.useState<LoanItem | null>(null)
   const [approveLoanItem, setApproveLoanItem] = React.useState<LoanItem | null>(null)
   const [auditReviewLoanItem, setAuditReviewLoanItem] = React.useState<LoanItem | null>(null)
@@ -175,20 +177,43 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
 
   const [highlightedLoanId, setHighlightedLoanId] = React.useState<string | null>(null)
 
-  // Audit Actions Menu State
+  // 3-Dots Action Menu State
   const [openMenuLoanId, setOpenMenuLoanId] = React.useState<string | null>(null)
-  const [menuPosition, setMenuPosition] = React.useState<{ top: number; left: number } | null>(null)
+  const [menuPosition, setMenuPosition] = React.useState<{
+    top: number
+    right: number
+    openUpward?: boolean
+  } | null>(null)
   const [activeMenuLoan, setActiveMenuLoan] = React.useState<LoanItem | null>(null)
 
   React.useEffect(() => {
-    const handleCloseMenu = () => setOpenMenuLoanId(null)
-    window.addEventListener('click', handleCloseMenu)
-    window.addEventListener('scroll', handleCloseMenu, true)
-    return () => {
-      window.removeEventListener('click', handleCloseMenu)
-      window.removeEventListener('scroll', handleCloseMenu, true)
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (
+        !target.closest('.loan-portal-menu') &&
+        !target.closest('.loan-action-btn')
+      ) {
+        setOpenMenuLoanId(null)
+        setMenuPosition(null)
+        setActiveMenuLoan(null)
+      }
     }
-  }, [])
+    const handleScrollOrResize = () => {
+      setOpenMenuLoanId(null)
+      setMenuPosition(null)
+      setActiveMenuLoan(null)
+    }
+    if (openMenuLoanId) {
+      document.addEventListener('mousedown', handleOutsideClick)
+      window.addEventListener('scroll', handleScrollOrResize, true)
+      window.addEventListener('resize', handleScrollOrResize)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      window.removeEventListener('scroll', handleScrollOrResize, true)
+      window.removeEventListener('resize', handleScrollOrResize)
+    }
+  }, [openMenuLoanId])
 
   const handleMarkLoanAudit = async (loan: LoanItem, status: 'Verified' | 'Flagged') => {
     const timestamp = new Date().toLocaleString('en-US', {
@@ -408,6 +433,25 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
           return false
         }
 
+        // Approve / Pending segmented tab filter
+        const statusLower = (item.status || '').trim().toLowerCase()
+        const isPendingLoan =
+          item.status === 'Pending Finance Endorsement' ||
+          item.status === 'Pending Approval' ||
+          item.status === 'Pending Audit Approval' ||
+          statusLower.includes('pending')
+        const isRejectedLoan =
+          item.status === 'Rejected by Finance' ||
+          item.status === 'Disapproved by Audit' ||
+          statusLower.includes('rejected') ||
+          statusLower.includes('disapproved')
+
+        if (approvalTab === 'Pending') {
+          if (!isPendingLoan) return false
+        } else if (approvalTab === 'Approve') {
+          if (isPendingLoan || isRejectedLoan) return false
+        }
+
         if (statusFilter !== 'All') {
           const itemStatus = (item.status || '').trim().toLowerCase()
           const filterStatus = statusFilter.trim().toLowerCase()
@@ -450,11 +494,11 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [loans, isAuditor, assignedCompany, selectedCompany, loanType, dateRange, statusFilter, searchQuery])
+  }, [loans, isAuditor, assignedCompany, selectedCompany, loanType, dateRange, statusFilter, searchQuery, approvalTab])
 
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [dateRange, searchQuery, selectedCompany, selectedPeriod, loanType, statusFilter])
+  }, [dateRange, searchQuery, selectedCompany, selectedPeriod, loanType, statusFilter, approvalTab])
 
   // Total Loans KPI
   const kpis = React.useMemo(() => {
@@ -497,6 +541,12 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const handleLoanAdded = (newItem: LoanItem) => {
     setLoans((prev) => [newItem, ...prev])
     setSearchQuery('')
+    const isNewPending =
+      newItem.status === 'Pending Finance Endorsement' ||
+      newItem.status === 'Pending Approval' ||
+      newItem.status === 'Pending Audit Approval' ||
+      (newItem.status || '').toLowerCase().includes('pending')
+    setApprovalTab(isNewPending ? 'Pending' : 'Approve')
 
     const newDateIso = newItem.rawDate || normalizeDateToYYYYMMDD(newItem.date)
     if (!isDateInRange(newDateIso, dateRange.startDate, dateRange.endDate)) {
@@ -545,32 +595,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   }
 
   const handleRowClick = (loan: LoanItem) => {
-    const isPendingFinance =
-      loan.status === 'Pending Finance Endorsement' || loan.status === 'Pending Approval'
-    const isPendingAudit = loan.status === 'Pending Audit Approval'
-
-    if (isPendingFinance) {
-      if (canApprove) {
-        setApproveLoanItem(loan)
-      } else {
-        setEditLoan(loan)
-      }
-      return
-    }
-
-    if (isPendingAudit) {
-      if (isAuditor) {
-        setAuditReviewLoanItem(loan)
-      }
-      return
-    }
-
-    if (loanType === 'Lender') {
-      // In the Lender tab, loans are extended to partner companies, so lenders don't pay loans
-      return
-    }
-    setPaymentLoan(loan)
-    setIsPaymentModalOpen(true)
+    setViewLoanItem(loan)
   }
 
   const handleConfirmDelete = async () => {
@@ -644,15 +669,25 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                variant={isAudit ? 'default' : 'outline'}
+                onClick={() => {
+                  setIsExportDropdownOpen((prev) => !prev)
+                  setIsPeriodDropdownOpen(false)
+                  setIsStatusDropdownOpen(false)
+                  setIsCompanyDropdownOpen(false)
+                }}
+                className={cn(
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  isAudit
+                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white'
+                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
+                )}
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 shrink-0 text-focus/70" />
+                <Download className={cn('h-4 w-4 shrink-0', isAudit ? 'text-white' : 'text-focus/70')} />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+                <ChevronDown className={cn('h-3.5 w-3.5 ml-0.5', isAudit ? 'text-white/90' : 'text-muted-fg')} />
               </Button>
 
               {isExportDropdownOpen && (
@@ -705,7 +740,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 flex-wrap relative z-30 overflow-visible shrink-0">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             {/* Period Dropdown */}
             <div ref={periodDropdownRef} className="relative inline-block shrink-0">
               <button
@@ -714,6 +749,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                   setIsPeriodDropdownOpen((prev) => !prev)
                   setIsStatusDropdownOpen(false)
                   setIsCompanyDropdownOpen(false)
+                  setIsExportDropdownOpen(false)
                 }}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
@@ -762,6 +798,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                   setIsStatusDropdownOpen((prev) => !prev)
                   setIsPeriodDropdownOpen(false)
                   setIsCompanyDropdownOpen(false)
+                  setIsExportDropdownOpen(false)
                 }}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus whitespace-nowrap shrink-0',
@@ -822,6 +859,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                     setIsCompanyDropdownOpen((prev) => !prev)
                     setIsPeriodDropdownOpen(false)
                     setIsStatusDropdownOpen(false)
+                    setIsExportDropdownOpen(false)
                   }}
                   className={cn(
                     'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
@@ -915,6 +953,36 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                 )}
               </div>
             )}
+
+            {/* Tab Switcher: Approve / Pending (Right Side, matching Deposit / Expense Record style) */}
+            <div className="flex items-center bg-slate-100 rounded-full border border-stroke/30 p-1 gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setApprovalTab('Approve')}
+                className={cn(
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  approvalTab === 'Approve'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => setApprovalTab('Pending')}
+                className={cn(
+                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  approvalTab === 'Pending'
+                    ? 'bg-[#960C01] text-white shadow-xs'
+                    : 'text-focus/70 hover:bg-white hover:text-focus'
+                )}
+              >
+                <Clock className="h-4 w-4 shrink-0" />
+                Pending
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -982,23 +1050,25 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
               {loanType === 'Borrower' ? (
                 <>
                   <col style={{ width: '9%' }} />
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '16%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '14%' }} />
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '8%' }} />
                   <col style={{ width: '11%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '8%' }} />
                 </>
               ) : (
                 <>
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '14%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '12%' }} />
                   <col style={{ width: '13%' }} />
+                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '8%' }} />
                 </>
               )}
             </colgroup>
@@ -1028,6 +1098,9 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                     INT. RATE
                   </TableHead>
                 )}
+                <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
+                  STATUS
+                </TableHead>
                 <TableHead className="px-2 py-3 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
                   ACTIONS
                 </TableHead>
@@ -1062,14 +1135,17 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       </TableCell>
                     )}
                     <TableCell className="px-2 py-3.5 text-center">
-                      <div className="h-6 w-12 bg-slate-200/60 animate-pulse rounded-lg mx-auto" />
+                      <div className="h-6 w-16 bg-slate-200/60 animate-pulse rounded-full mx-auto" />
+                    </TableCell>
+                    <TableCell className="px-2 py-3.5 text-center">
+                      <div className="h-7 w-7 bg-slate-200/60 animate-pulse rounded-lg mx-auto" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : paginatedLoans.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={loanType === 'Borrower' ? 8 : 7}
+                    colSpan={loanType === 'Borrower' ? 9 : 8}
                     className="py-14 text-center text-xs sm:text-sm text-muted-fg"
                   >
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
@@ -1093,16 +1169,6 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                   const isPendingAudit = loan.status === 'Pending Audit Approval'
                   const isRejectedFinance = loan.status === 'Rejected by Finance'
                   const isDisapprovedAudit = loan.status === 'Disapproved by Audit'
-                  const isApproved =
-                    loan.status === 'Approved' ||
-                    loan.status === 'Paid' ||
-                    loan.status === 'Partially Paid' ||
-                    (!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit)
-
-                  const isClickable =
-                    (isPendingFinance && (canApprove || loanType === 'Borrower')) ||
-                    (isPendingAudit && isAuditor) ||
-                    (isApproved && loanType === 'Borrower')
 
                   return (
                     <TableRow
@@ -1110,8 +1176,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                       id={`loan-row-${loan.id}`}
                       onClick={() => handleRowClick(loan)}
                       className={cn(
-                        'border-b transition-colors',
-                        isClickable ? 'cursor-pointer' : 'cursor-default',
+                        'border-b transition-colors cursor-pointer',
                         isPendingFinance && 'bg-amber-50/70 hover:bg-amber-100/60 border-amber-200/50',
                         isPendingAudit && 'bg-indigo-50/60 hover:bg-indigo-100/50 border-indigo-200/50',
                         (isRejectedFinance || isDisapprovedAudit) &&
@@ -1124,23 +1189,7 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                         highlightedLoanId === loan.id &&
                           'bg-amber-100/90 ring-2 ring-amber-400 font-semibold'
                       )}
-                      title={
-                        isPendingFinance
-                          ? canApprove
-                            ? 'Click to review and endorse loan request'
-                            : 'Pending finance endorsement (click to edit)'
-                          : isPendingAudit
-                          ? isAuditor
-                            ? 'Click to perform audit review on endorsed loan'
-                            : 'Pending internal audit approval'
-                          : isRejectedFinance
-                          ? 'Rejected by central finance'
-                          : isDisapprovedAudit
-                          ? 'Disapproved by internal audit'
-                          : loanType === 'Borrower'
-                          ? 'Click row to record payment or update'
-                          : 'Lender financing record'
-                      }
+                      title="Click row to view loan details"
                     >
                       {/* 1. Date */}
                       <TableCell className="px-2 py-3 text-xs font-medium text-focus whitespace-nowrap">
@@ -1219,170 +1268,82 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                         </TableCell>
                       )}
 
-                      {/* 8. Actions / Status */}
+                      {/* 8. Status */}
+                      <TableCell className="px-2 py-3 text-center whitespace-nowrap">
+                        {isPendingFinance ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[11px] font-semibold shadow-2xs">
+                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>Pending Finance</span>
+                          </span>
+                        ) : isPendingAudit ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-[11px] font-semibold shadow-2xs">
+                            <Clock className="w-3 h-3 text-indigo-600 shrink-0" />
+                            <span>Pending Audit</span>
+                          </span>
+                        ) : isRejectedFinance ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-[11px] font-semibold shadow-2xs"
+                            title={loan.financeRemark || 'Rejected by finance'}
+                          >
+                            <X className="w-3 h-3 text-rose-600 shrink-0" />
+                            <span>Rejected</span>
+                          </span>
+                        ) : isDisapprovedAudit ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-[11px] font-semibold shadow-2xs"
+                            title={loan.auditRemark || 'Disapproved by audit'}
+                          >
+                            <X className="w-3 h-3 text-rose-600 shrink-0" />
+                            <span>Disapproved</span>
+                          </span>
+                        ) : loan.status === 'Paid' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[11px] font-semibold shadow-2xs">
+                            <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>Paid</span>
+                          </span>
+                        ) : loan.status === 'Partially Paid' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-[11px] font-semibold shadow-2xs">
+                            <Clock className="w-3 h-3 text-blue-600 shrink-0" />
+                            <span>Partially Paid</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[11px] font-semibold shadow-2xs">
+                            <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>Approved</span>
+                          </span>
+                        )}
+                      </TableCell>
+
+                      {/* 9. Actions (3 Dots Menu) */}
                       <TableCell className="px-2 py-3 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1.5">
-                          {isAuditor ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
+                        <div className="flex items-center justify-center">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (openMenuLoanId === loan.id) {
+                                setOpenMenuLoanId(null)
+                                setMenuPosition(null)
+                                setActiveMenuLoan(null)
+                              } else {
                                 const rect = e.currentTarget.getBoundingClientRect()
+                                const openUpward = rect.bottom + 140 > window.innerHeight
                                 setMenuPosition({
-                                  top: rect.bottom + window.scrollY + 4,
-                                  left: Math.min(window.innerWidth - 180, Math.max(10, rect.right + window.scrollX - 160)),
+                                  top: openUpward ? rect.top - 6 : rect.bottom + 6,
+                                  right: Math.max(12, window.innerWidth - rect.right),
+                                  openUpward,
                                 })
                                 setActiveMenuLoan(loan)
-                                setOpenMenuLoanId(openMenuLoanId === loan.id ? null : loan.id)
-                              }}
-                              className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
-                              title="Audit Actions"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          ) : (
-                            <>
-                              {/* 1. Pending Finance Endorsement */}
-                              {isPendingFinance && (
-                                <>
-                                  {canApprove ? (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => setApproveLoanItem(loan)}
-                                      className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
-                                      title="Review and endorse loan to internal audit"
-                                    >
-                                      <CheckCircle2 className="w-3.5 h-3.5" />
-                                      <span>Endorse</span>
-                                    </Button>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-xs font-semibold shadow-2xs">
-                                      <Clock className="w-3 h-3 text-amber-600" />
-                                      <span>Pending Finance</span>
-                                    </span>
-                                  )}
-
-                                  {/* Edit / Delete actions for borrower or finance */}
-                                  {(canApprove || (!isAuditor && loanType === 'Borrower')) && (
-                                    <>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setEditLoan(loan)}
-                                        className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
-                                        title="Edit Loan Request"
-                                      >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setDeleteConfirmLoan(loan)}
-                                        className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                                        title="Cancel / Delete Loan Request"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </Button>
-                                    </>
-                                  )}
-                                </>
-                              )}
-
-                              {/* 2. Pending Audit Approval */}
-                              {isPendingAudit && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-xs font-semibold shadow-2xs">
-                                  <Clock className="w-3 h-3 text-indigo-600" />
-                                  <span>Pending Audit</span>
-                                </span>
-                              )}
-
-                              {/* 3. Rejected by Finance */}
-                              {isRejectedFinance && (
-                                <span
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
-                                  title={loan.financeRemark || 'Rejected by finance'}
-                                >
-                                  <X className="w-3 h-3 text-rose-600" />
-                                  <span>Rejected (Finance)</span>
-                                </span>
-                              )}
-
-                              {/* 4. Disapproved by Audit */}
-                              {isDisapprovedAudit && (
-                                <span
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200/80 text-xs font-semibold shadow-2xs"
-                                  title={loan.auditRemark || 'Disapproved by audit'}
-                                >
-                                  <X className="w-3 h-3 text-rose-600" />
-                                  <span>Disapproved (Audit)</span>
-                                </span>
-                              )}
-
-                              {/* 5. Approved / Active / Partially Paid / Paid */}
-                              {!isPendingFinance && !isPendingAudit && !isRejectedFinance && !isDisapprovedAudit && (
-                                <div className="flex items-center gap-1.5">
-                                  {loanType === 'Lender' ? (
-                                    loan.status === 'Paid' ? (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
-                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                        <span>Paid</span>
-                                      </span>
-                                    ) : loan.status === 'Partially Paid' ? (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-xs font-semibold shadow-2xs">
-                                        <Clock className="w-3.5 h-3.5 text-blue-600" />
-                                        <span>Partially Paid</span>
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
-                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                        <span>Approved</span>
-                                      </span>
-                                    )
-                                  ) : loan.status === 'Paid' ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-semibold shadow-2xs">
-                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                      <span>Paid</span>
-                                    </span>
-                                  ) : loan.status === 'Partially Paid' ? (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setPaymentLoan(loan)
-                                        setIsPaymentModalOpen(true)
-                                      }}
-                                      className="h-7 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 text-xs font-semibold cursor-pointer shadow-2xs"
-                                      title="Record partial or full payment on this loan"
-                                    >
-                                      <HandCoins className="w-3.5 h-3.5 mr-1 text-blue-600" />
-                                      <span>Partially Paid</span>
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setPaymentLoan(loan)
-                                        setIsPaymentModalOpen(true)
-                                      }}
-                                      className="h-7 px-2.5 rounded-lg bg-[#960C01]/10 hover:bg-[#960C01] hover:text-white text-[#960C01] border border-[#960C01]/20 text-xs font-semibold cursor-pointer transition-colors shadow-2xs"
-                                      title="Record partial or full payment on this loan"
-                                    >
-                                      <HandCoins className="w-3.5 h-3.5 mr-1" />
-                                      <span>Pay / Update</span>
-                                    </Button>
-                                  )}
-                                </div>
-                              )}
-                            </>
-                          )}
+                                setOpenMenuLoanId(loan.id)
+                              }
+                            }}
+                            className="loan-action-btn h-8 w-8 p-0 rounded-lg text-muted-fg hover:text-focus hover:bg-slate-100 cursor-pointer flex items-center justify-center"
+                            title="Actions"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1536,46 +1497,268 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
         onLoanPaid={handleLoanPaid}
       />
 
-      {/* Audit Action Portal Menu */}
+      {/* View Loan Details Modal (Read-only until clicking Edit) */}
+      <Dialog
+        open={Boolean(viewLoanItem)}
+        onOpenChange={(open) => !open && setViewLoanItem(null)}
+      >
+        <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
+          <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-6">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#0B0F2B] text-white flex items-center justify-center shrink-0 shadow-xs">
+                <FileText className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <DialogTitle className="text-base sm:text-lg font-bold text-focus leading-tight">
+                  Loan Details
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-fg font-normal mt-0.5">
+                  Complete read-only loan record for {viewLoanItem?.refNo || 'this facility'}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {viewLoanItem && (
+            <div className="space-y-4 pt-2">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-medium text-muted-fg block">
+                    Principal Amount
+                  </span>
+                  <span className="text-lg font-bold text-focus tabular-nums">
+                    {formatPHP(viewLoanItem.amount)}
+                  </span>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-white border border-stroke/40 text-focus shadow-2xs">
+                  {viewLoanItem.status}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                  <span className="text-muted-fg">Reference No:</span>
+                  <span className="font-mono font-semibold text-focus">{viewLoanItem.refNo}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                  <span className="text-muted-fg">Date:</span>
+                  <span className="font-semibold text-focus">{viewLoanItem.date}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                  <span className="text-muted-fg">Borrower Company:</span>
+                  <span className="font-semibold text-focus">{viewLoanItem.borrower}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                  <span className="text-muted-fg">Lender Company:</span>
+                  <span className="font-semibold text-focus">{viewLoanItem.lender}</span>
+                </div>
+                <div className="flex items-start justify-between gap-4 py-1.5 border-b border-stroke/10">
+                  <span className="text-muted-fg shrink-0">Particulars / Purpose:</span>
+                  <span className="font-medium text-focus text-right">{viewLoanItem.particulars}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                  <span className="text-muted-fg">Due Date:</span>
+                  <span className="font-semibold text-focus">{viewLoanItem.dueDate || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                  <span className="text-muted-fg">Interest Rate:</span>
+                  <span className="font-semibold text-focus">
+                    {viewLoanItem.interestRate !== undefined ? `${viewLoanItem.interestRate}%` : '0%'}
+                  </span>
+                </div>
+                {viewLoanItem.totalPaid !== undefined && viewLoanItem.totalPaid > 0 && (
+                  <>
+                    <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                      <span className="text-muted-fg">Total Paid:</span>
+                      <span className="font-bold text-emerald-600 tabular-nums">
+                        {formatPHP(viewLoanItem.totalPaid)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5 border-b border-stroke/10">
+                      <span className="text-muted-fg">Remaining Balance:</span>
+                      <span className="font-bold text-blue-600 tabular-nums">
+                        {formatPHP(
+                          viewLoanItem.outstandingBalance ??
+                            Math.max(0, viewLoanItem.amount - viewLoanItem.totalPaid)
+                        )}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-stroke/20 flex items-center justify-end gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setViewLoanItem(null)}
+                  className="h-9 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Close
+                </Button>
+
+                {!isAuditor &&
+                  canApprove &&
+                  (viewLoanItem.status === 'Pending Finance Endorsement' ||
+                    viewLoanItem.status === 'Pending Approval') && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        const target = viewLoanItem
+                        setViewLoanItem(null)
+                        setApproveLoanItem(target)
+                      }}
+                      className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Endorse</span>
+                    </Button>
+                  )}
+
+                {!isAuditor &&
+                  loanType === 'Borrower' &&
+                  (viewLoanItem.status === 'Approved' || viewLoanItem.status === 'Partially Paid') && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        const target = viewLoanItem
+                        setViewLoanItem(null)
+                        setPaymentLoan(target)
+                        setIsPaymentModalOpen(true)
+                      }}
+                      className="h-9 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <HandCoins className="w-3.5 h-3.5" />
+                      <span>Pay / Update</span>
+                    </Button>
+                  )}
+
+                {!isAuditor && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      const target = viewLoanItem
+                      setViewLoanItem(null)
+                      setEditLoan(target)
+                    }}
+                    className="h-9 px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Floating 3-Dots Action Portal Menu */}
       {openMenuLoanId && menuPosition && activeMenuLoan && typeof document !== 'undefined' &&
         createPortal(
           <div
             style={{
-              position: 'absolute',
               top: `${menuPosition.top}px`,
-              left: `${menuPosition.left}px`,
+              right: `${menuPosition.right}px`,
+              transform: menuPosition.openUpward ? 'translateY(-100%)' : 'none',
             }}
-            className="z-50 w-48 rounded-xl bg-white border border-slate-200 shadow-xl py-1 animate-in fade-in zoom-in-95 duration-100"
+            className="loan-portal-menu fixed z-[99999] w-48 rounded-xl bg-white border border-slate-200 shadow-2xl p-1.5 animate-in fade-in-50 zoom-in-95 duration-150"
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={() => handleMarkLoanAudit(activeMenuLoan, 'Verified')}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Mark as Audit</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleMarkLoanAudit(activeMenuLoan, 'Flagged')}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors text-left cursor-pointer"
-            >
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-              <span>Mark as Discrepancy</span>
-            </button>
-            <div className="h-px bg-slate-100 my-1" />
-            <button
-              type="button"
-              onClick={() => {
-                setAuditReviewLoanItem(activeMenuLoan)
-                setOpenMenuLoanId(null)
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-            >
-              <Eye className="w-3.5 h-3.5 text-slate-500" />
-              <span>Audit Review / View</span>
-            </button>
+            {isAuditor ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleMarkLoanAudit(activeMenuLoan, 'Verified')}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Mark as Audit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMarkLoanAudit(activeMenuLoan, 'Flagged')}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-amber-700 hover:bg-amber-50 transition-colors text-left cursor-pointer"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Mark as Discrepancy</span>
+                </button>
+                <div className="h-px bg-slate-100 my-1" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = activeMenuLoan
+                    setOpenMenuLoanId(null)
+                    setMenuPosition(null)
+                    setActiveMenuLoan(null)
+                    if (target.status === 'Pending Audit Approval') {
+                      setAuditReviewLoanItem(target)
+                    } else {
+                      setViewLoanItem(target)
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500" />
+                  <span>View</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const target = activeMenuLoan
+                    setOpenMenuLoanId(null)
+                    setMenuPosition(null)
+                    setActiveMenuLoan(null)
+                    setEditLoan(target)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-muted-fg" />
+                  <span>Edit</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const target = activeMenuLoan
+                    setOpenMenuLoanId(null)
+                    setMenuPosition(null)
+                    setActiveMenuLoan(null)
+                    setDeleteConfirmLoan(target)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Delete</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const target = activeMenuLoan
+                    setOpenMenuLoanId(null)
+                    setMenuPosition(null)
+                    setActiveMenuLoan(null)
+                    setViewLoanItem(target)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-focus hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-muted-fg" />
+                  <span>View</span>
+                </button>
+              </>
+            )}
           </div>,
           document.body
         )}

@@ -39,6 +39,7 @@ import {
 import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD, isDateInRange } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/hooks/useSession'
 
 const LOAN_CATEGORIES = [
   'All',
@@ -83,6 +84,8 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
   dbCompanies,
   onRequestLoan,
 }) => {
+  const { user } = useSession()
+  const isAudit = (user?.role || '').toLowerCase().includes('audit')
   const [groups, setGroups] = React.useState<CompanyLoanGroup[]>([])
   const [loading, setLoading] = React.useState(true)
 
@@ -541,15 +544,20 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant="outline"
+                variant={isAudit ? 'default' : 'outline'}
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                className={cn(
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  isAudit
+                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white'
+                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
+                )}
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 shrink-0 text-focus/70" />
+                <Download className={cn('h-4 w-4 shrink-0', isAudit ? 'text-white' : 'text-focus/70')} />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+                <ChevronDown className={cn('h-3.5 w-3.5 ml-0.5', isAudit ? 'text-white/90' : 'text-muted-fg')} />
               </Button>
 
               {isExportDropdownOpen && (
@@ -598,7 +606,7 @@ export const AdminCompanyLoansView: React.FC<AdminCompanyLoansViewProps> = ({
           </div>
 
           {/* Filter Toolbar - Compact single line matching system style */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap shrink-0 self-start lg:self-auto relative z-30 overflow-visible">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap shrink-0 self-start lg:self-auto">
             {/* 1. Period Dropdown */}
             <div ref={periodDropdownRef} className="relative inline-block shrink-0">
               <button

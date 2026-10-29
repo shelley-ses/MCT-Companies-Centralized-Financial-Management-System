@@ -2,17 +2,63 @@ import * as React from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Settings, LogOut, ChevronDown, Loader2, Building2 } from 'lucide-react'
 import { useSession } from '@/hooks/useSession'
+import { useCompany } from '@/context/CompanyContext'
+import { employeeService } from '@/services/employeeService'
+import { isCompanyMatch } from '@/utils/companyUtils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
 export const UserProfileDropdown: React.FC = () => {
   const { user, signOut } = useSession()
+  const { activeCompany } = useCompany()
   const userRole = (user?.role || '').toLowerCase()
   const canAccessCentralized = userRole === 'finance'
   const navigate = useNavigate()
   const [isOpen, setIsOpen] = React.useState(false)
   const [isLoggingOut, setIsLoggingOut] = React.useState(false)
+  const [dbCompanyLogoUrl, setDbCompanyLogoUrl] = React.useState<string | null>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
+
+  // Fetch company profile image from the database
+  React.useEffect(() => {
+    let isMounted = true
+    const fetchCompanyProfileImage = async () => {
+      if (!user) {
+        if (isMounted) setDbCompanyLogoUrl(null)
+        return
+      }
+      try {
+        const companies = await employeeService.getCompanies()
+        if (!isMounted || !Array.isArray(companies)) return
+
+        const targetCompanyName =
+          activeCompany && activeCompany !== 'All Companies'
+            ? activeCompany
+            : user.assignedCompany || null
+
+        const matchedCompany = companies.find((comp) => {
+          if (targetCompanyName && isCompanyMatch(comp.name, targetCompanyName)) {
+            return true
+          }
+          if (user.assignedCompany && isCompanyMatch(comp.name, user.assignedCompany)) {
+            return true
+          }
+          return false
+        })
+
+        if (isMounted) {
+          setDbCompanyLogoUrl(matchedCompany?.logoUrl || null)
+        }
+      } catch {
+        if (isMounted) setDbCompanyLogoUrl(null)
+      }
+    }
+
+    fetchCompanyProfileImage()
+    return () => {
+      isMounted = false
+    }
+  }, [user, activeCompany])
 
   // Close on outside click or Escape
   React.useEffect(() => {
@@ -53,6 +99,7 @@ export const UserProfileDropdown: React.FC = () => {
   })()
 
   const avatarSrc =
+    dbCompanyLogoUrl ||
     user?.avatarUrl ||
     (typeof window !== 'undefined' ? localStorage.getItem('mct_user_avatar') : null)
 
@@ -66,12 +113,14 @@ export const UserProfileDropdown: React.FC = () => {
         aria-haspopup="true"
         aria-label="User Account Menu"
       >
-        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 border border-primary/30 bg-white shrink-0 shadow-2xs">
+        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 border border-primary/30 bg-white shrink-0 shadow-2xs overflow-hidden">
           {avatarSrc && (
             <AvatarImage
               src={avatarSrc}
               alt={user?.fullName || 'User'}
-              className="p-0.5 object-contain"
+              className={cn(
+                dbCompanyLogoUrl ? 'object-cover w-full h-full' : 'p-0.5 object-contain'
+              )}
             />
           )}
           <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">

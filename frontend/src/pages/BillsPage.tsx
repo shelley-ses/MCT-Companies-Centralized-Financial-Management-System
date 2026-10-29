@@ -214,7 +214,7 @@ export const BillsPage: React.FC = () => {
       try {
         const stored = localStorage.getItem('bills_audit_records')
         if (stored) auditRecords = JSON.parse(stored)
-      } catch {}
+      } catch { }
       const merged = data.map((b) => {
         if (auditRecords[b.id]) {
           return { ...b, ...auditRecords[b.id] }
@@ -416,8 +416,8 @@ export const BillsPage: React.FC = () => {
       filteredBills.length === 0
         ? `<tr><td colspan="7" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No monthly bills found matching the selected filters.</td></tr>`
         : filteredBills
-            .map(
-              (b) => `
+          .map(
+            (b) => `
         <tr>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${b.billerName}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${b.company}</td>
@@ -428,8 +428,8 @@ export const BillsPage: React.FC = () => {
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.status}</td>
         </tr>
       `
-            )
-            .join('')
+          )
+          .join('')
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -495,8 +495,8 @@ export const BillsPage: React.FC = () => {
   const displayedCompanyTitle = isCompanyScoped
     ? assignedCompany
     : selectedCompany === 'All Companies'
-    ? 'All Subsidiaries'
-    : selectedCompany
+      ? 'All Subsidiaries'
+      : selectedCompany
 
   if (loading && billId) {
     return (
@@ -608,9 +608,6 @@ export const BillsPage: React.FC = () => {
               <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
                 Monthly Bills
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
-                {stats.totalBillsCount} Bills
-              </span>
             </div>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
               Track recurring utility, rental, and scheduled bills for {displayedCompanyTitle} with automated due date reminders and payment history.
@@ -622,15 +619,24 @@ export const BillsPage: React.FC = () => {
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                variant={isAudit ? 'default' : 'outline'}
+                onClick={() => {
+                  setIsExportDropdownOpen((prev) => !prev)
+                  setIsStatusDropdownOpen(false)
+                  setIsCompanyDropdownOpen(false)
+                }}
+                className={cn(
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  isAudit
+                    ? 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white'
+                    : 'border border-stroke/50 bg-white text-focus hover:bg-surface'
+                )}
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 shrink-0 text-focus/70" />
+                <Download className={cn('h-4 w-4 shrink-0', isAudit ? 'text-white' : 'text-focus/70')} />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+                <ChevronDown className={cn('h-3.5 w-3.5 ml-0.5', isAudit ? 'text-white/90' : 'text-muted-fg')} />
               </Button>
 
               {isExportDropdownOpen && (
@@ -671,7 +677,7 @@ export const BillsPage: React.FC = () => {
 
         {/* Second Row: Search Bar & Filter Toolbar */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-1">
-          {/* Extended Width Search Bar */}
+          {/* Extended Width Search Bar — Fills available space while keeping company name uncropped */}
           <div className="relative flex-1 w-full">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
             <Input
@@ -683,7 +689,7 @@ export const BillsPage: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 flex-wrap relative z-30 shrink-0">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 self-start lg:self-auto shrink-0">
             {/* Status Filter */}
             <div ref={statusDropdownRef} className="relative inline-block shrink-0">
               <button
@@ -691,6 +697,7 @@ export const BillsPage: React.FC = () => {
                 onClick={() => {
                   setIsStatusDropdownOpen((prev) => !prev)
                   setIsCompanyDropdownOpen(false)
+                  setIsExportDropdownOpen(false)
                 }}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
@@ -732,7 +739,7 @@ export const BillsPage: React.FC = () => {
             {isCompanyScoped ? (
               <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs shrink-0 whitespace-nowrap">
                 <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-semibold text-focus/90 truncate max-w-[140px]">
+                <span className="font-semibold text-focus/90">
                   {assignedCompany}
                 </span>
               </div>
@@ -743,6 +750,7 @@ export const BillsPage: React.FC = () => {
                   onClick={() => {
                     setIsCompanyDropdownOpen((prev) => !prev)
                     setIsStatusDropdownOpen(false)
+                    setIsExportDropdownOpen(false)
                   }}
                   className={cn(
                     'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border whitespace-nowrap shrink-0',
@@ -750,7 +758,7 @@ export const BillsPage: React.FC = () => {
                   )}
                 >
                   <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
-                  <span className="font-medium text-focus/90 truncate max-w-[140px] sm:max-w-[180px]">
+                  <span className="font-medium text-focus/90">
                     {selectedCompany}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
@@ -903,8 +911,8 @@ export const BillsPage: React.FC = () => {
                     isOverdue
                       ? 'bg-rose-50/90 border-rose-200 text-rose-900'
                       : isToday
-                      ? 'bg-amber-50/90 border-amber-200 text-amber-900'
-                      : 'bg-white border-neutral-200 text-neutral-800'
+                        ? 'bg-amber-50/90 border-amber-200 text-amber-900'
+                        : 'bg-white border-neutral-200 text-neutral-800'
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -916,15 +924,15 @@ export const BillsPage: React.FC = () => {
                           isOverdue
                             ? 'bg-rose-600 text-white'
                             : isToday
-                            ? 'bg-amber-600 text-white'
-                            : 'bg-amber-100 text-amber-800'
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-amber-100 text-amber-800'
                         )}
                       >
                         {isOverdue
                           ? `${rem.daysDiff}d Overdue`
                           : isToday
-                          ? 'DUE TODAY'
-                          : `Due in ${rem.daysDiff}d`}
+                            ? 'DUE TODAY'
+                            : `Due in ${rem.daysDiff}d`}
                       </span>
                     </div>
                     <div className="text-[11px] opacity-75 mt-0.5 flex items-center gap-1.5">
@@ -1053,7 +1061,7 @@ export const BillsPage: React.FC = () => {
                       className={cn(
                         'border-b border-slate-100 hover:bg-slate-50/60 transition-all duration-300 cursor-pointer',
                         isHighlighted &&
-                          'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
+                        'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
                       )}
                       title="Click to view complete bill details"
                     >

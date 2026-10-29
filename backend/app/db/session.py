@@ -42,6 +42,7 @@ def init_db():
     import app.models.bills
     import app.models.petty_cash
     import app.models.bank
+    import app.models.lending
     from app.models.company import Company
     Base.metadata.create_all(bind=engine)
 

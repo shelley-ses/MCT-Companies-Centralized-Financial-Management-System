@@ -11,7 +11,6 @@ import {
   LogOut,
   ChevronDown,
   Loader2,
-  Building2,
   ShieldCheck,
   UserCheck,
 } from 'lucide-react'
@@ -156,8 +155,18 @@ export const CentralizedAuthPage: React.FC = () => {
 
   // Pinned companies list
   const pinnedCompanies = React.useMemo(() => {
-    return CENTRALIZED_COMPANIES.filter((c) => pinnedIds.includes(c.id))
-  }, [pinnedIds])
+    const pinned = CENTRALIZED_COMPANIES.filter((c) => pinnedIds.includes(c.id))
+    if (!searchQuery.trim()) return pinned
+    const q = searchQuery.toLowerCase().trim()
+    return pinned.filter(
+      (company) =>
+        company.name.toLowerCase().includes(q) ||
+        company.systemCompanyName.toLowerCase().includes(q) ||
+        company.code.toLowerCase().includes(q) ||
+        company.initials.toLowerCase().includes(q) ||
+        company.role.toLowerCase().includes(q)
+    )
+  }, [pinnedIds, searchQuery])
 
   // Filter & Search logic for All Companies
   const filteredCompanies = React.useMemo(() => {
@@ -177,11 +186,12 @@ export const CentralizedAuthPage: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         const matchesName = company.name.toLowerCase().includes(q)
+        const matchesSystemName = company.systemCompanyName.toLowerCase().includes(q)
         const matchesCode = company.code.toLowerCase().includes(q)
         const matchesInitials = company.initials.toLowerCase().includes(q)
         const matchesRole = company.role.toLowerCase().includes(q)
         const matchesStatus = company.status.label.toLowerCase().includes(q)
-        return matchesName || matchesCode || matchesInitials || matchesRole || matchesStatus
+        return matchesName || matchesSystemName || matchesCode || matchesInitials || matchesRole || matchesStatus
       }
 
       return true
@@ -529,21 +539,21 @@ export const CentralizedAuthPage: React.FC = () => {
             {/* Right Controls: Search Bar + Grid / List View Toggle */}
             <div className="flex items-center gap-3 w-full sm:w-auto">
               {/* Search Input */}
-              <div className="relative flex-1 sm:w-72">
+              <div className="relative flex-1 sm:flex-none sm:w-72 md:w-80">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search company or code"
-                  className="w-full h-10 pl-9 pr-12 text-xs sm:text-sm rounded-xl bg-white border border-stroke/30 focus:border-primary/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-focus placeholder:text-muted-fg shadow-2xs"
+                  placeholder="Search company or code..."
+                  className="w-full h-10 pl-10 pr-10 text-xs sm:text-sm rounded-xl bg-white border border-stroke/30 focus:border-primary/80 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-focus placeholder:text-muted-fg shadow-2xs"
                 />
                 {searchQuery ? (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-fg hover:text-focus rounded-md transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-fg hover:text-focus rounded-md transition-colors cursor-pointer"
                     aria-label="Clear search"
                   >
                     <X className="h-3.5 w-3.5" />

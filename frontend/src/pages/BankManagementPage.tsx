@@ -179,11 +179,9 @@ export const BankManagementPage: React.FC = () => {
   // Dropdown states
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
-  const [isBankDropdownOpen, setIsBankDropdownOpen] = React.useState(false)
   const [isTxTypeDropdownOpen, setIsTxTypeDropdownOpen] = React.useState(false)
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
   const companyDropdownRef = React.useRef<HTMLDivElement>(null)
-  const bankDropdownRef = React.useRef<HTMLDivElement>(null)
   const txTypeDropdownRef = React.useRef<HTMLDivElement>(null)
 
   // Modals state
@@ -241,9 +239,6 @@ export const BankManagementPage: React.FC = () => {
       }
       if (companyDropdownRef.current && !companyDropdownRef.current.contains(target)) {
         setIsCompanyDropdownOpen(false)
-      }
-      if (bankDropdownRef.current && !bankDropdownRef.current.contains(target)) {
-        setIsBankDropdownOpen(false)
       }
       if (txTypeDropdownRef.current && !txTypeDropdownRef.current.contains(target)) {
         setIsTxTypeDropdownOpen(false)
@@ -740,9 +735,6 @@ export const BankManagementPage: React.FC = () => {
               <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
                 Bank Management
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
-                {roleScopedAccounts.length} {roleScopedAccounts.length === 1 ? 'Account' : 'Accounts'}
-              </span>
             </div>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
               Manage corporate bank accounts, monitor active balance.
@@ -751,19 +743,24 @@ export const BankManagementPage: React.FC = () => {
 
           {/* Action Controls: Export and Add New Bank */}
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 self-start shrink-0">
-            {/* Export Dropdown Button matching standard system UI */}
+            {/* Export Dropdown Button (White for Finance since Add New Bank is red; Red for Supervisor/Audit) */}
             <div ref={exportDropdownRef} className="relative inline-block">
               <Button
                 type="button"
-                variant="outline"
+                variant={canManageBank ? 'outline' : 'default'}
                 onClick={() => setIsExportDropdownOpen((prev) => !prev)}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border border border-stroke/50 bg-white text-focus hover:bg-surface"
+                className={cn(
+                  'h-10 sm:h-11 px-4 sm:px-5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-all box-border',
+                  canManageBank
+                    ? 'border border-stroke/50 bg-white text-focus hover:bg-surface'
+                    : 'bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white'
+                )}
                 aria-haspopup="true"
                 aria-expanded={isExportDropdownOpen}
               >
-                <Download className="h-4 w-4 shrink-0 text-focus/70" />
+                <Download className={cn('h-4 w-4 shrink-0', canManageBank ? 'text-focus/70' : 'text-white')} />
                 <span>Export</span>
-                <ChevronDown className="h-3.5 w-3.5 ml-0.5 text-muted-fg" />
+                <ChevronDown className={cn('h-3.5 w-3.5 ml-0.5', canManageBank ? 'text-muted-fg' : 'text-white/90')} />
               </Button>
 
               {isExportDropdownOpen && (
@@ -933,54 +930,6 @@ export const BankManagementPage: React.FC = () => {
                   )}
                 </div>
               )}
-
-              {/* 4. Bank Selector Dropdown (Allows switching which bank card to view directly) */}
-              <div ref={bankDropdownRef} className="relative inline-block">
-                <button
-                  type="button"
-                  onClick={() => setIsBankDropdownOpen((prev) => !prev)}
-                  className={cn(
-                    'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                    isBankDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
-                  )}
-                >
-                  <CreditCard className="h-4 w-4 text-muted-fg shrink-0" />
-                  <span className="font-semibold text-focus/90 truncate max-w-[140px]">
-                    {activeAccount?.bankName || 'Select Bank'}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-fg shrink-0" />
-                </button>
-
-                {isBankDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-72 overflow-y-auto">
-                    <div className="space-y-1">
-                      {roleScopedAccounts.map((acc) => (
-                        <button
-                          key={acc.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedAccountId(acc.id)
-                            setIsBankDropdownOpen(false)
-                          }}
-                          className={cn(
-                            'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                            activeAccount?.id === acc.id
-                              ? 'bg-primary/10 text-primary font-semibold'
-                              : 'text-focus/80 hover:bg-slate-50'
-                          )}
-                        >
-                          <div className="flex flex-col truncate pr-2">
-                            <span className="font-semibold text-focus truncate">{acc.bankName}</span>
-                          </div>
-                          {activeAccount?.id === acc.id && (
-                            <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-1" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -1020,53 +969,6 @@ export const BankManagementPage: React.FC = () => {
       ) : isSingleAccount ? (
         /* SINGLE ACCOUNT FULL-WIDTH HERO CARD (Matching User's Reference Screenshot) */
         <div className="w-full space-y-3">
-          {/* Multi-Bank Switcher Pill Bar (Only when company has multiple banks: 2 or 3 banks) */}
-          {activeCompanyAccounts.length > 1 && (
-            <div className="flex flex-wrap items-center justify-between gap-2.5 px-1 py-0.5">
-              <div className="flex flex-wrap items-center gap-2">
-                {activeCompanyAccounts.map((acc) => {
-                  const isActive = acc.id === activeAccount?.id
-                  return (
-                    <button
-                      key={acc.id}
-                      type="button"
-                      onClick={() => setSelectedAccountId(acc.id)}
-                      className={cn(
-                        'px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs',
-                        isActive
-                          ? 'bg-[#960C01] text-white ring-2 ring-[#960C01]/30 shadow-sm'
-                          : 'bg-white hover:bg-slate-50 text-focus/80 border border-stroke/50'
-                      )}
-                    >
-                      <CreditCard className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                      <span>{acc.bankName}</span>
-                      {isActive && <Check className="h-3 w-3 text-white ml-0.5" />}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Finance option to add another bank for this company */}
-              {!isAudit && !isCompanyScoped && activeCompanyAccounts.length < 3 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setAddBankForm((prev) => ({
-                      ...prev,
-                      companyName: activeAccount?.companyName || '',
-                    }))
-                    setIsAddBankModalOpen(true)
-                  }}
-                  className="h-8 px-3 rounded-full border border-dashed border-[#960C01]/50 text-[#960C01] hover:bg-red-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Add Another Bank for this Company</span>
-                </Button>
-              )}
-            </div>
-          )}
           <div
             onClick={handleCardClick}
             onDoubleClick={() => setIsCardDetailsModalOpen(true)}
@@ -1150,92 +1052,257 @@ export const BankManagementPage: React.FC = () => {
             )}
           </div>
         </div>
-      ) : (
-        /* MULTI-ACCOUNT TWO-COLUMN VIEW (Active Card on Left, Two Stacked Decks on Right) */
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-          {/* LEFT COLUMN: Selected Bank Card (ATM Format) */}
-          <div className="md:col-span-5 flex flex-col gap-2.5">
-            <div
-              onClick={handleCardClick}
-              onDoubleClick={() => setIsCardDetailsModalOpen(true)}
-              onTouchEnd={handleCardTouch}
-              title="Double-click to view complete bank specifications"
-              className={cn(
-                'w-full rounded-[28px] p-6 sm:p-7 text-white shadow-xl relative overflow-hidden flex flex-col justify-between h-[295px] sm:h-[315px] lg:h-[320px] transition-all duration-300 border select-none cursor-pointer group',
-                activeAccount?.colorTheme === 'grey'
-                  ? 'border-stone-700/60 hover:border-amber-400/50'
-                  : 'border-red-900/40 hover:border-amber-400/50'
-              )}
-              style={{
-                background:
-                  activeAccount?.colorTheme === 'grey'
-                    ? 'radial-gradient(circle at 25% 85%, rgba(245, 158, 11, 0.38) 0%, rgba(217, 119, 6, 0.22) 30%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(254, 240, 138, 0.18) 0%, transparent 40%), linear-gradient(135deg, #1c1917 0%, #292524 35%, #44403c 70%, #57534e 100%)'
-                    : 'radial-gradient(circle at 85% 15%, rgba(255, 215, 0, 0.28) 0%, transparent 45%), linear-gradient(135deg, #4a0500 0%, #780b02 30%, #960C01 65%, #c52d14 100%)',
-              }}
-            >
-              {/* Luminous Satin Sheen & Sunset Gold Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-tr from-black/25 via-transparent to-white/10 pointer-events-none" />
-              <div className="absolute -right-8 -bottom-8 w-56 h-56 bg-amber-400/15 rounded-full blur-2xl pointer-events-none" />
-              <div className="absolute -left-12 -top-12 w-48 h-48 bg-stone-300/10 rounded-full blur-xl pointer-events-none" />
-              {activeAccount?.colorTheme === 'grey' && (
-                <div className="absolute left-6 bottom-4 w-44 h-44 bg-amber-500/20 rounded-full blur-2xl pointer-events-none" />
-              )}
+      ) : (isCompanyScoped || selectedCompany !== 'All Companies' || roleScopedAccounts.length <= 3) ? (
+        /* COMPANY MULTI-BANK VIEW: Show 2 (or up to 3) Interactive ATM Cards Side-by-Side */
+        <div
+          className={cn(
+            'grid grid-cols-1 gap-5 items-stretch',
+            roleScopedAccounts.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'
+          )}
+        >
+          {roleScopedAccounts.map((acc) => {
+            const isSelected = acc.id === activeAccount?.id
+            return (
+              <div
+                key={acc.id}
+                onClick={(e) => {
+                  setSelectedAccountId(acc.id)
+                  handleCardClick(e)
+                }}
+                onDoubleClick={() => {
+                  setSelectedAccountId(acc.id)
+                  setIsCardDetailsModalOpen(true)
+                }}
+                onTouchEnd={(e) => {
+                  setSelectedAccountId(acc.id)
+                  handleCardTouch(e)
+                }}
+                title="Click to view this bank's transactions below; double-click for full bank details"
+                className={cn(
+                  'w-full rounded-[28px] sm:rounded-[32px] p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-between h-[230px] sm:h-[255px] transition-all duration-300 border select-none cursor-pointer group',
+                  acc.colorTheme === 'grey'
+                    ? 'border-stone-700/60 hover:border-amber-400/70'
+                    : 'border-red-900/40 hover:border-amber-400/70',
+                  isSelected
+                    ? 'ring-4 ring-[#960C01]/30 border-amber-400 shadow-2xl scale-[1.01]'
+                    : 'opacity-85 hover:opacity-100'
+                )}
+                style={{
+                  background:
+                    acc.colorTheme === 'grey'
+                      ? 'radial-gradient(ellipse at 42% 50%, rgba(254, 240, 138, 0.35) 0%, rgba(245, 158, 11, 0.2) 30%, transparent 60%), linear-gradient(115deg, #1c1917 0%, #292524 35%, #44403c 70%, #57534e 100%)'
+                      : 'radial-gradient(ellipse at 42% 50%, rgba(254, 240, 138, 0.45) 0%, rgba(245, 158, 11, 0.28) 28%, transparent 58%), linear-gradient(115deg, #450300 0%, #680800 25%, #960C01 45%, #b91c1c 50%, #960C01 55%, #680800 80%, #450300 100%)',
+                }}
+              >
+                {/* Luminous Diagonal Sunbeam / Gold Ray */}
+                <div
+                  className="absolute -inset-y-16 left-[28%] sm:left-[32%] w-28 sm:w-36 -rotate-12 pointer-events-none opacity-60 mix-blend-screen blur-md"
+                  style={{
+                    background:
+                      'linear-gradient(to right, transparent, rgba(254, 240, 138, 0.9), rgba(245, 158, 11, 0.65), transparent)',
+                  }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-tr from-black/25 via-transparent to-white/10 pointer-events-none" />
 
-              {/* Top row: Bank Name */}
-              <div className="flex items-start justify-between relative z-10">
-                <span className="font-black text-base sm:text-lg tracking-widest uppercase text-white/95 drop-shadow-sm">
-                  {activeAccount?.bankName}
-                </span>
-              </div>
-
-              {/* Middle: Current Balance & Visibility Toggle */}
-              <div className="my-auto relative z-10">
-                <span className="text-xs sm:text-[13px] font-medium tracking-wide text-white/85 block">
-                  Current Balance
-                </span>
-                <div className="flex items-center gap-3 mt-1">
-                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight tabular-nums text-white drop-shadow-md">
-                    {showBalance
-                      ? formatPHP(activeAccount?.currentBalance || 0)
-                      : '₱ ••••••••'}
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowBalance((prev) => !prev)
-                    }}
-                    className="p-1 rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
-                    title={showBalance ? 'Hide Balance' : 'Show Balance'}
-                    aria-label="Toggle balance visibility"
-                  >
-                    {showBalance ? (
-                      <Eye className="h-5 w-5" />
-                    ) : (
-                      <EyeOff className="h-5 w-5" />
+                {/* Top row: Bank Name & Viewing Status Badge */}
+                <div className="flex items-start justify-between gap-2 relative z-10">
+                  <div>
+                    <span className="font-black text-base sm:text-lg md:text-xl tracking-widest uppercase text-white/95 drop-shadow-sm block">
+                      {acc.bankName}
+                    </span>
+                    {acc.accountName && (
+                      <span className="text-[11px] font-medium text-white/75 tracking-wide block mt-0.5">
+                        {acc.accountName}
+                      </span>
                     )}
-                  </button>
+                  </div>
+                  {isSelected ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-bold bg-amber-400 text-stone-950 shadow-xs shrink-0">
+                      <Check className="h-3 w-3 stroke-[2.5]" />
+                      <span>Viewing</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-white/15 text-white/90 group-hover:bg-white/25 transition-colors shrink-0">
+                      Click to view
+                    </span>
+                  )}
                 </div>
-              </div>
 
-              {/* Bottom Row: Edit Action Button */}
-              {canManageBank && (
-                <div className="flex items-center justify-end relative z-10">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setIsEditModalOpen(true)
-                    }}
-                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-white text-[#960C01] hover:bg-slate-100 flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ml-auto"
-                    title="Edit Bank Details"
-                    aria-label="Edit Bank Details"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
+                {/* Middle: Current Balance & Visibility Toggle */}
+                <div className="my-auto relative z-10">
+                  <span className="text-xs sm:text-[13px] font-medium tracking-wide text-white/85 block">
+                    Current Balance
+                  </span>
+                  <div className="flex items-center gap-3 mt-1">
+                    <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight tabular-nums text-white drop-shadow-md">
+                      {showBalance ? formatPHP(acc.currentBalance || 0) : '₱ ••••••••'}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowBalance((prev) => !prev)
+                      }}
+                      className="p-1 rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
+                      title={showBalance ? 'Hide Balance' : 'Show Balance'}
+                      aria-label="Toggle balance visibility"
+                    >
+                      {showBalance ? (
+                        <Eye className="h-5 w-5" />
+                      ) : (
+                        <EyeOff className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
+
+                {/* Bottom Row: Edit Action Button */}
+                {canManageBank && (
+                  <div className="flex items-center justify-end relative z-10">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedAccountId(acc.id)
+                        setIsEditModalOpen(true)
+                      }}
+                      className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-white text-[#960C01] hover:bg-slate-100 flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ml-auto"
+                      title="Edit Bank Details"
+                      aria-label="Edit Bank Details"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        /* MULTI-ACCOUNT TWO-COLUMN VIEW (Active Company ATM Card(s) on Left, Two Stacked Decks on Right) */
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+          {/* LEFT COLUMN: Selected Company's Bank Card(s) (Shows 2 ATM cards when the selected company has 2 banks) */}
+          <div className="md:col-span-5 flex flex-col gap-3">
+            {(activeCompanyAccounts.length >= 2 ? activeCompanyAccounts : activeAccount ? [activeAccount] : []).map((acc) => {
+              const isSelected = acc.id === activeAccount?.id
+              const isCompactMulti = activeCompanyAccounts.length >= 2
+              return (
+                <div
+                  key={acc.id}
+                  onClick={(e) => {
+                    setSelectedAccountId(acc.id)
+                    handleCardClick(e)
+                  }}
+                  onDoubleClick={() => {
+                    setSelectedAccountId(acc.id)
+                    setIsCardDetailsModalOpen(true)
+                  }}
+                  onTouchEnd={(e) => {
+                    setSelectedAccountId(acc.id)
+                    handleCardTouch(e)
+                  }}
+                  title="Click to select this ATM card; double-click to view complete bank specifications"
+                  className={cn(
+                    'w-full rounded-[28px] p-5 sm:p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between transition-all duration-300 border select-none cursor-pointer group',
+                    isCompactMulti
+                      ? 'h-[175px] sm:h-[185px]'
+                      : 'h-[295px] sm:h-[315px] lg:h-[320px]',
+                    acc.colorTheme === 'grey'
+                      ? 'border-stone-700/60 hover:border-amber-400/50'
+                      : 'border-red-900/40 hover:border-amber-400/50',
+                    isCompactMulti && isSelected && 'ring-3 ring-[#960C01]/35 border-amber-400',
+                    isCompactMulti && !isSelected && 'opacity-80 hover:opacity-100'
+                  )}
+                  style={{
+                    background:
+                      acc.colorTheme === 'grey'
+                        ? 'radial-gradient(circle at 25% 85%, rgba(245, 158, 11, 0.38) 0%, rgba(217, 119, 6, 0.22) 30%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(254, 240, 138, 0.18) 0%, transparent 40%), linear-gradient(135deg, #1c1917 0%, #292524 35%, #44403c 70%, #57534e 100%)'
+                        : 'radial-gradient(circle at 85% 15%, rgba(255, 215, 0, 0.28) 0%, transparent 45%), linear-gradient(135deg, #4a0500 0%, #780b02 30%, #960C01 65%, #c52d14 100%)',
+                  }}
+                >
+                  {/* Luminous Satin Sheen & Sunset Gold Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-black/25 via-transparent to-white/10 pointer-events-none" />
+                  <div className="absolute -right-8 -bottom-8 w-56 h-56 bg-amber-400/15 rounded-full blur-2xl pointer-events-none" />
+                  <div className="absolute -left-12 -top-12 w-48 h-48 bg-stone-300/10 rounded-full blur-xl pointer-events-none" />
+                  {acc.colorTheme === 'grey' && (
+                    <div className="absolute left-6 bottom-4 w-44 h-44 bg-amber-500/20 rounded-full blur-2xl pointer-events-none" />
+                  )}
+
+                  {/* Top row: Bank Name & Active Badge when company has 2 banks */}
+                  <div className="flex items-start justify-between gap-2 relative z-10">
+                    <span className="font-black text-base sm:text-lg tracking-widest uppercase text-white/95 drop-shadow-sm">
+                      {acc.bankName}
+                    </span>
+                    {isCompactMulti && (
+                      isSelected ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-stone-950 shadow-xs shrink-0">
+                          <Check className="h-2.5 w-2.5 stroke-[2.5]" />
+                          <span>Viewing</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/15 text-white/85 group-hover:bg-white/25 shrink-0">
+                          Click to view
+                        </span>
+                      )
+                    )}
+                  </div>
+
+                  {/* Middle: Current Balance & Visibility Toggle */}
+                  <div className="my-auto relative z-10">
+                    <span className="text-xs sm:text-[13px] font-medium tracking-wide text-white/85 block">
+                      Current Balance
+                    </span>
+                    <div className="flex items-center gap-3 mt-1">
+                      <h2
+                        className={cn(
+                          'font-extrabold tracking-tight tabular-nums text-white drop-shadow-md',
+                          isCompactMulti ? 'text-xl sm:text-2xl lg:text-3xl' : 'text-2xl sm:text-3xl lg:text-4xl'
+                        )}
+                      >
+                        {showBalance
+                          ? formatPHP(acc.currentBalance || 0)
+                          : '₱ ••••••••'}
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowBalance((prev) => !prev)
+                        }}
+                        className="p-1 rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
+                        title={showBalance ? 'Hide Balance' : 'Show Balance'}
+                        aria-label="Toggle balance visibility"
+                      >
+                        {showBalance ? (
+                          <Eye className="h-5 w-5" />
+                        ) : (
+                          <EyeOff className="h-5 w-5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Bottom Row: Edit Action Button */}
+                  {canManageBank && (
+                    <div className="flex items-center justify-end relative z-10">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedAccountId(acc.id)
+                          setIsEditModalOpen(true)
+                        }}
+                        className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-white text-[#960C01] hover:bg-slate-100 flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ml-auto"
+                        title="Edit Bank Details"
+                        aria-label="Edit Bank Details"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {/* RIGHT COLUMN: Two Stacked Decks of Overlapping Bank Cards (Red Stack & Warm Graphite Stack) */}
@@ -1689,31 +1756,17 @@ export const BankManagementPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-focus block mb-1">
-                  Account Name <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  required
-                  value={addBankForm.accountName}
-                  onChange={(e) => setAddBankForm({ ...addBankForm, accountName: e.target.value })}
-                  placeholder="e.g. Bagong Bansa May Pagasa Movement"
-                  className="h-10 text-xs sm:text-sm rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-focus block mb-1">
-                  Account Number <span className="text-xs text-muted-fg font-normal">(Optional)</span>
-                </label>
-                <Input
-                  value={addBankForm.accountNumber}
-                  onChange={(e) => setAddBankForm({ ...addBankForm, accountNumber: e.target.value })}
-                  placeholder="e.g. 0042-8819-2041"
-                  className="h-10 text-xs sm:text-sm rounded-xl font-mono"
-                />
-              </div>
+            <div>
+              <label className="text-xs font-semibold text-focus block mb-1">
+                Account Name <span className="text-red-500">*</span>
+              </label>
+              <Input
+                required
+                value={addBankForm.accountName}
+                onChange={(e) => setAddBankForm({ ...addBankForm, accountName: e.target.value })}
+                placeholder="e.g. Bagong Bansa May Pagasa Movement"
+                className="h-10 text-xs sm:text-sm rounded-xl"
+              />
             </div>
 
             <div>
