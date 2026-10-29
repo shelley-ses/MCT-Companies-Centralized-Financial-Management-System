@@ -87,6 +87,19 @@ def get_current_user(
 
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 
+# require an Audit or Administrator account (only they may save an audit review, spec 0014)
+def require_audit_or_admin_user(user: CurrentUser) -> AuthenticatedUser:
+    role = str(user.get("role") or "").lower()
+    if role not in ("audit", "auditor", "admin") and not user.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Audit or Admin accounts can change the audit status.",
+        )
+    return user
+
+
+AuditOrAdminUser = Annotated[AuthenticatedUser, Depends(require_audit_or_admin_user)]
+
 # require the current authenticated user to be a central administrator account.
 def require_admin_user(user: CurrentUser) -> AuthenticatedUser:
     if not user.get("is_admin") and user.get("role") != "admin":

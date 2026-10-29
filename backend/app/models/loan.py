@@ -10,6 +10,7 @@ class Loan(Base):
     borrower = Column(BigInteger, nullable=False, index=True)  # Company_ID of borrower
     lender = Column(BigInteger, nullable=True, index=True)    # Company_ID of lender, assigned by Finance upon approval
     loan_ref_no = Column(String(100), unique=True, nullable=True)
+    bank_account_id = Column(String(100), nullable=True)
     principal_amount = Column(Numeric(15, 2), nullable=False)
     interest_rate = Column(Numeric(5, 2), default=0.00)
     interest_type = Column(String(50), default="simple")  # simple, compound

@@ -61,7 +61,7 @@ import {
 } from '@/services/loanService'
 import { websocketService } from '@/services/websocketService'
 import { useLocation } from 'react-router-dom'
-import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
+import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD, formatCreatedAt } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
 import { useCompany } from '@/context/CompanyContext'
 
@@ -140,11 +140,17 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   const [statusFilter, setStatusFilter] = React.useState<string>('All')
   const [approvalTab, setApprovalTab] = React.useState<'Approve' | 'Pending'>('Approve')
   const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodOption>('Monthly')
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    preset: 'This Month',
-    label: 'This Month',
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
+  const [dateRange, setDateRange] = React.useState<DateRange>(() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      preset: 'This Month',
+      label: 'This Month',
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+    }
   })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [currentPage, setCurrentPage] = React.useState(1)
@@ -360,6 +366,8 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
   // Real-time synchronization across all tabs and clients
   React.useEffect(() => {
     const unsubscribe = websocketService.subscribe('LOANS_UPDATED', () => {
+      // Another user (for example Audit) changed a loan: drop the 30 second cache so the reload is real
+      loanService.invalidateCache()
       loadLoans()
     })
     return () => unsubscribe()
@@ -1202,6 +1210,12 @@ export const LoanPage: React.FC<LoanPageProps> = ({ initialType = 'Borrower' }) 
                               </span>
                             )}
                           </div>
+                          {loan.createdAt && (
+                            <span className="text-[10px] text-muted-fg font-normal flex items-center gap-1" title={`Created at: ${formatCreatedAt(loan.createdAt)}`}>
+                              <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span className="tabular-nums">{formatCreatedAt(loan.createdAt, { timeOnly: true })}</span>
+                            </span>
+                          )}
                           {loan.auditDate && (
                             <span className="text-[10px] text-muted-fg font-normal flex items-center gap-1" title={`Audited at: ${loan.auditDate}`}>
                               <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />

@@ -242,3 +242,4 @@ nginx/ssl/
 
 # IDE & AI Assistant local state
 .gemini/
+.kiro/

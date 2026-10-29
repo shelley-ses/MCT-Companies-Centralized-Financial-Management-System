@@ -99,6 +99,10 @@ class ExpenseOut(BaseModel):
     description: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    audit_status: str = "Pending Audit"
+    audited_by: Optional[str] = None
+    audited_at: Optional[datetime] = None
+    audit_remarks: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

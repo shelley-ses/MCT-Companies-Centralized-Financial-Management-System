@@ -55,10 +55,11 @@ import { useSession } from '@/hooks/useSession'
 import { useCompany } from '@/context/CompanyContext'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { isDateInRange } from '@/utils/dateUtils'
+import { isDateInRange, formatCreatedAt } from '@/utils/dateUtils'
 import { isCompanyMatch } from '@/utils/companyUtils'
 import { getParticularsSummary } from '@/utils/particularsUtils'
 import { loanService } from '@/services/loanService'
+import { bankService, type BankAccount } from '@/services/bankService'
 import {
   pettyCashService,
   type PettyCashLedgerEntry,
@@ -172,6 +173,10 @@ export const PettyCashPage: React.FC = () => {
   const [reviewRemark, setReviewRemark] = React.useState('')
   const [reviewError, setReviewError] = React.useState('')
   const [isSubmittingReview, setIsSubmittingReview] = React.useState(false)
+
+  // Spec 0012: funding bank Finance chooses when endorsing a petty cash request.
+  const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>([])
+  const [selectedFundingBankId, setSelectedFundingBankId] = React.useState('')
   const [approvalFeedback, setApprovalFeedback] = React.useState<string | null>(null)
 
   // Audit Actions Menu State
@@ -205,13 +210,12 @@ export const PettyCashPage: React.FC = () => {
       status: status === 'Verified' && entry.status === 'Pending Audit Approval' ? 'Approved' : entry.status,
     }
     setLedger((prev) => prev.map((e) => (e.id === entry.id ? updatedEntry : e)))
-    try {
-      const stored = localStorage.getItem('petty_cash_audit_records')
-      const records = stored ? JSON.parse(stored) : {}
-      records[entry.id] = { auditStatus: status, auditDate: timestamp, auditedBy: user?.fullName || 'Audit' }
-      localStorage.setItem('petty_cash_audit_records', JSON.stringify(records))
-    } catch {
-      // ignore
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('petty_cash_audit_records')
+      } catch {
+        // ignore
+      }
     }
     setOpenMenuPettyId(null)
   }
@@ -249,6 +253,8 @@ export const PettyCashPage: React.FC = () => {
   // Realtime multi-tab WebSocket synchronization
   React.useEffect(() => {
     const unsubscribe = websocketService.subscribe('PETTY_CASH_UPDATED', () => {
+      // Another user (for example Audit) changed a top up: drop the 30 second cache so the reload is real
+      pettyCashService.invalidateCache()
       loadData()
     })
     return () => {
@@ -433,11 +439,35 @@ export const PettyCashPage: React.FC = () => {
     setIsSummaryModalOpen(true)
   }
 
+  // Load bank accounts once, so Finance can pick a funding bank when endorsing (spec 0012).
+  React.useEffect(() => {
+    let mounted = true
+    bankService
+      .getAccounts()
+      .then((accounts) => {
+        if (mounted && accounts) setBankAccounts(accounts)
+      })
+      .catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   // Open Confirmation Modal for Endorse, Reject, Approve or Disapprove
   const handleOpenReviewConfirm = (action: 'endorse' | 'reject' | 'approve' | 'disapprove') => {
     setReviewAction(action)
     setReviewRemark('')
     setReviewError('')
+    // For a Finance endorsement, preselect the requesting company's own bank account when it
+    // exists (Finance may change it to an outside funder). Otherwise leave it unchosen.
+    if (action === 'endorse') {
+      const ownAccount = bankAccounts.find((acc) =>
+        isCompanyMatch(acc.companyName || '', targetEntry?.companyName || '')
+      )
+      setSelectedFundingBankId(ownAccount ? ownAccount.id : '')
+    } else {
+      setSelectedFundingBankId('')
+    }
     setIsReviewConfirmModalOpen(true)
   }
 
@@ -451,12 +481,23 @@ export const PettyCashPage: React.FC = () => {
       return
     }
 
+    // Spec 0012: Finance must choose a funding bank before endorsing.
+    if (reviewAction === 'endorse' && !selectedFundingBankId) {
+      setReviewError('Please choose a funding bank account before endorsing.')
+      return
+    }
+
     setIsSubmittingReview(true)
     setReviewError('')
 
     try {
       if (reviewAction === 'endorse' || reviewAction === 'reject') {
-        await pettyCashService.endorseTopUp(targetEntry.recordId, reviewAction, reviewRemark.trim())
+        await pettyCashService.endorseTopUp(
+          targetEntry.recordId,
+          reviewAction,
+          reviewRemark.trim(),
+          reviewAction === 'endorse' ? selectedFundingBankId : undefined,
+        )
       } else {
         await pettyCashService.reviewTopUp(targetEntry.recordId, reviewAction, reviewRemark.trim())
       }
@@ -867,12 +908,13 @@ export const PettyCashPage: React.FC = () => {
           <Table className="w-full table-fixed min-w-[1000px]">
             <colgroup>
               <col style={{ width: '9%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '22%' }} />
               <col style={{ width: '11%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '9%' }} />
               <col style={{ width: '9%' }} />
-              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
               <col style={{ width: '10%' }} />
               <col style={{ width: '8%' }} />
             </colgroup>
@@ -886,6 +928,9 @@ export const PettyCashPage: React.FC = () => {
                 </TableHead>
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
+                </TableHead>
+                <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  FUNDING BANK
                 </TableHead>
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
                   AMOUNT REQUESTED
@@ -915,6 +960,7 @@ export const PettyCashPage: React.FC = () => {
                     <TableCell className="px-3 py-3.5"><div className="h-4 w-16 bg-slate-200 rounded" /></TableCell>
                     <TableCell className="px-3 py-3.5"><div className="h-4 w-28 bg-slate-200 rounded" /></TableCell>
                     <TableCell className="px-3 py-3.5"><div className="h-4 w-44 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-3 py-3.5"><div className="h-4 w-24 bg-slate-200 rounded" /></TableCell>
                     <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-20 bg-slate-200 rounded ml-auto" /></TableCell>
                     <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-16 bg-slate-200 rounded ml-auto" /></TableCell>
                     <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-16 bg-slate-200 rounded ml-auto" /></TableCell>
@@ -925,7 +971,7 @@ export const PettyCashPage: React.FC = () => {
                 ))
               ) : paginatedLedger.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
+                  <TableCell colSpan={10} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
                     <Wallet className="w-8 h-8 text-muted-fg/40 mx-auto mb-2" />
                     No petty cash transactions found for the selected criteria.
                   </TableCell>
@@ -949,6 +995,12 @@ export const PettyCashPage: React.FC = () => {
                       <TableCell className="px-3 py-3.5 text-xs text-muted-fg tabular-nums font-medium">
                         <div className="flex flex-col gap-0.5">
                           <span>{entry.date}</span>
+                          {entry.createdAt && (
+                            <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1" title={`Created at: ${formatCreatedAt(entry.createdAt)}`}>
+                              <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span className="tabular-nums">{formatCreatedAt(entry.createdAt, { timeOnly: true })}</span>
+                            </span>
+                          )}
                           {entry.auditDate && (
                             <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1" title={`Audited at: ${entry.auditDate}`}>
                               <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
@@ -1010,6 +1062,20 @@ export const PettyCashPage: React.FC = () => {
                         )}
                         {entry.category && !entry.remark && !entry.financeRemark && (
                           <div className="text-[11px] text-muted-fg line-clamp-1">{entry.category}</div>
+                        )}
+                      </TableCell>
+
+                      {/* 3b. Funding Bank (spec 0014): the bank Finance chose and the company that owns it */}
+                      <TableCell className="px-3 py-3.5">
+                        {entry.fundingBankName ? (
+                          <div className="min-w-0" title={`${entry.fundingBankName} · ${entry.fundingAccountName || ''} (${entry.fundingCompanyName || ''})`}>
+                            <div className="font-semibold text-xs text-focus truncate">{entry.fundingBankName}</div>
+                            <div className="text-[11px] text-muted-fg truncate">
+                              {entry.isOwnAccount ? 'Own account' : entry.fundingCompanyName || ''}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-fg/60 text-xs">—</span>
                         )}
                       </TableCell>
 
@@ -1216,6 +1282,12 @@ export const PettyCashPage: React.FC = () => {
                 <div>
                   <span className="text-[11px] text-muted-fg">Transaction Date</span>
                   <div className="font-semibold text-focus mt-0.5">{targetEntry.date}</div>
+                  {targetEntry.createdAt && (
+                    <div className="text-[11px] text-slate-500 font-normal mt-0.5 flex items-center gap-1">
+                      <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                      <span>Created: {formatCreatedAt(targetEntry.createdAt)}</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <span className="text-[11px] text-muted-fg">Subsidiary / Company</span>
@@ -1246,6 +1318,37 @@ export const PettyCashPage: React.FC = () => {
                   <div className="font-bold text-focus mt-0.5">{formatPHP(targetEntry.runningBalance)}</div>
                 </div>
               </div>
+
+              {/* Funding bank chosen by Finance (spec 0014). Top ups and requests only, never the account number. */}
+              {targetEntry.type !== 'expense' && (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-stroke/30 space-y-1 text-xs">
+                  <span className="text-[11px] font-bold text-muted-fg uppercase tracking-wider block">
+                    Funding Bank
+                  </span>
+                  {targetEntry.fundingBankName ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-[11px] text-muted-fg">Bank</span>
+                        <div className="font-semibold text-focus mt-0.5">{targetEntry.fundingBankName}</div>
+                        {targetEntry.fundingAccountName && (
+                          <div className="text-[11px] text-slate-500">{targetEntry.fundingAccountName}</div>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-muted-fg">Bank Owner Company</span>
+                        <div className="font-semibold text-focus mt-0.5">
+                          {targetEntry.fundingCompanyName || '—'}
+                        </div>
+                        {targetEntry.isOwnAccount && (
+                          <div className="text-[11px] text-emerald-700 font-medium">Own account</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-muted-fg italic">Not assigned yet</div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1 text-xs">
                 <span className="font-semibold text-focus">Particulars / Description</span>
@@ -1461,6 +1564,50 @@ export const PettyCashPage: React.FC = () => {
                 <span className="font-medium text-focus truncate max-w-[240px]">{targetEntry?.description}</span>
               </div>
             </div>
+
+            {/* Funding Bank Picker (Finance endorsement only, spec 0012) */}
+            {reviewAction === 'endorse' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Funding Bank Account <span className="text-red-500">* (Required)</span>
+                </Label>
+                <div className="relative">
+                  <select
+                    value={selectedFundingBankId}
+                    onChange={(e) => {
+                      setSelectedFundingBankId(e.target.value)
+                      if (reviewError) setReviewError('')
+                    }}
+                    className="w-full h-11 pl-3 pr-9 rounded-xl border border-stroke/60 bg-white text-xs font-medium text-focus focus:outline-none focus:ring-2 focus:ring-focus appearance-none cursor-pointer"
+                    required
+                  >
+                    <option value="" disabled>
+                      Choose the bank that funds this top-up...
+                    </option>
+                    {bankAccounts.map((acc) => {
+                      const isOwn = isCompanyMatch(acc.companyName || '', targetEntry?.companyName || '')
+                      return (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.bankName} · {acc.accountName} ({acc.companyName})
+                          {isOwn ? ' — own account, no deduction' : ''}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+                </div>
+                {bankAccounts.length === 0 && (
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    No bank accounts found. Add a bank account before endorsing.
+                  </p>
+                )}
+                <p className="text-[11px] text-muted-fg">
+                  Pick the requesting company's own account to fund it without any bank deduction.
+                  Pick a different company's account and the amount is withdrawn from it and
+                  deposited into {targetEntry?.companyName}'s bank on approval.
+                </p>
+              </div>
+            )}
 
             {/* Mandatory Remark Field */}
             <div className="space-y-1.5">

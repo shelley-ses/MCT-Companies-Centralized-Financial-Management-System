@@ -55,7 +55,18 @@ import type { DashboardTransactionItem } from '@/services/dashboardService'
 export type { BankAccount, BankTransaction }
 
 export function getAccountCardLabel(acc: BankAccount): string {
-  const bank = acc.bankName?.trim() || ''
+  const bank = acc.bankName?.trim() || 'Bank'
+  const acct = acc.accountName?.trim() || ''
+  const comp = acc.companyName?.trim() || ''
+  if (acct && comp) {
+    return `${bank} • ${acct} (${comp})`
+  }
+  if (acct) {
+    return `${bank} • ${acct}`
+  }
+  if (comp) {
+    return `${bank} (${comp})`
+  }
   return bank || 'Corporate Bank Account'
 }
 
@@ -124,7 +135,7 @@ export const BankManagementPage: React.FC = () => {
   const fetchAccounts = React.useCallback(async () => {
     try {
       // For company-scoped users, request their company accounts.
-      // For admin and finance, fetch all accounts so company filtering in memory is instantaneous and never fails on aliases.
+      // Company filtering in memory is instantaneous and never fails on aliases.
       const targetComp = isCompanyScoped ? assignedCompany : undefined
       const data = await bankService.getAccounts(targetComp)
       setAccounts(data || [])
@@ -166,12 +177,18 @@ export const BankManagementPage: React.FC = () => {
   // Filters state
   const [tableSearchQuery, setTableSearchQuery] = React.useState('')
   const [txTypeFilter, setTxTypeFilter] = React.useState<'All' | 'Deposit' | 'Withdrawal'>('All')
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    startDate: '2026-10-01',
-    endDate: '2026-10-05',
-    label: '10/01/2026 - 10/05/2026',
-    preset: 'Custom',
-  })
+  const [dateRange, setDateRange] = React.useState<DateRange>((() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+      label: 'This Month',
+      preset: 'This Month',
+    }
+  })())
 
   // Pagination for transaction table
   const [currentPage, setCurrentPage] = React.useState(1)
@@ -996,10 +1013,25 @@ export const BankManagementPage: React.FC = () => {
             />
             <div className="absolute inset-0 bg-gradient-to-tr from-black/25 via-transparent to-white/10 pointer-events-none" />
 
-            {/* Top row: Bank Name */}
+            {/* Top row: Bank Name, Account Name & Company Name */}
             <div className="flex items-start justify-between relative z-10">
-              <span className="font-black text-base sm:text-lg md:text-xl tracking-widest uppercase text-white/95 drop-shadow-sm">
-                {activeAccount?.bankName}
+              <div className="flex flex-col">
+                <span className="font-black text-base sm:text-lg md:text-xl tracking-widest uppercase text-white/95 drop-shadow-sm">
+                  {activeAccount?.bankName}
+                </span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs sm:text-sm font-semibold text-white/90 drop-shadow-xs">
+                    {activeAccount?.accountName}
+                  </span>
+                  {activeAccount?.companyName && (
+                    <span className="text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-xs">
+                      {activeAccount.companyName}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <span className="text-xs font-mono text-white/70">
+                •••• {activeAccount?.accountNumber?.slice(-4)}
               </span>
             </div>
 
@@ -1461,7 +1493,7 @@ export const BankManagementPage: React.FC = () => {
         <div className="bg-[#E2E8F0] px-5 sm:px-6 py-3 border-b border-slate-300 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
-              {activeAccount?.bankName || 'Bank Account'}
+              {activeAccount ? `${activeAccount.bankName} • ${activeAccount.accountName} (${activeAccount.companyName})` : 'Bank Account'}
             </h3>
             <span className="text-xs font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full border border-slate-300">
               Transactions

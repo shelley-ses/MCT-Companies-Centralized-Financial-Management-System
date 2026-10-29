@@ -76,95 +76,27 @@ export interface UpdateUserPayload {
 export interface ActivityLogItem {
   id: string
   company: string
+  /** Who did it (the signed in user's name, or the email on a login row). */
+  user: string
   action: string
   module: string
   target: string
   time: string
 }
 
-export const INITIAL_ACTIVITY_LOGS: ActivityLogItem[] = [
-  {
-    id: 'act_1',
-    company: 'MCT Head Office',
-    action: 'Created sale record',
-    module: 'Sales',
-    target: 'SV-202609-131',
-    time: '2026-10-05 08:14',
-  },
-  {
-    id: 'act_2',
-    company: 'MCT North Branch',
-    action: 'Updated expense category',
-    module: 'Expense',
-    target: 'EX-202610-042',
-    time: '2026-10-05 09:30',
-  },
-  {
-    id: 'act_3',
-    company: 'MCT South Branch',
-    action: 'Approved loan application',
-    module: 'Loan',
-    target: 'LN-202610-118',
-    time: '2026-10-05 10:45',
-  },
-  {
-    id: 'act_4',
-    company: 'MCT West Branch',
-    action: 'Added new employee profile',
-    module: 'Employee',
-    target: 'EMP-202610-005',
-    time: '2026-10-05 11:20',
-  },
-  {
-    id: 'act_5',
-    company: 'MCT Head Office',
-    action: 'Generated quarterly report',
-    module: 'Sales',
-    target: 'RPT-Q3-2026',
-    time: '2026-10-05 12:05',
-  },
-  {
-    id: 'act_6',
-    company: 'MCT North Branch',
-    action: 'Edited company profile',
-    module: 'Company',
-    target: 'CMP-001',
-    time: '2026-10-05 13:15',
-  },
-  {
-    id: 'act_7',
-    company: 'MCT South Branch',
-    action: 'Processed payroll batch',
-    module: 'Employee',
-    target: 'PAY-202610-01',
-    time: '2026-10-05 14:30',
-  },
-  {
-    id: 'act_8',
-    company: 'MCT West Branch',
-    action: 'Reconciled bank statement',
-    module: 'Expense',
-    target: 'BNK-202610-04',
-    time: '2026-10-05 15:45',
-  },
-  {
-    id: 'act_9',
-    company: 'MCT Head Office',
-    action: 'Locked user account',
-    module: 'Security',
-    target: 'USER-REMILEE',
-    time: '2026-10-05 16:10',
-  },
-  {
-    id: 'act_10',
-    company: 'MCT North Branch',
-    action: 'Archived old records',
-    module: 'System',
-    target: 'ARCH-2026-10',
-    time: '2026-10-05 17:00',
-  },
-]
 
+
+// "2026-10-30T09:15:00+00:00" or "2026-10-30 09:15:00" -> "2026-10-30 17:15" in the browser's time
+function formatLogTime(value?: string | null): string {
+  if (!value) return ''
+  const raw = String(value).trim().replace(' ', 'T')
+  // The database stores UTC. A value with no zone is UTC.
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(raw)
+  const d = new Date(hasZone ? raw : `${raw}Z`)
+  if (isNaN(d.getTime())) return String(value)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 function getAuthHeaders(): HeadersInit {
   const token = sessionStorage.getItem(['mct', 'access', 'token'].join('_'))
@@ -538,8 +470,34 @@ export const employeeService = {
     }
   },
 
+  /**
+   * The real activity log: the newest rows of the `audit_logs` table (Admin only), with the user, company,
+   * a plain description, the module and the record reference worked out by the server (spec 0018).
+   */
   async getActivityLogs(): Promise<ActivityLogItem[]> {
-    await new Promise((resolve) => setTimeout(resolve, 80))
-    return [...INITIAL_ACTIVITY_LOGS]
+    const response = await fetch('/api/v1/audit-logs?limit=1000', {
+      cache: 'no-store',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) throw new Error(await getApiError(response))
+    const rows = (await response.json()) as Array<{
+      audit_log_id: number
+      action: string
+      created_at?: string | null
+      user_name?: string
+      company_name?: string
+      description?: string
+      module?: string
+      target?: string
+    }>
+    return rows.map((row) => ({
+      id: String(row.audit_log_id),
+      company: row.company_name || 'System',
+      user: row.user_name || 'System',
+      action: row.description || row.action,
+      module: row.module || 'General',
+      target: row.target || '-',
+      time: formatLogTime(row.created_at),
+    }))
   },
 }

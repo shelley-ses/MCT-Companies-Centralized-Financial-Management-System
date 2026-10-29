@@ -26,6 +26,9 @@ import {
 } from '@/services/dashboardService'
 import { pettyCashService } from '@/services/pettyCashService'
 import { loanService } from '@/services/loanService'
+import { salesService } from '@/services/salesService'
+import { expenseService } from '@/services/expenseService'
+import { websocketService } from '@/services/websocketService'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
 import { isCompanyMatch } from '@/utils/companyUtils'
@@ -90,6 +93,7 @@ export const DashboardPage: React.FC = () => {
 
   const [loading, setLoading] = React.useState<boolean>(true)
   const [data, setData] = React.useState<DashboardData | null>(null)
+  const [loadError, setLoadError] = React.useState<string>('')
 
   // Fetch initial dashboard data
   React.useEffect(() => {
@@ -103,9 +107,13 @@ export const DashboardPage: React.FC = () => {
         })
         if (isMounted) {
           setData(result)
+          setLoadError('')
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err)
+        if (isMounted) {
+          setLoadError(err instanceof Error ? err.message : 'The dashboard data could not be loaded.')
+        }
       } finally {
         if (isMounted) {
           setLoading(false)
@@ -117,6 +125,38 @@ export const DashboardPage: React.FC = () => {
 
     return () => {
       isMounted = false
+    }
+  }, [filters.company])
+
+  // Realtime: reload quietly when another user changes data (spec 0018). Each service keeps a short
+  // cache, so the caches are cleared first to read what the database has now.
+  React.useEffect(() => {
+    let mounted = true
+    let timer: number | null = null
+    const reload = () => {
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(async () => {
+        dashboardService.invalidateCache()
+        salesService.invalidateCache()
+        expenseService.invalidateCache()
+        try {
+          const result = await dashboardService.getDashboardData({ company: filters.company })
+          if (mounted) {
+            setData(result)
+            setLoadError('')
+          }
+        } catch {
+          // keep what is on screen; the next full load shows the error
+        }
+      }, 400)
+    }
+    const unsubs = (['AUDIT_UPDATED', 'LOANS_UPDATED', 'PETTY_CASH_UPDATED', 'BANK_UPDATED', 'TENANTS_UPDATED'] as const).map(
+      (event) => websocketService.subscribe(event, reload)
+    )
+    return () => {
+      mounted = false
+      if (timer) window.clearTimeout(timer)
+      unsubs.forEach((off) => off())
     }
   }, [filters.company])
 
@@ -186,17 +226,26 @@ export const DashboardPage: React.FC = () => {
       })
   }, [data?.recentTransactions, isCompanyScoped, assignedCompany, filters.company, filters.dateRange])
 
-  // Dynamic KPI calculations responding to filtered transactions
+  // Dynamic KPI calculations responding to filtered transactions:
+  // Total Cash: actual cash inflow/deposits collected from sales
+  // Total Cash Expense: actual cash outflow/withdrawals disbursed from expenses
+  // Net Income: Total Cash - Total Cash Expense
   const { totalExpenses, totalIncome, netIncome, overdueCount, dueSoonCount } =
     React.useMemo(() => {
-      const expenses = filteredTransactions.reduce(
-        (sum, tx) => sum + (tx.withdrawal || 0),
-        0
-      )
-      const income = filteredTransactions.reduce(
-        (sum, tx) => sum + (tx.deposit || 0),
-        0
-      )
+      const expenses = filteredTransactions.reduce((sum, tx) => {
+        if (tx.type === 'Expense') {
+          return sum + (tx.withdrawal || tx.amount || 0)
+        }
+        return sum
+      }, 0)
+
+      const income = filteredTransactions.reduce((sum, tx) => {
+        if (tx.type === 'Sales' || tx.type === 'Income') {
+          return sum + (tx.deposit || tx.amount || 0)
+        }
+        return sum
+      }, 0)
+
       const net = income - expenses
 
       const overdue = filteredTransactions.filter(
@@ -240,6 +289,18 @@ export const DashboardPage: React.FC = () => {
         />
       </div>
 
+      {loadError && (
+        <div
+          className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-xs text-rose-700"
+          role="alert"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+          <span>
+            The dashboard data could not be loaded. {loadError} The figures below may be incomplete.
+          </span>
+        </div>
+      )}
+
       {/* 3. KPI Cards (Admin, Finance, and Audit):
           1. Total Expenses
           2. Total Income
@@ -250,7 +311,7 @@ export const DashboardPage: React.FC = () => {
       */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <DashboardKpiCard
-          label="Total Income"
+          label="Total Cash"
           value={formatPHP(totalIncome)}
           loading={loading}
           icon={TrendingUp}
@@ -258,7 +319,7 @@ export const DashboardPage: React.FC = () => {
           iconContainerClassName="bg-emerald-50 text-emerald-600 border border-emerald-200/60"
         />
         <DashboardKpiCard
-          label="Total Expenses"
+          label="Total Cash Expense"
           value={formatPHP(totalExpenses)}
           loading={loading}
           icon={TrendingDown}
@@ -266,7 +327,7 @@ export const DashboardPage: React.FC = () => {
           iconContainerClassName="bg-rose-50 text-rose-600 border border-rose-200/60"
         />
         <DashboardKpiCard
-          label="Net Income (Income - Expenses)"
+          label="Net Income (Total Cash - Cash Expense)"
           value={formatPHP(netIncome)}
           loading={loading}
           icon={Landmark}

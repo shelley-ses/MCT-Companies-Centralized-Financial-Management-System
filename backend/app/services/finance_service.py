@@ -211,6 +211,47 @@ class FinanceService:
             total_loans_repaid=total_loans_repaid
         )
 
+    def get_list_summaries_for_companies(
+        self,
+        company_ids: List[int],
+    ) -> dict[int, dict]:
+        """
+        Batch version of the revenue/expense/net-profit figures used by the
+        company LIST view, computed for many companies at once.
+
+        """
+        result: dict[int, dict] = {}
+        if not company_ids:
+            return result
+
+        # One grouped query for all sales, one for all expenses.
+        revenue_rows = (
+            self.db.query(Sale.company_id, func.coalesce(func.sum(Sale.amount), 0))
+            .filter(Sale.company_id.in_(company_ids))
+            .group_by(Sale.company_id)
+            .all()
+        )
+        expense_rows = (
+            self.db.query(Expense.company_id, func.coalesce(func.sum(Expense.amount), 0))
+            .filter(Expense.company_id.in_(company_ids))
+            .group_by(Expense.company_id)
+            .all()
+        )
+
+        revenue_by_company = {cid: amount for cid, amount in revenue_rows}
+        expense_by_company = {cid: amount for cid, amount in expense_rows}
+
+        for company_id in company_ids:
+            total_revenue = quantize_currency(revenue_by_company.get(company_id, 0))
+            total_expenses = quantize_currency(expense_by_company.get(company_id, 0))
+            net_profit = FinanceCalculator.calculate_net_profit(total_revenue, total_expenses)
+            result[company_id] = {
+                "total_revenue": total_revenue,
+                "total_expenses": total_expenses,
+                "net_profit": net_profit,
+            }
+        return result
+
     def get_budget_variance(self, budget_id: int) -> Optional[BudgetVarianceOut]:
         budget = self.db.query(Budget).filter(Budget.budget_id == budget_id).first()
         if not budget:

@@ -22,6 +22,7 @@ import {
   type SalesItem,
 } from '@/services/salesService'
 import { expenseService } from '@/services/expenseService'
+import { bankService } from '@/services/bankService'
 import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
@@ -90,6 +91,26 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
     }
   }, [open])
 
+  // Check if assigned company has any registered bank accounts
+  const [hasBankAccounts, setHasBankAccounts] = React.useState<boolean | null>(null)
+  React.useEffect(() => {
+    if (!open) return
+    let mounted = true
+    bankService
+      .getAccounts(assignedCompany)
+      .then((accs) => {
+        if (mounted) {
+          setHasBankAccounts(Boolean(accs && accs.length > 0))
+        }
+      })
+      .catch(() => {
+        if (mounted) setHasBankAccounts(true)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [open, assignedCompany])
+
   // Dynamic filter for category suggestions
   const filteredCategoryOptions = React.useMemo(() => {
     const q = category.trim().toLowerCase()
@@ -130,6 +151,12 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (hasBankAccounts === false) {
+      setError(`Ensure that you have a bank account associated with ${assignedCompany || 'this company'} before recording sales.`)
+      return
+    }
+
     const errors: { date?: string; particulars?: string; amount?: string; category?: string } = {}
 
     const todayIso = getTodayIso()
@@ -223,6 +250,13 @@ export const AddSalesModal: React.FC<AddSalesModalProps> = ({
               <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-medium flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {hasBankAccounts === false && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Ensure that you have a bank account associated with this company before recording sales.</span>
               </div>
             )}
 

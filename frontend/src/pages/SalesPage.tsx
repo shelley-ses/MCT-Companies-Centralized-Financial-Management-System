@@ -21,6 +21,8 @@ import {
   ArrowDownLeft,
   MoreVertical,
   Eye,
+  Pencil,
+  Lock,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Card } from '@/components/ui/card'
@@ -51,41 +53,46 @@ import {
   salesService,
   type SalesItem,
 } from '@/services/salesService'
+import { bankService } from '@/services/bankService'
 import type { DashboardTransactionItem } from '@/services/dashboardService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
-import { isDateInRange, normalizeDateToYYYYMMDD, formatToYYYYMMDD } from '@/utils/dateUtils'
-import { getParticularsSummary } from '@/utils/particularsUtils'
+import {
+  isDateInRange,
+  normalizeDateToYYYYMMDD,
+  formatToYYYYMMDD,
+  formatCreatedAt,
+} from '@/utils/dateUtils'
+import {
+  getParticularsSummary,
+  matchesParticularsStatusFilter,
+  normalizeParticularStatus,
+} from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '@/context/CompanyContext'
+import { loanService } from '@/services/loanService'
+import { websocketService } from '@/services/websocketService'
 
-const DEFAULT_COMPANIES = [
-  'All Companies',
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
+const DEFAULT_COMPANY_LIST = ['All Companies']
 
-// Period options: Daily, Quarterly, Monthly, Annually (added per user request)
+// Period options: Daily, Quarterly, Monthly, Annually
 const PERIOD_OPTIONS = ['Daily', 'Quarterly', 'Monthly', 'Annually'] as const
 type PeriodType = (typeof PERIOD_OPTIONS)[number]
+
+import { getPaidDepositForSale } from '@/utils/cashLedgerUtils'
+import { reportAuditSaveFailure } from '@/services/auditReviewApi'
 
 const ITEMS_PER_PAGE = 10
 
 export const SalesPage: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useSession()
-  const { activeCompany, setActiveCompany } = useCompany()
+  const { activeCompany, setActiveCompany, allCompanies } = useCompany()
   const userRole = (user?.role || '').toLowerCase()
   const isAudit = userRole === 'audit' || userRole.includes('auditor')
-  const isCompanyUser = (userRole === 'company' || userRole === 'supervisor') && !isAudit
+  const isCompanyUser =
+    (userRole === 'company' || userRole === 'supervisor') && !isAudit
   const isFinance = userRole === 'finance'
   const isAdmin = userRole === 'admin' || isAudit
   const isCompanyScoped = !isAdmin && !isFinance
@@ -93,10 +100,48 @@ export const SalesPage: React.FC = () => {
   const canAdd = !isAudit && (isCompanyUser || isFinance)
   const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
 
+  // Dynamic company list loaded strictly from the database
+  const [companyList, setCompanyList] = React.useState<string[]>(() => {
+    if (allCompanies && allCompanies.length > 0) return allCompanies
+    return DEFAULT_COMPANY_LIST
+  })
+
+  // Keep in sync with dynamic companies from CompanyContext
+  React.useEffect(() => {
+    if (allCompanies && allCompanies.length > 0) {
+      setCompanyList(allCompanies)
+    }
+  }, [allCompanies])
+
+  React.useEffect(() => {
+    let mounted = true
+    loanService.getCompanies().then((companies) => {
+      if (mounted && companies.length > 0) {
+        const names = companies.map((c) => c.company_name).filter(Boolean)
+        const combined = Array.from(new Set(['All Companies', ...names]))
+        setCompanyList(combined)
+      }
+    })
+    return () => {
+      mounted = false
+    }
+  }, [user])
+
   // Filter state
   const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isCompanyScoped ? assignedCompany : (activeCompany || 'All Companies')
+    isCompanyScoped ? assignedCompany : activeCompany || 'All Companies'
   )
+
+  // Prefetch bank accounts so /sales/add has Deposit Bank ready in 0ms
+  React.useEffect(() => {
+    const targetComp = isCompanyScoped
+      ? assignedCompany
+      : selectedCompany === 'All Companies'
+        ? undefined
+        : selectedCompany
+    bankService.prefetchAccounts(targetComp)
+    bankService.prefetchAccounts()
+  }, [isCompanyScoped, assignedCompany, selectedCompany])
 
   // Keep selectedCompany in sync if user profile loads after initial render
   React.useEffect(() => {
@@ -111,16 +156,28 @@ export const SalesPage: React.FC = () => {
       setSelectedCompany(activeCompany)
     }
   }, [activeCompany, isCompanyScoped])
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-    label: 'Last 30 Days',
-    preset: 'Last 30 Days',
+
+  const [dateRange, setDateRange] = React.useState<DateRange>(() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+      label: 'This Month',
+      preset: 'This Month',
+    }
   })
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [statusFilter, setStatusFilter] = React.useState<'All' | 'Paid' | 'Pending' | 'Unpaid'>('All')
-  const [selectedPeriod, setSelectedPeriod] = React.useState<PeriodType>('Monthly')
-  const [tableTab, setTableTab] = React.useState<'Deposit' | 'Sales Record'>('Sales Record')
+  const [statusFilter, setStatusFilter] = React.useState<
+    'All' | 'Paid' | 'Pending' | 'Unpaid'
+  >('All')
+  const [selectedPeriod, setSelectedPeriod] =
+    React.useState<PeriodType>('Monthly')
+  const [tableTab, setTableTab] = React.useState<'Deposit' | 'Sales Record'>(
+    'Sales Record'
+  )
 
   // Handle switching period (Daily, Quarterly, Monthly, Annually)
   const handlePeriodChange = (period: PeriodType) => {
@@ -164,7 +221,8 @@ export const SalesPage: React.FC = () => {
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false)
   const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = React.useState(false)
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = React.useState(false)
-  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = React.useState(false)
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] =
+    React.useState(false)
   const [companySearch, setCompanySearch] = React.useState('')
 
   const exportDropdownRef = React.useRef<HTMLDivElement>(null)
@@ -174,20 +232,24 @@ export const SalesPage: React.FC = () => {
 
   const filteredCompanyList = React.useMemo(() => {
     const q = companySearch.toLowerCase().trim()
-    if (!q) return DEFAULT_COMPANIES
-    return DEFAULT_COMPANIES.filter((c) => c.toLowerCase().includes(q))
-  }, [companySearch])
+    if (!q) return companyList
+    return companyList.filter((c) => c.toLowerCase().includes(q))
+  }, [companySearch, companyList])
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false)
   const [selectedSale, setSelectedSale] = React.useState<SalesItem | null>(null)
-  const [deleteConfirmSale, setDeleteConfirmSale] = React.useState<SalesItem | null>(null)
+  const [deleteConfirmSale, setDeleteConfirmSale] =
+    React.useState<SalesItem | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
-  const [selectedTx, setSelectedTx] = React.useState<DashboardTransactionItem | null>(null)
+  const [selectedTx, setSelectedTx] =
+    React.useState<DashboardTransactionItem | null>(null)
   const [isAuditModalOpen, setIsAuditModalOpen] = React.useState(false)
 
   // Highlight state for newly added sale
-  const [highlightedSaleId, setHighlightedSaleId] = React.useState<string | null>(null)
+  const [highlightedSaleId, setHighlightedSaleId] = React.useState<
+    string | null
+  >(null)
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const tableCardRef = React.useRef<HTMLDivElement>(null)
 
@@ -202,7 +264,9 @@ export const SalesPage: React.FC = () => {
 
   // Handlers for edit and delete
   const handleSaleUpdated = (updatedItem: SalesItem) => {
-    setSales((prev) => prev.map((s) => (s.id === updatedItem.id ? updatedItem : s)))
+    setSales((prev) =>
+      prev.map((s) => (s.id === updatedItem.id ? updatedItem : s))
+    )
     setSelectedSale(updatedItem)
     setSelectedTx(salesService.toDashboardTransaction(updatedItem))
     setHighlightedSaleId(updatedItem.id)
@@ -229,11 +293,23 @@ export const SalesPage: React.FC = () => {
   }
 
   // 3-Dots Action Menu for Audit
-  const [openMenuSaleId, setOpenMenuSaleId] = React.useState<string | null>(null)
-  const [menuPosition, setMenuPosition] = React.useState<{ top: number; right: number; openUpward: boolean } | null>(null)
-  const [activeMenuSale, setActiveMenuSale] = React.useState<SalesItem | null>(null)
+  const [openMenuSaleId, setOpenMenuSaleId] = React.useState<string | null>(
+    null
+  )
+  const [menuPosition, setMenuPosition] = React.useState<{
+    top: number
+    right: number
+    openUpward: boolean
+  } | null>(null)
+  const [activeMenuSale, setActiveMenuSale] = React.useState<SalesItem | null>(
+    null
+  )
 
-  const handleMarkSaleAudit = (sale: SalesItem, status: 'Verified' | 'Flagged', e?: React.MouseEvent) => {
+  const handleMarkSaleAudit = (
+    sale: SalesItem,
+    status: 'Verified' | 'Flagged',
+    e?: React.MouseEvent
+  ) => {
     e?.stopPropagation()
     const timestamp = new Date().toLocaleString('en-US', {
       month: '2-digit',
@@ -251,7 +327,11 @@ export const SalesPage: React.FC = () => {
       auditDate: timestamp,
     }
     setSales((prev) => prev.map((s) => (s.id === sale.id ? updated : s)))
-    salesService.updateSaleAuditStatus(sale.id, status, auditorName)
+    salesService.updateSaleAuditStatus(sale.id, status, auditorName).catch((err) => {
+      // Spec 0014: show the real status again when the server did not save it.
+      reportAuditSaveFailure(err)
+      loadSales()
+    })
     setOpenMenuSaleId(null)
     setMenuPosition(null)
     setActiveMenuSale(null)
@@ -264,13 +344,15 @@ export const SalesPage: React.FC = () => {
   const [sales, setSales] = React.useState<SalesItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
-  // Load sales data
-  const loadSales = React.useCallback(async () => {
-    setLoading(true)
+  // Load sales data. `silent` reloads without the loading skeleton (used by realtime updates).
+  const loadSales = React.useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const targetCompany = isCompanyScoped
         ? assignedCompany
-        : (selectedCompany === 'All Companies' ? undefined : selectedCompany)
+        : selectedCompany === 'All Companies'
+          ? undefined
+          : selectedCompany
       const data = await salesService.getSales(targetCompany)
       setSales(data)
     } catch (err) {
@@ -284,20 +366,49 @@ export const SalesPage: React.FC = () => {
     loadSales()
   }, [loadSales])
 
+  // Realtime: when Audit saves a review (or any client changes a sale), reload the real values
+  React.useEffect(() => {
+    let timer: number | null = null
+    const reload = () => {
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        salesService.invalidateCache()
+        void loadSales(true)
+      }, 250)
+    }
+    const unsubAudit = websocketService.subscribe('AUDIT_UPDATED', reload)
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      unsubAudit()
+    }
+  }, [loadSales])
+
   // Click-outside listeners for dropdowns
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node
-      if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) {
+      if (
+        exportDropdownRef.current &&
+        !exportDropdownRef.current.contains(target)
+      ) {
         setIsExportDropdownOpen(false)
       }
-      if (periodDropdownRef.current && !periodDropdownRef.current.contains(target)) {
+      if (
+        periodDropdownRef.current &&
+        !periodDropdownRef.current.contains(target)
+      ) {
         setIsPeriodDropdownOpen(false)
       }
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(target)) {
+      if (
+        statusDropdownRef.current &&
+        !statusDropdownRef.current.contains(target)
+      ) {
         setIsStatusDropdownOpen(false)
       }
-      if (companyDropdownRef.current && !companyDropdownRef.current.contains(target)) {
+      if (
+        companyDropdownRef.current &&
+        !companyDropdownRef.current.contains(target)
+      ) {
         setIsCompanyDropdownOpen(false)
       }
     }
@@ -305,22 +416,17 @@ export const SalesPage: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Client-side filtering and sorting (latest first)
-  const filteredSales = React.useMemo(() => {
+  // 1. Base filtered sales (independent of Deposit / Sales Record tab so KPIs above stay constant)
+  const baseFilteredSales = React.useMemo(() => {
     const targetCompany = isCompanyScoped ? assignedCompany : selectedCompany
 
     return sales
       .filter((item) => {
-        // 0. Tab filter
-        if (tableTab === 'Deposit') {
-          const hasDeposit = (item.deposit || 0) > 0 || item.status === 'Paid'
-          if (!hasDeposit) return false
-        }
-
         // 1. Company filter
         if (
           targetCompany !== 'All Companies' &&
-          (item.company || '').toLowerCase().trim() !== targetCompany.toLowerCase().trim()
+          (item.company || '').toLowerCase().trim() !==
+            targetCompany.toLowerCase().trim()
         ) {
           return false
         }
@@ -336,21 +442,35 @@ export const SalesPage: React.FC = () => {
           return false
         }
 
-        // 3. Status filter
-        if (statusFilter !== 'All' && item.status !== statusFilter) {
+        // 3. Particulars-aware Status filter ('All' | 'Paid' | 'Pending' | 'Unpaid')
+        if (
+          !matchesParticularsStatusFilter(
+            item.particulars,
+            item.items,
+            item.status,
+            statusFilter,
+            item.deposit
+          )
+        ) {
           return false
         }
 
-        // 4. Search query (by refNo, chequeNo, particulars, payment method, company, status, amount)
+        // 4. Search query
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim()
           const matchRef = (item.refNo || '').toLowerCase().includes(q)
           const matchCheque = (item.chequeNo || '').toLowerCase().includes(q)
-          const matchParticulars = (item.particulars || '').toLowerCase().includes(q)
-          const matchPaymentMethod = (item.paymentMethod || '').toLowerCase().includes(q)
+          const matchParticulars = (item.particulars || '')
+            .toLowerCase()
+            .includes(q)
+          const matchPaymentMethod = (item.paymentMethod || '')
+            .toLowerCase()
+            .includes(q)
           const matchCompany = (item.company || '').toLowerCase().includes(q)
           const matchStatus = (item.status || '').toLowerCase().includes(q)
-          const matchAmount = String(item.netAmount || item.deposit || '').includes(q)
+          const matchAmount = String(
+            item.netAmount || item.deposit || ''
+          ).includes(q)
 
           if (
             !matchRef &&
@@ -374,37 +494,57 @@ export const SalesPage: React.FC = () => {
         if (cmp !== 0) return cmp
         return (b.createdAt || b.id).localeCompare(a.createdAt || a.id)
       })
-  }, [sales, isAuditor, selectedCompany, dateRange, statusFilter, searchQuery, tableTab, isCompanyScoped, assignedCompany])
+  }, [
+    sales,
+    selectedCompany,
+    dateRange,
+    statusFilter,
+    searchQuery,
+    isCompanyScoped,
+    assignedCompany,
+  ])
+
+  // 2. Dynamic Tab Filtering ('Deposit' vs 'Sales Record') for Table & Chart
+  const filteredSales = React.useMemo(() => {
+    if (tableTab === 'Deposit') {
+      return baseFilteredSales.filter((item) => getPaidDepositForSale(item) > 0)
+    }
+    return baseFilteredSales
+  }, [baseFilteredSales, tableTab])
 
   // Reset to page 1 on filter change
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [dateRange, searchQuery, statusFilter, selectedCompany, selectedPeriod, tableTab])
+  }, [
+    dateRange,
+    searchQuery,
+    statusFilter,
+    selectedCompany,
+    selectedPeriod,
+    tableTab,
+  ])
 
-
-
-  // KPI Calculation: Total Sales & Total Cash
+  // KPI Calculation: Total Sales & Total Cash (computed from baseFilteredSales so switching Deposit / Sales Record tab does not alter the KPIs above)
   const kpis = React.useMemo(() => {
     let salesTotal = 0
     let cashTotal = 0
-    filteredSales.forEach((s) => {
+    baseFilteredSales.forEach((s) => {
       salesTotal += s.deposit || 0
-      if (s.items && s.items.length > 0) {
-        s.items.forEach((item) => {
-          if (item.status === 'Paid') {
-            cashTotal += item.total || 0
-          }
-        })
-      } else if (s.status === 'Paid') {
-        cashTotal += s.deposit || 0
-      }
+      cashTotal += getPaidDepositForSale(s)
     })
     return {
       totalSales: salesTotal,
       totalCash: cashTotal,
       totalIncome: salesTotal,
     }
-  }, [filteredSales])
+  }, [baseFilteredSales])
+
+  // Effective status filter for particulars display in table & modal
+  const effectiveParticularsStatusFilter = React.useMemo(() => {
+    if (statusFilter !== 'All') return statusFilter
+    if (tableTab === 'Deposit') return 'Paid'
+    return 'All'
+  }, [statusFilter, tableTab])
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredSales.length / ITEMS_PER_PAGE) || 1
@@ -412,10 +552,21 @@ export const SalesPage: React.FC = () => {
   const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredSales.length)
   const paginatedSales = filteredSales.slice(startIndex, endIndex)
 
-  // Map sales to DashboardTransactionItems for IncomeSummaryChart
+  // Map sales to DashboardTransactionItems for IncomeSummaryChart (dynamically reflects Deposit vs Sales Record tab)
   const mappedTransactions = React.useMemo(() => {
-    return filteredSales.map((s) => salesService.toDashboardTransaction(s))
-  }, [filteredSales])
+    return filteredSales.map((s) => {
+      const tx = salesService.toDashboardTransaction(s)
+      if (tableTab === 'Deposit') {
+        const paidAmt = getPaidDepositForSale(s)
+        return {
+          ...tx,
+          amount: paidAmt,
+          deposit: paidAmt,
+        }
+      }
+      return tx
+    })
+  }, [filteredSales, tableTab])
 
   // Export handlers
   const companyForExport = isAuditor ? assignedCompany : selectedCompany
@@ -434,35 +585,33 @@ export const SalesPage: React.FC = () => {
   }
 
   const handleSaleAdded = (newItem: SalesItem) => {
-    // 1. Prepend to sales
     setSales((prev) => [newItem, ...prev])
-
-    // 2. Clear filters so the new sale is immediately visible on the table
     setSearchQuery('')
     setStatusFilter('All')
 
-    // 3. Ensure date range covers the new sale date
     const newDateIso = newItem.rawDate || normalizeDateToYYYYMMDD(newItem.date)
     if (!isDateInRange(newDateIso, dateRange.startDate, dateRange.endDate)) {
       setDateRange((prev) => ({
         ...prev,
-        startDate: prev.startDate && prev.startDate < newDateIso ? prev.startDate : newDateIso,
-        endDate: prev.endDate && prev.endDate > newDateIso ? prev.endDate : newDateIso,
+        startDate:
+          prev.startDate && prev.startDate < newDateIso
+            ? prev.startDate
+            : newDateIso,
+        endDate:
+          prev.endDate && prev.endDate > newDateIso ? prev.endDate : newDateIso,
       }))
     }
 
-    // 4. Reset to page 1 where the latest sale appears
     setCurrentPage(1)
-
-    // 5. Highlight the newly added sale
     setHighlightedSaleId(newItem.id)
 
-    // 6. Smooth scroll/redirect to the sales table card
     setTimeout(() => {
-      tableCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      tableCardRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
     }, 100)
 
-    // 7. Remove highlight after exactly 3 seconds
     if (highlightTimeoutRef.current) {
       clearTimeout(highlightTimeoutRef.current)
     }
@@ -480,8 +629,8 @@ export const SalesPage: React.FC = () => {
   const displayedCompanyTitle = isCompanyScoped
     ? assignedCompany
     : selectedCompany === 'All Companies'
-    ? 'MCT Group of Companies'
-    : selectedCompany
+      ? 'MCT Group of Companies'
+      : selectedCompany
 
   return (
     <div className="space-y-6 pb-10 max-w-[1600px] mx-auto animate-in fade-in duration-300">
@@ -494,7 +643,7 @@ export const SalesPage: React.FC = () => {
               Sales
             </h1>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
-              Here's the summary of sales records and transactions.
+              Here's the summary of sales in {displayedCompanyTitle}
             </p>
           </div>
 
@@ -541,7 +690,7 @@ export const SalesPage: React.FC = () => {
               )}
             </div>
 
-            {/* Add Sales Button (Exclusively for operational users: Company and Finance; Admin side has NO Add Sales button) */}
+            {/* Add Sales Button */}
             {canAdd && (
               <Button
                 type="button"
@@ -577,11 +726,14 @@ export const SalesPage: React.FC = () => {
                 onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
                 className={cn(
                   'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isPeriodDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
+                  isPeriodDropdownOpen &&
+                    'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
                 <Calendar className="h-4 w-4 text-muted-fg shrink-0" />
-                <span className="font-medium text-focus/90">{selectedPeriod}</span>
+                <span className="font-medium text-focus/90">
+                  {selectedPeriod}
+                </span>
                 <ChevronDown
                   className={cn(
                     'h-3.5 w-3.5 text-muted-fg shrink-0 transition-transform duration-200',
@@ -620,11 +772,19 @@ export const SalesPage: React.FC = () => {
                 type="button"
                 onClick={() => setIsStatusDropdownOpen((prev) => !prev)}
                 className={cn(
-                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                  isStatusDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
+                  'inline-flex items-center gap-2 h-11 px-4 rounded-full border bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                  statusFilter === 'Pending'
+                    ? 'border-yellow-400 bg-yellow-50 text-yellow-800'
+                    : statusFilter === 'Paid'
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                      : statusFilter === 'Unpaid'
+                        ? 'border-rose-300 bg-rose-50 text-rose-700'
+                        : 'border-stroke/60',
+                  isStatusDropdownOpen &&
+                    'ring-2 ring-slate-100 border-slate-300'
                 )}
               >
-                <span className="font-medium text-focus/90">
+                <span className="font-medium">
                   {statusFilter === 'All' ? 'Status' : statusFilter}
                 </span>
                 <ChevronDown
@@ -648,18 +808,32 @@ export const SalesPage: React.FC = () => {
                       className={cn(
                         'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
                         statusFilter === st
-                          ? 'bg-primary/10 text-primary font-semibold'
+                          ? st === 'Pending'
+                            ? 'bg-yellow-100 text-yellow-800 font-semibold'
+                            : 'bg-primary/10 text-primary font-semibold'
                           : 'text-focus/80 hover:bg-slate-50'
                       )}
                     >
-                      <span>
+                      <span className="flex items-center gap-2">
+                        {st !== 'All' && (
+                          <span
+                            className={cn(
+                              'w-2 h-2 rounded-full',
+                              st === 'Paid'
+                                ? 'bg-emerald-500'
+                                : st === 'Pending'
+                                  ? 'bg-yellow-400'
+                                  : 'bg-rose-500'
+                            )}
+                          />
+                        )}
                         {st === 'All'
                           ? 'All Status'
                           : st === 'Paid'
-                          ? 'Received / Paid'
-                          : st === 'Pending'
-                          ? 'Pending'
-                          : 'Unpaid'}
+                            ? 'Paid'
+                            : st === 'Pending'
+                              ? 'Pending'
+                              : 'Unpaid'}
                       </span>
                       {statusFilter === st && (
                         <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
@@ -670,22 +844,30 @@ export const SalesPage: React.FC = () => {
               )}
             </div>
 
-            {/* Unified Date Range Picker (presets hidden, period handled by Period dropdown) */}
+            {/* Unified Date Range Picker */}
             <DateRangePicker
               value={dateRange}
               onChange={(newRange) => setDateRange(newRange)}
               hidePresets
             />
 
-            {/* Company Scope: Dropdown for Admin/Finance only */}
-            {!isCompanyScoped && (
+            {/* Company Scope */}
+            {isCompanyScoped ? (
+              <div className="inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-xs">
+                <Building2 className="h-4 w-4 text-muted-fg shrink-0" />
+                <span className="font-semibold text-focus/90">
+                  {assignedCompany}
+                </span>
+              </div>
+            ) : (
               <div ref={companyDropdownRef} className="relative inline-block">
                 <button
                   type="button"
                   onClick={() => setIsCompanyDropdownOpen((prev) => !prev)}
                   className={cn(
                     'inline-flex items-center gap-2 h-11 px-4 rounded-full border border-stroke/60 bg-white hover:bg-surface text-focus text-xs sm:text-sm font-medium shadow-xs transition-colors cursor-pointer select-none box-border',
-                    isCompanyDropdownOpen && 'ring-2 ring-slate-100 border-slate-300'
+                    isCompanyDropdownOpen &&
+                      'ring-2 ring-slate-100 border-slate-300'
                   )}
                   aria-label="Filter sales by company"
                 >
@@ -711,7 +893,6 @@ export const SalesPage: React.FC = () => {
 
                 {isCompanyDropdownOpen && (
                   <div className="absolute right-0 top-full mt-2 w-68 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2.5 z-50 animate-in fade-in-50 zoom-in-95 duration-150">
-                    {/* Header */}
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-stroke/20 px-1">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-muted-fg">
                         Filter By Company
@@ -731,7 +912,6 @@ export const SalesPage: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Company Quick Search */}
                     <div className="relative mb-2 px-1">
                       <Search className="w-3.5 h-3.5 text-muted-fg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
@@ -752,7 +932,6 @@ export const SalesPage: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Company list */}
                     <div className="space-y-0.5 max-h-56 overflow-y-auto pr-0.5">
                       {filteredCompanyList.length === 0 ? (
                         <div className="py-4 text-center text-xs text-muted-fg">
@@ -789,32 +968,32 @@ export const SalesPage: React.FC = () => {
               </div>
             )}
 
-            {/* Tab Switcher: Deposit / Sales Record (Right Side) */}
+            {/* Dynamic Tab Switcher: Deposit / Sales Record (Drives Chart & Table below; KPIs above remain independent) */}
             <div className="flex items-center bg-slate-100 rounded-full border border-stroke/30 p-1 gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => setTableTab('Deposit')}
                 className={cn(
-                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
                   tableTab === 'Deposit'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-focus/70 hover:bg-white hover:text-focus'
                 )}
               >
-                <ArrowDownLeft className="h-4 w-4 shrink-0" />
+                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0" />
                 Deposit
               </button>
               <button
                 type="button"
                 onClick={() => setTableTab('Sales Record')}
                 className={cn(
-                  'inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-4.5 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer select-none',
+                  'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none',
                   tableTab === 'Sales Record'
                     ? 'bg-[#960C01] text-white shadow-xs'
                     : 'text-focus/70 hover:bg-white hover:text-focus'
                 )}
               >
-                <TrendingUp className="h-4 w-4 shrink-0" />
+                <TrendingUp className="h-3.5 w-3.5 shrink-0" />
                 Sales Record
               </button>
             </div>
@@ -822,8 +1001,7 @@ export const SalesPage: React.FC = () => {
         </div>
       </div>
 
-
-      {/* 3. Total Sales & Total Cash KPI Cards */}
+      {/* 3. Total Sales & Total Cash KPI Cards (Independent of Deposit / Sales Record Tab) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Total Sales Card */}
         <Card className="w-full bg-white rounded-[15px] border border-stroke/20 p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:shadow-md hover:border-stroke/40">
@@ -831,20 +1009,22 @@ export const SalesPage: React.FC = () => {
             <span className="text-xs font-medium text-muted-fg block">
               Total Sales
             </span>
-            <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
-              {loading ? (
-                <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
-                </span>
-              ) : (
-                formatPHP(kpis.totalSales)
-              )}
-            </h3>
-            <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-              Total sales volume for {dateRange.label || 'the selected period'} in {displayedCompanyTitle}
-            </p>
+            {loading ? (
+              <div className="space-y-1.5 mt-2">
+                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1 tabular-nums tracking-tight">
+                  {formatPHP(kpis.totalSales)}
+                </h3>
+                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                  Total sales volume for {dateRange.label || 'the selected period'} in{' '}
+                  {displayedCompanyTitle}
+                </p>
+              </>
+            )}
           </div>
 
           <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-emerald-50 border border-emerald-200/60 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
@@ -858,20 +1038,21 @@ export const SalesPage: React.FC = () => {
             <span className="text-xs font-medium text-muted-fg block">
               Total Cash
             </span>
-            <h3 className="text-xl sm:text-2xl font-bold text-teal-600 mt-1 tabular-nums tracking-tight">
-              {loading ? (
-                <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
-                </span>
-              ) : (
-                formatPHP(kpis.totalCash)
-              )}
-            </h3>
-            <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
-              Actual cash collected from paid sales in {displayedCompanyTitle}
-            </p>
+            {loading ? (
+              <div className="space-y-1.5 mt-2">
+                <div className="h-7 w-36 bg-slate-200/80 animate-pulse rounded-md" />
+                <div className="h-3 w-56 bg-slate-200/60 animate-pulse rounded-md" />
+              </div>
+            ) : (
+              <>
+                <h3 className="text-xl sm:text-2xl font-bold text-teal-600 mt-1 tabular-nums tracking-tight">
+                  {formatPHP(kpis.totalCash)}
+                </h3>
+                <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
+                  Actual cash collected from paid sales in {displayedCompanyTitle}
+                </p>
+              </>
+            )}
           </div>
 
           <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-teal-50 border border-teal-200/60 flex items-center justify-center text-teal-600 shrink-0 shadow-2xs">
@@ -880,7 +1061,7 @@ export const SalesPage: React.FC = () => {
         </Card>
       </div>
 
-      {/* 4. Charts Section: Diagram - Income Summary extended to full width (weekly sales trend removed) */}
+      {/* 4. Charts Section */}
       <div className="w-full">
         {loading ? (
           <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs">
@@ -904,48 +1085,99 @@ export const SalesPage: React.FC = () => {
         )}
       </div>
 
-      {/* 5. Summary Transactions in Sales (Following the Sales table from the provided mockup) */}
+      {/* 5. Summary Transactions in Sales */}
       <Card
         ref={tableCardRef}
         className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-7 shadow-xs scroll-mt-6"
       >
-        {/* Table matching the Sales table from mockup with equal spacing across all columns */}
+        {/* Dynamic Tab Context Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4 mb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border',
+                tableTab === 'Deposit'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-[#960C01]/10 text-[#960C01] border-[#960C01]/20'
+              )}
+            >
+              {tableTab === 'Deposit' ? (
+                <>
+                  <ArrowDownLeft className="w-3.5 h-3.5" />
+                  <span>Deposit View (Collected / Paid Inflows)</span>
+                </>
+              ) : (
+                <>
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>Sales Record View (All Sales Particulars)</span>
+                </>
+              )}
+            </span>
 
+            {statusFilter !== 'All' && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border',
+                  statusFilter === 'Paid'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : statusFilter === 'Pending'
+                      ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                )}
+              >
+                <span>Particulars Status: {statusFilter}</span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('All')}
+                  className="hover:opacity-75 cursor-pointer"
+                  title="Clear status filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+          </div>
 
-        {/* Table matching the Sales table from mockup with equal spacing across all columns */}
+          <span className="text-xs text-muted-fg font-medium">
+            {filteredSales.length}{' '}
+            {tableTab === 'Deposit' ? 'deposit' : 'sales'}{' '}
+            {filteredSales.length === 1 ? 'record' : 'records'} shown
+          </span>
+        </div>
+
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table className="w-full table-fixed min-w-[900px]">
+          <Table className="w-full table-fixed min-w-[940px]">
             <colgroup>
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '17%' }} />
               <col style={{ width: '12%' }} />
-              <col style={{ width: '17%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '12%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
               <col style={{ width: '8%' }} />
             </colgroup>
             <TableHeader>
-              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
-                <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>
-                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[15%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   COMPANY
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CHEQUE NO.
                 </TableHead>
-                <TableHead className="w-[17%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[21%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   PARTICULARS
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
-                  DEPOSIT
+                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                  {tableTab === 'Deposit' ? 'DEPOSITED' : 'DEPOSIT'}
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   CATEGORY
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   NET AMOUNT
                 </TableHead>
                 <TableHead className="w-[8%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
@@ -995,179 +1227,269 @@ export const SalesPage: React.FC = () => {
                         <AlertCircle className="w-6 h-6 stroke-[1.5]" />
                       </div>
                       <p className="font-semibold text-focus text-sm sm:text-base">
-                        No sales records found
+                        No {tableTab === 'Deposit' ? 'deposit' : 'sales'} records
+                        found
                       </p>
                       <p className="text-xs text-muted-fg leading-relaxed">
-                        There are no sales transactions recorded for {displayedCompanyTitle} matching your current filters. {isAuditor && 'Click "Add Sales" above to record a new transaction.'}
+                        There are no{' '}
+                        {tableTab === 'Deposit' ? 'deposit' : 'sales'}{' '}
+                        transactions recorded for {displayedCompanyTitle} matching
+                        your current filters.
                       </p>
                     </div>
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedSales.map((sale) => (
-                  <TableRow
-                    key={sale.id}
-                    id={`sale-row-${sale.id}`}
-                    onClick={() => handleOpenRow(sale)}
-                    className={cn(
-                      'border-b border-slate-100 hover:bg-slate-50/60 transition-all duration-300 cursor-pointer',
-                      highlightedSaleId === sale.id &&
-                        'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
-                    )}
-                    title="Click to view complete details"
-                  >
-                    {/* 1. Date */}
-                    <TableCell className="w-[10%] px-3.5 py-3.5 text-xs font-medium text-focus truncate text-left">
-                      <div className="flex flex-col truncate">
+                paginatedSales.map((sale) => {
+                  const fallbackStatus = normalizeParticularStatus(
+                    sale.status,
+                    'Paid'
+                  )
+                  const summary = getParticularsSummary(
+                    sale.particulars,
+                    sale.items,
+                    {
+                      statusFilter: effectiveParticularsStatusFilter,
+                      fallbackStatus,
+                      fallbackTotal: sale.deposit,
+                    }
+                  )
+                  const rowAmount =
+                    effectiveParticularsStatusFilter !== 'All'
+                      ? summary.filteredTotal
+                      : sale.deposit
+                  const createdAtTime = formatCreatedAt(sale.createdAt, {
+                    timeOnly: true,
+                  })
+
+                  return (
+                    <TableRow
+                      key={sale.id}
+                      id={`sale-row-${sale.id}`}
+                      onClick={() => handleOpenRow(sale)}
+                      className={cn(
+                        'border-b border-slate-100 hover:bg-slate-50/60 transition-all duration-300 cursor-pointer',
+                        highlightedSaleId === sale.id &&
+                          'bg-amber-100/90 hover:bg-amber-100/90 ring-2 ring-amber-500 shadow-md font-semibold'
+                      )}
+                      title="Click to view complete details"
+                    >
+                      {/* 1. Date & Created At Time */}
+                      <TableCell className="w-[12%] px-3.5 py-3.5 text-xs font-medium text-focus truncate text-left">
+                        <div className="flex flex-col truncate">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span>{sale.date}</span>
+                            {highlightedSaleId === sale.id && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white shadow-xs animate-bounce shrink-0">
+                                NEW
+                              </span>
+                            )}
+                          </div>
+                          {createdAtTime && (
+                            <span
+                              className="text-[10px] text-muted-fg font-mono mt-0.5"
+                              title={`Created at ${formatCreatedAt(sale.createdAt)}`}
+                            >
+                              {createdAtTime}
+                            </span>
+                          )}
+                          {sale.auditStatus &&
+                            sale.auditStatus !== 'Pending Audit' && (
+                              <div className="mt-1 flex items-center gap-1">
+                                <span
+                                  className={cn(
+                                    'inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold border',
+                                    sale.auditStatus === 'Verified'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                                  )}
+                                >
+                                  {sale.auditStatus === 'Verified'
+                                    ? 'Audited'
+                                    : 'Discrepancy'}
+                                </span>
+                              </div>
+                            )}
+                          {sale.auditDate &&
+                            sale.auditStatus === 'Verified' && (
+                              <span className="text-[9.5px] text-muted-fg font-mono mt-0.5">
+                                {sale.auditDate}
+                              </span>
+                            )}
+                        </div>
+                      </TableCell>
+
+                      {/* 2. Company */}
+                      <TableCell
+                        className="w-[15%] px-3.5 py-3.5 text-xs font-semibold text-focus truncate text-left"
+                        title={sale.company}
+                      >
                         <div className="flex items-center gap-1.5 truncate">
-                          <span>{sale.date}</span>
-                          {highlightedSaleId === sale.id && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#960C01] text-white shadow-xs animate-bounce shrink-0">
-                              NEW
+                          <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <span className="truncate">{sale.company}</span>
+                        </div>
+                      </TableCell>
+
+                      {/* 3. Cheque No */}
+                      <TableCell className="w-[11%] px-3.5 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
+                        {sale.chequeNo || '—'}
+                      </TableCell>
+
+                      {/* 4. Particulars (filtered by statusFilter / tab, with yellow Pending badge) */}
+                      <TableCell
+                        className="w-[21%] px-3.5 py-3.5 text-xs text-focus/90 font-normal truncate text-left"
+                        title={sale.particulars}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="truncate block font-medium">
+                            {summary.firstItemName}
+                          </span>
+                          <span
+                            className={cn(
+                              'shrink-0 px-1.5 py-0.5 rounded-full text-[9.5px] font-bold border',
+                              summary.firstItemStatus === 'Paid'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : summary.firstItemStatus === 'Pending'
+                                  ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                            )}
+                          >
+                            {summary.firstItemStatus}
+                          </span>
+                          {summary.count > 1 && (
+                            <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                              +{summary.count - 1} more
                             </span>
                           )}
                         </div>
-                        {sale.auditStatus && (
-                          <div className="mt-1 flex items-center gap-1">
-                            <span
-                              className={cn(
-                                'inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold border',
-                                sale.auditStatus === 'Verified'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-rose-50 text-rose-700 border-rose-200'
-                              )}
-                            >
-                              {sale.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
-                            </span>
-                          </div>
-                        )}
-                        {sale.auditDate && (
-                          <span className="text-[9.5px] text-muted-fg font-mono mt-0.5">
-                            {sale.auditDate}
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
+                      </TableCell>
 
-                    {/* 2. Company */}
-                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs font-semibold text-focus truncate text-left" title={sale.company}>
-                      <div className="flex items-center gap-1.5 truncate">
-                        <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                        <span className="truncate">{sale.company}</span>
-                      </div>
-                    </TableCell>
+                      {/* 5. Deposit */}
+                      <TableCell className="w-[11%] px-3.5 py-3.5 text-xs font-semibold text-left tabular-nums whitespace-nowrap text-emerald-600">
+                        {rowAmount > 0 ? formatPHP(rowAmount) : '—'}
+                      </TableCell>
 
-                    {/* 3. Cheque No */}
-                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus/90 truncate font-mono text-left">
-                      {sale.chequeNo || '—'}
-                    </TableCell>
+                      {/* 6. Category + Payment Method */}
+                      <TableCell className="w-[11%] px-3.5 py-3.5 text-xs text-focus font-medium text-left">
+                        <span
+                          className="truncate block font-semibold text-focus"
+                          title={
+                            sale.category && sale.category !== 'None'
+                              ? sale.category
+                              : 'Uncategorized'
+                          }
+                        >
+                          {sale.category && sale.category !== 'None'
+                            ? sale.category
+                            : 'Uncategorized'}
+                        </span>
+                        <span
+                          className="truncate block text-[11px] text-muted-fg"
+                          title={sale.paymentMethod || 'Cash'}
+                        >
+                          {sale.paymentMethod || 'Cash'}
+                        </span>
+                      </TableCell>
 
-                    {/* 4. Particulars */}
-                    <TableCell className="w-[17%] px-3.5 py-3.5 text-xs text-focus/90 font-normal truncate text-left" title={sale.particulars}>
-                      {(() => {
-                        const summary = getParticularsSummary(sale.particulars, sale.items)
-                        if (summary.count > 1) {
-                          return (
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="truncate block font-medium">{summary.firstItemName}</span>
-                              <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
-                                +{summary.count - 1} more
-                              </span>
-                            </div>
-                          )
-                        }
-                        return <span className="truncate block">{summary.firstItemName}</span>
-                      })()}
-                    </TableCell>
+                      {/* 7. Net Amount */}
+                      <TableCell className="w-[11%] px-3.5 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
+                        {formatPHP(rowAmount)}
+                      </TableCell>
 
-                    {/* 5. Deposit */}
-                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs font-semibold text-left tabular-nums whitespace-nowrap text-emerald-600">
-                      {sale.deposit > 0 ? formatPHP(sale.deposit) : ''}
-                    </TableCell>
-
-                    {/* 6. Category + Payment Method */}
-                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs text-focus font-medium text-left">
-                      <span
-                        className="truncate block font-semibold text-focus"
-                        title={sale.category && sale.category !== 'None' ? sale.category : 'Uncategorized'}
+                      {/* 8. Actions */}
+                      <TableCell
+                        className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {sale.category && sale.category !== 'None' ? sale.category : 'Uncategorized'}
-                      </span>
-                      <span className="truncate block text-[11px] text-muted-fg" title={sale.paymentMethod || 'Cash'}>
-                        {sale.paymentMethod || 'Cash'}
-                      </span>
-                    </TableCell>
-
-                    {/* 7. Net Amount */}
-                    <TableCell className="w-[12%] px-3.5 py-3.5 text-xs font-bold text-left tabular-nums whitespace-nowrap text-focus">
-                      {formatPHP(sale.netAmount)}
-                    </TableCell>
-
-                    {/* 8. Actions */}
-                    <TableCell
-                      className="w-[8%] px-3.5 py-3.5 text-center whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center justify-center">
-                        {isAudit ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (openMenuSaleId === sale.id) {
-                                setOpenMenuSaleId(null)
-                                setMenuPosition(null)
-                                setActiveMenuSale(null)
-                              } else {
-                                const rect = e.currentTarget.getBoundingClientRect()
-                                const openUpward = rect.bottom + 140 > window.innerHeight
-                                setMenuPosition({
-                                  top: openUpward ? rect.top - 6 : rect.bottom + 6,
-                                  right: Math.max(12, window.innerWidth - rect.right),
-                                  openUpward,
-                                })
-                                setActiveMenuSale(sale)
-                                setOpenMenuSaleId(sale.id)
-                              }
-                            }}
-                            className="h-8 w-8 p-0 rounded-lg text-muted-fg hover:text-focus hover:bg-slate-100 cursor-pointer flex items-center justify-center transition-colors"
-                            title="Audit Actions"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDeleteConfirmSale(sale)}
-                            className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                            title="Delete Sale"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                        <div className="flex items-center justify-center gap-1">
+                          {isAudit ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (openMenuSaleId === sale.id) {
+                                  setOpenMenuSaleId(null)
+                                  setMenuPosition(null)
+                                  setActiveMenuSale(null)
+                                } else {
+                                  const rect =
+                                    e.currentTarget.getBoundingClientRect()
+                                  const openUpward =
+                                    rect.bottom + 140 > window.innerHeight
+                                  setMenuPosition({
+                                    top: openUpward
+                                      ? rect.top - 6
+                                      : rect.bottom + 6,
+                                    right: Math.max(
+                                      12,
+                                      window.innerWidth - rect.right
+                                    ),
+                                    openUpward,
+                                  })
+                                  setActiveMenuSale(sale)
+                                  setOpenMenuSaleId(sale.id)
+                                }
+                              }}
+                              className="h-8 w-8 p-0 rounded-lg text-muted-fg hover:text-focus hover:bg-slate-100 cursor-pointer flex items-center justify-center transition-colors"
+                              title="Audit Actions"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          ) : sale.auditStatus === 'Verified' ? (
+                            <span
+                              className="h-7 w-7 rounded-lg text-emerald-600 bg-emerald-50 border border-emerald-200 flex items-center justify-center"
+                              title="Audited by auditor (locked from editing)"
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                            </span>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  navigate('/sales/add', {
+                                    state: { editSale: sale },
+                                  })
+                                }
+                                className="h-7 w-7 p-0 rounded-lg text-slate-500 hover:text-focus hover:bg-slate-100 cursor-pointer"
+                                title="Edit Sale & Particulars"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleteConfirmSale(sale)}
+                                className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                                title="Delete Sale"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
               )}
             </TableBody>
           </Table>
         </div>
 
-        {/* 6. Pagination Footer (Matching Sales table reference: Showing X of Y and Page 1 out of 10) */}
+        {/* 6. Pagination Footer */}
         <div className="pt-4 mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
-          {/* Left: Record summary */}
           <span className="font-medium text-focus/80">
             {filteredSales.length === 0
               ? 'Showing 0 of 0 records'
               : `Showing ${startIndex + 1}-${endIndex} of ${filteredSales.length} records`}
           </span>
 
-          {/* Right: Page Indicator & Navigation */}
           <div className="flex items-center gap-2 self-end sm:self-auto">
             <span className="text-xs text-muted-fg italic">
               Page {currentPage} out of {totalPages}
@@ -1208,9 +1530,12 @@ export const SalesPage: React.FC = () => {
         assignedCompany={isAuditor ? assignedCompany : selectedCompany}
       />
 
-      {/* Delete Confirmation Dialog (Hidden for Admin who has no delete ability) */}
+      {/* Delete Confirmation Dialog */}
       {!isAdmin && (
-        <Dialog open={!!deleteConfirmSale} onOpenChange={(open) => !open && setDeleteConfirmSale(null)}>
+        <Dialog
+          open={!!deleteConfirmSale}
+          onOpenChange={(open) => !open && setDeleteConfirmSale(null)}
+        >
           <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl">
             <DialogHeader>
               <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center mb-2">
@@ -1221,9 +1546,16 @@ export const SalesPage: React.FC = () => {
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-fg mt-1">
                 Are you sure you want to delete this sale entry{' '}
-                <strong className="text-focus">{deleteConfirmSale?.particulars}</strong> ({deleteConfirmSale?.refNo}) for{' '}
-                <strong className="text-focus">{deleteConfirmSale?.deposit ? formatPHP(deleteConfirmSale.deposit) : ''}</strong>?
-                This action cannot be undone.
+                <strong className="text-focus">
+                  {deleteConfirmSale?.particulars}
+                </strong>{' '}
+                ({deleteConfirmSale?.refNo}) for{' '}
+                <strong className="text-focus">
+                  {deleteConfirmSale?.deposit
+                    ? formatPHP(deleteConfirmSale.deposit)
+                    : ''}
+                </strong>
+                ? This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
 
@@ -1257,7 +1589,7 @@ export const SalesPage: React.FC = () => {
         </Dialog>
       )}
 
-      {/* Transaction Details & Audit Modal (View only for Admin just like in loan, editable for operational users) */}
+      {/* Transaction Details & Audit Modal */}
       <AuditTransactionModal
         open={isAuditModalOpen}
         onOpenChange={(open) => {
@@ -1271,9 +1603,14 @@ export const SalesPage: React.FC = () => {
         sale={selectedSale}
         onSaleUpdated={handleSaleUpdated}
         editable={!isAdmin}
+        statusFilter={effectiveParticularsStatusFilter}
       />
+
       {/* 3-Dots Action Portal Menu for Audit */}
-      {openMenuSaleId && activeMenuSale && menuPosition && typeof document !== 'undefined' &&
+      {openMenuSaleId &&
+        activeMenuSale &&
+        menuPosition &&
+        typeof document !== 'undefined' &&
         createPortal(
           <div
             className="fixed w-44 bg-white rounded-xl border border-slate-200 shadow-2xl p-1.5 z-[99999] animate-in fade-in-50 zoom-in-95 duration-150"
@@ -1287,7 +1624,9 @@ export const SalesPage: React.FC = () => {
           >
             <button
               type="button"
-              onClick={(e) => handleMarkSaleAudit(activeMenuSale, 'Verified', e)}
+              onClick={(e) =>
+                handleMarkSaleAudit(activeMenuSale, 'Verified', e)
+              }
               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors text-left cursor-pointer"
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -1324,4 +1663,3 @@ export const SalesPage: React.FC = () => {
     </div>
   )
 }
-

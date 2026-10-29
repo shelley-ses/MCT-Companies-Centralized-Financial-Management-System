@@ -45,6 +45,11 @@ class Sale(Base):
     particulars = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Audit review result (spec 0014): saved on the server so every account sees the same status.
+    audit_status = Column(String(20), nullable=False, default="Pending Audit", server_default="Pending Audit")
+    audited_by = Column(String(100), nullable=True)
+    audited_at = Column(DateTime(timezone=True), nullable=True)
+    audit_remarks = Column(Text, nullable=True)
 
     category = relationship("Category", back_populates="sales")
 
@@ -67,6 +72,11 @@ class Expense(Base):
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Audit review result (spec 0014): saved on the server so every account sees the same status.
+    audit_status = Column(String(20), nullable=False, default="Pending Audit", server_default="Pending Audit")
+    audited_by = Column(String(100), nullable=True)
+    audited_at = Column(DateTime(timezone=True), nullable=True)
+    audit_remarks = Column(Text, nullable=True)
 
     category = relationship("Category", back_populates="expenses")
 

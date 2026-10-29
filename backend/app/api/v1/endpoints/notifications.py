@@ -32,10 +32,11 @@ def _resolve_company(
 ) -> Optional[int]:
     """
     Company users are always scoped to their own company_id from the JWT.
-    Admins may pass ?company_id to target a specific company, or omit it to
-    get notifications across all companies.
+    Admins, finance, and audit roles may pass ?company_id to target a specific
+    company, or omit it to get notifications across all companies.
     """
-    if current_user["is_admin"]:
+    role = (current_user.get("role") or ("admin" if current_user.get("is_admin") else "supervisor")).lower()
+    if current_user.get("is_admin") or role in ("admin", "finance", "audit"):
         return company_id_param
     return current_user.get("company_id")
 
@@ -77,10 +78,12 @@ def get_notifications(
     - `LOAN_REPAYMENT_SENT`     — borrower: payment confirmation
     - `LOAN_FULLY_SETTLED`      — both parties: loan fully paid off
     """
+    user_role = (current_user.get("role") or ("admin" if current_user.get("is_admin") else "supervisor")).lower()
     resolved = _resolve_company(company_id, current_user)
     svc = NotificationService(db)
     return svc.get_notifications(
         company_id=resolved,
+        user_role=user_role,
         notification_type=notification_type,
         limit=limit,
         offset=offset,
@@ -102,7 +105,8 @@ def notification_count(
     Because the backend has no persistence, every notification is treated as
     unread — the frontend is responsible for tracking acknowledged IDs.
     """
+    user_role = (current_user.get("role") or ("admin" if current_user.get("is_admin") else "supervisor")).lower()
     resolved = _resolve_company(company_id, current_user)
     svc = NotificationService(db)
-    count = svc.get_unread_count(company_id=resolved)
+    count = svc.get_unread_count(company_id=resolved, user_role=user_role)
     return NotificationCountOut(unread_count=count)

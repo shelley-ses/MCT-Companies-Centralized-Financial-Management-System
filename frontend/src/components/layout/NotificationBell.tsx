@@ -106,8 +106,20 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
         let IconComponent: React.ElementType = AlertCircle
         let iconColor = 'text-primary'
 
-        if (item.notification_type === 'LOAN_PENDING_APPROVAL') {
+        if (item.notification_type === 'LOAN_PENDING_APPROVAL' || item.notification_type === 'LOAN_REQUEST_FINANCE') {
           IconComponent = FileCheck2
+          iconColor = 'text-amber-600'
+        } else if (item.notification_type === 'LOAN_ENDORSED_AUDIT' || item.notification_type === 'PETTY_CASH_AUDIT') {
+          IconComponent = FileCheck2
+          iconColor = 'text-blue-600'
+        } else if (item.notification_type === 'LOAN_APPROVED_SUPERVISOR' || item.notification_type === 'PETTY_CASH_APPROVED' || item.notification_type === 'DEPOSIT_VERIFIED') {
+          IconComponent = CheckCircle2
+          iconColor = 'text-emerald-600'
+        } else if (item.notification_type === 'LOAN_REJECTED_SUPERVISOR' || item.notification_type === 'PETTY_CASH_REJECTED') {
+          IconComponent = AlertCircle
+          iconColor = 'text-rose-600'
+        } else if (item.notification_type === 'PETTY_CASH_REQUEST') {
+          IconComponent = Clock
           iconColor = 'text-amber-600'
         } else if (item.notification_type === 'LOAN_OVERDUE') {
           IconComponent = AlertCircle
@@ -202,8 +214,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className })
       prev.map((n) => (n.id === item.id ? { ...n, unread: false } : n))
     )
 
-    // If related to a loan, navigate to /loan
-    if (item.refType === 'loan' || item.type.includes('LOAN')) {
+    // Navigate based on notification category
+    if (item.refType === 'petty_cash' || item.type.includes('PETTY_CASH')) {
+      setIsOpen(false)
+      navigate('/petty-cash')
+    } else if (item.refType === 'deposit' || item.type.includes('DEPOSIT') || item.refType === 'sale') {
+      setIsOpen(false)
+      navigate('/sales')
+    } else if (item.refType === 'loan' || item.type.includes('LOAN')) {
       setIsOpen(false)
       navigate('/loan')
     }
