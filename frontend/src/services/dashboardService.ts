@@ -61,7 +61,7 @@ export interface DashboardTransactionItem {
   refNo: string
   chequeNo?: string
   date: string // e.g. "October 1, 2026" or "2026-10-01"
-  type: 'Expense' | 'Sales' | 'Loan' | 'Income'
+  type: 'Expense' | 'Sales' | 'Loan' | 'Income' | 'Petty Cash'
   company: string
   description: string
   particulars?: string
@@ -80,6 +80,10 @@ export interface DashboardTransactionItem {
   updatedAt?: string
   attachments?: string[]
   items?: ParticularItem[]
+  /** The other side of a record shown for another company (lender loan row, petty cash rows). Read only. */
+  isMirrorRow?: boolean
+  /** Endorsed by Finance but not yet approved by Internal Audit. */
+  awaitingAudit?: boolean
 }
 
 export interface DashboardData {

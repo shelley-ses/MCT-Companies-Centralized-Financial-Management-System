@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -9,11 +9,15 @@ from sqlalchemy.orm import Session
 from app.core.cache import system_cache
 from app.core.websocket import ws_manager
 from app.db.supabase import get_supabase_admin_client
+from app.models.bank import BankAccount
 from app.models.company import Company
 from app.models.finance import Category, Expense
 from app.models.petty_cash import PettyCashTopUp, PettyCashWallet
+from app.schemas.bank import BankDepositWithdrawRequest
+from app.services.bank_service import BankService
 from app.schemas.petty_cash import (
     PettyCashLedgerEntry,
+    PettyCashMovementOut,
     PettyCashSummaryOut,
     PettyCashTopUpCreate,
     PettyCashTopUpOut,
@@ -22,6 +26,8 @@ from app.services.bills_service import _resolve_company
 
 
 PETTY_CASH_METHOD = "petty cash"
+
+LEDGER_MOVEMENT_STATUSES = {"pending audit approval", "approved"}
 DEFAULT_LOW_BALANCE_THRESHOLD = Decimal("1000.00")
 ZERO = Decimal("0.00")
 
@@ -56,10 +62,6 @@ class PettyCashService:
     """
     Petty cash wallet per company.
 
-    balance = sum(top-ups) - sum(amount of expenses paid with "Petty Cash")
-
-    The balance is never stored, so editing or deleting a petty cash expense
-    is reflected automatically.
     """
 
     def __init__(self, db: Session):
@@ -330,6 +332,71 @@ class PettyCashService:
         system_cache.set(cache_key, result, ttl=60, tags=["petty_cash"])
         return result
 
+    def list_movements(self, company: Optional[Company] = None) -> List[PettyCashMovementOut]:
+        """
+        Top-ups for the Transaction page ledger 
+        """
+        topups = [
+            t for t in self._topups(None)
+            if (t.status or "").strip().lower() in LEDGER_MOVEMENT_STATUSES
+            and (t.bank_account_id or "").strip()
+        ]
+        if not topups:
+            return []
+
+        comp_names = {c.company_id: c.company_name for c in self.db.query(Company).all()}
+        name_to_id = {(name or "").strip().lower(): cid for cid, name in comp_names.items()}
+
+        bank_ids = {t.bank_account_id.strip() for t in topups}
+        banks = {
+            b.id: b
+            for b in self.db.query(BankAccount).filter(BankAccount.id.in_(bank_ids)).all()
+        }
+
+        movements: List[PettyCashMovementOut] = []
+        for t in topups:
+            bank = banks.get(t.bank_account_id.strip())
+            if bank is None:
+                # Funding bank cannot be found: nothing reliable to show for either side.
+                continue
+
+            funding_company_id = bank.company_id
+            if funding_company_id is None:
+                funding_company_id = name_to_id.get((bank.company_name or "").strip().lower())
+            funding_company_name = (
+                comp_names.get(funding_company_id) if funding_company_id is not None else None
+            ) or bank.company_name
+
+            requesting_name = comp_names.get(t.company_id)
+            is_own_account = funding_company_id == t.company_id
+            if not is_own_account and funding_company_id is None and requesting_name:
+                is_own_account = (
+                    (bank.company_name or "").strip().lower() == requesting_name.strip().lower()
+                )
+
+            if company is not None and company.company_id not in (t.company_id, funding_company_id):
+                continue
+
+            movements.append(
+                PettyCashMovementOut(
+                    topup_id=t.topup_id,
+                    reference_no=t.reference_no,
+                    topup_date=t.topup_date,
+                    amount=_to_decimal(t.amount),
+                    description=t.description,
+                    status=t.status,
+                    company_id=t.company_id,
+                    company_name=requesting_name,
+                    funding_company_id=funding_company_id,
+                    funding_company_name=funding_company_name,
+                    is_own_account=is_own_account,
+                    created_at=t.created_at,
+                )
+            )
+
+        movements.sort(key=lambda m: (m.topup_date, m.topup_id), reverse=True)
+        return movements
+
     # ── Mutations ────────────────────────────────────────────────────────────
 
     def _topup_output(self, topup: PettyCashTopUp) -> PettyCashTopUpOut:
@@ -399,6 +466,7 @@ class PettyCashService:
         action: str,
         remark: str,
         endorser_name: Optional[str] = None,
+        bank_account_id: Optional[str] = None,
     ) -> PettyCashTopUpOut:
         topup = self.db.query(PettyCashTopUp).filter(PettyCashTopUp.topup_id == topup_id).first()
         if not topup:
@@ -411,11 +479,19 @@ class PettyCashService:
         if not remark or not remark.strip():
             raise HTTPException(status_code=422, detail="A remark is required when endorsing or rejecting.")
 
-        new_status = "Pending Audit Approval" if action.lower() == "endorse" else "Rejected by Finance"
+        is_endorse = action.lower() == "endorse"
+
+        #Finance must choose a funding bank before endorsing (not required for a rejection).
+        if is_endorse and not (bank_account_id and str(bank_account_id).strip()):
+            raise HTTPException(status_code=422, detail="Please choose a funding bank account before endorsing.")
+
+        new_status = "Pending Audit Approval" if is_endorse else "Rejected by Finance"
         topup.status = new_status
         topup.finance_remark = remark.strip()
         topup.endorsed_by = endorser_name or "Finance Officer"
         topup.endorsed_at = func.now()
+        if is_endorse:
+            topup.bank_account_id = str(bank_account_id).strip()
 
         self.db.commit()
         self.db.refresh(topup)
@@ -441,7 +517,8 @@ class PettyCashService:
         if not remark or not remark.strip():
             raise HTTPException(status_code=422, detail="A remark is required when approving or disapproving.")
 
-        new_status = "Approved" if action.lower() == "approve" else "Disapproved by Audit"
+        is_approve = action.lower() == "approve"
+        new_status = "Approved" if is_approve else "Disapproved by Audit"
         topup.status = new_status
         topup.remark = remark.strip()
         topup.reviewed_by = reviewer_name or "Internal Auditor"
@@ -449,9 +526,81 @@ class PettyCashService:
 
         self.db.commit()
         self.db.refresh(topup)
+
+        # Disapproval moves nothing.
+        if is_approve:
+            self._disburse_to_bank(topup)
+
         system_cache.invalidate_tag("petty_cash")
         ws_manager.broadcast_sync({"type": "PETTY_CASH_UPDATED"})
         return self._topup_output(topup)
+
+    def _disburse_to_bank(self, topup: PettyCashTopUp) -> None:
+
+        amount = _to_decimal(topup.amount)
+        if amount <= ZERO:
+            return
+
+        funding_bank_id = (topup.bank_account_id or "").strip()
+        if not funding_bank_id:
+            # No funding bank chosen (e.g. a historical row). Nothing to move; the wallet
+            # credit from the Approved status still applies.
+            return
+
+        bank_svc = BankService(self.db)
+        funding_acc = self.db.query(BankAccount).filter(BankAccount.id == funding_bank_id).first()
+        if not funding_acc:
+            raise HTTPException(
+                status_code=400,
+                detail="The selected funding bank account was not found. Please re-endorse with a valid bank.",
+            )
+
+        # Is the funding bank the requesting company's own account?
+        company = self.db.query(Company).filter(Company.company_id == topup.company_id).first()
+        company_name = company.company_name if company else None
+        is_own_account = funding_acc.company_id == topup.company_id
+        if not is_own_account and funding_acc.company_id is None and company_name:
+            # Fallback when the account has no company_id: match by company name.
+            is_own_account = (funding_acc.company_name or "").strip().lower() == company_name.strip().lower()
+
+        if is_own_account:
+            # Own-account funding: no bank movement. Only the wallet is credited (via status).
+            return
+
+        ref = topup.reference_no or f"PC-{topup.topup_id}"
+        c_disp = company_name or f"Company #{topup.company_id}"
+
+        try:
+            # 1. Withdraw from the outside funding bank.
+            withdraw_req = BankDepositWithdrawRequest(
+                amount=amount,
+                date=datetime.now().strftime("%m/%d/%y"),
+                particulars=f"Petty Cash Funding for {c_disp} (Ref: {ref})",
+                category="Bank Transfer",
+                reference_no=ref,
+            )
+            bank_svc.withdraw(funding_acc.id, withdraw_req)
+            ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": funding_acc.id}})
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Bank withdrawal for petty cash failed: {exc}")
+
+        # 2. Deposit into the requesting company's own bank account.
+        dest_acc = self.db.query(BankAccount).filter(BankAccount.company_id == topup.company_id).first()
+        if not dest_acc and company_name:
+            dest_acc = bank_svc.find_account_for_company(company_name)
+        if dest_acc:
+            try:
+                deposit_req = BankDepositWithdrawRequest(
+                    amount=amount,
+                    date=datetime.now().strftime("%m/%d/%y"),
+                    particulars=f"Petty Cash Top-up received (Ref: {ref})",
+                    category="Bank Transfer",
+                    reference_no=ref,
+                )
+                bank_svc.deposit(dest_acc.id, deposit_req)
+                ws_manager.broadcast_sync({"type": "BANK_UPDATED", "payload": {"account_id": dest_acc.id}})
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Bank deposit for petty cash failed: {exc}")
 
     def delete_topup(self, topup_id: int) -> PettyCashTopUp:
         topup = self.db.query(PettyCashTopUp).filter(PettyCashTopUp.topup_id == topup_id).first()

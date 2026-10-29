@@ -59,6 +59,7 @@ import { isDateInRange, formatCreatedAt } from '@/utils/dateUtils'
 import { isCompanyMatch } from '@/utils/companyUtils'
 import { getParticularsSummary } from '@/utils/particularsUtils'
 import { loanService } from '@/services/loanService'
+import { bankService, type BankAccount } from '@/services/bankService'
 import {
   pettyCashService,
   type PettyCashLedgerEntry,
@@ -172,6 +173,10 @@ export const PettyCashPage: React.FC = () => {
   const [reviewRemark, setReviewRemark] = React.useState('')
   const [reviewError, setReviewError] = React.useState('')
   const [isSubmittingReview, setIsSubmittingReview] = React.useState(false)
+
+  // Spec 0012: funding bank Finance chooses when endorsing a petty cash request.
+  const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>([])
+  const [selectedFundingBankId, setSelectedFundingBankId] = React.useState('')
   const [approvalFeedback, setApprovalFeedback] = React.useState<string | null>(null)
 
   // Audit Actions Menu State
@@ -433,11 +438,35 @@ export const PettyCashPage: React.FC = () => {
     setIsSummaryModalOpen(true)
   }
 
+  // Load bank accounts once, so Finance can pick a funding bank when endorsing (spec 0012).
+  React.useEffect(() => {
+    let mounted = true
+    bankService
+      .getAccounts()
+      .then((accounts) => {
+        if (mounted && accounts) setBankAccounts(accounts)
+      })
+      .catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   // Open Confirmation Modal for Endorse, Reject, Approve or Disapprove
   const handleOpenReviewConfirm = (action: 'endorse' | 'reject' | 'approve' | 'disapprove') => {
     setReviewAction(action)
     setReviewRemark('')
     setReviewError('')
+    // For a Finance endorsement, preselect the requesting company's own bank account when it
+    // exists (Finance may change it to an outside funder). Otherwise leave it unchosen.
+    if (action === 'endorse') {
+      const ownAccount = bankAccounts.find((acc) =>
+        isCompanyMatch(acc.companyName || '', targetEntry?.companyName || '')
+      )
+      setSelectedFundingBankId(ownAccount ? ownAccount.id : '')
+    } else {
+      setSelectedFundingBankId('')
+    }
     setIsReviewConfirmModalOpen(true)
   }
 
@@ -451,12 +480,23 @@ export const PettyCashPage: React.FC = () => {
       return
     }
 
+    // Spec 0012: Finance must choose a funding bank before endorsing.
+    if (reviewAction === 'endorse' && !selectedFundingBankId) {
+      setReviewError('Please choose a funding bank account before endorsing.')
+      return
+    }
+
     setIsSubmittingReview(true)
     setReviewError('')
 
     try {
       if (reviewAction === 'endorse' || reviewAction === 'reject') {
-        await pettyCashService.endorseTopUp(targetEntry.recordId, reviewAction, reviewRemark.trim())
+        await pettyCashService.endorseTopUp(
+          targetEntry.recordId,
+          reviewAction,
+          reviewRemark.trim(),
+          reviewAction === 'endorse' ? selectedFundingBankId : undefined,
+        )
       } else {
         await pettyCashService.reviewTopUp(targetEntry.recordId, reviewAction, reviewRemark.trim())
       }
@@ -1468,6 +1508,50 @@ export const PettyCashPage: React.FC = () => {
                 <span className="font-medium text-focus truncate max-w-[240px]">{targetEntry?.description}</span>
               </div>
             </div>
+
+            {/* Funding Bank Picker (Finance endorsement only, spec 0012) */}
+            {reviewAction === 'endorse' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus block">
+                  Funding Bank Account <span className="text-red-500">* (Required)</span>
+                </Label>
+                <div className="relative">
+                  <select
+                    value={selectedFundingBankId}
+                    onChange={(e) => {
+                      setSelectedFundingBankId(e.target.value)
+                      if (reviewError) setReviewError('')
+                    }}
+                    className="w-full h-11 pl-3 pr-9 rounded-xl border border-stroke/60 bg-white text-xs font-medium text-focus focus:outline-none focus:ring-2 focus:ring-focus appearance-none cursor-pointer"
+                    required
+                  >
+                    <option value="" disabled>
+                      Choose the bank that funds this top-up...
+                    </option>
+                    {bankAccounts.map((acc) => {
+                      const isOwn = isCompanyMatch(acc.companyName || '', targetEntry?.companyName || '')
+                      return (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.bankName} · {acc.accountName} ({acc.companyName})
+                          {isOwn ? ' — own account, no deduction' : ''}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
+                </div>
+                {bankAccounts.length === 0 && (
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    No bank accounts found. Add a bank account before endorsing.
+                  </p>
+                )}
+                <p className="text-[11px] text-muted-fg">
+                  Pick the requesting company's own account to fund it without any bank deduction.
+                  Pick a different company's account and the amount is withdrawn from it and
+                  deposited into {targetEntry?.companyName}'s bank on approval.
+                </p>
+              </div>
+            )}
 
             {/* Mandatory Remark Field */}
             <div className="space-y-1.5">

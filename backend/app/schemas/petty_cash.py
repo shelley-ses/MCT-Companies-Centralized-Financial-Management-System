@@ -39,6 +39,7 @@ class PettyCashTopUpOut(BaseModel):
     topup_date: date
     reference_no: Optional[str] = None
     description: Optional[str] = None
+    bank_account_id: Optional[str] = None
     status: str = "Pending Finance Endorsement"
     endorsed_by: Optional[str] = None
     endorsed_at: Optional[datetime] = None
@@ -53,6 +54,9 @@ class PettyCashTopUpOut(BaseModel):
 class PettyCashEndorseIn(BaseModel):
     action: Literal["endorse", "reject"]
     remark: str = Field(..., min_length=1, description="A remark is required when endorsing or rejecting.")
+    bank_account_id: Optional[str] = Field(
+        None, description="Funding bank account chosen by Finance; required when action is 'endorse' (spec 0012)."
+    )
 
 
 class PettyCashReviewIn(BaseModel):
@@ -74,6 +78,27 @@ class PettyCashSummaryOut(BaseModel):
     period_spent: Decimal
     low_balance_threshold: Decimal
     is_low: bool
+
+
+class PettyCashMovementOut(BaseModel):
+    """One petty cash top-up shown on the Transaction page ledger (spec 0013).
+
+    Carries both sides of the money: the requesting company and the company that owns the
+    funding bank, so the page can show a Deposit for one and a Withdrawal for the other.
+    """
+
+    topup_id: int
+    reference_no: Optional[str] = None
+    topup_date: date
+    amount: Decimal
+    description: Optional[str] = None
+    status: str
+    company_id: int
+    company_name: Optional[str] = None
+    funding_company_id: Optional[int] = None
+    funding_company_name: Optional[str] = None
+    is_own_account: bool = False
+    created_at: Optional[datetime] = None
 
 
 class PettyCashLedgerEntry(BaseModel):

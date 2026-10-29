@@ -21,6 +21,9 @@ class PettyCashTopUp(Base):
     topup_date = Column(Date, nullable=False, index=True)
     reference_no = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
+    # Funding bank chosen by Finance at endorsement (spec 0012). Nullable: historical rows
+    # and approvals with no funding bank move no money.
+    bank_account_id = Column(String(100), nullable=True)
     status = Column(String(50), nullable=False, default="Pending Finance Endorsement")
     endorsed_by = Column(String(100), nullable=True)
     endorsed_at = Column(DateTime(timezone=True), nullable=True)
