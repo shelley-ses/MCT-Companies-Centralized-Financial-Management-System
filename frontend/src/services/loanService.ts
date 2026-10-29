@@ -97,36 +97,21 @@ export interface CompanyLoanGroup {
   loans: CompanyLoan[]
 }
 
-const LOANS_STORAGE_KEY = 'mct_loan_records_v2'
-
-function loadStoredLoans(): LoanItem[] {
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem(LOANS_STORAGE_KEY)
-      if (stored !== null) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed)) {
-          return parsed
-        }
-      }
-    } catch {
-      // ignore
-    }
+// Clear legacy local storage to prevent clear-text storage of sensitive banking/financial data
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('mct_loan_records_v2')
+    localStorage.removeItem('mct_loan_records_v1')
+  } catch {
+    // ignore
   }
-  return []
 }
+
+let inMemoryLoans: LoanItem[] = []
 
 function saveStoredLoans(items: LoanItem[]): void {
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(LOANS_STORAGE_KEY, JSON.stringify(items))
-    } catch {
-      // ignore
-    }
-  }
+  inMemoryLoans = items
 }
-
-let inMemoryLoans: LoanItem[] = loadStoredLoans()
 
 const companyNameCache = new Map<string, string>()
 
