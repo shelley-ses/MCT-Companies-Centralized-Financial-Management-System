@@ -40,6 +40,25 @@ class BorrowerCreateRequest(BaseModel):
     notes: Optional[str] = ""
 
 
+class BorrowerUpdateRequest(BaseModel):
+    borrower_name: Optional[str] = None
+    borrower_contact: Optional[str] = None
+    borrower_address: Optional[str] = None
+    loan_amount: Optional[Decimal] = None
+    interest_rate: Optional[Decimal] = None
+    payment_frequency: Optional[str] = None
+    term_days: Optional[int] = None
+    date_borrowed: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class BorrowerDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Borrower deleted successfully."
+
+
 class LendingPaymentCreateRequest(BaseModel):
     borrower_id: int
     payment_date: str

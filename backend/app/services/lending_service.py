@@ -1060,6 +1060,7 @@ class LendingService:
             "id": str(new_borrower.borrower_id),
             "borrower_id": new_borrower.borrower_id,
             "borrower_ref_no": new_borrower.borrower_ref_no,
+            "borrowerRefNo": new_borrower.borrower_ref_no,
             "loanId": new_borrower.borrower_id,
             "loanRefNo": new_borrower.borrower_ref_no,
             "borrowerName": new_borrower.borrower_name,
@@ -1086,6 +1087,93 @@ class LendingService:
             "notes": notes or "",
             "dailyPayments": [],
         }
+
+    @classmethod
+    def update_borrower(
+        cls,
+        db: Session,
+        borrower_id: int,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update an existing borrower in the database and recalculate loan terms if required."""
+        b = db.query(Borrower).filter(Borrower.borrower_id == borrower_id).first()
+        if not b:
+            loan = db.query(Loan).filter(Loan.loan_id == borrower_id).first()
+            if not loan:
+                raise HTTPException(status_code=404, detail="Borrower not found.")
+            if "borrower_name" in payload and payload["borrower_name"] is not None:
+                meta = cls.parse_loan_description(loan.description)
+                meta["borrower_name"] = str(payload["borrower_name"]).strip()
+                loan.description = cls.serialize_loan_description(meta)
+            if "loan_amount" in payload and payload["loan_amount"] is not None:
+                loan.principal_amount = quantize(payload["loan_amount"])
+            if "interest_rate" in payload and payload["interest_rate"] is not None:
+                loan.interest_rate = quantize(payload["interest_rate"])
+            if "status" in payload and payload["status"] is not None:
+                loan.status = str(payload["status"]).strip()
+            db.commit()
+            db.refresh(loan)
+            return cls.get_borrower(db=db, borrower_id=borrower_id)
+
+        if "borrower_name" in payload and payload["borrower_name"] is not None:
+            name_val = str(payload["borrower_name"]).strip()
+            if name_val:
+                b.borrower_name = name_val
+
+        if "status" in payload and payload["status"] is not None:
+            status_val = str(payload["status"]).strip()
+            if status_val:
+                b.status = status_val
+
+        if "notes" in payload and payload["notes"] is not None:
+            b.notes = str(payload["notes"]).strip()
+
+        # Check if financial terms or dates were altered
+        has_amount = payload.get("loan_amount") is not None
+        has_rate = payload.get("interest_rate") is not None
+        has_freq = payload.get("payment_frequency") is not None
+        has_term = payload.get("term_days") is not None
+        has_start = payload.get("date_borrowed") is not None
+        has_due = payload.get("due_date") is not None
+
+        if has_amount or has_rate or has_freq or has_term or has_start or has_due:
+            p = quantize(payload["loan_amount"]) if has_amount else quantize(b.principal_amount)
+            r = Decimal(str(payload["interest_rate"])) if has_rate else quantize(b.interest_rate or Decimal("20.00"))
+            freq = (payload["payment_frequency"] or b.payment_frequency or "Daily").strip().capitalize() if has_freq else (b.payment_frequency or "Daily").strip().capitalize()
+            term_days = int(payload["term_days"]) if has_term and int(payload["term_days"]) > 0 else (b.term_days or (40 if freq == "Daily" else 60))
+            start = parse_date(payload["date_borrowed"]) if has_start else b.date_borrowed
+            due = parse_date(payload["due_date"]) if has_due else (start + timedelta(days=term_days))
+
+            terms = cls.calculate_terms(p, r, freq, start, due, term_days)
+            b.principal_amount = p
+            b.interest_rate = Decimal(str(terms["interest_rate"]))
+            b.total_payable = Decimal(str(terms["total_payable"]))
+            b.payment_frequency = freq
+            b.term_days = term_days
+            b.date_borrowed = start
+            b.due_date = due
+
+        db.commit()
+        db.refresh(b)
+        return cls.get_borrower(db=db, borrower_id=borrower_id)
+
+    @classmethod
+    def delete_borrower(cls, db: Session, borrower_id: int) -> Dict[str, Any]:
+        """Delete an existing borrower and all associated transactions."""
+        b = db.query(Borrower).filter(Borrower.borrower_id == borrower_id).first()
+        if b:
+            db.delete(b)
+            db.commit()
+            return {"success": True, "message": "Borrower deleted successfully."}
+
+        loan = db.query(Loan).filter(Loan.loan_id == borrower_id).first()
+        if loan:
+            db.query(LoanRepayment).filter(LoanRepayment.loan_id == borrower_id).delete()
+            db.delete(loan)
+            db.commit()
+            return {"success": True, "message": "Borrower deleted successfully."}
+
+        raise HTTPException(status_code=404, detail="Borrower not found.")
 
     @classmethod
     def record_payment(
@@ -1177,7 +1265,7 @@ class LendingService:
 
             # 3. Create LendingTransaction record
             pay_date = parse_date(payment_date_val) or date.today()
-            ref_clean = reference_no.strip() if reference_no and reference_no.strip() else f"TX-{int(datetime.now().timestamp() % 100000):05d}"
+            ref_clean = reference_no.strip() if reference_no and reference_no.strip() else None
             tx_ref = f"TX-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() % 10000):04d}"
 
             rem_bal = max(Decimal("0.00"), remaining_before - payment_amount)
@@ -1241,7 +1329,7 @@ class LendingService:
                 "remaining_balance": float(updated_remaining),
                 "status": tx_out_status,
                 "payment_method": new_tx.payment_method,
-                "reference_no": ref_clean,
+                "reference_no": ref_clean or "",
                 "notes": notes or "",
             }
 
@@ -1314,7 +1402,7 @@ class LendingService:
         cls.validate_payment_bounds(payment_amount, remaining_before)
 
         pay_date = parse_date(payment_date_val) or date.today()
-        ref_text = f"{method.strip()} - {reference_no.strip()}" if reference_no and reference_no.strip() else method.strip()
+        ref_text = reference_no.strip() if reference_no and reference_no.strip() else None
 
         new_repayment = LoanRepayment(
             loan_id=loan.loan_id,
@@ -1345,7 +1433,7 @@ class LendingService:
             "remaining_balance": float(updated_remaining),
             "status": "Paid",
             "payment_method": method.strip(),
-            "reference_no": ref_text,
+            "reference_no": ref_text or "",
             "notes": notes or "",
         }
 

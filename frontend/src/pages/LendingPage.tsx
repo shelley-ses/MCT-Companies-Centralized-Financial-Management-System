@@ -51,7 +51,6 @@ import {
   type DailyPaymentRecord,
   type LendingFacility,
   lendingService,
-  INITIAL_FACILITIES,
   LENDING_STORAGE_KEY as STORAGE_KEY,
   getMonthlyProgress,
   getNextInstallmentInfo,
@@ -101,22 +100,9 @@ export const LendingPage: React.FC = () => {
     document.title = 'Lending - MCT Centralized Financial Management'
   }, [])
 
-  // Persistent storage for facilities so updates remain live across interactions
+  // Load facilities from backend or empty cache
   const [facilities, setFacilities] = React.useState<LendingFacility[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY)
-        if (saved) {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed
-          }
-        }
-      } catch (err) {
-        console.error('Error loading stored lending facilities:', err)
-      }
-    }
-    return INITIAL_FACILITIES
+    return lendingService.loadFromStorage()
   })
 
   // Sync with backend lending service on mount
@@ -124,7 +110,7 @@ export const LendingPage: React.FC = () => {
     lendingService
       .getFacilities()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setFacilities(data)
         }
       })
@@ -558,50 +544,55 @@ export const LendingPage: React.FC = () => {
 
     const termDaysNum = parseInt(formData.termDays || (formData.paymentFrequency === 'Daily' ? '40' : '60'), 10)
 
-    const newFacility = await lendingService.createFacility({
-      borrowerName: formData.borrowerName.trim(),
-      loanAmount: principalNum,
-      interestRate: rateNum,
-      paymentFrequency: formData.paymentFrequency,
-      termDays: termDaysNum,
-      dateBorrowed: formData.dateBorrowed,
-      dueDate: formData.dueDate,
-      notes: formData.notes.trim() || 'Everyday micro-credit lending facility.',
-    })
+    try {
+      const newFacility = await lendingService.createFacility({
+        borrowerName: formData.borrowerName.trim(),
+        loanAmount: principalNum,
+        interestRate: rateNum,
+        paymentFrequency: formData.paymentFrequency,
+        termDays: termDaysNum,
+        dateBorrowed: formData.dateBorrowed,
+        dueDate: formData.dueDate,
+        notes: formData.notes.trim() || 'Everyday micro-credit lending facility.',
+      })
 
-    const updatedList = [newFacility, ...facilities.filter((f) => f.id !== newFacility.id)]
-    saveFacilities(updatedList)
-    setIsAddModalOpen(false)
+      const updatedList = [newFacility, ...facilities.filter((f) => f.id !== newFacility.id)]
+      saveFacilities(updatedList)
+      setIsAddModalOpen(false)
 
-    // Reset form
-    const currentToday = formatToYYYYMMDD(new Date())
-    setFormData({
-      borrowerName: '',
-      loanAmount: '',
-      interestRate: '20.0',
-      termDays: '40',
-      dateBorrowed: currentToday,
-      dueDate: calculateProjectedDueDate(currentToday, '40'),
-      paymentFrequency: 'Daily',
-      notes: '',
-    })
+      // Reset form
+      const currentToday = formatToYYYYMMDD(new Date())
+      setFormData({
+        borrowerName: '',
+        loanAmount: '',
+        interestRate: '20.0',
+        termDays: '40',
+        dateBorrowed: currentToday,
+        dueDate: calculateProjectedDueDate(currentToday, '40'),
+        paymentFrequency: 'Daily',
+        notes: '',
+      })
 
-    // Reset filters and highlight newly created item
-    setSearchQuery('')
-    setStatusFilter('All')
-    setCurrentPage(1)
-    setHighlightedFacilityId(newFacility.id)
+      // Reset filters and highlight newly created item
+      setSearchQuery('')
+      setStatusFilter('All')
+      setCurrentPage(1)
+      setHighlightedFacilityId(newFacility.id)
 
-    if (highlightTimeoutRef.current) {
-      clearTimeout(highlightTimeoutRef.current)
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current)
+      }
+      highlightTimeoutRef.current = setTimeout(() => {
+        setHighlightedFacilityId(null)
+      }, 3000)
+
+      setTimeout(() => {
+        tableCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    } catch (err: any) {
+      console.error('Failed to create borrower in database:', err)
+      alert(err.message || 'Failed to create borrower in database.')
     }
-    highlightTimeoutRef.current = setTimeout(() => {
-      setHighlightedFacilityId(null)
-    }, 3000)
-
-    setTimeout(() => {
-      tableCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 100)
   }
 
   // Open Edit Modal for a specific facility
@@ -624,7 +615,7 @@ export const LendingPage: React.FC = () => {
   }
 
   // Save changes from Edit Modal
-  const handleSaveEditFacility = (e: React.FormEvent) => {
+  const handleSaveEditFacility = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isAudit || !activeFacility) return
 
@@ -637,33 +628,29 @@ export const LendingPage: React.FC = () => {
       return
     }
 
-    const totalInterest = principalNum * (rateNum / 100)
-    const newTotalPayable = principalNum + totalInterest
-    const newRemaining = Math.max(0, newTotalPayable - activeFacility.amountPaid)
-    const resolvedStatus = newRemaining <= 0 ? 'Completed' : editFormData.status
-    const cycleCount = editFormData.paymentFrequency === 'Daily' ? termDaysNum : Math.max(1, Math.round(termDaysNum / 30))
-    const newInstallmentTarget = Math.round((newTotalPayable / cycleCount) * 100) / 100
+    const borrowerDbId = activeFacility.borrower_id || activeFacility.borrowerId || activeFacility.id
 
-    const updated: LendingFacility = {
-      ...activeFacility,
-      borrowerName: editFormData.borrowerName.trim(),
-      loanAmount: principalNum,
-      interestRate: rateNum,
-      termDays: termDaysNum,
-      installmentTarget: newInstallmentTarget,
-      dateBorrowed: editFormData.dateBorrowed,
-      dueDate: editFormData.dueDate,
-      status: resolvedStatus,
-      paymentFrequency: editFormData.paymentFrequency,
-      totalAmountPayable: newTotalPayable,
-      remainingBalance: newRemaining,
-      notes: editFormData.notes.trim(),
+    try {
+      const updated = await lendingService.updateBorrower(borrowerDbId, {
+        borrowerName: editFormData.borrowerName.trim(),
+        loanAmount: principalNum,
+        interestRate: rateNum,
+        termDays: termDaysNum,
+        dateBorrowed: editFormData.dateBorrowed,
+        dueDate: editFormData.dueDate,
+        status: editFormData.status,
+        paymentFrequency: editFormData.paymentFrequency,
+        notes: editFormData.notes.trim(),
+      })
+
+      const updatedList = facilities.map((f) => (f.id === activeFacility.id || String(f.borrower_id) === String(borrowerDbId) ? updated : f))
+      saveFacilities(updatedList)
+      setIsEditModalOpen(false)
+      setActiveFacility(updated)
+    } catch (err: any) {
+      console.error('Failed to update borrower in database:', err)
+      alert(err.message || 'Failed to update borrower in database.')
     }
-
-    const updatedList = facilities.map((f) => (f.id === activeFacility.id ? updated : f))
-    saveFacilities(updatedList)
-    setIsEditModalOpen(false)
-    setActiveFacility(updated)
   }
 
   // Helper to get daily target for a facility
@@ -845,6 +832,7 @@ export const LendingPage: React.FC = () => {
 
     try {
       const backendRes = await lendingService.recordPayment({
+        borrower_id: activeFacility.borrower_id || activeFacility.borrowerId,
         facilityId: activeFacility.id,
         paymentDate: pendingPayment.paymentDate,
         amount: pendingPayment.amount,
@@ -920,7 +908,8 @@ export const LendingPage: React.FC = () => {
       setActiveFacility(updatedFacility)
 
       // Re-fetch latest borrower from backend to guarantee complete consistency
-      lendingService.getBorrower(activeFacility.id).then((fresh) => {
+      const borrowerDbId = activeFacility.borrower_id || activeFacility.borrowerId || activeFacility.id
+      lendingService.getBorrower(borrowerDbId).then((fresh) => {
         if (fresh) {
           setActiveFacility(fresh)
           setFacilities((prev) => prev.map((f) => (f.id === fresh.id ? fresh : f)))
@@ -950,12 +939,22 @@ export const LendingPage: React.FC = () => {
   }
 
   // Confirm Delete
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (isAudit || !activeFacility) return
-    const updatedList = facilities.filter((f) => f.id !== activeFacility.id)
-    saveFacilities(updatedList)
-    setIsDeleteConfirmOpen(false)
-    setActiveFacility(null)
+    const borrowerDbId = activeFacility.borrower_id || activeFacility.borrowerId || activeFacility.id
+    try {
+      await lendingService.deleteBorrower(borrowerDbId)
+      const updatedList = facilities.filter((f) => f.id !== activeFacility.id && String(f.borrower_id) !== String(borrowerDbId))
+      saveFacilities(updatedList)
+      setIsDeleteConfirmOpen(false)
+      setActiveFacility(null)
+      if (viewMode === 'details') {
+        setViewMode('list')
+      }
+    } catch (err: any) {
+      console.error('Failed to delete borrower from database:', err)
+      alert(err.message || 'Failed to delete borrower from database.')
+    }
   }
 
   // Open Complete Information page on row click
@@ -965,7 +964,8 @@ export const LendingPage: React.FC = () => {
     setHistoryCurrentPage(1)
     setViewMode('details')
     try {
-      const fresh = await lendingService.getBorrower(facility.id)
+      const borrowerDbId = facility.borrower_id || facility.borrowerId || facility.id
+      const fresh = await lendingService.getBorrower(borrowerDbId)
       if (fresh) {
         setActiveFacility(fresh)
         setFacilities((prev) => prev.map((f) => (f.id === fresh.id ? fresh : f)))
@@ -1034,9 +1034,6 @@ export const LendingPage: React.FC = () => {
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-focus tracking-tight">
                   {activeFacility.borrowerName}
                 </h1>
-                <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-sky-50 text-sky-800 border border-sky-200">
-                  {activeFacility.borrower_ref_no || activeFacility.borrowerRefNo || activeFacility.loanRefNo || `BOR-${activeFacility.id}`}
-                </span>
               </div>
               <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                 <span className="text-xs sm:text-sm text-muted-fg font-medium">
@@ -1626,15 +1623,15 @@ export const LendingPage: React.FC = () => {
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <Table className="w-full table-fixed min-w-[1160px]">
             <colgroup>
-              <col style={{ width: '18%' }} /> {/* Borrower's Name */}
-              <col style={{ width: '11%' }} /> {/* Loan Amount */}
-              <col style={{ width: '10%' }} /> {/* Date Borrowed */}
-              <col style={{ width: '10%' }} /> {/* Due Date */}
-              <col style={{ width: '15%' }} /> {/* Total Amount Payable */}
-              <col style={{ width: '11%' }} /> {/* Amount Paid */}
-              <col style={{ width: '12%' }} /> {/* Remaining Balance */}
-              <col style={{ width: '7%' }} />  {/* Status */}
-              <col style={{ width: '6%' }} />  {/* Actions */}
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '6%' }} />
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
@@ -1707,9 +1704,6 @@ export const LendingPage: React.FC = () => {
                           {facility.borrowerName}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className="font-mono text-[10px] font-semibold text-sky-800 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">
-                            {facility.borrower_ref_no || facility.borrowerRefNo || facility.loanRefNo || `BOR-${facility.id}`}
-                          </span>
                           {facility.borrowerContact && (
                             <span className="text-[10px] text-muted-fg truncate max-w-[120px]">
                               {facility.borrowerContact}
@@ -2059,7 +2053,7 @@ export const LendingPage: React.FC = () => {
 
             {/* Field 2 & 3: Loan Amount & Interest Rate */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className={cn(!isFinance && 'sm:col-span-2')}>
+              <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
                   Loan Amount (₱) <span className="text-red-500">*</span>
                 </label>
@@ -2075,23 +2069,21 @@ export const LendingPage: React.FC = () => {
                 />
               </div>
 
-              {isFinance && (
-                <div>
-                  <label className="text-xs font-semibold text-focus block mb-1">
-                    Interest Rate (%) <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    required
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={formData.interestRate}
-                    onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
-                    placeholder="20.0"
-                    className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="text-xs font-semibold text-focus block mb-1">
+                  Interest Rate (%) <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  required
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={formData.interestRate}
+                  onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
+                  placeholder="20.0"
+                  className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
+                />
+              </div>
             </div>
 
             {/* Field 4 & 5: Payment Schedule & Term Days */}
@@ -2859,7 +2851,7 @@ export const LendingPage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className={cn(!isFinance && 'sm:col-span-2')}>
+                <div>
                   <label className="text-xs font-semibold text-focus block mb-1">
                     Loan Amount (₱) <span className="text-red-500">*</span>
                   </label>
@@ -2876,24 +2868,22 @@ export const LendingPage: React.FC = () => {
                   />
                 </div>
 
-                {isFinance && (
-                  <div>
-                    <label className="text-xs font-semibold text-focus block mb-1">
-                      Interest Rate (%) <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      required
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={editFormData.interestRate}
-                      onChange={(e) =>
-                        setEditFormData({ ...editFormData, interestRate: e.target.value })
-                      }
-                      className="h-10 text-xs sm:text-sm rounded-xl"
-                    />
-                  </div>
-                )}
+                <div>
+                  <label className="text-xs font-semibold text-focus block mb-1">
+                    Interest Rate (%) <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    required
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={editFormData.interestRate}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, interestRate: e.target.value })
+                    }
+                    className="h-10 text-xs sm:text-sm rounded-xl"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

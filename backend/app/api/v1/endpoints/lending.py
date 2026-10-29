@@ -8,6 +8,8 @@ from app.schemas.lending import (
     LendingCalculateRequest,
     LendingCalculateResponse,
     BorrowerCreateRequest,
+    BorrowerUpdateRequest,
+    BorrowerDeleteResponse,
     BorrowerOut,
     LendingPaymentCreateRequest,
     LendingTransactionCreateRequest,
@@ -95,6 +97,41 @@ def create_borrower(
         term_days_val=payload.term_days,
         notes=payload.notes,
     )
+
+
+@router.put(
+    "/borrowers/{borrower_id}",
+    response_model=BorrowerOut,
+    summary="Update an existing borrower",
+)
+def update_borrower(
+    borrower_id: int,
+    payload: BorrowerUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Update borrower details and loan terms in the database.
+    """
+    return LendingService.update_borrower(
+        db=db,
+        borrower_id=borrower_id,
+        payload=payload.model_dump(exclude_unset=True),
+    )
+
+
+@router.delete(
+    "/borrowers/{borrower_id}",
+    response_model=BorrowerDeleteResponse,
+    summary="Delete a borrower and associated transactions",
+)
+def delete_borrower(
+    borrower_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a borrower and all linked transactions from the database.
+    """
+    return LendingService.delete_borrower(db=db, borrower_id=borrower_id)
 
 
 @router.get(
