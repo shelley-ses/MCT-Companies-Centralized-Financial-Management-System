@@ -40,7 +40,13 @@ import { loanService, type CompanyOption } from '@/services/loanService'
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { formatToYYYYMMDD, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
-import { formatParticularsString, parseParticulars, type ParticularItem } from '@/utils/particularsUtils'
+import {
+  formatParticularsString,
+  parseParticulars,
+  normalizeParticularStatus,
+  deriveRecordStatusFromParticulars,
+  type ParticularItem,
+} from '@/utils/particularsUtils'
 import { cn } from '@/lib/utils'
 import { SALES_CATEGORY_LIST } from '@/utils/categoryConstants'
 import { bankService, type BankAccount } from '@/services/bankService'
@@ -98,18 +104,6 @@ export const PREDEFINED_PETTY_CASH_CATEGORIES = [
 ] as const
 
 export const PREDEFINED_PETTY_CASH_PARTICULARS = PREDEFINED_PETTY_CASH_CATEGORIES
-
-const DEFAULT_COMPANIES = [
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
 
 export const DEFAULT_EXPENSE_CATEGORIES = [
   'Petty Cash',
@@ -179,9 +173,11 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   // Top header metadata form fields
   const [date, setDate] = React.useState(() => formatToYYYYMMDD(new Date()))
-  const [selectedCompany, setSelectedCompany] = React.useState<string>(
-    isAuditor ? assignedCompany : 'MCT Kitchen'
-  )
+  const initialCompany = isAuditor
+    ? assignedCompany
+    : editItem?.company || 'MCT Kitchen'
+  const [selectedCompany, setSelectedCompany] =
+    React.useState<string>(initialCompany)
 
   // Keep selectedCompany in sync if user profile loads after initial render
   React.useEffect(() => {
@@ -194,18 +190,44 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const [paymentMethod, setPaymentMethod] = React.useState<string>('Cash')
   const [chequeNo, setChequeNo] = React.useState<string>('')
 
-  // Bank Accounts state for direct account routing
-  const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>([])
-  const [selectedBankAccountId, setSelectedBankAccountId] = React.useState<string>('')
+  // Bank Accounts state initialized synchronously from cache for 0ms Deposit Bank availability
+  const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>(() =>
+    bankService.getCachedAccounts(initialCompany)
+  )
+  const [isLoadingBanks, setIsLoadingBanks] = React.useState<boolean>(
+    () => bankService.getCachedAccounts(initialCompany).length === 0
+  )
+  const [selectedBankAccountId, setSelectedBankAccountId] =
+    React.useState<string>(() => {
+      const cached = bankService.getCachedAccounts(initialCompany)
+      return cached.length > 0 ? cached[0].id : ''
+    })
 
   React.useEffect(() => {
     let mounted = true
     const targetComp = isAuditor ? assignedCompany : selectedCompany
-    bankService.getAccounts(targetComp).then((accounts) => {
-      if (mounted) {
-        setBankAccounts(accounts || [])
-      }
-    })
+    const cached = bankService.getCachedAccounts(targetComp)
+    if (cached.length > 0) {
+      setBankAccounts(cached)
+      setIsLoadingBanks(false)
+    } else {
+      setIsLoadingBanks(true)
+    }
+
+    bankService
+      .getAccounts(targetComp)
+      .then((accounts) => {
+        if (mounted) {
+          setBankAccounts(accounts || [])
+          setIsLoadingBanks(false)
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setIsLoadingBanks(false)
+        }
+      })
+
     return () => {
       mounted = false
     }
@@ -219,49 +241,56 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       isCompanyMatch(a.companyName, targetComp)
     )
     if (matching.length > 0) return matching
-    const general = bankAccounts.filter((a) =>
-      !a.companyName ||
-      a.companyName.toLowerCase().includes('general') ||
-      a.companyName.toLowerCase().includes('unassigned')
+    const general = bankAccounts.filter(
+      (a) =>
+        !a.companyName ||
+        a.companyName.toLowerCase().includes('general') ||
+        a.companyName.toLowerCase().includes('unassigned')
     )
     // Never leak other companies' bank accounts when scoped to a specific company
     return general
   }, [bankAccounts, selectedCompany, isAuditor, assignedCompany])
 
-  // Auto-select the first bank account of the company if available
+  // Auto-select the first bank account of the company immediately if available
   React.useEffect(() => {
     if (availableBankAccounts.length > 0) {
-      const exists = availableBankAccounts.some((a) => a.id === selectedBankAccountId)
+      const exists = availableBankAccounts.some(
+        (a) => a.id === selectedBankAccountId
+      )
       if (!exists) {
         setSelectedBankAccountId(availableBankAccounts[0].id)
       }
-    } else {
+    } else if (!isLoadingBanks) {
       setSelectedBankAccountId('')
     }
-  }, [availableBankAccounts, selectedBankAccountId])
+  }, [availableBankAccounts, selectedBankAccountId, isLoadingBanks])
 
-  // Category state (only used in Expense transactions; removed from Sales)
+  // Category state
   const [category, setCategory] = React.useState<string>('Rendered Fee')
   const [categories, setCategories] = React.useState<string[]>([])
-  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = React.useState(false)
+  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] =
+    React.useState(false)
   const [newCategoryName, setNewCategoryName] = React.useState('')
   const [isSavingCategory, setIsSavingCategory] = React.useState(false)
   const [categorySaveError, setCategorySaveError] = React.useState('')
 
   // Check if current expense transaction is Petty Cash (strictly tied to payment method)
   const isPettyCash =
-    transactionType === 'Expense' && paymentMethod.trim().toLowerCase() === 'petty cash'
+    transactionType === 'Expense' &&
+    paymentMethod.trim().toLowerCase() === 'petty cash'
 
-  // Dynamic companies list
-  const [dbCompanies, setDbCompanies] = React.useState<string[]>(DEFAULT_COMPANIES)
+  // Dynamic companies list loaded strictly from database
+  const [dbCompanies, setDbCompanies] = React.useState<string[]>([])
 
   React.useEffect(() => {
     let mounted = true
     loanService.getCompanies().then((companies: CompanyOption[]) => {
       if (mounted && companies.length > 0) {
         const names = companies.map((c) => c.company_name).filter(Boolean)
-        const combined = Array.from(new Set([...names, ...DEFAULT_COMPANIES]))
-        setDbCompanies(combined)
+        setDbCompanies(names)
+        if (!selectedCompany && names.length > 0) {
+          setSelectedCompany(names[0])
+        }
       }
     })
     return () => {
@@ -273,7 +302,13 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   React.useEffect(() => {
     if (transactionType === 'Sales') {
       setCategories(SALES_CATEGORY_LIST)
-      setCategory((prev) => (SALES_CATEGORY_LIST.includes(prev) ? prev : SALES_CATEGORY_LIST[0]))
+      setCategory((prev) =>
+        editItem?.category && editItem.category !== 'None'
+          ? editItem.category
+          : SALES_CATEGORY_LIST.includes(prev)
+            ? prev
+            : SALES_CATEGORY_LIST[0]
+      )
       return
     }
     if (transactionType !== 'Expense') return
@@ -287,14 +322,25 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           .filter((name) => !DEPRECATED_OLD_CATEGORIES.has(name.toLowerCase()))
 
         const combined = Array.from(
-          new Set([...DEFAULT_EXPENSE_CATEGORIES, ...fetchedNames])
+          new Set([
+            ...DEFAULT_EXPENSE_CATEGORIES,
+            ...fetchedNames,
+            ...(editItem?.category ? [editItem.category] : []),
+          ])
         )
         setCategories(combined)
         setCategory((prev) => {
           if (paymentMethod.trim().toLowerCase() === 'petty cash') {
             return 'Petty Cash'
           }
-          if (prev && prev.trim().toLowerCase() !== 'petty cash' && combined.includes(prev)) {
+          if (editItem?.category && combined.includes(editItem.category)) {
+            return editItem.category
+          }
+          if (
+            prev &&
+            prev.trim().toLowerCase() !== 'petty cash' &&
+            combined.includes(prev)
+          ) {
             return prev
           }
           return 'Rendered Fee'
@@ -304,7 +350,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     return () => {
       mounted = false
     }
-  }, [transactionType])
+  }, [transactionType, editItem])
 
   const handleSaveNewCategory = async () => {
     const trimmed = newCategoryName.trim()
@@ -318,7 +364,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       const saved = await expenseService.createCategory(trimmed)
       const savedName = saved.name || trimmed
       setCategories((prev) => {
-        if (prev.some((c) => c.toLowerCase() === savedName.toLowerCase())) return prev
+        if (prev.some((c) => c.toLowerCase() === savedName.toLowerCase()))
+          return prev
         return [...prev, savedName]
       })
       setCategory(savedName)
@@ -342,11 +389,15 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       : `Add ${transactionType} (Excel Sheet) - MCT Centralized Financial System`
   }, [transactionType, isEditMode])
 
-  // Prevent editing if transaction has already been audited
+  // Prevent editing only if transaction has explicitly been audited and verified by an auditor
   React.useEffect(() => {
     if (editItem && (editItem.auditStatus === 'Verified' || editItem.isAudited)) {
-      alert('This transaction has already been audited and verified. Records cannot be edited.')
-      navigate(transactionType === 'Sales' ? '/sales' : '/expense', { replace: true })
+      alert(
+        'This transaction has already been audited and verified by the auditor. Records cannot be edited.'
+      )
+      navigate(transactionType === 'Sales' ? '/sales' : '/expense', {
+        replace: true,
+      })
     }
   }, [editItem, transactionType, navigate])
 
@@ -368,27 +419,44 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
     if (editItem.chequeNo) {
       setChequeNo(editItem.chequeNo)
     }
-    if (editItem.category) {
+    if (editItem.category && editItem.category !== 'None') {
       setCategory(editItem.category)
     }
 
+    const fallbackTotal =
+      editItem.amount ||
+      editItem.deposit ||
+      editItem.withdrawal ||
+      editItem.netAmount ||
+      0
+
     // Populate rows from structured items or parsed particulars string
-    if (editItem.items && Array.isArray(editItem.items) && editItem.items.length > 0) {
+    if (
+      editItem.items &&
+      Array.isArray(editItem.items) &&
+      editItem.items.length > 0
+    ) {
       setRows(
         editItem.items.map((it: any, idx: number) => ({
           id: it.id || `row-${idx}`,
           pettyCashCategory: '',
           particulars: it.particulars || '',
-          unitPrice: typeof it.unitPrice === 'number' ? it.unitPrice : (it.total || ''),
-          quantity: typeof it.quantity === 'number' ? it.quantity : 1,
-          status: (it.status || editItem.status || 'Pending') as 'Paid' | 'Pending' | 'On hold',
+          unitPrice:
+            typeof it.unitPrice === 'number' && it.unitPrice > 0
+              ? it.unitPrice
+              : it.total || fallbackTotal || '',
+          quantity: typeof it.quantity === 'number' && it.quantity > 0 ? it.quantity : 1,
+          status: normalizeParticularStatus(
+            it.status || editItem.status,
+            'Paid'
+          ),
         }))
       )
     } else if (editItem.particulars) {
       const parsed = parseParticulars(
         editItem.particulars,
         null,
-        editItem.amount || editItem.deposit || editItem.withdrawal || editItem.netAmount
+        fallbackTotal
       )
       if (parsed.length > 0) {
         setRows(
@@ -396,18 +464,56 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             id: p.id || `row-${idx}`,
             pettyCashCategory: '',
             particulars: p.particulars,
-            unitPrice: typeof p.unitPrice === 'number' && p.unitPrice > 0 ? p.unitPrice : (p.total || ''),
-            quantity: typeof p.quantity === 'number' && p.quantity > 0 ? p.quantity : 1,
-            status: (p.status || editItem.status || 'Pending') as 'Paid' | 'Pending' | 'On hold',
+            unitPrice:
+              typeof p.unitPrice === 'number' && p.unitPrice > 0
+                ? p.unitPrice
+                : p.total || fallbackTotal || '',
+            quantity:
+              typeof p.quantity === 'number' && p.quantity > 0 ? p.quantity : 1,
+            status: normalizeParticularStatus(
+              p.status || editItem.status,
+              'Paid'
+            ),
           }))
         )
       }
     }
   }, [editItem])
 
-  // Excel-style rows state: initialize with 1 clean row (status defaults to Pending)
+  // Excel-style rows state: initialize with 4 clean rows
   const [rows, setRows] = React.useState<ParticularsRow[]>([
-    { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' },
+    {
+      id: 'row-1',
+      pettyCashCategory: '',
+      particulars: '',
+      unitPrice: '',
+      quantity: 1,
+      status: 'Paid',
+    },
+    {
+      id: 'row-2',
+      pettyCashCategory: '',
+      particulars: '',
+      unitPrice: '',
+      quantity: 1,
+      status: 'Paid',
+    },
+    {
+      id: 'row-3',
+      pettyCashCategory: '',
+      particulars: '',
+      unitPrice: '',
+      quantity: 1,
+      status: 'Paid',
+    },
+    {
+      id: 'row-4',
+      pettyCashCategory: '',
+      particulars: '',
+      unitPrice: '',
+      quantity: 1,
+      status: 'Paid',
+    },
   ])
 
   // Submission state
@@ -420,14 +526,23 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   } | null>(null)
 
   // Input refs to focus on newly added row
-  const particularsInputRefs = React.useRef<{ [key: string]: HTMLInputElement | null }>({})
+  const particularsInputRefs = React.useRef<{
+    [key: string]: HTMLInputElement | null
+  }>({})
 
   // Row operations
   const handleAddRow = () => {
     const newId = `row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     setRows((prev) => [
       ...prev,
-      { id: newId, pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' },
+      {
+        id: newId,
+        pettyCashCategory: '',
+        particulars: '',
+        unitPrice: '',
+        quantity: 1,
+        status: 'Paid',
+      },
     ])
     setTimeout(() => {
       particularsInputRefs.current[newId]?.focus()
@@ -436,8 +551,16 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   const handleRemoveRow = (id: string) => {
     if (rows.length <= 1) {
-      // Don't remove last row, just clear it
-      setRows([{ id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' }])
+      setRows([
+        {
+          id: 'row-1',
+          pettyCashCategory: '',
+          particulars: '',
+          unitPrice: '',
+          quantity: 1,
+          status: 'Paid',
+        },
+      ])
       return
     }
     setRows((prev) => prev.filter((r) => r.id !== id))
@@ -479,7 +602,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       const qty = typeof r.quantity === 'number' ? r.quantity : 0
       const total = price * qty
       const hasDescription = isPettyCash
-        ? r.particulars.trim().length > 0 || (r.pettyCashCategory && r.pettyCashCategory.trim().length > 0)
+        ? r.particulars.trim().length > 0 ||
+          (r.pettyCashCategory && r.pettyCashCategory.trim().length > 0)
         : r.particulars.trim().length > 0
       return {
         ...r,
@@ -525,7 +649,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       isMounted = false
     }
   }, [isPettyCash, pettyCashCompany])
-  const exceedsPettyCash = isPettyCash && pettyBalance !== null && grandTotal > pettyBalance
+  const exceedsPettyCash =
+    isPettyCash && pettyBalance !== null && grandTotal > pettyBalance
 
   const totalQuantity = React.useMemo(() => {
     return calculatedRows
@@ -559,6 +684,39 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
     const companyToUse = isAuditor ? assignedCompany : selectedCompany
 
+    // If bank accounts are still loading when user clicks save immediately, await the in-flight request
+    let effectiveBankId = selectedBankAccountId
+    let currentCompanyBanks = availableBankAccounts
+    if (!isPettyCash && currentCompanyBanks.length === 0) {
+      try {
+        setIsLoadingBanks(true)
+        const fetched = await bankService.getAccounts(companyToUse)
+        setBankAccounts(fetched || [])
+        const matched = (fetched || []).filter(
+          (a) =>
+            isCompanyMatch(a.companyName, companyToUse) ||
+            !a.companyName ||
+            a.companyName.toLowerCase().includes('general')
+        )
+        currentCompanyBanks = matched
+        if (matched.length > 0 && !effectiveBankId) {
+          effectiveBankId = matched[0].id
+          setSelectedBankAccountId(matched[0].id)
+        }
+      } catch {
+        // ignore network error and fall through to check
+      } finally {
+        setIsLoadingBanks(false)
+      }
+    }
+
+    if (!isPettyCash && currentCompanyBanks.length === 0) {
+      setErrorMessage(
+        `Ensure that you have a bank account associated with ${companyToUse} before adding ${transactionType.toLowerCase()} transactions.`
+      )
+      return
+    }
+
     if (exceedsPettyCash) {
       setErrorMessage(
         `Insufficient petty cash (${formatPHP(pettyBalance ?? 0)} available). Top up petty cash first.`
@@ -572,7 +730,9 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       const itemizedParticulars: ParticularItem[] = validItems.map((item, idx) => {
         let text = item.particulars.trim()
         if (isPettyCash && item.pettyCashCategory?.trim()) {
-          text = text ? `${item.pettyCashCategory.trim()} - ${text}` : item.pettyCashCategory.trim()
+          text = text
+            ? `${item.pettyCashCategory.trim()} - ${text}`
+            : item.pettyCashCategory.trim()
         }
         return {
           id: item.id || `item-${idx}`,
@@ -580,21 +740,18 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           quantity: item.numericQty,
           unitPrice: item.numericPrice,
           total: item.rowTotal,
-          status: item.status || 'Pending',
+          status: normalizeParticularStatus(item.status, 'Paid'),
         }
       })
 
       // Combine into formatted particulars text
       const formattedParticulars = formatParticularsString(itemizedParticulars)
 
-      // Calculate batch status: all Paid -> Paid, all Unpaid -> Unpaid, mixed/pending -> Pending
-      const isAllPaid = validItems.every((i) => i.status === 'Paid')
-      const isAllUnpaid = validItems.every((i) => i.status === 'Unpaid')
-      const overallStatus: 'Paid' | 'Unpaid' | 'Pending' = isAllPaid
-        ? 'Paid'
-        : isAllUnpaid
-        ? 'Unpaid'
-        : 'Pending'
+      // Calculate batch status from particulars: all Paid -> Paid, all Unpaid -> Unpaid, mixed/pending -> Pending
+      const overallStatus = deriveRecordStatusFromParticulars(
+        itemizedParticulars,
+        'Paid'
+      )
 
       if (isEditMode) {
         if (transactionType === 'Sales') {
@@ -608,7 +765,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             category: category || SALES_CATEGORY_LIST[0],
             status: overallStatus,
             items: itemizedParticulars,
-            bankAccountId: selectedBankAccountId || undefined,
+            bankAccountId: effectiveBankId || undefined,
           })
         } else {
           await expenseService.updateExpense(editItem.id, {
@@ -617,17 +774,16 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             particulars: formattedParticulars,
             withdrawal: grandTotal,
             netAmount: grandTotal,
-            category: isPettyCash ? 'Petty Cash' : (category || 'Rendered Fee'),
+            category: isPettyCash ? 'Petty Cash' : category || 'Rendered Fee',
             paymentMethod: paymentMethod,
             chequeNo: chequeNo.trim() || undefined,
             status: overallStatus,
             items: itemizedParticulars,
-            bankAccountId: selectedBankAccountId || undefined,
+            bankAccountId: effectiveBankId || undefined,
           })
         }
       } else {
         if (transactionType === 'Sales') {
-          // Record all particulars consolidated as ONE single entry (category is removed in sales)
           await salesService.addSale({
             company: companyToUse,
             date,
@@ -638,24 +794,27 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             category: category || SALES_CATEGORY_LIST[0],
             status: overallStatus,
             items: itemizedParticulars,
-            bankAccountId: selectedBankAccountId || undefined,
+            bankAccountId: effectiveBankId || undefined,
           })
         } else {
-          // Record all particulars consolidated as ONE single entry
           await expenseService.addExpense({
             company: companyToUse,
             date,
             particulars: formattedParticulars,
             amount: grandTotal,
-            category: isPettyCash ? 'Petty Cash' : (category || 'Rendered Fee'),
+            category: isPettyCash ? 'Petty Cash' : category || 'Rendered Fee',
             paymentMethod: paymentMethod,
             chequeNo: chequeNo.trim() || undefined,
             status: overallStatus,
             items: itemizedParticulars,
-            bankAccountId: selectedBankAccountId || undefined,
+            bankAccountId: effectiveBankId || undefined,
           })
         }
       }
+
+      // Refresh bank accounts cache in background after recording a transaction
+      bankService.invalidateCache()
+      bankService.prefetchAccounts(companyToUse)
 
       setSuccessBanner({
         count: validItems.length,
@@ -666,10 +825,12 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
       // Redirect back after brief delay
       setTimeout(() => {
         navigate(transactionType === 'Sales' ? '/sales' : '/expense')
-      }, 1200)
+      }, 900)
     } catch (err: any) {
       console.error('Failed to save entries:', err)
-      setErrorMessage(err?.message || 'Failed to save transactions. Please try again.')
+      setErrorMessage(
+        err?.message || 'Failed to save transactions. Please try again.'
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -677,7 +838,38 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
   const handleReset = () => {
     setRows([
-      { id: 'row-1', pettyCashCategory: '', particulars: '', unitPrice: '', quantity: 1, status: 'Pending' },
+      {
+        id: 'row-1',
+        pettyCashCategory: '',
+        particulars: '',
+        unitPrice: '',
+        quantity: 1,
+        status: 'Paid',
+      },
+      {
+        id: 'row-2',
+        pettyCashCategory: '',
+        particulars: '',
+        unitPrice: '',
+        quantity: 1,
+        status: 'Paid',
+      },
+      {
+        id: 'row-3',
+        pettyCashCategory: '',
+        particulars: '',
+        unitPrice: '',
+        quantity: 1,
+        status: 'Paid',
+      },
+      {
+        id: 'row-4',
+        pettyCashCategory: '',
+        particulars: '',
+        unitPrice: '',
+        quantity: 1,
+        status: 'Paid',
+      },
     ])
     setErrorMessage(null)
   }
@@ -685,7 +877,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
   const isSales = transactionType === 'Sales'
 
   return (
-    <div className="space-y-6 pb-16 w-full animate-in fade-in duration-300">
+    <div className="space-y-6 pb-16 max-w-7xl mx-auto animate-in fade-in duration-300">
       {/* 1. Navigation & Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
@@ -717,10 +909,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
               </h1>
               <p className="text-xs sm:text-sm text-muted-fg font-normal">
                 {isEditMode
-                  ? `Editing particulars for ${editItem?.refNo || 'transaction'}. You can adjust particulars, unit prices, quantities, and status.`
+                  ? `Editing particulars for ${editItem?.refNo || 'transaction'}. You can adjust particulars, category, unit prices, quantities, and status.`
                   : isSales
-                  ? 'Excel-style spreadsheet entry for sales particulars, unit pricing, and deposit calculations.'
-                  : 'Excel-style spreadsheet entry for operational expense particulars, unit pricing, and withdrawal calculations.'}
+                    ? 'Excel-style spreadsheet entry for sales particulars, unit pricing, and deposit calculations.'
+                    : 'Excel-style spreadsheet entry for operational expense particulars, unit pricing, and withdrawal calculations.'}
               </p>
             </div>
           </div>
@@ -742,7 +934,9 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                 isSales ? 'bg-emerald-500' : 'bg-rose-500'
               )}
             />
-            <span>{isSales ? 'Sales Deposit Entry' : 'Expense Withdrawal Entry'}</span>
+            <span>
+              {isSales ? 'Sales Deposit Entry' : 'Expense Withdrawal Entry'}
+            </span>
           </span>
         </div>
       </div>
@@ -752,9 +946,12 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
         <div className="flex items-center gap-3 p-4 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-900 text-sm font-medium shadow-xs animate-in fade-in-50 duration-200">
           <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
           <div className="flex-1">
-            <strong>Successfully recorded 1 {successBanner.type} entry with {successBanner.count} particulars!</strong> Total:{' '}
-            <span className="font-bold">{formatPHP(successBanner.total)}</span>. Redirecting to{' '}
-            {successBanner.type} summary...
+            <strong>
+              Successfully recorded 1 {successBanner.type} entry with{' '}
+              {successBanner.count} particulars!
+            </strong>{' '}
+            Total: <span className="font-bold">{formatPHP(successBanner.total)}</span>
+            . Redirecting to {successBanner.type} summary...
           </div>
           <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
         </div>
@@ -768,7 +965,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
         </div>
       )}
 
-      {/* 2. Transaction Parameters Card (Date, Company, Payment Method, Category [Expense only], Cheque/Ref) */}
+      {/* 2. Transaction Parameters Card (Date, Company, Payment Method, Deposit Bank, Category, Cheque/Ref) */}
       <Card className="rounded-[24px] bg-white border border-stroke/30 p-5 sm:p-6 shadow-xs space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-stroke/20">
           <span className="text-xs font-bold uppercase tracking-wider text-muted-fg">
@@ -781,12 +978,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
         <div
           className={cn(
-            'grid gap-4 items-start',
+            'grid gap-3.5 sm:gap-4 items-start',
             isPettyCash
               ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
-              : isAuditor
-              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
-              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6'
+              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
           )}
         >
           {/* 1. Date */}
@@ -804,17 +999,21 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             />
           </div>
 
-          {/* 2. Company (Finance only; hidden for Supervisor) */}
-          {!isAuditor && (
-            <div className="space-y-1.5 flex flex-col justify-start">
-              <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
-                <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>Company</span>
-              </label>
+          {/* 2. Company */}
+          <div className="space-y-1.5 flex flex-col justify-start">
+            <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
+              <Building2 className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+              <span>Company</span>
+            </label>
+            {isAuditor ? (
+              <div className="w-full h-10 px-3 rounded-xl border border-stroke/40 bg-slate-50 text-xs sm:text-sm text-focus font-medium flex items-center truncate">
+                {assignedCompany}
+              </div>
+            ) : (
               <select
                 value={selectedCompany}
                 onChange={(e) => setSelectedCompany(e.target.value)}
-                className="w-full h-10 px-3 pr-8 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer truncate"
+                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
               >
                 {dbCompanies.map((c) => (
                   <option key={c} value={c}>
@@ -822,8 +1021,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   </option>
                 ))}
               </select>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* 3. Payment Method */}
           <div className="space-y-1.5 flex flex-col justify-start">
@@ -844,9 +1043,12 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   }
                 }
               }}
-              className="w-full h-10 px-3 pr-8 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+              className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
             >
-              {(transactionType === 'Expense' ? EXPENSE_PAYMENT_METHODS : SALES_PAYMENT_METHODS).map((pm) => (
+              {(transactionType === 'Expense'
+                ? EXPENSE_PAYMENT_METHODS
+                : SALES_PAYMENT_METHODS
+              ).map((pm) => (
                 <option key={pm} value={pm}>
                   {pm}
                 </option>
@@ -859,7 +1061,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   exceedsPettyCash ? 'text-red-600' : 'text-muted-fg'
                 )}
               >
-                Petty cash available: <span className="font-semibold">{formatPHP(pettyBalance)}</span>
+                Petty cash available:{' '}
+                <span className="font-semibold">{formatPHP(pettyBalance)}</span>
               </p>
             )}
           </div>
@@ -869,31 +1072,50 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             <div className="space-y-1.5 flex flex-col justify-start">
               <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
                 <Landmark className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span className="truncate">{transactionType === 'Sales' ? 'Deposit Bank' : 'Withdraw Bank'}</span>
-                <span className="text-[11px] font-normal text-muted-fg shrink-0">(Bank)</span>
+                <span className="truncate">
+                  {transactionType === 'Sales' ? 'Deposit Bank' : 'Withdraw Bank'}
+                </span>
+                <span className="text-[11px] font-normal text-muted-fg shrink-0">
+                  (Bank)
+                </span>
               </label>
               <select
                 value={selectedBankAccountId}
                 onChange={(e) => setSelectedBankAccountId(e.target.value)}
-                className="w-full h-10 px-3 pr-8 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer truncate"
+                disabled={isLoadingBanks && availableBankAccounts.length === 0}
+                className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer disabled:opacity-70"
               >
                 {availableBankAccounts.length === 0 ? (
-                  <option value="">No Bank Registered</option>
+                  <option value="">
+                    {isLoadingBanks
+                      ? 'Loading bank accounts...'
+                      : 'No Bank Registered'}
+                  </option>
                 ) : (
                   <>
                     <option value="">None / Skip Bank Sync</option>
                     {availableBankAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.bankName}
+                        {acc.bankName} - {acc.accountName || acc.accountNumber} (
+                        {formatPHP(acc.currentBalance)})
                       </option>
                     ))}
                   </>
                 )}
               </select>
+              {!isLoadingBanks && availableBankAccounts.length === 0 && (
+                <p className="text-[11px] font-medium text-amber-700 flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                  <span>
+                    Ensure that you have a bank account associated with this
+                    company.
+                  </span>
+                </p>
+              )}
             </div>
           )}
 
-          {/* 4. Category (Expense only; hidden when Payment Method is Petty Cash since category is auto-set to Petty Cash and specific categories are selected in the spreadsheet table column below) */}
+          {/* 4. Category */}
           {!isPettyCash && (
             <div className="space-y-1.5 flex flex-col justify-start">
               <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
@@ -909,7 +1131,10 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                   } else {
                     const newCat = e.target.value
                     setCategory(newCat)
-                    if (transactionType === 'Expense' && newCat.trim().toLowerCase() === 'petty cash') {
+                    if (
+                      transactionType === 'Expense' &&
+                      newCat.trim().toLowerCase() === 'petty cash'
+                    ) {
                       setPaymentMethod('Petty Cash')
                     }
                   }
@@ -933,7 +1158,9 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             <label className="h-5 flex items-center gap-1.5 text-xs font-semibold text-focus">
               <FileSpreadsheet className="w-3.5 h-3.5 text-muted-fg shrink-0" />
               <span className="truncate">Cheque / Ref No.</span>
-              <span className="text-[11px] font-normal text-muted-fg shrink-0">(Optional)</span>
+              <span className="text-[11px] font-normal text-muted-fg shrink-0">
+                (Optional)
+              </span>
             </label>
             <input
               type="text"
@@ -959,7 +1186,8 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                 Particulars Spreadsheet
               </h2>
               <p className="text-xs text-muted-fg">
-                Enter each specific item or purchase. Quantities and unit prices calculate the total automatically.
+                Enter each specific item or purchase. Quantities and unit prices
+                calculate the total automatically.
               </p>
             </div>
           </div>
@@ -990,7 +1218,12 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
         {/* Excel Grid Table */}
         <div className="overflow-x-auto">
-          <Table className={cn('w-full border-collapse', isPettyCash ? 'min-w-[1020px]' : 'min-w-[880px]')}>
+          <Table
+            className={cn(
+              'w-full border-collapse',
+              isPettyCash ? 'min-w-[1020px]' : 'min-w-[880px]'
+            )}
+          >
             <TableHeader className="bg-slate-50/90 border-b border-slate-200/80">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-12 text-center text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3">
@@ -999,10 +1232,11 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                 <TableHead className="text-left text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
                   PARTICULARS <span className="text-red-500">*</span>
                   <span className="font-normal text-muted-fg/70 ml-1.5 lowercase">
-                    {isPettyCash ? '(specific description)' : '(specific thing bought/sold)'}
+                    {isPettyCash
+                      ? '(specific description)'
+                      : '(specific thing bought/sold)'}
                   </span>
                 </TableHead>
-                {/* Extra column: next to particulars, only visible if category is Petty Cash */}
                 {isPettyCash && (
                   <TableHead className="w-56 sm:w-64 text-left text-[11px] font-bold uppercase tracking-wider text-muted-fg border-r border-slate-200/60 py-3 px-4">
                     PETTY CASH CATEGORY <span className="text-red-500">*</span>
@@ -1028,12 +1262,14 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
 
             <TableBody>
               {rows.map((row, index) => {
-                const price = typeof row.unitPrice === 'number' ? row.unitPrice : 0
+                const price =
+                  typeof row.unitPrice === 'number' ? row.unitPrice : 0
                 const qty = typeof row.quantity === 'number' ? row.quantity : 0
                 const rowTotal = price * qty
                 const isRowActive =
                   row.particulars.trim().length > 0 ||
-                  (row.pettyCashCategory && row.pettyCashCategory.trim().length > 0) ||
+                  (row.pettyCashCategory &&
+                    row.pettyCashCategory.trim().length > 0) ||
                   price > 0
 
                 return (
@@ -1049,7 +1285,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                       {index + 1}
                     </TableCell>
 
-                    {/* Particulars Cell: Reverted back to manual input */}
+                    {/* Particulars Cell */}
                     <TableCell className="border-r border-slate-200/60 p-1.5 px-3">
                       <input
                         ref={(el) => {
@@ -1070,13 +1306,17 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                       />
                     </TableCell>
 
-                    {/* Pre-defined Petty Cash Category Column: placed NEXT TO particulars */}
+                    {/* Pre-defined Petty Cash Category Column */}
                     {isPettyCash && (
                       <TableCell className="w-56 sm:w-64 border-r border-slate-200/60 p-1.5 px-3 align-middle">
                         <select
                           value={row.pettyCashCategory || ''}
                           onChange={(e) =>
-                            handleRowChange(row.id, 'pettyCashCategory', e.target.value)
+                            handleRowChange(
+                              row.id,
+                              'pettyCashCategory',
+                              e.target.value
+                            )
                           }
                           className="w-full h-9 px-2.5 text-xs sm:text-sm text-focus rounded-lg border border-stroke/60 bg-white hover:border-slate-300 focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus transition-all cursor-pointer truncate align-middle"
                         >
@@ -1103,8 +1343,15 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                           placeholder="0.00"
                           value={row.unitPrice}
                           onChange={(e) => {
-                            const val = e.target.value === '' ? '' : parseFloat(e.target.value)
-                            handleRowChange(row.id, 'unitPrice', isNaN(val as number) ? '' : val)
+                            const val =
+                              e.target.value === ''
+                                ? ''
+                                : parseFloat(e.target.value)
+                            handleRowChange(
+                              row.id,
+                              'unitPrice',
+                              isNaN(val as number) ? '' : val
+                            )
                           }}
                           onKeyDown={(e) => handleKeyDown(e, index)}
                           className="w-full h-9 pl-6 pr-3 text-right text-xs sm:text-sm font-mono text-focus rounded-lg border border-transparent hover:border-slate-300 focus:border-focus focus:bg-white focus:outline-none focus:ring-1 focus:ring-focus transition-all"
@@ -1121,33 +1368,44 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
                         placeholder="1"
                         value={row.quantity}
                         onChange={(e) => {
-                          const val = e.target.value === '' ? '' : parseInt(e.target.value, 10)
-                          handleRowChange(row.id, 'quantity', isNaN(val as number) ? '' : val)
+                          const val =
+                            e.target.value === ''
+                              ? ''
+                              : parseInt(e.target.value, 10)
+                          handleRowChange(
+                            row.id,
+                            'quantity',
+                            isNaN(val as number) ? '' : val
+                          )
                         }}
                         onKeyDown={(e) => handleKeyDown(e, index)}
                         className="w-full h-9 px-2 text-center text-xs sm:text-sm font-mono text-focus rounded-lg border border-transparent hover:border-slate-300 focus:border-focus focus:bg-white focus:outline-none focus:ring-1 focus:ring-focus transition-all"
                       />
                     </TableCell>
 
-                    {/* Status Dropdown Cell: Paid, Unpaid, Pending */}
+                    {/* Status Dropdown Cell: Paid, Unpaid, Pending (Yellow) */}
                     <TableCell className="w-36 border-r border-slate-200/60 p-1.5 px-2.5">
                       <select
-                        value={row.status || 'Pending'}
+                        value={normalizeParticularStatus(row.status, 'Paid')}
                         onChange={(e) =>
-                          handleRowChange(row.id, 'status', e.target.value as 'Paid' | 'Unpaid' | 'Pending')
+                          handleRowChange(
+                            row.id,
+                            'status',
+                            e.target.value as 'Paid' | 'Unpaid' | 'Pending'
+                          )
                         }
                         className={cn(
                           'w-full h-9 px-2.5 text-xs font-semibold rounded-lg border focus:outline-none focus:ring-1 transition-all cursor-pointer truncate',
                           row.status === 'Paid'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
                             : row.status === 'Unpaid'
-                            ? 'bg-rose-50 text-rose-700 border-rose-300 focus:border-rose-500 focus:ring-rose-500'
-                            : 'bg-amber-50 text-amber-700 border-amber-300 focus:border-amber-500 focus:ring-amber-500'
+                              ? 'bg-rose-50 text-rose-700 border-rose-300 focus:border-rose-500 focus:ring-rose-500'
+                              : 'bg-yellow-100 text-yellow-800 border-yellow-300 focus:border-yellow-500 focus:ring-yellow-500'
                         )}
                       >
-                        <option value="Pending">Pending</option>
                         <option value="Paid">Paid</option>
                         <option value="Unpaid">Unpaid</option>
+                        <option value="Pending">Pending</option>
                       </select>
                     </TableCell>
 
@@ -1199,7 +1457,9 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           >
             <Plus className="w-3.5 h-3.5 text-primary" />
             <span>Add Row to Sheet</span>
-            <span className="text-[10px] text-muted-fg ml-1">(or press Enter on last cell)</span>
+            <span className="text-[10px] text-muted-fg ml-1">
+              (or press Enter on last cell)
+            </span>
           </Button>
 
           <span className="text-xs text-muted-fg hidden sm:inline-block">
@@ -1258,7 +1518,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
               <span className="text-xs font-medium text-muted-fg block">
                 Unpaid / Pending
               </span>
-              <span className="text-lg sm:text-xl font-bold text-amber-600 mt-0.5 block tabular-nums">
+              <span className="text-lg sm:text-xl font-bold text-yellow-700 mt-0.5 block tabular-nums">
                 {formatPHP(unpaidPendingTotal)}
               </span>
             </div>
@@ -1289,7 +1549,11 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>{isEditMode ? 'Updating transaction…' : `Saving ${validRowsCount} items…`}</span>
+                <span>
+                  {isEditMode
+                    ? 'Updating transaction…'
+                    : `Saving ${validRowsCount} items…`}
+                </span>
               </>
             ) : (
               <>
@@ -1316,7 +1580,7 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
           }
         }}
       >
-        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4 [&>button]:w-6 [&>button]:h-6 [&>button]:p-0.5 [&>button]:rounded-md [&>button>svg]:w-3.5 [&>button>svg]:h-3.5">
+        <DialogContent className="sm:max-w-[420px] rounded-[24px] p-6 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4 [&>button]:w-6 [&>button]:h-6 [&>button]:p-0.5 [&>button]:rounded-md [&>button>svg]:w-3.5 [&>button>svg]:w-3.5">
           <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[#960C01] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -1324,10 +1588,11 @@ export const AddTransactionSheetPage: React.FC<AddTransactionSheetPageProps> = (
               </div>
               <div>
                 <DialogTitle className="text-lg font-bold text-focus leading-tight">
-                  Add Expense Category
+                  Add Category
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-fg mt-0.5">
-                  Type a new category name. It will be automatically saved and selected.
+                  Type a new category name. It will be automatically saved and
+                  selected.
                 </DialogDescription>
               </div>
             </div>

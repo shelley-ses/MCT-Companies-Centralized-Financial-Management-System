@@ -47,7 +47,6 @@ export interface ExpenseItem {
   createdBy?: string
   createdAt?: string
   updatedAt?: string
-  bankAccountId?: string
   type: 'Expense'
   bankAccountId?: string
 }
