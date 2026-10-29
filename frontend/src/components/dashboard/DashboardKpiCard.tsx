@@ -10,6 +10,7 @@ interface DashboardKpiCardProps {
   subtext?: string
   valueClassName?: string
   iconContainerClassName?: string
+  loading?: boolean
 }
 
 export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
@@ -20,7 +21,10 @@ export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
   subtext,
   valueClassName,
   iconContainerClassName,
+  loading = false,
 }) => {
+  const isCardLoading = loading || value === '...'
+
   return (
     <Card
       className={cn(
@@ -38,7 +42,15 @@ export const DashboardKpiCard: React.FC<DashboardKpiCardProps> = ({
             valueClassName
           )}
         >
-          {value}
+          {isCardLoading ? (
+            <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
+            </span>
+          ) : (
+            value
+          )}
         </h3>
         {subtext && (
           <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5">

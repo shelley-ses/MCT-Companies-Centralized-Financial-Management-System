@@ -57,6 +57,7 @@ import { formatPHP } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { isDateInRange, formatCreatedAt } from '@/utils/dateUtils'
 import { isCompanyMatch } from '@/utils/companyUtils'
+import { getParticularsSummary } from '@/utils/particularsUtils'
 import { loanService } from '@/services/loanService'
 import {
   pettyCashService,
@@ -835,7 +836,15 @@ export const PettyCashPage: React.FC = () => {
             Current Balance
           </span>
           <h3 className="text-xl sm:text-2xl font-bold text-focus mt-1 tabular-nums tracking-tight">
-            {formatPHP(currentBalance)}
+            {isLoading ? (
+              <span className="inline-flex items-center gap-1.5 py-1 text-muted-fg" aria-label="Loading">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" />
+              </span>
+            ) : (
+              formatPHP(currentBalance)
+            )}
           </h3>
           <p className="text-2xs sm:text-xs text-muted-fg font-normal mt-0.5 truncate">
             Available petty cash reserve for operational disbursements • {displayedCompanyTitle}
@@ -863,7 +872,7 @@ export const PettyCashPage: React.FC = () => {
               <col style={{ width: '8%' }} />
             </colgroup>
             <TableHeader>
-              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+              <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
                 <TableHead className="px-3 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DATE
                 </TableHead>
@@ -896,12 +905,19 @@ export const PettyCashPage: React.FC = () => {
 
             <TableBody>
               {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
-                    <Clock className="w-6 h-6 text-muted-fg/40 mx-auto mb-2 animate-spin" />
-                    Loading petty cash transactions from database...
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i} className="animate-pulse">
+                    <TableCell className="px-3 py-3.5"><div className="h-4 w-16 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-3 py-3.5"><div className="h-4 w-28 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-3 py-3.5"><div className="h-4 w-44 bg-slate-200 rounded" /></TableCell>
+                    <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-20 bg-slate-200 rounded ml-auto" /></TableCell>
+                    <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-16 bg-slate-200 rounded ml-auto" /></TableCell>
+                    <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-16 bg-slate-200 rounded ml-auto" /></TableCell>
+                    <TableCell className="px-3 py-3.5 text-right"><div className="h-4 w-20 bg-slate-200 rounded ml-auto" /></TableCell>
+                    <TableCell className="px-3 py-3.5 text-center"><div className="h-5 w-24 bg-slate-200 rounded-full mx-auto" /></TableCell>
+                    <TableCell className="px-3 py-3.5 text-center"><div className="h-7 w-16 bg-slate-200 rounded mx-auto" /></TableCell>
+                  </TableRow>
+                ))
               ) : paginatedLedger.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="h-44 text-center text-muted-fg text-xs sm:text-sm">
@@ -963,9 +979,24 @@ export const PettyCashPage: React.FC = () => {
 
                       {/* 3. Particulars & Remarks */}
                       <TableCell className="px-3 py-3.5">
-                        <div className="font-medium text-xs text-focus line-clamp-1" title={entry.description}>
-                          {entry.description || '—'}
-                        </div>
+                        {(() => {
+                          const summary = getParticularsSummary(entry.description)
+                          if (summary.count > 1) {
+                            return (
+                              <div className="flex items-center gap-1.5 min-w-0" title={entry.description}>
+                                <span className="font-medium text-xs text-focus truncate block">{summary.firstItemName}</span>
+                                <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                  +{summary.count - 1} more
+                                </span>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div className="font-medium text-xs text-focus line-clamp-1" title={entry.description}>
+                              {summary.firstItemName || '—'}
+                            </div>
+                          )
+                        })()}
                         {entry.financeRemark && (
                           <div className="text-[11px] text-blue-800 bg-blue-50/80 px-2 py-0.5 rounded-md mt-1 inline-flex items-center gap-1 max-w-full truncate border border-blue-200/50">
                             <MessageSquare className="w-3 h-3 shrink-0 text-blue-600" />

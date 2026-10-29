@@ -110,7 +110,7 @@ export const TwoFactorDialog: React.FC<TwoFactorDialogProps> = ({ open }) => {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[400px] sm:max-w-[420px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl">
+      <DialogContent className="max-w-[480px] sm:max-w-[500px] rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl">
         {isSuccess ? (
           <div className="space-y-6 text-center py-2">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-surface border border-stroke/40 text-focus shadow-xs">

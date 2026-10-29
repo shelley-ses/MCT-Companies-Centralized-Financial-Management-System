@@ -103,9 +103,11 @@ export const DashboardPage: React.FC = () => {
     lowCount: number
     walletCount: number
   } | null>(null)
+  const [pettyCashLoading, setPettyCashLoading] = React.useState<boolean>(true)
 
   React.useEffect(() => {
     let isMounted = true
+    setPettyCashLoading(true)
     const company = isCompanyScoped ? assignedCompany : filters.company
     const request =
       company === 'All Companies'
@@ -121,6 +123,9 @@ export const DashboardPage: React.FC = () => {
         })
       })
       .catch(() => isMounted && setPettyCash(null))
+      .finally(() => {
+        if (isMounted) setPettyCashLoading(false)
+      })
     return () => {
       isMounted = false
     }
@@ -218,6 +223,7 @@ export const DashboardPage: React.FC = () => {
         <DashboardKpiCard
           label="Total Cash"
           value={formatPHP(totalIncome)}
+          loading={loading}
           icon={TrendingUp}
           valueClassName="text-emerald-600"
           iconContainerClassName="bg-emerald-50 text-emerald-600 border border-emerald-200/60"
@@ -225,6 +231,7 @@ export const DashboardPage: React.FC = () => {
         <DashboardKpiCard
           label="Total Cash Expense"
           value={formatPHP(totalExpenses)}
+          loading={loading}
           icon={TrendingDown}
           valueClassName="text-rose-600"
           iconContainerClassName="bg-rose-50 text-rose-600 border border-rose-200/60"
@@ -232,6 +239,7 @@ export const DashboardPage: React.FC = () => {
         <DashboardKpiCard
           label="Net Income (Total Cash - Cash Expense)"
           value={formatPHP(netIncome)}
+          loading={loading}
           icon={Landmark}
           valueClassName={netIncome >= 0 ? 'text-emerald-600' : 'text-rose-600'}
           iconContainerClassName={
@@ -243,6 +251,7 @@ export const DashboardPage: React.FC = () => {
         <DashboardKpiCard
           label="Overdue / Due Soon"
           value={`${overdueCount} / ${dueSoonCount}`}
+          loading={loading}
           icon={AlertCircle}
           valueClassName="text-amber-600"
           iconContainerClassName="bg-amber-50 text-amber-600 border border-amber-200/60"
@@ -255,6 +264,7 @@ export const DashboardPage: React.FC = () => {
           <DashboardKpiCard
             label="Petty Cash Balance"
             value={pettyCash ? formatPHP(pettyCash.balance) : '—'}
+            loading={loading || pettyCashLoading}
             icon={Wallet}
             className="h-full"
             valueClassName="text-blue-600"
