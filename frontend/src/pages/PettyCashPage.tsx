@@ -210,13 +210,12 @@ export const PettyCashPage: React.FC = () => {
       status: status === 'Verified' && entry.status === 'Pending Audit Approval' ? 'Approved' : entry.status,
     }
     setLedger((prev) => prev.map((e) => (e.id === entry.id ? updatedEntry : e)))
-    try {
-      const stored = localStorage.getItem('petty_cash_audit_records')
-      const records = stored ? JSON.parse(stored) : {}
-      records[entry.id] = { auditStatus: status, auditDate: timestamp, auditedBy: user?.fullName || 'Audit' }
-      localStorage.setItem('petty_cash_audit_records', JSON.stringify(records))
-    } catch {
-      // ignore
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('petty_cash_audit_records')
+      } catch {
+        // ignore
+      }
     }
     setOpenMenuPettyId(null)
   }

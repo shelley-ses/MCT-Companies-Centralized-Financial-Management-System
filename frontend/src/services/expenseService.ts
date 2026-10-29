@@ -69,34 +69,20 @@ export interface NewExpenseInput {
 const EXPENSES_STORAGE_KEY = 'mct_expense_records_v1'
 removeLegacyAuditStorage()
 
-function loadStoredExpenses(): ExpenseItem[] {
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem(EXPENSES_STORAGE_KEY)
-      if (stored !== null) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed)) {
-          return parsed
-        }
-      }
-    } catch {
-      // ignore
-    }
+// Clear legacy local storage to prevent clear-text storage
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem(EXPENSES_STORAGE_KEY)
+  } catch {
+    // ignore
   }
-  return []
 }
+
+let inMemoryExpenses: ExpenseItem[] = []
 
 function saveStoredExpenses(items: ExpenseItem[]): void {
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(EXPENSES_STORAGE_KEY, JSON.stringify(items))
-    } catch {
-      // ignore
-    }
-  }
+  inMemoryExpenses = items
 }
-
-let inMemoryExpenses: ExpenseItem[] = loadStoredExpenses()
 
 function mapBackendExpenseToItem(exp: any): ExpenseItem {
   const rawDateStr = exp.expense_date || '2026-10-01'

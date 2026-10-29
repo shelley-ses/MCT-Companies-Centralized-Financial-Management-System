@@ -69,26 +69,10 @@ function normalizeCacheKey(companyName?: string): string {
   return companyName.trim().toLowerCase()
 }
 
-function loadSessionBankCache(): Record<string, CachedBankAccountsEntry> {
-  if (typeof window === 'undefined') return {}
+// Purge legacy session storage to eliminate clear-text storage of bank accounts
+if (typeof window !== 'undefined') {
   try {
-    const raw = sessionStorage.getItem(BANK_CACHE_STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed === 'object') return parsed
-    }
-  } catch {
-    // ignore storage errors
-  }
-  return {}
-}
-
-function saveSessionBankCache(key: string, entry: CachedBankAccountsEntry): void {
-  if (typeof window === 'undefined') return
-  try {
-    const map = loadSessionBankCache()
-    map[key] = entry
-    sessionStorage.setItem(BANK_CACHE_STORAGE_KEY, JSON.stringify(map))
+    sessionStorage.removeItem(BANK_CACHE_STORAGE_KEY)
   } catch {
     // ignore storage errors
   }
@@ -196,7 +180,6 @@ async function fetchAccountsFromNetwork(companyName?: string): Promise<BankAccou
         timestamp: Date.now(),
       }
       memoryBankCache.set(key, entry)
-      saveSessionBankCache(key, entry)
       return accounts
     } finally {
       inFlightRequests.delete(key)
@@ -221,16 +204,9 @@ export const bankService = {
     const mem = memoryBankCache.get(key)
     if (mem && mem.data.length > 0) return mem.data
 
-    const sessionMap = loadSessionBankCache()
-    const sess = sessionMap[key]
-    if (sess && Array.isArray(sess.data) && sess.data.length > 0) {
-      memoryBankCache.set(key, sess)
-      return sess.data
-    }
-
     // Fallback: check __ALL__ cache and filter by company name
     if (key !== '__ALL__') {
-      const allMem = memoryBankCache.get('__ALL__') || sessionMap['__ALL__']
+      const allMem = memoryBankCache.get('__ALL__')
       if (allMem && Array.isArray(allMem.data) && allMem.data.length > 0) {
         const filtered = allMem.data.filter(
           (b) => (b.companyName || '').trim().toLowerCase() === key
@@ -257,9 +233,8 @@ export const bankService = {
   ): Promise<BankAccount[]> {
     const key = normalizeCacheKey(companyName)
     if (!options?.forceRefresh) {
-      const mem = memoryBankCache.get(key) || loadSessionBankCache()[key]
+      const mem = memoryBankCache.get(key)
       if (mem && Array.isArray(mem.data) && mem.data.length > 0) {
-        memoryBankCache.set(key, mem)
         // If still fresh, return immediately; if stale, revalidate in background and return cached immediately
         if (Date.now() - mem.timestamp >= BANK_CACHE_TTL_MS) {
           fetchAccountsFromNetwork(companyName).catch(() => {})
