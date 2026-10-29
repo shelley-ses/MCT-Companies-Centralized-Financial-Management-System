@@ -227,7 +227,9 @@ class LendingService:
             direct_paid = month_paid_map.get(m, Decimal("0.00"))
             available_funds = direct_paid + available_credit
             cycle_due = cls.get_cycle_due_date(date_borrowed_val, due_date_val, "Monthly", m, total_months)
+            cycle_due_d = parse_date(cycle_due)
 
+            cycle_penalty = Decimal("0.00")
             if direct_paid >= expected and expected > 0:
                 rem = Decimal("0.00")
                 status_str = "Paid"
@@ -238,11 +240,21 @@ class LendingService:
                 is_settled = False
                 is_overdue = today_iso > cycle_due
                 status_str = "Partially Paid"
+                if is_overdue and cycle_due_d:
+                    months_late = max(1, (date.today().year - cycle_due_d.year) * 12 + (date.today().month - cycle_due_d.month))
+                    cycle_penalty = quantize(penalty_per_month * Decimal(str(months_late)))
+                    total_penalties += cycle_penalty
+                    missed_count += 1
             else:
                 rem = expected
                 is_settled = False
                 is_overdue = today_iso > cycle_due
                 status_str = "Missed" if is_overdue else "Unpaid"
+                if is_overdue and cycle_due_d:
+                    months_late = max(1, (date.today().year - cycle_due_d.year) * 12 + (date.today().month - cycle_due_d.month))
+                    cycle_penalty = quantize(penalty_per_month * Decimal(str(months_late)))
+                    total_penalties += cycle_penalty
+                    missed_count += 1
 
             info = {
                 "month_index": m,
@@ -253,7 +265,7 @@ class LendingService:
                 "dueDate": cycle_due,
                 "isOverdue": is_overdue,
                 "isLocked": is_settled,
-                "penalty": 0.0,
+                "penalty": float(cycle_penalty),
             }
             month_details.append(info)
 
@@ -273,15 +285,17 @@ class LendingService:
                 "penalty": 0.0,
             }
 
+        compliance_str = "Delinquent" if missed_count >= 2 else ("Delayed" if missed_count == 1 else "Compliant")
+
         return {
             "totalMonths": total_months,
             "targetPerMonth": float(target_per_month),
             "monthDetails": month_details,
             "activeMonth": active_month,
-            "totalPenalties": 0.0,
+            "totalPenalties": float(total_penalties),
             "advanceAmount": 0.0,
-            "complianceStatus": "Active",
-            "missedCyclesCount": 0,
+            "complianceStatus": compliance_str,
+            "missedCyclesCount": missed_count,
         }
 
     @classmethod
@@ -352,18 +366,17 @@ class LendingService:
         due = parse_date(due_date_val) or (start + timedelta(days=safe_term_days))
         end_date = max(today, start + timedelta(days=max(1, safe_term_days) - 1))
 
-        # Group payments by payment date (actual transaction date)
+        # Group payments by target installment date (cycle_due_date if present, else payment_date)
         day_payments: Dict[str, List[Dict[str, Any]]] = {}
         for r in repayments:
-            p_date = str(r.get("date") or r.get("payment_date") or "").split("T")[0]
-            if p_date:
-                if p_date not in day_payments:
-                    day_payments[p_date] = []
-                day_payments[p_date].append(r)
+            target_iso = str(r.get("cycle_due_date") or r.get("date") or r.get("payment_date") or "").split("T")[0]
+            if target_iso:
+                if target_iso not in day_payments:
+                    day_payments[target_iso] = []
+                day_payments[target_iso].append(r)
 
         target_dec = quantize(installment_target)
         penalty_dec = quantize(penalty_per_cycle if penalty_per_cycle > 0 else (target_dec * Decimal("0.05")))
-        available_credit = Decimal("0.00")
         total_penalties = Decimal("0.00")
         missed_count = 0
 
@@ -373,13 +386,17 @@ class LendingService:
             iso = cur.isoformat()
             payments_today = day_payments.get(iso, [])
             paid_today = sum((Decimal(str(p.get("amount", 0))) for p in payments_today), Decimal("0.00"))
+            penalties_paid_today = sum((Decimal(str(p.get("penalty_portion", 0) or p.get("penalty", 0))) for p in payments_today), Decimal("0.00"))
+            has_late_payment = any(p.get("is_late") for p in payments_today)
+            max_days_late = max([p.get("days_late", 0) for p in payments_today] or [0])
 
             if paid_today >= target_dec and target_dec > Decimal("0.00"):
-                status_str = "Paid"
+                status_str = f"Paid Late ({max_days_late}d)" if has_late_payment else "Paid"
                 method_str = payments_today[0].get("method", "Cash") if payments_today else "Cash"
                 ref_str = payments_today[0].get("referenceNo", "-") if payments_today else "-"
                 notes_str = payments_today[0].get("notes", "-") if payments_today else "-"
 
+                total_penalties += penalties_paid_today
                 ledger_rows.append({
                     "id": f"day-{iso}",
                     "date": iso,
@@ -389,16 +406,25 @@ class LendingService:
                     "referenceNo": ref_str,
                     "notes": notes_str,
                     "status": status_str,
-                    "penalty": 0.0,
-                    "timestamp": iso,
+                    "penalty": float(penalties_paid_today),
+                    "timestamp": payments_today[0].get("timestamp", iso) if payments_today else iso,
                     "isLocked": True,
+                    "is_late": has_late_payment,
+                    "days_late": max_days_late,
                 })
             elif paid_today > Decimal("0.00"):
                 status_str = "Partially Paid"
-
                 method_str = payments_today[0].get("method", "Cash") if payments_today else "Cash"
                 ref_str = payments_today[0].get("referenceNo", "-") if payments_today else "-"
                 notes_str = payments_today[0].get("notes", "-") if payments_today else "-"
+
+                if cur < today:
+                    days_overdue = (today - cur).days
+                    unpaid_penalty = quantize(penalty_dec * Decimal(str(days_overdue)))
+                    total_penalties += penalties_paid_today + unpaid_penalty
+                    missed_count += 1
+                else:
+                    total_penalties += penalties_paid_today
 
                 ledger_rows.append({
                     "id": f"day-{iso}",
@@ -409,17 +435,26 @@ class LendingService:
                     "referenceNo": ref_str,
                     "notes": notes_str,
                     "status": status_str,
-                    "penalty": 0.0,
-                    "timestamp": iso,
+                    "penalty": float(penalties_paid_today),
+                    "timestamp": payments_today[0].get("timestamp", iso) if payments_today else iso,
                     "isLocked": False,
+                    "is_late": has_late_payment,
+                    "days_late": max_days_late,
                 })
             else:
                 if cur < today:
                     status_str = "Missed"
+                    days_overdue = (today - cur).days
+                    unpaid_penalty = quantize(penalty_dec * Decimal(str(days_overdue)))
+                    total_penalties += unpaid_penalty
+                    missed_count += 1
+                    penalty_amount = float(unpaid_penalty)
                 elif cur == today:
                     status_str = "Pending"
+                    penalty_amount = 0.0
                 else:
                     status_str = "Scheduled"
+                    penalty_amount = 0.0
 
                 ledger_rows.append({
                     "id": f"day-{iso}",
@@ -430,19 +465,28 @@ class LendingService:
                     "referenceNo": "-",
                     "notes": "-",
                     "status": status_str,
-                    "penalty": 0.0,
+                    "penalty": penalty_amount,
                     "timestamp": iso,
                     "isLocked": False,
+                    "is_late": False,
+                    "days_late": (today - cur).days if cur < today else 0,
                 })
 
             cur += timedelta(days=1)
 
         ledger_rows.sort(key=lambda x: x["date"], reverse=True)
 
+        if missed_count == 0:
+            compliance_status = "Compliant"
+        elif missed_count == 1:
+            compliance_status = "Delayed"
+        else:
+            compliance_status = "Delinquent"
+
         meta = {
-            "total_penalties": 0.0,
+            "total_penalties": float(total_penalties),
             "advance_amount": 0.0,
-            "compliance_status": "Active",
+            "compliance_status": compliance_status,
             "missed_cycles_count": missed_count,
         }
         return ledger_rows, meta
@@ -458,33 +502,38 @@ class LendingService:
         payment_date_val: Any,
         repayments: List[Dict[str, Any]],
         installment_target: Optional[Decimal | float] = None,
+        cycle_due_date_val: Optional[Any] = None,
     ) -> Tuple[bool, Optional[str]]:
         """
-        Checks whether the specified period or date is already settled and locked.
+        Checks whether the specified installment date or period is already settled and locked.
         Returns (is_locked, reason).
         """
         freq = (frequency or "Daily").strip().capitalize()
-        p_date = parse_date(payment_date_val)
-        if not p_date:
+        target_date = parse_date(cycle_due_date_val) or parse_date(payment_date_val)
+        if not target_date:
             return False, None
 
-        iso_date = p_date.isoformat()
+        iso_target = target_date.isoformat()
 
         if freq == "Daily":
-            paid_on_date = sum(
-                (Decimal(str(r.get("amount", 0))) for r in repayments if str(r.get("date") or r.get("payment_date") or "").split("T")[0] == iso_date),
+            paid_for_target = sum(
+                (
+                    Decimal(str(r.get("amount", 0)))
+                    for r in repayments
+                    if str(r.get("cycle_due_date") or r.get("date") or r.get("payment_date") or "").split("T")[0] == iso_target
+                ),
                 Decimal("0.00"),
             )
             if installment_target is not None and Decimal(str(installment_target)) > Decimal("0.00"):
                 target_dec = quantize(installment_target)
-                if paid_on_date >= target_dec:
-                    return True, f"Date {iso_date} is already fully paid and locked. You cannot record another payment for this date."
+                if paid_for_target >= target_dec:
+                    return True, f"Installment date {iso_target} is already fully paid and locked. You cannot record another payment for this date."
             else:
                 for r in repayments:
-                    r_date = str(r.get("date") or r.get("payment_date") or "").split("T")[0]
+                    r_target = str(r.get("cycle_due_date") or r.get("date") or r.get("payment_date") or "").split("T")[0]
                     status_val = str(r.get("status") or "").strip().lower()
-                    if r_date == iso_date and status_val in {"paid", "completed"}:
-                        return True, f"Date {iso_date} is already fully paid and locked. You cannot record another payment for this date."
+                    if r_target == iso_target and status_val in {"paid", "completed"}:
+                        return True, f"Installment date {iso_target} is already fully paid and locked. You cannot record another payment for this date."
 
         return False, None
 
@@ -576,7 +625,13 @@ class LendingService:
                         "transactionRefNo": t.transaction_ref_no or f"TX-{t.transaction_id}",
                         "payment_date": t.payment_date.isoformat() if t.payment_date else "",
                         "date": t.payment_date.isoformat() if t.payment_date else "",
+                        "cycle_due_date": t.cycle_due_date.isoformat() if t.cycle_due_date else "",
+                        "cycle_index": t.cycle_index,
+                        "is_late": t.is_late or False,
+                        "days_late": t.days_late or 0,
                         "amount": float(t.amount or 0),
+                        "penalty_portion": float(t.penalty_portion or 0),
+                        "penalty": float(t.penalty_portion or 0),
                         "method": t.payment_method or "Cash",
                         "referenceNo": t.reference_no or "-",
                         "notes": t.notes or "-",
@@ -818,7 +873,13 @@ class LendingService:
                     "transactionRefNo": t.transaction_ref_no or f"TX-{t.transaction_id}",
                     "date": t.payment_date.isoformat() if t.payment_date else "",
                     "payment_date": t.payment_date.isoformat() if t.payment_date else "",
+                    "cycle_due_date": t.cycle_due_date.isoformat() if t.cycle_due_date else "",
+                    "cycle_index": t.cycle_index,
+                    "is_late": t.is_late or False,
+                    "days_late": t.days_late or 0,
                     "amount": float(t.amount or 0),
+                    "penalty_portion": float(t.penalty_portion or 0),
+                    "penalty": float(t.penalty_portion or 0),
                     "method": t.payment_method or "Cash",
                     "referenceNo": t.reference_no or "-",
                     "notes": t.notes or "-",
@@ -1187,9 +1248,12 @@ class LendingService:
         notes: Optional[str] = None,
         recorded_by: Optional[str] = None,
         transaction_type: str = "Repayment",
+        cycle_due_date_val: Optional[Any] = None,
+        cycle_index_val: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Record a payment remittance in the lending_transactions table with period settlement locking.
+        Record a payment remittance in the lending_transactions table with period settlement locking
+        and automated 5% late penalty calculation based on the actual cash received date.
         """
         b = db.query(Borrower).filter(Borrower.borrower_id == borrower_id).first()
 
@@ -1200,13 +1264,20 @@ class LendingService:
             existing_txs = (
                 db.query(LendingTransaction)
                 .filter(LendingTransaction.borrower_id == b.borrower_id)
-                .order_by(LendingTransaction.payment_date.desc())
+                .order_by(LendingTransaction.payment_date.desc(), LendingTransaction.created_at.desc())
                 .all()
             )
             repayment_dicts = [
                 {
                     "date": t.payment_date.isoformat() if t.payment_date else "",
+                    "payment_date": t.payment_date.isoformat() if t.payment_date else "",
+                    "cycle_due_date": t.cycle_due_date.isoformat() if t.cycle_due_date else "",
+                    "cycle_index": t.cycle_index,
+                    "is_late": t.is_late or False,
+                    "days_late": t.days_late or 0,
                     "amount": float(t.amount or 0),
+                    "penalty_portion": float(t.penalty_portion or 0),
+                    "penalty": float(t.penalty_portion or 0),
                     "status": "Paid" if (t.status or "").lower() == "completed" else (t.status or "Paid"),
                 }
                 for t in existing_txs
@@ -1222,12 +1293,16 @@ class LendingService:
                 term_days,
             )
 
+            pay_date = parse_date(payment_date_val) or date.today()
+            target_cycle_due = parse_date(cycle_due_date_val) or pay_date
+
             # 2. Period settlement locking check
             is_locked, lock_reason = cls.check_period_settlement(
                 freq,
                 payment_date_val,
                 repayment_dicts,
                 installment_target=terms["installment_target"],
+                cycle_due_date_val=target_cycle_due,
             )
             if is_locked:
                 raise HTTPException(
@@ -1235,54 +1310,62 @@ class LendingService:
                     detail=lock_reason or "Period or date is already fully settled and locked.",
                 )
 
+            # 3. Calculate lateness and 5% penalty
+            installment_target = quantize(terms["installment_target"])
+            is_late = False
+            days_late = 0
+            penalty_portion = Decimal("0.00")
+
+            if target_cycle_due and pay_date > target_cycle_due:
+                is_late = True
+                if freq == "Daily":
+                    days_late = (pay_date - target_cycle_due).days
+                    overdue_units = max(1, days_late)
+                elif freq == "Monthly":
+                    overdue_units = max(1, (pay_date.year - target_cycle_due.year) * 12 + (pay_date.month - target_cycle_due.month))
+                    days_late = overdue_units * 30
+                elif freq == "Quarterly":
+                    overdue_units = max(1, ((pay_date.year - target_cycle_due.year) * 12 + (pay_date.month - target_cycle_due.month) + 2) // 3)
+                    days_late = overdue_units * 90
+                else:
+                    overdue_units = max(1, pay_date.year - target_cycle_due.year)
+                    days_late = overdue_units * 365
+
+                penalty_portion = quantize(installment_target * Decimal("0.05") * Decimal(str(overdue_units)))
+
+            # Sum penalties from previous transactions
+            prev_penalties = sum((Decimal(str(r.get("penalty_portion", 0))) for r in repayment_dicts), Decimal("0.00"))
+            total_penalties = prev_penalties + penalty_portion
+
             total_paid_before = sum((Decimal(str(r["amount"])) for r in repayment_dicts), Decimal("0.00"))
-
-            if freq == "Daily":
-                _, ledger_meta = cls.build_daily_ledger(
-                    b.date_borrowed,
-                    b.due_date,
-                    repayment_dicts,
-                    term_days=terms["term_days"],
-                    installment_target=terms["installment_target"],
-                    penalty_per_cycle=terms["penalty_per_cycle"],
-                )
-                total_penalties = Decimal(str(ledger_meta["total_penalties"]))
-            else:
-                progress = cls.get_monthly_progress(
-                    b.date_borrowed,
-                    b.due_date,
-                    terms["total_payable"],
-                    repayment_dicts,
-                    term_days=terms["term_days"],
-                )
-                total_penalties = Decimal(str(progress["totalPenalties"]))
-
             total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
             remaining_before = max(Decimal("0.00"), total_payable_with_penalties - total_paid_before)
 
             payment_amount = quantize(amount_val)
             cls.validate_payment_bounds(payment_amount, remaining_before)
 
-            # 3. Create LendingTransaction record
-            pay_date = parse_date(payment_date_val) or date.today()
+            # 4. Create LendingTransaction record
             ref_clean = reference_no.strip() if reference_no and reference_no.strip() else None
             tx_ref = f"TX-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() % 10000):04d}"
 
             rem_bal = max(Decimal("0.00"), remaining_before - payment_amount)
 
-            # Determine if this payment fully settles the period/date target or is Partially Paid
-            target_dec = quantize(terms["installment_target"])
+            # Determine if this payment fully settles the target or is Partially Paid
+            target_with_penalty = installment_target + penalty_portion
             if freq == "Daily":
-                paid_on_date_before = sum(
-                    (Decimal(str(r["amount"])) for r in repayment_dicts if r["date"] == pay_date.isoformat()),
+                paid_for_date_before = sum(
+                    (
+                        Decimal(str(r["amount"]))
+                        for r in repayment_dicts
+                        if str(r.get("cycle_due_date") or r.get("date") or "").split("T")[0] == target_cycle_due.isoformat()
+                    ),
                     Decimal("0.00"),
                 )
-                is_period_settled = (paid_on_date_before + payment_amount) >= target_dec or rem_bal <= Decimal("0.00")
+                is_period_settled = (paid_for_date_before + payment_amount) >= target_with_penalty or rem_bal <= Decimal("0.00")
             elif freq == "Monthly":
-                active_rem = quantize(progress["activeMonth"]["remaining"])
-                is_period_settled = payment_amount >= active_rem or rem_bal <= Decimal("0.00")
+                is_period_settled = payment_amount >= target_with_penalty or rem_bal <= Decimal("0.00")
             else:
-                is_period_settled = payment_amount >= target_dec or rem_bal <= Decimal("0.00")
+                is_period_settled = payment_amount >= target_with_penalty or rem_bal <= Decimal("0.00")
 
             tx_db_status = "Completed" if is_period_settled else "Partially Paid"
             tx_out_status = "Paid" if is_period_settled else "Partially Paid"
@@ -1293,8 +1376,12 @@ class LendingService:
                 transaction_type=transaction_type or "Repayment",
                 payment_date=pay_date,
                 due_date=b.due_date,
+                cycle_index=cycle_index_val,
+                cycle_due_date=target_cycle_due,
+                is_late=is_late,
+                days_late=days_late,
                 amount=payment_amount,
-                penalty_portion=Decimal("0.00"),
+                penalty_portion=penalty_portion,
                 remaining_balance=rem_bal,
                 payment_method=method.strip() if method else "Cash",
                 reference_no=ref_clean,
@@ -1303,13 +1390,14 @@ class LendingService:
             )
             db.add(new_tx)
 
-            # If now settled on this date, mark any earlier partial transactions on this date as Completed
-            if freq == "Daily" and is_period_settled:
+            # If now settled on this cycle date, mark any earlier partial transactions as Completed
+            if is_period_settled:
                 for prev_tx in existing_txs:
-                    if prev_tx.payment_date == pay_date and prev_tx.status == "Partially Paid":
+                    prev_cycle_due = prev_tx.cycle_due_date or prev_tx.payment_date
+                    if prev_cycle_due == target_cycle_due and prev_tx.status == "Partially Paid":
                         prev_tx.status = "Completed"
 
-            # 4. Update borrower status if fully paid
+            # 5. Update borrower status if fully paid
             updated_remaining = remaining_before - payment_amount
             if updated_remaining <= Decimal("0.00"):
                 b.status = "Fully Paid"
@@ -1325,7 +1413,12 @@ class LendingService:
                 "borrower_id": b.borrower_id,
                 "loan_id": b.borrower_id,
                 "payment_date": pay_date.isoformat(),
+                "cycle_due_date": target_cycle_due.isoformat() if target_cycle_due else "",
+                "cycle_index": cycle_index_val,
+                "is_late": is_late,
+                "days_late": days_late,
                 "amount": float(payment_amount),
+                "penalty_portion": float(penalty_portion),
                 "remaining_balance": float(updated_remaining),
                 "status": tx_out_status,
                 "payment_method": new_tx.payment_method,
@@ -1473,6 +1566,10 @@ class LendingService:
                 "transaction_type": t.transaction_type,
                 "payment_date": t.payment_date.isoformat() if t.payment_date else "",
                 "due_date": t.due_date.isoformat() if t.due_date else "",
+                "cycle_index": t.cycle_index,
+                "cycle_due_date": t.cycle_due_date.isoformat() if t.cycle_due_date else None,
+                "is_late": t.is_late or False,
+                "days_late": t.days_late or 0,
                 "amount": float(t.amount or 0),
                 "penalty_portion": float(t.penalty_portion or 0),
                 "remaining_balance": float(t.remaining_balance) if t.remaining_balance is not None else None,
@@ -1499,6 +1596,10 @@ class LendingService:
             "transaction_type": t.transaction_type,
             "payment_date": t.payment_date.isoformat() if t.payment_date else "",
             "due_date": t.due_date.isoformat() if t.due_date else "",
+            "cycle_index": t.cycle_index,
+            "cycle_due_date": t.cycle_due_date.isoformat() if t.cycle_due_date else None,
+            "is_late": t.is_late or False,
+            "days_late": t.days_late or 0,
             "amount": float(t.amount or 0),
             "penalty_portion": float(t.penalty_portion or 0),
             "remaining_balance": float(t.remaining_balance) if t.remaining_balance is not None else None,

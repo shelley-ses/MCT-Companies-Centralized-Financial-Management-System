@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, Numeric, Date, DateTime, ForeignKey, Integer
+from sqlalchemy import Column, BigInteger, String, Text, Numeric, Date, DateTime, ForeignKey, Integer, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.session import Base
@@ -51,6 +51,10 @@ class LendingTransaction(Base):
     transaction_type = Column(String(50), nullable=False, default="Repayment")  # Repayment, Disbursement, Adjustment
     payment_date = Column(Date, nullable=False, index=True)
     due_date = Column(Date, nullable=True)
+    cycle_index = Column(Integer, nullable=True)
+    cycle_due_date = Column(Date, nullable=True)
+    is_late = Column(Boolean, default=False)
+    days_late = Column(Integer, default=0)
     amount = Column(Numeric(15, 2), nullable=False)
     penalty_portion = Column(Numeric(15, 2), default=0.00)
     remaining_balance = Column(Numeric(15, 2), nullable=True)

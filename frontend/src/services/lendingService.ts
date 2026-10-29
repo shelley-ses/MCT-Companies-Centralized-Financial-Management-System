@@ -3,6 +3,15 @@ export interface DailyPaymentRecord {
   transactionRefNo?: string
   transaction_ref_no?: string
   date: string
+  payment_date?: string
+  cycle_due_date?: string
+  cycleDueDate?: string
+  cycle_index?: number
+  cycleIndex?: number
+  is_late?: boolean
+  isLate?: boolean
+  days_late?: number
+  daysLate?: number
   amount: number
   method: string
   referenceNo?: string
@@ -15,6 +24,7 @@ export interface DailyPaymentRecord {
   isLocked?: boolean
   target?: number
   penalty?: number
+  penalty_portion?: number
 }
 
 export interface LendingFacility {
@@ -98,6 +108,10 @@ export interface LendingRecordPaymentPayload {
   borrower_id?: number | string
   borrowerId?: number | string
   paymentDate: string
+  cycleDueDate?: string
+  cycle_due_date?: string
+  cycleIndex?: number
+  cycle_index?: number
   amount: number
   method: string
   referenceNo?: string
@@ -111,6 +125,10 @@ export interface LendingTransactionRecord {
   transaction_type: string
   payment_date: string
   due_date?: string
+  cycle_due_date?: string
+  cycle_index?: number
+  is_late?: boolean
+  days_late?: number
   amount: number
   penalty_portion?: number
   remaining_balance?: number
@@ -447,6 +465,8 @@ class LendingServiceGateway {
         body: JSON.stringify({
           borrower_id: numId,
           payment_date: payload.paymentDate,
+          cycle_due_date: payload.cycleDueDate || payload.cycle_due_date || null,
+          cycle_index: payload.cycleIndex ?? payload.cycle_index ?? null,
           amount: payload.amount,
           method: payload.method,
           reference_no: payload.referenceNo || '',

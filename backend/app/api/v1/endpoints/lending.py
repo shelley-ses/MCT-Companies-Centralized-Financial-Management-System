@@ -212,6 +212,8 @@ def create_transaction(
         reference_no=payload.reference_no,
         notes=payload.notes,
         transaction_type=payload.transaction_type,
+        cycle_due_date_val=payload.cycle_due_date,
+        cycle_index_val=payload.cycle_index,
     )
 
 
@@ -236,4 +238,6 @@ def record_payment(
         method=payload.method,
         reference_no=payload.reference_no,
         notes=payload.notes,
+        cycle_due_date_val=payload.cycle_due_date,
+        cycle_index_val=payload.cycle_index,
     )

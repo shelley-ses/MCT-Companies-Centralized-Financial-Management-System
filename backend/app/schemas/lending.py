@@ -62,6 +62,8 @@ class BorrowerDeleteResponse(BaseModel):
 class LendingPaymentCreateRequest(BaseModel):
     borrower_id: int
     payment_date: str
+    cycle_due_date: Optional[str] = None
+    cycle_index: Optional[int] = None
     amount: Decimal = Field(..., ge=1.0)
     method: str = Field(default="Cash")
     reference_no: Optional[str] = ""
@@ -71,6 +73,8 @@ class LendingPaymentCreateRequest(BaseModel):
 class LendingTransactionCreateRequest(BaseModel):
     borrower_id: int
     payment_date: str
+    cycle_due_date: Optional[str] = None
+    cycle_index: Optional[int] = None
     amount: Decimal = Field(..., ge=0.01)
     payment_method: str = Field(default="Cash")
     transaction_type: str = Field(default="Repayment")
@@ -85,6 +89,10 @@ class LendingTransactionOut(BaseModel):
     transaction_type: str = "Repayment"
     payment_date: str
     due_date: Optional[str] = None
+    cycle_index: Optional[int] = None
+    cycle_due_date: Optional[str] = None
+    is_late: bool = False
+    days_late: int = 0
     amount: float
     penalty_portion: float = 0.0
     remaining_balance: Optional[float] = None
@@ -111,6 +119,10 @@ class DailyPaymentRecordOut(BaseModel):
     timestamp: str
     isLocked: Optional[bool] = False
     penalty: Optional[float] = 0.0
+    cycle_index: Optional[int] = None
+    cycle_due_date: Optional[str] = None
+    is_late: Optional[bool] = False
+    days_late: Optional[int] = 0
 
 
 class BorrowerOut(BaseModel):
