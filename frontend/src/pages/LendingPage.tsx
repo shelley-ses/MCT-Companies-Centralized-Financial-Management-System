@@ -16,6 +16,7 @@ import {
   Pencil,
   Trash2,
   Coins,
+  Receipt,
   MoreVertical,
   Eye,
   Lock,
@@ -1056,6 +1057,23 @@ export const LendingPage: React.FC = () => {
     const historyEndIndex = Math.min(historyStartIndex + HISTORY_ITEMS_PER_PAGE, filteredHistoryPayments.length)
     const paginatedHistoryPayments = filteredHistoryPayments.slice(historyStartIndex, historyEndIndex)
 
+    const calculatedInterest =
+      (activeFacility as any).interestAmount ??
+      Math.round(((activeFacility.loanAmount || 0) * ((activeFacility.interestRate || 0) / 100)) * 100) / 100
+    const totalPaidPenalties = (activeFacility.dailyPayments || []).reduce(
+      (sum, p) => sum + (Number(p.penalty) || Number(p.penalty_portion) || 0),
+      0
+    )
+    const facilityPenalties = Math.max(activeFacility.totalPenalties || 0, totalPaidPenalties)
+    const installmentTargetAmount =
+      activeFacility.installmentTarget ||
+      Math.round(
+        (activeFacility.totalAmountPayable /
+          (activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60))) *
+          100
+      ) / 100
+    const termDaysCount = activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)
+
     return (
       <div className="space-y-6 animate-in fade-in duration-200">
         {/* Top navigation row */}
@@ -1139,311 +1157,334 @@ export const LendingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 6 Spacious Financial Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Principal Amount
-            </span>
-            <span className="text-base sm:text-xl font-bold text-focus block mt-1">
-              {formatPHP(activeFacility.loanAmount)}
-            </span>
-            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
-              Disbursed capital
-            </span>
-          </div>
-
-          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Interest Rate
-            </span>
-            <span className="text-base sm:text-xl font-bold text-focus block mt-1">
-              {activeFacility.interestRate}%
-            </span>
-            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
-              +{formatPHP(Math.max(0, activeFacility.totalAmountPayable - activeFacility.loanAmount))} interest
-            </span>
-          </div>
-
-          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Total Payable
-            </span>
-            <span className="text-base sm:text-xl font-extrabold text-focus block mt-1">
-              {formatPHP(activeFacility.totalAmountPayable)}
-            </span>
-            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
-              Principal + interest
-            </span>
-          </div>
-
-          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Amount Paid
-            </span>
-            <span className="text-base sm:text-xl font-extrabold text-emerald-600 block mt-1">
-              {formatPHP(activeFacility.amountPaid)}
-            </span>
-            <span className="text-[10.5px] text-emerald-700/80 mt-0.5 block">
-              Total collections
-            </span>
-          </div>
-
-          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Remaining Balance
-            </span>
-            <span className="text-base sm:text-xl font-extrabold text-amber-600 block mt-1">
-              {formatPHP(activeFacility.remainingBalance)}
-            </span>
-            <span className="text-[10.5px] text-amber-700/80 mt-0.5 block">
-              Balance to complete
-            </span>
-          </div>
-
-          <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold text-muted-fg uppercase tracking-wider block">
-              Installment Target
-            </span>
-            <span className="text-base sm:text-xl font-bold text-focus block mt-1">
-              {formatPHP(
-                activeFacility.installmentTarget ||
-                  Math.round(
-                    (activeFacility.totalAmountPayable /
-                      (activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60))) *
-                      100
-                  ) / 100
-              )}
-            </span>
-            <span className="text-[10.5px] text-muted-fg mt-0.5 block">
-              Per {activeFacility.paymentFrequency === 'Daily' ? 'day' : 'month'}
-            </span>
-          </div>
-        </div>
-
-        {/* Two Section Layout: Terms Summary (Left) & Complete Schedule Ledger (Right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          {/* Left 1 Column: Agreement Terms & Dates */}
-          <div className="bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-focus">
-              Loan Agreement & Terms
-            </h3>
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-muted-fg">Payment Frequency:</span>
-                <span className="font-semibold text-focus">{activeFacility.paymentFrequency || 'Daily'}</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-muted-fg">Loan Term Duration:</span>
-                <span className="font-semibold text-focus">
-                  {activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)} Days
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-muted-fg">Date Borrowed:</span>
-                <span className="font-mono text-focus">{activeFacility.dateBorrowed}</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
-                <span className="text-muted-fg">Maturity Due Date:</span>
-                <span className="font-mono text-focus">{activeFacility.dueDate}</span>
-              </div>
-            </div>
-
-            {activeFacility.notes && (
-              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-muted-fg mt-3">
-                <strong className="text-focus font-semibold block mb-0.5">Agreement Notes:</strong>
-                {activeFacility.notes}
-              </div>
-            )}
-          </div>
-
-          {/* Right 3 Columns: Full Width Payment History & Schedule Table */}
-          <div className="lg:col-span-3 bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Coins className="h-4 w-4 text-emerald-600" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-focus">
-                  Payment Schedule & History ({filteredHistoryPayments.length})
-                </h3>
-              </div>
-
-              {/* Payment Search Bar (filter dates or remarks) */}
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-fg pointer-events-none" />
-                <Input
-                  type="text"
-                  value={historySearchQuery}
-                  onChange={(e) => setHistorySearchQuery(e.target.value)}
-                  placeholder="Search dates or remarks..."
-                  className="pl-9 pr-8 h-9 text-xs rounded-xl bg-slate-50 border-stroke/60 focus:bg-white"
-                />
-                {historySearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setHistorySearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus text-xs p-0.5 cursor-pointer"
-                    title="Clear search"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Payment Schedule & History Table or Empty State */}
-            {(activeFacility.dailyPayments || []).length === 0 ? (
-              <div className="py-16 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-center">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-3 text-emerald-600 shadow-2xs">
-                  <Coins className="w-7 h-7" />
-                </div>
-                <h4 className="text-sm font-bold text-focus">No Payments Recorded Yet</h4>
-                <p className="text-xs text-muted-fg max-w-md mt-1 mb-4 leading-relaxed">
-                  This borrower has not started paying yet. All recorded payment transactions, dates, amounts, and receipt references will appear here as a payment log.
-                </p>
-                {!isAudit && activeFacility.remainingBalance > 0 && (
-                  <Button
-                    type="button"
-                    onClick={(e) => handleOpenPaymentModal(activeFacility, e)}
-                    className="h-9 px-4 rounded-xl font-semibold text-xs bg-focus hover:bg-focus/90 text-white flex items-center gap-2 cursor-pointer shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Record Payment</span>
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <>
-                {/* Ledger Table (Paginated to up to 5 rows) */}
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
-                      <tr>
-                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Tx Ref No.</th>
-                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Payment Date</th>
-                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Status</th>
-                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Amount Paid</th>
-                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Method</th>
-                        <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Receipt / Ref No.</th>
-                        <th className="py-2.5 px-3.5 text-left">Remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {paginatedHistoryPayments.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="py-12 text-center text-muted-fg text-xs">
-                            <div className="flex flex-col items-center justify-center">
-                              <Coins className="w-6 h-6 text-muted-fg/40 mb-2" />
-                              <p className="font-semibold text-focus">
-                                No payment records matching &quot;{historySearchQuery}&quot;
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : (
-                        paginatedHistoryPayments.map((p) => {
-                          const isPartial = p.status === 'Partial' || p.status === 'Partially Paid'
-                          const txRef = p.transactionRefNo || p.transaction_ref_no || (p.id?.startsWith('dp-') ? p.id : `TX-${p.id}`)
-                          return (
-                            <tr
-                              key={p.id}
-                              className={cn(
-                                'hover:bg-slate-50/70 transition-colors',
-                                isPartial && 'bg-amber-50/20'
-                              )}
-                            >
-                              <td className="py-2.5 px-3.5 font-mono text-[11px] font-semibold text-focus whitespace-nowrap">
-                                <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
-                                  {txRef}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap font-medium">
-                                {p.date}
-                              </td>
-                              <td className="py-2.5 px-3.5 whitespace-nowrap">
-                                {isPartial ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                    <span>Partially Paid</span>
-                                  </span>
-                                ) : (p.is_late || p.isLate || (p.status && p.status.includes('Late'))) ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                    <AlertCircle className="w-2.5 h-2.5 text-rose-600" />
-                                    <span>{p.status || `Paid Late (${p.days_late || p.daysLate || ''}d)`}</span>
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                    <span>{p.status || 'Paid'}</span>
-                                  </span>
-                                )}
-                              </td>
-                              <td className={cn(
-                                'py-2.5 px-3.5 font-bold whitespace-nowrap',
-                                isPartial ? 'text-amber-700' : 'text-emerald-600'
-                              )}>
-                                <div>{formatPHP(p.amount)}</div>
-                                {Boolean(p.penalty || p.penalty_portion) && (
-                                  <div className="text-[10px] text-rose-600 font-medium">
-                                    +{formatPHP(p.penalty || p.penalty_portion || 0)} penalty
-                                  </div>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-3.5 text-focus whitespace-nowrap">
-                                {p.method || 'Cash'}
-                              </td>
-                              <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap">
-                                {p.referenceNo || '-'}
-                              </td>
-                              <td className="py-2.5 px-3.5 text-muted-fg truncate max-w-[240px]" title={p.notes || '-'}>
-                                {p.notes || '-'}
-                              </td>
-                            </tr>
-                          )
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Payment Schedule & History Pagination Footer (up to 5 rows per page) */}
-                <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
-                  <span className="font-medium text-focus/80">
-                    {filteredHistoryPayments.length === 0
-                      ? 'Showing 0 of 0 records'
-                      : `Showing ${historyStartIndex + 1}-${historyEndIndex} of ${filteredHistoryPayments.length} records`}
-                  </span>
-
-                  <div className="flex items-center gap-2 self-end sm:self-auto">
-                    <span className="text-xs text-muted-fg italic">
-                      Page {safeHistoryPage} out of {historyTotalPages}
-                    </span>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={safeHistoryPage <= 1}
-                      onClick={() => setHistoryCurrentPage((p) => Math.max(1, p - 1))}
-                      className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                      aria-label="Previous history page"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={safeHistoryPage >= historyTotalPages}
-                      onClick={() => setHistoryCurrentPage((p) => Math.min(historyTotalPages, p + 1))}
-                      className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                      aria-label="Next history page"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
+        {/* Two Section Layout: Terms & Financial Receipt (Left) & Complete Schedule Ledger (Right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+          {/* Left Column: Loan Agreement & Terms Styled Like a Financial Receipt */}
+          <div className="lg:col-span-5 xl:col-span-4 bg-white border border-slate-200/90 rounded-2xl p-5 shadow-2xs flex flex-col justify-between h-full">
+            {/* Main Receipt Content with tight, natural receipt layout */}
+            <div className="space-y-3.5">
+              {/* Receipt Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-dashed border-slate-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-focus">
+                    <Receipt className="w-4 h-4 text-focus" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-focus">
+                      Loan Agreement & Terms
+                    </h3>
+                    <span className="text-[10px] text-muted-fg font-medium">Official Agreement Receipt</span>
                   </div>
                 </div>
-              </>
-            )}
+                <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-semibold border border-slate-200">
+                  {activeFacility.loanRefNo || activeFacility.borrower_ref_no || activeFacility.borrowerRefNo || `LN-${activeFacility.loanId || activeFacility.id}`}
+                </span>
+              </div>
+
+              {/* Terms & Schedule Parameters */}
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between items-center py-1 border-b border-slate-100/70">
+                  <span className="text-muted-fg">Date Borrowed:</span>
+                  <span className="font-mono text-focus">{activeFacility.dateBorrowed}</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-muted-fg">Maturity Due Date:</span>
+                  <span className="font-mono text-focus">{activeFacility.dueDate}</span>
+                </div>
+              </div>
+
+              {/* Dashed Perforation */}
+              <div className="border-t border-dashed border-slate-200" />
+
+              {/* Financial Breakdown (Distinguishing Interest from Penalty Fees) */}
+              <div className="space-y-1.5 text-xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-fg mb-1">
+                  Financial Breakdown
+                </div>
+
+                {/* Principal Amount */}
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-muted-fg">Principal Amount:</span>
+                  <span className="font-mono font-bold text-focus">{formatPHP(activeFacility.loanAmount)}</span>
+                </div>
+
+                {/* Interest Rate & Contractual Interest Amount */}
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-muted-fg">Interest Rate ({activeFacility.interestRate}%):</span>
+                  <span className="font-mono font-bold text-focus">+{formatPHP(calculatedInterest)}</span>
+                </div>
+
+                {/* Penalty Fees (Distinguished from Interest) */}
+                <div className="flex justify-between items-center py-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-fg">Penalty Fees:</span>
+                    {facilityPenalties > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-50 text-rose-700 font-bold border border-rose-200">
+                        Late Overdue
+                      </span>
+                    )}
+                  </div>
+                  <span className={cn(
+                    'font-mono font-bold',
+                    facilityPenalties > 0 ? 'text-rose-600' : 'text-slate-400 font-normal'
+                  )}>
+                    {facilityPenalties > 0 ? `+${formatPHP(facilityPenalties)}` : '₱0.00'}
+                  </span>
+                </div>
+
+                {/* Total Payable */}
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-center font-bold text-sm">
+                  <span className="text-focus">Total Payable:</span>
+                  <span className="font-mono text-focus">{formatPHP(activeFacility.totalAmountPayable)}</span>
+                </div>
+              </div>
+
+              {/* Dashed Perforation */}
+              <div className="border-t border-dashed border-slate-200" />
+
+              {/* Collections & Balances */}
+              <div className="space-y-2 text-xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-fg mb-1">
+                  Collections & Balances
+                </div>
+
+                {/* Amount Paid */}
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-muted-fg">Amount Paid:</span>
+                  <span className="font-mono font-bold text-emerald-600">{formatPHP(activeFacility.amountPaid)}</span>
+                </div>
+
+                {/* Remaining Balance Receipt Box */}
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+                  <div>
+                    <span className="text-xs font-bold text-focus block">Remaining Balance</span>
+                    <span className="text-[10px] text-muted-fg">Balance to complete</span>
+                  </div>
+                  <span className={cn(
+                    'text-base font-mono font-extrabold',
+                    activeFacility.remainingBalance <= 0 ? 'text-emerald-600' : 'text-amber-600'
+                  )}>
+                    {formatPHP(activeFacility.remainingBalance)}
+                  </span>
+                </div>
+
+                {/* Installment Target Receipt Box */}
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+                  <div>
+                    <span className="text-xs font-bold text-focus block">Installment Target</span>
+                    <span className="text-[10px] text-muted-fg">
+                      Per {activeFacility.paymentFrequency === 'Daily' ? 'day' : 'month'}
+                    </span>
+                  </div>
+                  <span className="text-sm font-mono font-bold text-focus">
+                    {formatPHP(installmentTargetAmount)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Agreement Notes (if any) */}
+              {activeFacility.notes && (
+                <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-muted-fg">
+                  <strong className="text-focus font-semibold block mb-0.5 text-[11px]">Agreement Notes:</strong>
+                  {activeFacility.notes}
+                </div>
+              )}
+            </div>
+
+            {/* Receipt Footer Note */}
+            <div className="pt-3 text-center text-[10px] text-muted-fg/70 uppercase tracking-widest font-mono border-t border-dashed border-slate-200 mt-4">
+              *** Official Loan Record ***
+            </div>
+          </div>
+
+          {/* Right Column: Full Width Payment History & Schedule Table */}
+          <div className="lg:col-span-7 xl:col-span-8 bg-white border border-stroke/60 rounded-2xl p-5 shadow-2xs flex flex-col justify-between h-full">
+            <div className="flex-1 flex flex-col space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Coins className="h-4 w-4 text-emerald-600" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-focus">
+                    Payment Schedule & History ({filteredHistoryPayments.length})
+                  </h3>
+                </div>
+
+                {/* Payment Search Bar (filter dates or remarks) */}
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-fg pointer-events-none" />
+                  <Input
+                    type="text"
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    placeholder="Search dates or remarks..."
+                    className="pl-9 pr-8 h-9 text-xs rounded-xl bg-slate-50 border-stroke/60 focus:bg-white"
+                  />
+                  {historySearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setHistorySearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-fg hover:text-focus text-xs p-0.5 cursor-pointer"
+                      title="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Payment Schedule & History Table or Empty State */}
+              <div className="flex-1 flex flex-col">
+                {(activeFacility.dailyPayments || []).length === 0 ? (
+                  <div className="flex-1 py-12 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-3 text-emerald-600 shadow-2xs">
+                      <Coins className="w-7 h-7" />
+                    </div>
+                    <h4 className="text-sm font-bold text-focus">No Payments Recorded Yet</h4>
+                    <p className="text-xs text-muted-fg max-w-md mt-1 mb-4 leading-relaxed">
+                      This borrower has not started paying yet. All recorded payment transactions, dates, amounts, and receipt references will appear here as a payment log.
+                    </p>
+                    {!isAudit && activeFacility.remainingBalance > 0 && (
+                      <Button
+                        type="button"
+                        onClick={(e) => handleOpenPaymentModal(activeFacility, e)}
+                        className="h-9 px-4 rounded-xl font-semibold text-xs bg-focus hover:bg-focus/90 text-white flex items-center gap-2 cursor-pointer shadow-2xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Record Payment</span>
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 flex-1">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
+                        <tr>
+                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Tx Ref No.</th>
+                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Payment Date</th>
+                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Status</th>
+                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Amount Paid</th>
+                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Method</th>
+                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Receipt / Ref No.</th>
+                          <th className="py-2.5 px-3.5 text-left">Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {paginatedHistoryPayments.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-12 text-center text-muted-fg text-xs">
+                              <div className="flex flex-col items-center justify-center">
+                                <Coins className="w-6 h-6 text-muted-fg/40 mb-2" />
+                                <p className="font-semibold text-focus">
+                                  No payment records matching &quot;{historySearchQuery}&quot;
+                                </p>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedHistoryPayments.map((p) => {
+                            const isPartial = p.status === 'Partial' || p.status === 'Partially Paid'
+                            const txRef = p.transactionRefNo || p.transaction_ref_no || (p.id?.startsWith('dp-') ? p.id : `TX-${p.id}`)
+                            return (
+                              <tr
+                                key={p.id}
+                                className={cn(
+                                  'hover:bg-slate-50/70 transition-colors',
+                                  isPartial && 'bg-amber-50/20'
+                                )}
+                              >
+                                <td className="py-2.5 px-3.5 font-mono text-[11px] font-semibold text-focus whitespace-nowrap">
+                                  <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
+                                    {txRef}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap font-medium">
+                                  {p.date}
+                                </td>
+                                <td className="py-2.5 px-3.5 whitespace-nowrap">
+                                  {isPartial ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                      <span>Partially Paid</span>
+                                    </span>
+                                  ) : (p.is_late || p.isLate || (p.status && p.status.includes('Late'))) ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                      <AlertCircle className="w-2.5 h-2.5 text-rose-600" />
+                                      <span>{p.status || `Paid Late (${p.days_late || p.daysLate || ''}d)`}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                      <span>{p.status || 'Paid'}</span>
+                                    </span>
+                                  )}
+                                </td>
+                                <td className={cn(
+                                  'py-2.5 px-3.5 font-bold whitespace-nowrap',
+                                  isPartial ? 'text-amber-700' : 'text-emerald-600'
+                                )}>
+                                  <div>{formatPHP(p.amount)}</div>
+                                  {Boolean(p.penalty || p.penalty_portion) && (
+                                    <div className="text-[10px] text-rose-600 font-medium">
+                                      +{formatPHP(p.penalty || p.penalty_portion || 0)} penalty
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3.5 text-focus whitespace-nowrap">
+                                  {p.method || 'Cash'}
+                                </td>
+                                <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap">
+                                  {p.referenceNo || '-'}
+                                </td>
+                                <td className="py-2.5 px-3.5 text-muted-fg truncate max-w-[240px]" title={p.notes || '-'}>
+                                  {p.notes || '-'}
+                                </td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Payment Schedule & History Pagination Footer (Always Anchored at Bottom) */}
+            <div className="pt-4 mt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-fg">
+              <span className="font-medium text-focus/80">
+                {filteredHistoryPayments.length === 0
+                  ? 'Showing 0-0 of 0 records'
+                  : `Showing ${historyStartIndex + 1}-${historyEndIndex} of ${filteredHistoryPayments.length} records`}
+              </span>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <span className="text-xs text-muted-fg font-medium">
+                  Page {safeHistoryPage} out of {historyTotalPages}
+                </span>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeHistoryPage <= 1}
+                  onClick={() => setHistoryCurrentPage((p) => Math.max(1, p - 1))}
+                  className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  aria-label="Previous history page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeHistoryPage >= historyTotalPages}
+                  onClick={() => setHistoryCurrentPage((p) => Math.min(historyTotalPages, p + 1))}
+                  className="h-8 w-8 p-0 flex items-center justify-center rounded-lg border-slate-200 text-focus hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  aria-label="Next history page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2388,19 +2429,6 @@ export const LendingPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Date Settlement Alert if already paid */}
-                {isDateAlreadySettled && (
-                  <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl space-y-1 text-xs text-amber-900">
-                    <div className="flex items-center gap-1.5 font-bold text-amber-800">
-                      <Lock className="w-4 h-4 shrink-0 text-amber-600" />
-                      <span>Date Already Settled ({targetInstallmentDate})</span>
-                    </div>
-                    <p className="text-[11px] text-amber-700 leading-relaxed">
-                      Full installment payment for this calendar date has already been recorded and locked. Please select an unpaid or partially paid date from the calendar on the left.
-                    </p>
-                  </div>
-                )}
-
                 {/* Two-Column Layout: Left = Calendar, Right = Payment Fields */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                   {/* Left Column: Interactive Calendar Date Picker */}
@@ -2578,6 +2606,36 @@ export const LendingPage: React.FC = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Late Penalty Banner if late (Placed below calendar) */}
+                    {isLatePayment && (
+                      <div className="p-3 bg-rose-50/90 border border-rose-200 rounded-xl space-y-1.5 text-xs text-rose-900">
+                        <div className="flex items-center justify-between font-bold text-rose-800">
+                          <span className="flex items-center gap-1">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                            5% Late Payment Penalty
+                          </span>
+                          <span>+{formatPHP(calculatedPenalty)}</span>
+                        </div>
+                        <div className="text-[11px] text-rose-700 flex justify-between items-center">
+                          <span>Overdue penalty ({calculatedDaysLate} day{calculatedDaysLate > 1 ? 's' : ''}):</span>
+                          <span>{formatPHP(periodRemainingDue)} target × 5% × {calculatedDaysLate}</span>
+                        </div>
+                        <div className="pt-1.5 border-t border-rose-200/80 flex items-center justify-between font-bold text-xs text-focus">
+                          <span>Total to Pay for this date:</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-700 text-sm">{formatPHP(periodRemainingDue + calculatedPenalty)}</span>
+                            <button
+                              type="button"
+                              onClick={() => setPaymentForm({ ...paymentForm, paymentAmount: String(periodRemainingDue + calculatedPenalty) })}
+                              className="text-[10px] bg-white border border-rose-300 text-rose-800 px-2 py-0.5 rounded-lg hover:bg-rose-50 cursor-pointer font-semibold shadow-2xs"
+                            >
+                              Apply Total
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Right Column: Payment Amount, Payment Method, Receipt No., Remarks/Notes */}
@@ -2616,36 +2674,6 @@ export const LendingPage: React.FC = () => {
                         Enter actual cash collection date. If paid on time in the field, this removes late penalties.
                       </p>
                     </div>
-
-                    {/* Late Penalty Banner if late */}
-                    {isLatePayment && (
-                      <div className="p-3 bg-rose-50/90 border border-rose-200 rounded-xl space-y-1.5 text-xs text-rose-900">
-                        <div className="flex items-center justify-between font-bold text-rose-800">
-                          <span className="flex items-center gap-1">
-                            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                            5% Late Payment Penalty
-                          </span>
-                          <span>+{formatPHP(calculatedPenalty)}</span>
-                        </div>
-                        <div className="text-[11px] text-rose-700 flex justify-between items-center">
-                          <span>Overdue penalty ({calculatedDaysLate} day{calculatedDaysLate > 1 ? 's' : ''}):</span>
-                          <span>{formatPHP(periodRemainingDue)} target × 5% × {calculatedDaysLate}</span>
-                        </div>
-                        <div className="pt-1.5 border-t border-rose-200/80 flex items-center justify-between font-bold text-xs text-focus">
-                          <span>Total to Pay for this date:</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-emerald-700 text-sm">{formatPHP(periodRemainingDue + calculatedPenalty)}</span>
-                            <button
-                              type="button"
-                              onClick={() => setPaymentForm({ ...paymentForm, paymentAmount: String(periodRemainingDue + calculatedPenalty) })}
-                              className="text-[10px] bg-white border border-rose-300 text-rose-800 px-2 py-0.5 rounded-lg hover:bg-rose-50 cursor-pointer font-semibold shadow-2xs"
-                            >
-                              Apply Total
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
                     {/* Payment Amount Input */}
                     <div>

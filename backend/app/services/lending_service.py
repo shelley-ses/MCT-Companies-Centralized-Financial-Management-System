@@ -595,7 +595,12 @@ class LendingService:
         return json.dumps(data)
 
     @classmethod
-    def get_borrowers(cls, db: Session, borrower_query: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_borrowers(
+        cls,
+        db: Session,
+        borrower_query: Optional[str] = None,
+        company_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Retrieve borrowers with calculated summary balances, accrued penalties, and schedules."""
         b_query = db.query(Borrower)
         if borrower_query and str(borrower_query).strip():
@@ -689,6 +694,21 @@ class LendingService:
                     derived_status = "Overdue"
                 else:
                     derived_status = b.status or "Active"
+
+                # Synchronize borrower persistent columns in Supabase
+                if (
+                    b.total_penalties != total_penalties
+                    or b.amount_paid != total_paid
+                    or b.total_payable != total_payable_with_penalties
+                    or b.remaining_balance != remaining_balance
+                    or b.status != derived_status
+                ):
+                    b.total_penalties = total_penalties
+                    b.amount_paid = total_paid
+                    b.total_payable = total_payable_with_penalties
+                    b.remaining_balance = remaining_balance
+                    b.status = derived_status
+                    db.commit()
 
                 results.append({
                     "id": str(b.borrower_id),
@@ -1106,6 +1126,9 @@ class LendingService:
             principal_amount=p,
             interest_rate=Decimal(str(terms["interest_rate"])),
             total_payable=Decimal(str(terms["total_payable"])),
+            total_penalties=Decimal("0.00"),
+            amount_paid=Decimal("0.00"),
+            remaining_balance=Decimal(str(terms["total_payable"])),
             payment_frequency=freq,
             term_days=term_days,
             date_borrowed=start,
@@ -1397,13 +1420,19 @@ class LendingService:
                     if prev_cycle_due == target_cycle_due and prev_tx.status == "Partially Paid":
                         prev_tx.status = "Completed"
 
-            # 5. Update borrower status if fully paid
-            updated_remaining = remaining_before - payment_amount
-            if updated_remaining <= Decimal("0.00"):
+            # 5. Update borrower status and persistent ledger totals
+            b.amount_paid = total_paid_before + payment_amount
+            b.total_penalties = total_penalties
+            b.total_payable = total_payable_with_penalties
+            b.remaining_balance = rem_bal
+            if rem_bal <= Decimal("0.00"):
                 b.status = "Fully Paid"
+            elif is_late:
+                b.status = "Overdue"
 
             db.commit()
             db.refresh(new_tx)
+            db.refresh(b)
 
             return {
                 "transaction_id": new_tx.transaction_id,
@@ -1419,7 +1448,7 @@ class LendingService:
                 "days_late": days_late,
                 "amount": float(payment_amount),
                 "penalty_portion": float(penalty_portion),
-                "remaining_balance": float(updated_remaining),
+                "remaining_balance": float(rem_bal),
                 "status": tx_out_status,
                 "payment_method": new_tx.payment_method,
                 "reference_no": ref_clean or "",
