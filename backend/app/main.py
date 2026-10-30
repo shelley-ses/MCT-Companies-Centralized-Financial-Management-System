@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.router import api_router
+from app.core.websocket import ws_manager
+from app.core.errors import validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -9,6 +12,9 @@ app = FastAPI(
     description="Centralized financial management system backend for MCT Companies.",
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+# Validation errors never echo the submitted values back (see app/core/errors.py)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 # CORS Middleware setup
 app.add_middleware(
@@ -19,8 +25,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Real-time WebSocket endpoint for instant multi-tab sync
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except (WebSocketDisconnect, Exception):
+        ws_manager.disconnect(websocket)
+
 # Include API Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+@app.on_event("startup")
+def on_startup():
+    from app.db.session import init_db
+    init_db()
 
 @app.get("/", tags=["Root"])
 def root():
@@ -33,3 +56,5 @@ def root():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT, reload=True)
+
+

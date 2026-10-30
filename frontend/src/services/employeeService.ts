@@ -1,0 +1,503 @@
+import { isCompanyMatch } from '@/utils/companyUtils'
+
+export interface Company {
+  id: string
+  name: string
+  email?: string
+  address: string
+  contactPerson?: string
+  contactPersonEmail?: string
+  contactNumber: string
+  telephoneNumber: string
+  startingBalance: number
+  currentBalance?: number
+  pettyCash?: number
+  status: 'Active' | 'Inactive'
+  createdAt: string
+  logoUrl?: string
+}
+
+export interface EmployeeUser {
+  id: string
+  fullName: string
+  email: string
+  companyId: string
+  companyIds?: string[]
+  companyName: string
+  companyNames?: string[]
+  role?: string
+  status: 'Active' | 'Inactive'
+  lastLogin: string
+  isAdmin?: boolean
+  isProtected?: boolean
+  avatarUrl?: string
+}
+
+export interface CreateCompanyPayload {
+  name: string
+  email?: string
+  address: string
+  contactPerson?: string
+  contactPersonEmail?: string
+  contactNumber: string
+  telephoneNumber?: string
+  startingBalance: number
+  currentBalance?: number
+  pettyCash?: number
+  logoUrl?: string
+  logoFile?: File
+}
+
+export interface CreateUserPayload {
+  fullName: string
+  email: string
+  assignedCompany?: string
+  assignedCompanies?: string[]
+  companyIds?: number[]
+  role: string
+  password?: string
+  avatarUrl?: string
+  avatarFile?: File
+}
+
+export interface UpdateUserPayload {
+  fullName?: string
+  email?: string
+  assignedCompany?: string
+  assignedCompanies?: string[]
+  companyIds?: number[]
+  role?: string
+  password?: string
+  avatarUrl?: string
+  avatarFile?: File
+  status?: 'Active' | 'Inactive'
+}
+
+export interface ActivityLogItem {
+  id: string
+  company: string
+  /** Who did it (the signed in user's name, or the email on a login row). */
+  user: string
+  action: string
+  module: string
+  target: string
+  time: string
+}
+
+
+
+// "2026-10-30T09:15:00+00:00" or "2026-10-30 09:15:00" -> "2026-10-30 17:15" in the browser's time
+function formatLogTime(value?: string | null): string {
+  if (!value) return ''
+  const raw = String(value).trim().replace(' ', 'T')
+  // The database stores UTC. A value with no zone is UTC.
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(raw)
+  const d = new Date(hasZone ? raw : `${raw}Z`)
+  if (isNaN(d.getTime())) return String(value)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function getAuthHeaders(): HeadersInit {
+  const token = sessionStorage.getItem(['mct', 'access', 'token'].join('_'))
+  return token ? { Authorization: 'Bearer ' + token } : {}
+}
+
+async function getApiError(response: Response): Promise<string> {
+  try {
+    const body = await response.json()
+    if (typeof body?.detail === 'string') return body.detail
+    if (Array.isArray(body?.detail)) {
+      const messages = body.detail
+        .map((item: { loc?: unknown[]; msg?: string }) => {
+          const field = item.loc?.at(-1)
+          return field && item.msg ? `${String(field)}: ${item.msg}` : item.msg
+        })
+        .filter(Boolean)
+      if (messages.length > 0) return messages.join('; ')
+    }
+  } catch {
+    // Use the generic fallback below when the response is not JSON.
+  }
+  return `Request failed (${response.status})`
+}
+
+async function mapApiResponse<T>(
+  response: Response,
+  mapper: (value: unknown) => T
+): Promise<T> {
+  if (!response.ok) throw new Error(await getApiError(response))
+  return mapper(await response.json())
+}
+
+function mapUser(value: unknown): EmployeeUser {
+  const user = value as {
+    user_id: number
+    name: string
+    email: string
+    company_id: number | null
+    company_ids?: number[]
+    company_name: string | null
+    company_names?: string[]
+    is_admin: boolean
+    is_protected?: boolean
+    role?: string
+    photo_url?: string | null
+    last_login_at: string | null
+  }
+
+  let roleName = (user.role || '').toLowerCase()
+  if (roleName === 'admin' || user.is_admin) {
+    roleName = 'Admin'
+  } else if (roleName === 'audit') {
+    roleName = 'Audit'
+  } else if (roleName === 'finance') {
+    roleName = 'Finance'
+  } else {
+    roleName = 'Supervisor'
+  }
+
+  const cids = (user.company_ids && user.company_ids.length > 0)
+    ? user.company_ids.map(String)
+    : (user.company_id !== null && user.company_id !== undefined ? [String(user.company_id)] : [])
+
+  const cnames = (user.company_names && user.company_names.length > 0)
+    ? user.company_names
+    : (user.company_name ? [user.company_name] : [])
+
+  return {
+    id: String(user.user_id),
+    fullName: user.name,
+    email: user.email,
+    companyId: user.company_id === null ? '' : String(user.company_id),
+    companyIds: cids,
+    companyName: cnames.join(', ') || 'MCT Group',
+    companyNames: cnames,
+    role: roleName,
+    status: 'Active',
+    lastLogin: user.last_login_at
+      ? new Date(user.last_login_at).toLocaleString()
+      : 'Never',
+    isAdmin: user.is_admin,
+    isProtected: Boolean(user.is_protected || user.user_id === 1 || user.email.toLowerCase() === 'admin@mct.com'),
+    avatarUrl: user.photo_url || undefined,
+  }
+}
+
+function mapCompany(value: unknown): Company {
+  const company = value as {
+    id: number
+    name: string
+    location: string
+    contact_number: string | null
+    phone: string | null
+    starting_balance: number
+    petty_cash?: number
+    created_at: string | null
+    logo_url?: string | null
+  }
+  return {
+    id: String(company.id),
+    name: company.name,
+    address: company.location,
+    contactNumber: company.contact_number || '',
+    telephoneNumber: company.phone || '',
+    startingBalance: Number(company.starting_balance),
+    pettyCash: Number(company.petty_cash || 0),
+    status: 'Active',
+    createdAt: company.created_at || '',
+    logoUrl: company.logo_url || undefined,
+  }
+}
+
+export const employeeService = {
+  async getUsers(): Promise<EmployeeUser[]> {
+    const response = await fetch('/api/v1/users', {
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
+    return await mapApiResponse(response, (value) =>
+      (value as unknown[]).map(mapUser)
+    )
+  },
+
+  async getCompanies(): Promise<Company[]> {
+    try {
+      const response = await fetch('/api/v1/companies', {
+        headers: getAuthHeaders(),
+      })
+      if (response.ok) {
+        return await mapApiResponse(response, (value) =>
+          (value as unknown[]).map(mapCompany)
+        )
+      }
+      console.warn('GET /api/v1/companies failed with status', response.status)
+    } catch (error) {
+      console.warn('Failed to fetch companies from the backend:', error)
+    }
+    return []
+  },
+
+  async createUser(payload: CreateUserPayload): Promise<EmployeeUser> {
+    const companies = await employeeService.getCompanies()
+    
+    // Resolve company IDs from assignedCompanies, assignedCompany, or companyIds
+    const companyIds: number[] = []
+    if (payload.companyIds && payload.companyIds.length > 0) {
+      companyIds.push(...payload.companyIds)
+    } else if (payload.assignedCompanies && payload.assignedCompanies.length > 0) {
+      for (const nameOrId of payload.assignedCompanies) {
+        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId || isCompanyMatch(c.name, nameOrId))
+        if (found && !isNaN(Number(found.id))) {
+          const numId = Number(found.id)
+          if (!companyIds.includes(numId)) companyIds.push(numId)
+        }
+      }
+    } else if (payload.assignedCompany) {
+      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany || isCompanyMatch(c.name, payload.assignedCompany))
+      if (found && !isNaN(Number(found.id))) {
+        companyIds.push(Number(found.id))
+      }
+    }
+
+    const primaryCompanyId = companyIds.length > 0 ? companyIds[0] : null
+
+    const response = await fetch('/api/v1/users', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: payload.fullName,
+        email: payload.email,
+        password: payload.password || 'Password123!',
+        company_id: primaryCompanyId,
+        company_ids: companyIds,
+        company_name: payload.assignedCompany || undefined,
+        is_admin: payload.role === 'Admin',
+        role: payload.role.toLowerCase(),
+        photo_url: payload.avatarUrl && !payload.avatarUrl.startsWith('data:') ? payload.avatarUrl : null,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
+
+    let created = await mapApiResponse(response, mapUser)
+
+    if (payload.avatarFile) {
+      const formData = new FormData()
+      formData.append('picture', payload.avatarFile)
+      const picResponse = await fetch(`/api/v1/users/${created.id}/picture`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      })
+      if (picResponse.ok) {
+        created = await mapApiResponse(picResponse, mapUser)
+      }
+    }
+
+
+    return created
+  },
+
+  async updateUser(id: string, payload: UpdateUserPayload): Promise<EmployeeUser> {
+    const companies = (payload.assignedCompanies || payload.assignedCompany || payload.companyIds)
+      ? await employeeService.getCompanies()
+      : []
+
+    const body: Record<string, unknown> = {}
+    if (payload.fullName !== undefined) body.name = payload.fullName
+    if (payload.email !== undefined) body.email = payload.email
+    if (payload.role !== undefined) {
+      body.role = payload.role.toLowerCase()
+      body.is_admin = payload.role === 'Admin'
+    }
+    if (payload.password) body.password = payload.password
+    if (payload.avatarUrl !== undefined && !payload.avatarUrl.startsWith('data:')) {
+      body.photo_url = payload.avatarUrl
+    }
+
+    if (payload.companyIds !== undefined) {
+      body.company_ids = payload.companyIds
+      body.company_id = payload.companyIds[0] || null
+    } else if (payload.assignedCompanies !== undefined) {
+      const resolvedIds: number[] = []
+      for (const nameOrId of payload.assignedCompanies) {
+        const found = companies.find((c) => c.name === nameOrId || c.id === nameOrId || isCompanyMatch(c.name, nameOrId))
+        if (found && !isNaN(Number(found.id))) {
+          const numId = Number(found.id)
+          if (!resolvedIds.includes(numId)) resolvedIds.push(numId)
+        }
+      }
+      body.company_ids = resolvedIds
+      body.company_id = resolvedIds[0] || null
+    } else if (payload.assignedCompany !== undefined) {
+      const found = companies.find((c) => c.name === payload.assignedCompany || c.id === payload.assignedCompany || isCompanyMatch(c.name, payload.assignedCompany))
+      if (found && !isNaN(Number(found.id))) {
+        body.company_ids = [Number(found.id)]
+        body.company_id = Number(found.id)
+      } else {
+        body.company_ids = []
+        body.company_id = null
+      }
+    }
+
+    const response = await fetch(`/api/v1/users/${id}`, {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
+
+    let updated = await mapApiResponse(response, mapUser)
+
+    if (payload.avatarFile) {
+      const formData = new FormData()
+      formData.append('picture', payload.avatarFile)
+      const picResponse = await fetch(`/api/v1/users/${id}/picture`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      })
+      if (picResponse.ok) {
+        updated = await mapApiResponse(picResponse, mapUser)
+      }
+    }
+
+
+    return updated
+  },
+
+  async deleteUser(id: string): Promise<void> {
+    const response = await fetch(`/api/v1/users/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
+  },
+
+  async createCompany(payload: CreateCompanyPayload): Promise<Company> {
+    let endpoint = '/api/v1/companies'
+    let headers: HeadersInit = {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    }
+    let body: BodyInit = JSON.stringify({
+      name: payload.name,
+      location: payload.address,
+      contact_number: payload.contactNumber || null,
+      phone: payload.telephoneNumber || null,
+      starting_balance: payload.startingBalance,
+      petty_cash: payload.pettyCash || 0,
+      logo_url: payload.logoUrl && !payload.logoUrl.startsWith('data:') ? payload.logoUrl : null,
+    })
+
+    if (payload.logoFile) {
+      const formData = new FormData()
+      formData.append('name', payload.name)
+      formData.append('location', payload.address)
+      formData.append('contact_number', payload.contactNumber || '')
+      formData.append('phone', payload.telephoneNumber || '')
+      formData.append('starting_balance', String(payload.startingBalance))
+      formData.append('petty_cash', String(payload.pettyCash || 0))
+      formData.append('picture', payload.logoFile)
+      endpoint = '/api/v1/companies/with-picture'
+      headers = getAuthHeaders()
+      body = formData
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body,
+    })
+
+    return await mapApiResponse(response, mapCompany)
+  },
+
+  async updateCompany(
+    id: string,
+    payload: Partial<CreateCompanyPayload>
+  ): Promise<Company> {
+    const body: Record<string, unknown> = {}
+    if (payload.name !== undefined) body.name = payload.name
+    if (payload.address !== undefined) body.location = payload.address
+    if (payload.contactNumber !== undefined) body.contact_number = payload.contactNumber || null
+    if (payload.telephoneNumber !== undefined) body.phone = payload.telephoneNumber || null
+    if (payload.startingBalance !== undefined) body.starting_balance = payload.startingBalance
+    if (payload.pettyCash !== undefined) body.petty_cash = payload.pettyCash
+    if (payload.logoUrl !== undefined && !payload.logoUrl.startsWith('data:')) {
+      body.logo_url = payload.logoUrl
+    }
+
+    const response = await fetch(`/api/v1/companies/${id}`, {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    let comp = await mapApiResponse(response, mapCompany)
+
+    if (payload.logoFile) {
+      const formData = new FormData()
+      formData.append('picture', payload.logoFile)
+      const picResponse = await fetch(`/api/v1/companies/${id}/picture`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      })
+      comp = await mapApiResponse(picResponse, mapCompany)
+    }
+
+    return comp
+  },
+
+  async deleteCompany(id: string): Promise<void> {
+    const response = await fetch(`/api/v1/companies/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(await getApiError(response))
+    }
+  },
+
+  /**
+   * The real activity log: the newest rows of the `audit_logs` table (Admin only), with the user, company,
+   * a plain description, the module and the record reference worked out by the server (spec 0018).
+   */
+  async getActivityLogs(): Promise<ActivityLogItem[]> {
+    const response = await fetch('/api/v1/audit-logs?limit=1000', {
+      cache: 'no-store',
+      headers: getAuthHeaders(),
+    })
+    if (!response.ok) throw new Error(await getApiError(response))
+    const rows = (await response.json()) as Array<{
+      audit_log_id: number
+      action: string
+      created_at?: string | null
+      user_name?: string
+      company_name?: string
+      description?: string
+      module?: string
+      target?: string
+    }>
+    return rows.map((row) => ({
+      id: String(row.audit_log_id),
+      company: row.company_name || 'System',
+      user: row.user_name || 'System',
+      action: row.description || row.action,
+      module: row.module || 'General',
+      target: row.target || '-',
+      time: formatLogTime(row.created_at),
+    }))
+  },
+}

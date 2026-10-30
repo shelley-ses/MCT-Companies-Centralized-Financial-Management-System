@@ -1,0 +1,276 @@
+import * as React from 'react'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { AppShell } from '@/components/layout/AppShell'
+import {
+  ProtectedRoute,
+  PublicOnlyRoute,
+  AdminOnlyRoute,
+  FinanceOnlyRoute,
+  LendingRouteGuard,
+  TenantRouteGuard,
+  SalesRouteGuard,
+} from '@/components/layout/RouteGuards'
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[60vh] w-full items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <span className="text-xs font-medium text-muted-fg animate-pulse">Loading...</span>
+      </div>
+    </div>
+  )
+}
+
+function lazyPage<P = any>(
+  importer: () => Promise<{ [key: string]: any }>,
+  name: string
+) {
+  const LazyComponent = React.lazy(() =>
+    importer().then((m) => ({ default: m[name] }))
+  )
+  return function Wrapped(props: P & React.JSX.IntrinsicAttributes) {
+    return (
+      <React.Suspense fallback={<PageFallback />}>
+        <LazyComponent {...(props as any)} />
+      </React.Suspense>
+    )
+  }
+}
+
+// Lazy-loaded routes for code-splitting
+const LandingPage = lazyPage(() => import('@/pages/LandingPage'), 'LandingPage')
+const LoginPage = lazyPage(() => import('@/pages/LoginPage'), 'LoginPage')
+const DashboardPage = lazyPage(() => import('@/pages/DashboardPage'), 'DashboardPage')
+const SalesPage = lazyPage(() => import('@/pages/SalesPage'), 'SalesPage')
+const ExpensePage = lazyPage(() => import('@/pages/ExpensePage'), 'ExpensePage')
+const LoanPage = lazyPage(() => import('@/pages/LoanPage'), 'LoanPage')
+const LendingPage = lazyPage(() => import('@/pages/LendingPage'), 'LendingPage')
+const TenantPage = lazyPage(() => import('@/pages/TenantPage'), 'TenantPage')
+const BankManagementPage = lazyPage(() => import('@/pages/BankManagementPage'), 'BankManagementPage')
+const BillsPage = lazyPage(() => import('@/pages/BillsPage'), 'BillsPage')
+const PettyCashPage = lazyPage(() => import('@/pages/PettyCashPage'), 'PettyCashPage')
+const TransactionPage = lazyPage(() => import('@/pages/TransactionPage'), 'TransactionPage')
+const EmployeePage = lazyPage(() => import('@/pages/EmployeePage'), 'EmployeePage')
+const UserManagementPage = lazyPage(() => import('@/pages/UserManagementPage'), 'UserManagementPage')
+const ActivityLogPage = lazyPage(() => import('@/pages/ActivityLogPage'), 'ActivityLogPage')
+const SettingsPage = lazyPage(() => import('@/pages/SettingsPage'), 'SettingsPage')
+const AddTransactionSheetPage = lazyPage(
+  () => import('@/pages/AddTransactionSheetPage'),
+  'AddTransactionSheetPage'
+)
+const CentralizedAuthPage = lazyPage(
+  () => import('@/pages/CentralizedAuthPage'),
+  'CentralizedAuthPage'
+)
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <LandingPage />,
+  },
+  // Finance Centralized Company Selector & Hub (Strictly Finance only)
+  {
+    path: '/centralized-auth',
+    element: (
+      <FinanceOnlyRoute>
+        <CentralizedAuthPage />
+      </FinanceOnlyRoute>
+    ),
+  },
+  {
+    path: '/finance/centralized-auth',
+    element: <Navigate to="/centralized-auth" replace />,
+  },
+  {
+    path: '/choose-company',
+    element: <Navigate to="/centralized-auth" replace />,
+  },
+  // Public Only routes (authenticated users redirected to /dashboard)
+  {
+    path: '/login',
+    element: (
+      <PublicOnlyRoute>
+        <LoginPage />
+      </PublicOnlyRoute>
+    ),
+  },
+  {
+    path: '/forgot-password',
+    element: (
+      <PublicOnlyRoute>
+        <LoginPage />
+      </PublicOnlyRoute>
+    ),
+  },
+  {
+    path: '/verify-2fa',
+    element: (
+      <PublicOnlyRoute>
+        <LoginPage />
+      </PublicOnlyRoute>
+    ),
+  },
+  // Authenticated Persistent App Shell layout route
+  // Using AppShell as a layout route keeps the sidebar and header mounted,
+  // preventing layout destruction and enabling instantaneous page navigation.
+  {
+    element: (
+      <ProtectedRoute>
+        <AppShell />
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        path: '/dashboard',
+        element: <DashboardPage />,
+      },
+      // Sales routes
+      {
+        path: '/sales',
+        element: (
+          <SalesRouteGuard>
+            <SalesPage />
+          </SalesRouteGuard>
+        ),
+      },
+      {
+        path: '/sales/daily',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/quarterly',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/monthly',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/annual',
+        element: <Navigate to="/sales" replace />,
+      },
+      {
+        path: '/sales/add',
+        element: <AddTransactionSheetPage initialType="Sales" />,
+      },
+      // Expense routes
+      {
+        path: '/expense',
+        element: <ExpensePage />,
+      },
+      {
+        path: '/expense/add',
+        element: <AddTransactionSheetPage initialType="Expense" />,
+      },
+      // Loan routes
+      {
+        path: '/loan',
+        element: <LoanPage />,
+      },
+      {
+        path: '/loan/company',
+        element: <Navigate to="/loan" replace />,
+      },
+      {
+        path: '/loan/borrower',
+        element: <LoanPage initialType="Borrower" />,
+      },
+      {
+        path: '/loan/lender',
+        element: <LoanPage initialType="Lender" />,
+      },
+      {
+        path: '/lending',
+        element: (
+          <LendingRouteGuard>
+            <LendingPage />
+          </LendingRouteGuard>
+        ),
+      },
+      {
+        path: '/tenant',
+        element: (
+          <TenantRouteGuard>
+            <TenantPage />
+          </TenantRouteGuard>
+        ),
+      },
+      {
+        path: '/tenants',
+        element: <Navigate to="/tenant" replace />,
+      },
+      {
+        path: '/bank-management',
+        element: <BankManagementPage />,
+      },
+      // Operations & Management
+      {
+        path: '/petty-cash',
+        element: <PettyCashPage />,
+      },
+      {
+        path: '/bills',
+        element: <BillsPage />,
+      },
+      {
+        path: '/bills/:billId',
+        element: <BillsPage />,
+      },
+      {
+        path: '/loan/bills',
+        element: <Navigate to="/bills" replace />,
+      },
+      {
+        path: '/transaction',
+        element: <TransactionPage />,
+      },
+      {
+        path: '/transactions',
+        element: <Navigate to="/transaction" replace />,
+      },
+      {
+        path: '/employee',
+        element: (
+          <AdminOnlyRoute>
+            <EmployeePage />
+          </AdminOnlyRoute>
+        ),
+      },
+      {
+        path: '/users',
+        element: (
+          <AdminOnlyRoute>
+            <UserManagementPage />
+          </AdminOnlyRoute>
+        ),
+      },
+      {
+        path: '/user-management',
+        element: <Navigate to="/users" replace />,
+      },
+      {
+        path: '/activity-log',
+        element: (
+          <AdminOnlyRoute>
+            <ActivityLogPage />
+          </AdminOnlyRoute>
+        ),
+      },
+      {
+        path: '/activity',
+        element: <Navigate to="/activity-log" replace />,
+      },
+      {
+        path: '/settings',
+        element: <SettingsPage />,
+      },
+    ],
+  },
+  // Fallback
+  {
+    path: '*',
+    element: <Navigate to="/login" replace />,
+  },
+])
+
