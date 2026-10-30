@@ -683,8 +683,8 @@ class LendingService:
                     compliance_status = progress["complianceStatus"]
                     missed_cycles_count = progress["missedCyclesCount"]
 
-                total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
-                remaining_balance = max(Decimal("0.00"), total_payable_with_penalties - total_paid)
+                contractual_total_payable = Decimal(str(terms["total_payable"]))
+                remaining_balance = max(Decimal("0.00"), contractual_total_payable - total_paid)
 
                 today_iso = date.today().isoformat()
                 due_iso = b.due_date.isoformat() if b.due_date else ""
@@ -699,13 +699,13 @@ class LendingService:
                 if (
                     b.total_penalties != total_penalties
                     or b.amount_paid != total_paid
-                    or b.total_payable != total_payable_with_penalties
+                    or b.total_payable != contractual_total_payable
                     or b.remaining_balance != remaining_balance
                     or b.status != derived_status
                 ):
                     b.total_penalties = total_penalties
                     b.amount_paid = total_paid
-                    b.total_payable = total_payable_with_penalties
+                    b.total_payable = contractual_total_payable
                     b.remaining_balance = remaining_balance
                     b.status = derived_status
                     db.commit()
@@ -723,7 +723,7 @@ class LendingService:
                     "loanAmount": float(b.principal_amount),
                     "interestRate": float(terms["interest_rate"]),
                     "interestAmount": terms["interest"],
-                    "totalAmountPayable": float(total_payable_with_penalties),
+                    "totalAmountPayable": float(contractual_total_payable),
                     "amountPaid": float(total_paid),
                     "remainingBalance": float(remaining_balance),
                     "dateBorrowed": b.date_borrowed.isoformat() if b.date_borrowed else "",
@@ -814,8 +814,8 @@ class LendingService:
                 compliance_status = progress["complianceStatus"]
                 missed_cycles_count = progress["missedCyclesCount"]
 
-            total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
-            remaining_balance = max(Decimal("0.00"), total_payable_with_penalties - total_paid)
+            contractual_total_payable = Decimal(str(terms["total_payable"]))
+            remaining_balance = max(Decimal("0.00"), contractual_total_payable - total_paid)
 
             today_iso = date.today().isoformat()
             due_iso = loan.due_date.isoformat() if loan.due_date else ""
@@ -834,7 +834,7 @@ class LendingService:
                 "loanAmount": float(loan.principal_amount),
                 "interestRate": float(terms["interest_rate"]),
                 "interestAmount": terms["interest"],
-                "totalAmountPayable": float(total_payable_with_penalties),
+                "totalAmountPayable": float(contractual_total_payable),
                 "amountPaid": float(total_paid),
                 "remainingBalance": float(remaining_balance),
                 "dateBorrowed": loan.loan_date.isoformat() if loan.loan_date else "",
@@ -949,13 +949,13 @@ class LendingService:
                 compliance_status = monthly_progress["complianceStatus"]
                 missed_cycles_count = monthly_progress["missedCyclesCount"]
 
-                total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
+                contractual_total_payable = Decimal(str(terms["total_payable"]))
                 next_installment = cls.get_next_installment_info(
-                    b.date_borrowed, b.due_date, freq, total_payable_with_penalties, total_paid
+                    b.date_borrowed, b.due_date, freq, contractual_total_payable, total_paid
                 )
 
-            total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
-            remaining_balance = max(Decimal("0.00"), total_payable_with_penalties - total_paid)
+            contractual_total_payable = Decimal(str(terms["total_payable"]))
+            remaining_balance = max(Decimal("0.00"), contractual_total_payable - total_paid)
 
             return {
                 "borrower_id": str(b.borrower_id),
@@ -967,7 +967,7 @@ class LendingService:
                 "payment_frequency": freq,
                 "principal": float(b.principal_amount),
                 "interest_rate": float(terms["interest_rate"]),
-                "total_payable": float(total_payable_with_penalties),
+                "total_payable": float(contractual_total_payable),
                 "amount_paid": float(total_paid),
                 "remaining_balance": float(remaining_balance),
                 "date_borrowed": b.date_borrowed.isoformat() if b.date_borrowed else "",
@@ -1056,13 +1056,13 @@ class LendingService:
             compliance_status = monthly_progress["complianceStatus"]
             missed_cycles_count = monthly_progress["missedCyclesCount"]
 
-            total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
+            contractual_total_payable = Decimal(str(terms["total_payable"]))
             next_installment = cls.get_next_installment_info(
-                loan.loan_date, loan.due_date, freq, total_payable_with_penalties, total_paid
+                loan.loan_date, loan.due_date, freq, contractual_total_payable, total_paid
             )
 
-        total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
-        remaining_balance = max(Decimal("0.00"), total_payable_with_penalties - total_paid)
+        contractual_total_payable = Decimal(str(terms["total_payable"]))
+        remaining_balance = max(Decimal("0.00"), contractual_total_payable - total_paid)
 
         return {
             "borrower_id": str(loan.loan_id),
@@ -1072,7 +1072,7 @@ class LendingService:
             "payment_frequency": freq,
             "principal": float(loan.principal_amount),
             "interest_rate": float(terms["interest_rate"]),
-            "total_payable": float(total_payable_with_penalties),
+            "total_payable": float(contractual_total_payable),
             "amount_paid": float(total_paid),
             "remaining_balance": float(remaining_balance),
             "date_borrowed": loan.loan_date.isoformat() if loan.loan_date else "",
@@ -1343,9 +1343,15 @@ class LendingService:
                 is_late = True
                 days_late = max(1, (pay_date - target_cycle_due).days)
 
-            # Penalty is specified directly by user (or 0 if waived), NOT auto-calculated
+            # Penalty is specified directly by user (or 0 if waived), NOT auto-calculated.
+            # It can be 0.00 but can never be negative.
             if penalty_amount_val is not None:
                 penalty_portion = quantize(penalty_amount_val)
+                if penalty_portion < Decimal("0.00"):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Late payment charges can be 0.00 but can never be a negative value.",
+                    )
             else:
                 penalty_portion = Decimal("0.00")
 

@@ -118,3 +118,44 @@ def test_manual_penalty_not_deducted_from_total_payable():
     assert remaining_balance_after == 35100.0
     assert user_input_penalty != 0.0
 
+
+def test_negative_penalty_disallowed():
+    """
+    Verify that negative late payment charges are disallowed by Pydantic schema validation.
+    """
+    from pydantic import ValidationError
+    from app.schemas.lending import LendingPaymentCreateRequest, LendingTransactionCreateRequest
+
+    # Valid with 0.00
+    req_zero = LendingPaymentCreateRequest(
+        borrower_id=1,
+        payment_date="2026-10-30",
+        amount=Decimal("900.00"),
+        penalty_amount=Decimal("0.00"),
+    )
+    assert req_zero.penalty_amount == Decimal("0.00")
+
+    # Invalid with negative value
+    try:
+        LendingPaymentCreateRequest(
+            borrower_id=1,
+            payment_date="2026-10-30",
+            amount=Decimal("900.00"),
+            penalty_amount=Decimal("-50.00"),
+        )
+        assert False, "Should have raised ValidationError for negative penalty"
+    except ValidationError:
+        pass
+
+    try:
+        LendingTransactionCreateRequest(
+            borrower_id=1,
+            payment_date="2026-10-30",
+            amount=Decimal("900.00"),
+            penalty_amount=Decimal("-10.00"),
+        )
+        assert False, "Should have raised ValidationError for negative penalty"
+    except ValidationError:
+        pass
+
+

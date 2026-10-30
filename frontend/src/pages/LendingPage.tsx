@@ -21,6 +21,7 @@ import {
   Eye,
   Lock,
   Building2,
+  Loader2,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -64,8 +65,8 @@ type PeriodType = (typeof PERIOD_OPTIONS)[number]
 
 const COMPANY_NAME = 'FilCap Prime Holdings Corp.'
 
-const ITEMS_PER_PAGE = 10
-const HISTORY_ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 10 // Total no. of borrowers in table view
+const HISTORY_ITEMS_PER_PAGE = 9 // Total no. of payment records in payment history table
 
 interface PendingPaymentData {
   facilityId: string
@@ -176,6 +177,8 @@ export const LendingPage: React.FC = () => {
   const [editModalError, setEditModalError] = React.useState<string | null>(null)
   const [deleteModalError, setDeleteModalError] = React.useState<string | null>(null)
   const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false)
+  const [isCreatingBorrower, setIsCreatingBorrower] = React.useState(false)
+  const [isDeletingBorrower, setIsDeletingBorrower] = React.useState(false)
 
   // 3-dots actions menu state
   const [openMenuFacilityId, setOpenMenuFacilityId] = React.useState<string | null>(null)
@@ -562,6 +565,7 @@ export const LendingPage: React.FC = () => {
 
     const termDaysNum = parseInt(formData.termDays || (formData.paymentFrequency === 'Daily' ? '40' : '60'), 10)
 
+    setIsCreatingBorrower(true)
     try {
       const newFacility = await lendingService.createFacility({
         borrowerName: formData.borrowerName.trim(),
@@ -613,6 +617,8 @@ export const LendingPage: React.FC = () => {
       setAddModalError(
         formatUserFriendlyErrorMessage(err, 'Unable to create borrower record. Please try again.')
       )
+    } finally {
+      setIsCreatingBorrower(false)
     }
   }
 
@@ -778,6 +784,12 @@ export const LendingPage: React.FC = () => {
     const paymentNum = parseFloat(paymentForm.paymentAmount)
     if (isNaN(paymentNum) || paymentNum < 1) {
       setPaymentError('Payment Amount cannot be lower than  ₱1.00.')
+      return
+    }
+
+    const rawPenalty = parseFloat(paymentForm.penaltyAmount)
+    if (!isNaN(rawPenalty) && rawPenalty < 0) {
+      setPaymentError('Late payment charges can be ₱0.00 but can never be a negative value.')
       return
     }
 
@@ -1021,6 +1033,7 @@ export const LendingPage: React.FC = () => {
     if (isAudit || !activeFacility) return
     setDeleteModalError(null)
     const borrowerDbId = activeFacility.borrower_id || activeFacility.borrowerId || activeFacility.id
+    setIsDeletingBorrower(true)
     try {
       await lendingService.deleteBorrower(borrowerDbId)
       const updatedList = facilities.filter((f) => f.id !== activeFacility.id && String(f.borrower_id) !== String(borrowerDbId))
@@ -1036,6 +1049,8 @@ export const LendingPage: React.FC = () => {
       setDeleteModalError(
         formatUserFriendlyErrorMessage(err, 'Unable to delete borrower record. Please try again.')
       )
+    } finally {
+      setIsDeletingBorrower(false)
     }
   }
 
@@ -1069,12 +1084,13 @@ export const LendingPage: React.FC = () => {
     if (!query) return paidList
     return paidList.filter((p) => {
       const dateMatch = (p.date || '').toLowerCase().includes(query)
+      const installmentDateMatch = (p.cycle_due_date || p.cycleDueDate || '').toLowerCase().includes(query)
       const notesMatch = (p.notes || '').toLowerCase().includes(query)
       const refMatch = (p.referenceNo || '').toLowerCase().includes(query)
       const txRefMatch = (p.transactionRefNo || p.transaction_ref_no || p.id || '').toLowerCase().includes(query)
       const methodMatch = (p.method || '').toLowerCase().includes(query)
       const statusMatch = (p.status || '').toLowerCase().includes(query)
-      return dateMatch || notesMatch || refMatch || txRefMatch || methodMatch || statusMatch
+      return dateMatch || installmentDateMatch || notesMatch || refMatch || txRefMatch || methodMatch || statusMatch
     })
   }, [activeFacility, historySearchQuery])
 
@@ -1096,6 +1112,8 @@ export const LendingPage: React.FC = () => {
     const calculatedInterest =
       (activeFacility as any).interestAmount ??
       Math.round(((activeFacility.loanAmount || 0) * ((activeFacility.interestRate || 0) / 100)) * 100) / 100
+    const contractualTotalPayable =
+      (activeFacility.loanAmount || 0) + calculatedInterest
     const totalPaidPenalties = (activeFacility.dailyPayments || []).reduce(
       (sum, p) => sum + (Number(p.penalty) || Number(p.penalty_portion) || 0),
       0
@@ -1104,7 +1122,7 @@ export const LendingPage: React.FC = () => {
     const installmentTargetAmount =
       activeFacility.installmentTarget ||
       Math.round(
-        (activeFacility.totalAmountPayable /
+        (contractualTotalPayable /
           (activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60))) *
           100
       ) / 100
@@ -1232,7 +1250,7 @@ export const LendingPage: React.FC = () => {
               {/* Dashed Perforation */}
               <div className="border-t border-dashed border-slate-200" />
 
-              {/* Financial Breakdown (Distinguishing Interest from Penalty Fees) */}
+              {/* Financial Breakdown (Contractual Loan Terms: Principal + Interest) */}
               <div className="space-y-1.5 text-xs">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-muted-fg mb-1">
                   Financial Breakdown
@@ -1250,28 +1268,10 @@ export const LendingPage: React.FC = () => {
                   <span className="font-mono font-bold text-focus">+{formatPHP(calculatedInterest)}</span>
                 </div>
 
-                {/* Penalty Fees (Distinguished from Interest) */}
-                <div className="flex justify-between items-center py-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-muted-fg">Penalty Fees:</span>
-                    {facilityPenalties > 0 && (
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-50 text-rose-700 font-bold border border-rose-200">
-                        Late Overdue
-                      </span>
-                    )}
-                  </div>
-                  <span className={cn(
-                    'font-mono font-bold',
-                    facilityPenalties > 0 ? 'text-rose-600' : 'text-slate-400 font-normal'
-                  )}>
-                    {facilityPenalties > 0 ? `+${formatPHP(facilityPenalties)}` : '₱0.00'}
-                  </span>
-                </div>
-
-                {/* Total Payable */}
+                {/* Total Payable (strictly Principal + Interest, never including penalties) */}
                 <div className="pt-2 border-t border-slate-200 flex justify-between items-center font-bold text-sm">
                   <span className="text-focus">Total Payable:</span>
-                  <span className="font-mono text-focus">{formatPHP(activeFacility.totalAmountPayable)}</span>
+                  <span className="font-mono text-focus">{formatPHP(contractualTotalPayable)}</span>
                 </div>
               </div>
 
@@ -1289,6 +1289,21 @@ export const LendingPage: React.FC = () => {
                   <span className="text-muted-fg">Amount Paid:</span>
                   <span className="font-mono font-bold text-emerald-600">{formatPHP(activeFacility.amountPaid)}</span>
                 </div>
+
+                {/* Penalty Fees (Separate from contractual loan payable) */}
+                {facilityPenalties > 0 && (
+                  <div className="flex justify-between items-center py-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-fg">Penalty Fees:</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#960C01]/10 text-[#960C01] font-bold border border-[#960C01]/20">
+                        Late Overdue
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-[#960C01]">
+                      {formatPHP(facilityPenalties)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Remaining Balance Receipt Box */}
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
@@ -1325,12 +1340,7 @@ export const LendingPage: React.FC = () => {
                   {activeFacility.notes}
                 </div>
               )}
-            </div>
-
-            {/* Receipt Footer Note */}
-            <div className="pt-3 text-center text-[10px] text-muted-fg/70 uppercase tracking-widest font-mono border-t border-dashed border-slate-200 mt-4">
-              *** Official Loan Record ***
-            </div>
+            </div>  
           </div>
 
           {/* Right Column: Full Width Payment History & Schedule Table */}
@@ -1394,7 +1404,7 @@ export const LendingPage: React.FC = () => {
                     <table className="w-full text-xs">
                       <thead className="bg-slate-50 border-b border-slate-200 text-muted-fg font-semibold">
                         <tr>
-                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Tx Ref No.</th>
+                          <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Installment Date</th>
                           <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Payment Date</th>
                           <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Status</th>
                           <th className="py-2.5 px-3.5 text-left whitespace-nowrap">Amount Paid</th>
@@ -1418,7 +1428,8 @@ export const LendingPage: React.FC = () => {
                         ) : (
                           paginatedHistoryPayments.map((p) => {
                             const isPartial = p.status === 'Partial' || p.status === 'Partially Paid'
-                            const txRef = p.transactionRefNo || p.transaction_ref_no || (p.id?.startsWith('dp-') ? p.id : `TX-${p.id}`)
+                            const installmentDate = p.cycle_due_date || p.cycleDueDate || p.date || '-'
+                            const paymentDate = p.date || p.payment_date || '-'
                             return (
                               <tr
                                 key={p.id}
@@ -1427,13 +1438,11 @@ export const LendingPage: React.FC = () => {
                                   isPartial && 'bg-amber-50/20'
                                 )}
                               >
-                                <td className="py-2.5 px-3.5 font-mono text-[11px] font-semibold text-focus whitespace-nowrap">
-                                  <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
-                                    {txRef}
-                                  </span>
+                                <td className="py-2.5 px-3.5 font-mono text-focus whitespace-nowrap font-medium">
+                                  {installmentDate}
                                 </td>
                                 <td className="py-2.5 px-3.5 font-mono text-muted-fg whitespace-nowrap font-medium">
-                                  {p.date}
+                                  {paymentDate}
                                 </td>
                                 <td className="py-2.5 px-3.5 whitespace-nowrap">
                                   {isPartial ? (
@@ -1441,8 +1450,8 @@ export const LendingPage: React.FC = () => {
                                       <span>Partially Paid</span>
                                     </span>
                                   ) : (p.is_late || p.isLate || (p.status && p.status.includes('Late'))) ? (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                      <AlertCircle className="w-2.5 h-2.5 text-rose-600" />
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                      <AlertCircle className="w-2.5 h-2.5 text-[#960C01]" />
                                       <span>{p.status || `Paid Late (${p.days_late || p.daysLate || ''}d)`}</span>
                                     </span>
                                   ) : (
@@ -1458,7 +1467,7 @@ export const LendingPage: React.FC = () => {
                                 )}>
                                   <div>{formatPHP(p.amount)}</div>
                                   {Boolean(p.penalty || p.penalty_portion) && (
-                                    <div className="text-[10px] text-rose-600 font-medium">
+                                    <div className="text-[10px] text-[#960C01] font-medium">
                                       +{formatPHP(p.penalty || p.penalty_portion || 0)} penalty
                                     </div>
                                   )}
@@ -1584,7 +1593,7 @@ export const LendingPage: React.FC = () => {
                     onClick={handleExportPdf}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-focus/90 hover:bg-slate-50 transition-colors text-left cursor-pointer"
                   >
-                    <FileText className="w-4 h-4 text-rose-600 shrink-0" />
+                    <FileText className="w-4 h-4 text-[#960C01] shrink-0" />
                     <span>Download as PDF</span>
                   </button>
                 </div>
@@ -1816,7 +1825,7 @@ export const LendingPage: React.FC = () => {
                     Active: 'bg-blue-50 text-blue-700 border-blue-200',
                     Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
                     Pending: 'bg-amber-50 text-amber-700 border-amber-200',
-                    Overdue: 'bg-rose-50 text-rose-700 border-rose-200',
+                    Overdue: 'bg-[#960C01]/10 text-[#960C01] border-[#960C01]/20',
                   }[facility.status]
 
                   const isHighlighted = highlightedFacilityId === facility.id
@@ -1896,7 +1905,7 @@ export const LendingPage: React.FC = () => {
                                 'inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold border',
                                 facility.auditStatus === 'Verified'
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-[#960C01]/10 text-[#960C01] border-[#960C01]/20'
                               )}
                             >
                               {facility.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
@@ -2069,9 +2078,9 @@ export const LendingPage: React.FC = () => {
                       setActiveMenuFacility(null)
                     }
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-rose-700 hover:bg-rose-50 transition-colors text-left cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-[#960C01] hover:bg-[#960C01]/10 transition-colors text-left cursor-pointer"
                 >
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <AlertCircle className="w-3.5 h-3.5 text-[#960C01] shrink-0" />
                   <span>Mark as Discrepancy</span>
                 </button>
 
@@ -2146,9 +2155,9 @@ export const LendingPage: React.FC = () => {
                       handleOpenDeleteModal(fac, e)
                     }
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-[#960C01] hover:bg-[#960C01]/10 transition-colors text-left cursor-pointer"
                 >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <Trash2 className="w-3.5 h-3.5 text-[#960C01] shrink-0" />
                   <span>Delete</span>
                 </button>
               </>
@@ -2172,15 +2181,15 @@ export const LendingPage: React.FC = () => {
           <form onSubmit={handleCreateFacility} className="space-y-4 mt-3">
             {/* Inline Error Banner */}
             {addModalError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700">
+              <div className="p-3 bg-[#960C01]/10 border border-[#960C01]/20 rounded-xl flex items-start justify-between gap-2 text-xs text-[#960C01]">
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                  <AlertCircle className="w-4 h-4 shrink-0 text-[#960C01] mt-0.5" />
                   <span>{addModalError}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setAddModalError(null)}
-                  className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+                  className="text-[#960C01] hover:text-[#800a01] font-bold ml-1 text-sm leading-none"
                 >
                   &times;
                 </button>
@@ -2190,7 +2199,7 @@ export const LendingPage: React.FC = () => {
             {/* Field 1: Name */}
             <div>
               <label className="text-xs font-semibold text-focus block mb-1">
-                Name (Borrower's Name) <span className="text-red-500">*</span>
+                Name (Borrower's Name) <span className="text-[#960C01]">*</span>
               </label>
               <Input
                 required
@@ -2205,7 +2214,7 @@ export const LendingPage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Loan Amount (₱) <span className="text-red-500">*</span>
+                  Loan Amount (₱) <span className="text-[#960C01]">*</span>
                 </label>
                 <Input
                   required
@@ -2221,7 +2230,7 @@ export const LendingPage: React.FC = () => {
 
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Interest Rate (%) <span className="text-red-500">*</span>
+                  Interest Rate (%) <span className="text-[#960C01]">*</span>
                 </label>
                 <Input
                   required
@@ -2240,7 +2249,7 @@ export const LendingPage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Payment Schedule <span className="text-red-500">*</span>
+                  Payment Schedule <span className="text-[#960C01]">*</span>
                 </label>
                 <select
                   value={formData.paymentFrequency}
@@ -2266,7 +2275,7 @@ export const LendingPage: React.FC = () => {
 
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Term (Days) <span className="text-red-500">*</span>
+                  Term (Days) <span className="text-[#960C01]">*</span>
                 </label>
                 <Input
                   required
@@ -2292,7 +2301,7 @@ export const LendingPage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Date Borrowed <span className="text-red-500">*</span>
+                  Date Borrowed <span className="text-[#960C01]">*</span>
                 </label>
                 <Input
                   required
@@ -2336,7 +2345,6 @@ export const LendingPage: React.FC = () => {
               const termDays = parseInt(formData.termDays || '40', 10) || 40
               const cycleCount = formData.paymentFrequency === 'Daily' ? termDays : Math.max(1, Math.round(termDays / 30))
               const installmentTarget = cycleCount > 0 ? totalPayable / cycleCount : totalPayable
-              const penaltyFee = installmentTarget * 0.05
 
               return (
                 <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
@@ -2361,14 +2369,6 @@ export const LendingPage: React.FC = () => {
                       / {formData.paymentFrequency === 'Daily' ? 'day' : 'month'}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-[11px] pt-0.5 text-rose-600 border-t border-slate-200/40">
-                    <span className="font-medium">
-                      5% Missed Installment Penalty:
-                    </span>
-                    <span className="font-bold">
-                      +{formatPHP(penaltyFee)} / missed {formData.paymentFrequency === 'Daily' ? 'day' : 'month'}
-                    </span>
-                  </div>
                 </div>
               )
             })()}
@@ -2391,16 +2391,25 @@ export const LendingPage: React.FC = () => {
               <Button
                 type="button"
                 variant="outline"
+                disabled={isCreatingBorrower}
                 onClick={() => setIsAddModalOpen(false)}
-                className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+                className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer"
+                disabled={isCreatingBorrower}
+                className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 shadow-xs"
               >
-                Create Borrower
+                {isCreatingBorrower ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <span>Create Borrower</span>
+                )}
               </Button>
             </div>
           </form>
@@ -2437,7 +2446,9 @@ export const LendingPage: React.FC = () => {
               calculatedDaysLate = Math.max(1, Math.round((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24)))
             }
 
-            const userPenaltyNum = Math.max(0, parseFloat(paymentForm.penaltyAmount) || 0)
+            const rawPenaltyNum = parseFloat(paymentForm.penaltyAmount)
+            const isPenaltyNegative = !isNaN(rawPenaltyNum) && rawPenaltyNum < 0
+            const userPenaltyNum = Math.max(0, rawPenaltyNum || 0)
             // Penalty is not included in the deduction of total payable.
             // Max allowed for repayment amount is strictly the remaining loan balance.
             const maxAllowed = activeFacility.remainingBalance
@@ -2445,7 +2456,8 @@ export const LendingPage: React.FC = () => {
             const isAmountValid =
               !isNaN(currentPaymentNum) &&
               currentPaymentNum >= 1 &&
-              currentPaymentNum <= maxAllowed
+              currentPaymentNum <= maxAllowed &&
+              !isPenaltyNegative
 
             const alreadyPaidOnSelectedDate = (activeFacility.dailyPayments || [])
               .filter((p) => (p.cycle_due_date || p.cycleDueDate || p.date) === targetInstallmentDate)
@@ -2478,15 +2490,15 @@ export const LendingPage: React.FC = () => {
               <form onSubmit={handleRecordDailyPayment} className="space-y-5 mt-2">
                 {/* Inline Error Banner */}
                 {paymentError && (
-                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700">
+                  <div className="p-3 bg-[#960C01]/10 border border-[#960C01]/20 rounded-xl flex items-start justify-between gap-2 text-xs text-[#960C01]">
                     <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                      <AlertCircle className="w-4 h-4 shrink-0 text-[#960C01] mt-0.5" />
                       <span>{paymentError}</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setPaymentError(null)}
-                      className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+                      className="text-[#960C01] hover:text-[#800a01] font-bold ml-1 text-sm leading-none"
                     >
                       &times;
                     </button>
@@ -2499,7 +2511,7 @@ export const LendingPage: React.FC = () => {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-focus">
-                        Installment Date <span className="text-red-500">*</span>
+                        Installment Date <span className="text-[#960C01]">*</span>
                       </label>
                       <span className="text-[11px] font-mono font-bold text-focus">
                         {targetInstallmentDate ? `Target: ${targetInstallmentDate}` : 'Please select date'}
@@ -2614,7 +2626,7 @@ export const LendingPage: React.FC = () => {
                                       'bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer font-semibold',
                                     !isSelected &&
                                       isMissed &&
-                                      'bg-rose-50 text-rose-800 border border-rose-300 cursor-pointer font-bold hover:bg-rose-100',
+                                      'bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/30 cursor-pointer font-bold hover:bg-[#960C01]/20',
                                     !isSelected &&
                                       isBefore &&
                                       'text-slate-300 cursor-not-allowed bg-slate-50/50',
@@ -2643,7 +2655,7 @@ export const LendingPage: React.FC = () => {
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 absolute bottom-1" />
                                   )}
                                   {isMissed && !isSelected && (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 absolute bottom-1" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#960C01] absolute bottom-1" />
                                   )}
                                 </button>
                               )
@@ -2665,7 +2677,7 @@ export const LendingPage: React.FC = () => {
                             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Partial
                           </span>
                           <span className="flex items-center gap-1 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" /> Missed
+                            <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Missed
                           </span>
                         </div>
                       </div>
@@ -2705,12 +2717,12 @@ export const LendingPage: React.FC = () => {
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="text-xs font-semibold text-focus">
-                          Date Cash Received <span className="text-red-500">*</span>
+                          Date Cash Received <span className="text-[#960C01]">*</span>
                         </label>
                         <span className="text-[11px] font-medium">
                           {isLatePayment ? (
-                            <span className="text-rose-600 font-bold flex items-center gap-1">
-                              <AlertCircle className="w-3 h-3" />
+                            <span className="text-[#960C01] font-bold flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-[#960C01]" />
                               {calculatedDaysLate} Day{calculatedDaysLate > 1 ? 's' : ''} Late
                             </span>
                           ) : (
@@ -2736,42 +2748,14 @@ export const LendingPage: React.FC = () => {
                       </p>
                     </div>
 
-                    {/* Late Payment Charges Input */}
-                    {isLatePayment && (
-                      <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-xl space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-rose-900 flex items-center gap-1">
-                            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                            Late Payment Charges (₱)
-                          </label>
-                        </div>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={paymentForm.penaltyAmount}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          onChange={(e) => {
-                            setPaymentError(null)
-                            setPaymentForm({ ...paymentForm, penaltyAmount: e.target.value })
-                          }}
-                          placeholder="0.00"
-                          className="h-9 text-xs sm:text-sm rounded-lg font-semibold bg-white border-rose-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <p className="text-[10px] text-rose-700/90 leading-tight">
-                          * Late payment charges are recorded separately and are not deducted from the loan total payable.
-                        </p>
-                      </div>
-                    )}
-
                     {/* Payment Amount Input */}
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="text-xs font-semibold text-focus">
-                          Payment Amount (₱) <span className="text-red-500">*</span>
+                          Payment Amount (₱) <span className="text-[#960C01]">*</span>
                         </label>
                         <span className="text-[11px] text-muted-fg font-medium">
-                          Target: {formatPHP(periodRemainingDue)} • Max: {formatPHP(maxAllowed)}
+                          Target: {formatPHP(periodRemainingDue)}
                         </span>
                       </div>
                       <Input
@@ -2782,20 +2766,72 @@ export const LendingPage: React.FC = () => {
                         step="any"
                         value={paymentForm.paymentAmount}
                         onWheel={(e) => e.currentTarget.blur()}
+                        onKeyDown={(e) => {
+                          if (e.key === '-' || e.key === 'Subtract') {
+                            e.preventDefault()
+                          }
+                        }}
                         onChange={(e) => {
                           setPaymentError(null)
-                          setPaymentForm({ ...paymentForm, paymentAmount: e.target.value })
+                          const val = e.target.value
+                          if (val.includes('-')) return
+                          setPaymentForm({ ...paymentForm, paymentAmount: val })
                         }}
                         placeholder="Enter repayment amount"
                         className="h-10 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       {paymentForm.paymentAmount && !isAmountValid && (
-                        <p className="text-[11px] text-rose-600 mt-1">
+                        <p className="text-[11px] text-[#960C01] mt-1">
                           {currentPaymentNum < 1
                             ? 'Payment amount cannot be lower than ₱1.00.'
-                            : `Payment amount cannot exceed ${formatPHP(maxAllowed)}.`}
+                            : currentPaymentNum > maxAllowed
+                            ? `Payment amount cannot exceed ${formatPHP(maxAllowed)}.`
+                            : isPenaltyNegative
+                            ? 'Late payment charges cannot be a negative value.'
+                            : 'Please enter a valid amount.'}
                         </p>
                       )}
+                    </div>
+
+                     {/* Late Payment Charges Input */}
+                    {isLatePayment && (
+                      <div className="p-3 bg-[#960C01]/5 border border-[#960C01]/20 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-[#960C01] flex items-center gap-1">
+                            <AlertCircle className="w-3.5 h-3.5 text-[#960C01]" />
+                            Late Payment Charges (₱)
+                          </label>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={paymentForm.penaltyAmount}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          onKeyDown={(e) => {
+                            if (e.key === '-' || e.key === 'Subtract') {
+                              e.preventDefault()
+                            }
+                          }}
+                          onChange={(e) => {
+                            setPaymentError(null)
+                            const val = e.target.value
+                            if (val.includes('-')) return
+                            const num = parseFloat(val)
+                            if (!isNaN(num) && num < 0) return
+                            setPaymentForm({ ...paymentForm, penaltyAmount: val })
+                          }}
+                          placeholder="0.00"
+                          className="h-9 text-xs sm:text-sm rounded-lg font-semibold bg-white border-[#960C01]/30 focus:border-[#960C01] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        {isPenaltyNegative && (
+                          <p className="text-[11px] text-[#960C01] font-medium mt-1">
+                            Late payment charges can be ₱0.00 but can never be a negative value.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                       {isAmountValid && (
                         <div className="mt-2 space-y-1.5">
                           {userPenaltyNum > 0 && (
@@ -2804,7 +2840,7 @@ export const LendingPage: React.FC = () => {
                                 <span>Repayment (reduces loan):</span>
                                 <span className="font-mono font-semibold text-focus">{formatPHP(currentPaymentNum)}</span>
                               </div>
-                              <div className="flex justify-between items-center text-rose-600 text-[11px]">
+                              <div className="flex justify-between items-center text-[#960C01] text-[11px]">
                                 <span>Late Payment Charge (fee):</span>
                                 <span className="font-mono font-semibold">+{formatPHP(userPenaltyNum)}</span>
                               </div>
@@ -2831,7 +2867,6 @@ export const LendingPage: React.FC = () => {
                           </div>
                         </div>
                       )}
-                    </div>
 
                     {/* Payment Method */}
                     <div>
@@ -2945,8 +2980,8 @@ export const LendingPage: React.FC = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-muted-fg">Timeliness:</span>
                   {pendingPayment.isLate ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                      <AlertCircle className="w-3 h-3 text-rose-600" />
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                      <AlertCircle className="w-3 h-3 text-[#960C01]" />
                       <span>{pendingPayment.daysLate} Days Late</span>
                     </span>
                   ) : (
@@ -2957,7 +2992,7 @@ export const LendingPage: React.FC = () => {
                   )}
                 </div>
                 {Boolean(pendingPayment.penaltyPortion) ? (
-                  <div className="flex justify-between items-center text-rose-600">
+                  <div className="flex justify-between items-center text-[#960C01]">
                     <span className="font-medium">Late Payment Charges (Fee):</span>
                     <span className="font-bold">+{formatPHP(pendingPayment.penaltyPortion || 0)}</span>
                   </div>
@@ -2968,18 +3003,14 @@ export const LendingPage: React.FC = () => {
                   </div>
                 ) : null}
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-fg">Installment Target:</span>
-                  <span className="font-semibold text-focus">{formatPHP(pendingPayment.targetDue)}</span>
-                </div>
-                <div className="flex justify-between items-center border-t border-slate-200/70 pt-2">
-                  <span className="font-semibold text-focus">Repayment (Deducted from Loan):</span>
-                  <span className="font-extrabold text-emerald-600 text-sm">
+                  <span className="font-semibold text-focus">Installment Payment:</span>
+                  <span className="font-semibold text-emerald-600 text-xs">
                     {formatPHP(pendingPayment.amount)}
                   </span>
                 </div>
                 {Boolean(pendingPayment.penaltyPortion) && (
                   <div className="flex justify-between items-center bg-amber-50/80 p-2 rounded-lg border border-amber-200/80 font-bold">
-                    <span className="text-focus text-[11px]">Total Cash to Collect (Repayment + Late Fee):</span>
+                    <span className="text-focus text-[11px]">Total Cash to Collect:</span>
                     <span className="text-amber-800 text-sm font-mono">
                       {formatPHP(pendingPayment.amount + (pendingPayment.penaltyPortion || 0))}
                     </span>
@@ -3078,7 +3109,7 @@ export const LendingPage: React.FC = () => {
                   Payment Recorded Successfully
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-fg mt-1">
-                  Payment transaction for <strong className="text-focus">{completedReceipt.borrowerName}</strong> has been saved to the ledger.
+                  Payment transaction for <strong className="text-focus">{completedReceipt.borrowerName}</strong> has been saved.
                 </DialogDescription>
               </div>
 
@@ -3118,8 +3149,8 @@ export const LendingPage: React.FC = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-muted-fg">Timeliness:</span>
                   {completedReceipt.isLate ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                      <AlertCircle className="w-3 h-3 text-rose-600" />
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                      <AlertCircle className="w-3 h-3 text-[#960C01]" />
                       <span>{completedReceipt.daysLate} Days Late</span>
                     </span>
                   ) : (
@@ -3130,7 +3161,7 @@ export const LendingPage: React.FC = () => {
                   )}
                 </div>
                 {Boolean(completedReceipt.penaltyPortion) ? (
-                  <div className="flex justify-between items-center text-rose-600">
+                  <div className="flex justify-between items-center text-[#960C01]">
                     <span className="font-medium">Late Payment Charges (Fee):</span>
                     <span className="font-bold">+{formatPHP(completedReceipt.penaltyPortion || 0)}</span>
                   </div>
@@ -3210,15 +3241,15 @@ export const LendingPage: React.FC = () => {
             <form onSubmit={handleSaveEditFacility} className="space-y-4 mt-2">
               {/* Inline Error Banner */}
               {editModalError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700">
+                <div className="p-3 bg-[#960C01]/10 border border-[#960C01]/20 rounded-xl flex items-start justify-between gap-2 text-xs text-[#960C01]">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <AlertCircle className="w-4 h-4 shrink-0 text-[#960C01] mt-0.5" />
                     <span>{editModalError}</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setEditModalError(null)}
-                    className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+                    className="text-[#960C01] hover:text-[#800a01] font-bold ml-1 text-sm leading-none"
                   >
                     &times;
                   </button>
@@ -3227,7 +3258,7 @@ export const LendingPage: React.FC = () => {
 
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Borrower's Name <span className="text-red-500">*</span>
+                  Borrower's Name <span className="text-[#960C01]">*</span>
                 </label>
                 <Input
                   required
@@ -3242,7 +3273,7 @@ export const LendingPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-focus block mb-1">
-                    Loan Amount (₱) <span className="text-red-500">*</span>
+                    Loan Amount (₱) <span className="text-[#960C01]">*</span>
                   </label>
                   <Input
                     required
@@ -3259,7 +3290,7 @@ export const LendingPage: React.FC = () => {
 
                 <div>
                   <label className="text-xs font-semibold text-focus block mb-1">
-                    Interest Rate (%) <span className="text-red-500">*</span>
+                    Interest Rate (%) <span className="text-[#960C01]">*</span>
                   </label>
                   <Input
                     required
@@ -3304,7 +3335,7 @@ export const LendingPage: React.FC = () => {
 
                 <div>
                   <label className="text-xs font-semibold text-focus block mb-1">
-                    Term (Days) <span className="text-red-500">*</span>
+                    Term (Days) <span className="text-[#960C01]">*</span>
                   </label>
                   <Input
                     required
@@ -3328,7 +3359,7 @@ export const LendingPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-focus block mb-1">
-                    Date Borrowed <span className="text-red-500">*</span>
+                    Date Borrowed <span className="text-[#960C01]">*</span>
                   </label>
                   <Input
                     required
@@ -3422,8 +3453,8 @@ export const LendingPage: React.FC = () => {
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto bg-white rounded-[24px] p-6 shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-rose-600 flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-rose-600" />
+            <DialogTitle className="text-lg font-bold text-[#960C01] flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-[#960C01]" />
               <span>Delete Borrower</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-fg mt-1">
@@ -3434,15 +3465,15 @@ export const LendingPage: React.FC = () => {
 
           {/* Inline Error Banner */}
           {deleteModalError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700 mt-2">
+            <div className="p-3 bg-[#960C01]/10 border border-[#960C01]/20 rounded-xl flex items-start justify-between gap-2 text-xs text-[#960C01] mt-2">
               <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#960C01] mt-0.5" />
                 <span>{deleteModalError}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setDeleteModalError(null)}
-                className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+                className="text-[#960C01] hover:text-[#800a01] font-bold ml-1 text-sm leading-none"
               >
                 &times;
               </button>
@@ -3453,17 +3484,26 @@ export const LendingPage: React.FC = () => {
             <Button
               type="button"
               variant="outline"
+              disabled={isDeletingBorrower}
               onClick={() => setIsDeleteConfirmOpen(false)}
-              className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+              className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-50"
             >
               Cancel
             </Button>
             <Button
               type="button"
+              disabled={isDeletingBorrower}
               onClick={handleConfirmDelete}
-              className="h-10 px-5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+              className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              Delete Borrower
+              {isDeletingBorrower ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <span>Delete Borrower</span>
+              )}
             </Button>
           </div>
         </DialogContent>

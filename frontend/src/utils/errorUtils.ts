@@ -47,7 +47,7 @@ export function formatUserFriendlyErrorMessage(
     lower.includes('load failed') ||
     lower.includes('cannot connect')
   ) {
-    return 'Unable to connect to the server. Please check your internet connection or verify the server is running.'
+    return 'Unable to connect. Please check your internet connection or try again later.'
   }
 
   // 2. Request timeouts or cancellations
