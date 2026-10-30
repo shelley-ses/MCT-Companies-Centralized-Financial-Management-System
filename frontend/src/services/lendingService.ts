@@ -1,3 +1,5 @@
+import { formatUserFriendlyErrorMessage } from '../utils/errorUtils'
+
 export interface DailyPaymentRecord {
   id: string
   transactionRefNo?: string
@@ -333,36 +335,46 @@ class LendingServiceGateway {
   }
 
   /**
-  /**
    * Create a new borrower via backend, saving directly to Supabase database.
    */
   async createFacility(payload: LendingCreateFacilityPayload): Promise<LendingFacility> {
     const termDays = payload.termDays || (payload.paymentFrequency === 'Daily' ? 40 : 60)
-    const res = await fetch('/api/v1/lending/borrowers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        borrower_name: payload.borrowerName,
-        borrower_contact: payload.borrowerContact || '',
-        borrower_address: payload.borrowerAddress || '',
-        loan_amount: payload.loanAmount,
-        interest_rate: payload.interestRate,
-        payment_frequency: payload.paymentFrequency,
-        term_days: termDays,
-        date_borrowed: payload.dateBorrowed,
-        due_date: payload.dueDate || '',
-        notes: payload.notes || '',
-      }),
-    })
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || 'Failed to create borrower (' + res.status + ')')
+    try {
+      const res = await fetch('/api/v1/lending/borrowers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          borrower_name: payload.borrowerName,
+          borrower_contact: payload.borrowerContact || '',
+          borrower_address: payload.borrowerAddress || '',
+          loan_amount: payload.loanAmount,
+          interest_rate: payload.interestRate,
+          payment_frequency: payload.paymentFrequency,
+          term_days: termDays,
+          date_borrowed: payload.dateBorrowed,
+          due_date: payload.dueDate || '',
+          notes: payload.notes || '',
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        const friendly = formatUserFriendlyErrorMessage(
+          errData?.detail || { status: res.status },
+          'Unable to create borrower record. Please try again.'
+        )
+        throw new Error(friendly)
+      }
+      const created = await res.json()
+      const existing = this.loadFromStorage()
+      const updated = [created, ...existing]
+      this.saveToStorage(updated)
+      return created
+    } catch (err: any) {
+      console.error('LendingServiceGateway.createFacility failed:', err)
+      throw new Error(
+        formatUserFriendlyErrorMessage(err, 'Unable to create borrower record. Please try again.')
+      )
     }
-    const created = await res.json()
-    const existing = this.loadFromStorage()
-    const updated = [created, ...existing]
-    this.saveToStorage(updated)
-    return created
   }
 
   /**
@@ -383,30 +395,41 @@ class LendingServiceGateway {
     }
   ): Promise<LendingFacility> {
     const numId = typeof borrowerId === 'number' ? borrowerId : parseInt(String(borrowerId).replace(/\D/g, ''), 10)
-    const res = await fetch('/api/v1/lending/borrowers/' + numId, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        borrower_name: payload.borrowerName,
-        loan_amount: payload.loanAmount,
-        interest_rate: payload.interestRate,
-        payment_frequency: payload.paymentFrequency,
-        term_days: payload.termDays,
-        date_borrowed: payload.dateBorrowed,
-        due_date: payload.dueDate,
-        status: payload.status,
-        notes: payload.notes,
-      }),
-    })
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || 'Failed to update borrower (' + res.status + ')')
+    try {
+      const res = await fetch('/api/v1/lending/borrowers/' + numId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          borrower_name: payload.borrowerName,
+          loan_amount: payload.loanAmount,
+          interest_rate: payload.interestRate,
+          payment_frequency: payload.paymentFrequency,
+          term_days: payload.termDays,
+          date_borrowed: payload.dateBorrowed,
+          due_date: payload.dueDate,
+          status: payload.status,
+          notes: payload.notes,
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        const friendly = formatUserFriendlyErrorMessage(
+          errData?.detail || { status: res.status },
+          'Unable to update borrower details. Please try again.'
+        )
+        throw new Error(friendly)
+      }
+      const updated = await res.json()
+      const cached = this.loadFromStorage()
+      const nextList = cached.map((f) => (String(f.id) === String(borrowerId) || String(f.borrower_id) === String(numId) ? updated : f))
+      this.saveToStorage(nextList)
+      return updated
+    } catch (err: any) {
+      console.error('LendingServiceGateway.updateBorrower failed:', err)
+      throw new Error(
+        formatUserFriendlyErrorMessage(err, 'Unable to update borrower details. Please try again.')
+      )
     }
-    const updated = await res.json()
-    const cached = this.loadFromStorage()
-    const nextList = cached.map((f) => (String(f.id) === String(borrowerId) || String(f.borrower_id) === String(numId) ? updated : f))
-    this.saveToStorage(nextList)
-    return updated
   }
 
   /**
@@ -414,18 +437,29 @@ class LendingServiceGateway {
    */
   async deleteBorrower(borrowerId: string | number): Promise<{ success: boolean; message: string }> {
     const numId = typeof borrowerId === 'number' ? borrowerId : parseInt(String(borrowerId).replace(/\D/g, ''), 10)
-    const res = await fetch('/api/v1/lending/borrowers/' + numId, {
-      method: 'DELETE',
-    })
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || 'Failed to delete borrower (' + res.status + ')')
+    try {
+      const res = await fetch('/api/v1/lending/borrowers/' + numId, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        const friendly = formatUserFriendlyErrorMessage(
+          errData?.detail || { status: res.status },
+          'Unable to delete borrower record. Please try again.'
+        )
+        throw new Error(friendly)
+      }
+      const result = await res.json()
+      const cached = this.loadFromStorage()
+      const nextList = cached.filter((f) => String(f.id) !== String(borrowerId) && String(f.borrower_id) !== String(numId))
+      this.saveToStorage(nextList)
+      return result
+    } catch (err: any) {
+      console.error('LendingServiceGateway.deleteBorrower failed:', err)
+      throw new Error(
+        formatUserFriendlyErrorMessage(err, 'Unable to delete borrower record. Please try again.')
+      )
     }
-    const result = await res.json()
-    const cached = this.loadFromStorage()
-    const nextList = cached.filter((f) => String(f.id) !== String(borrowerId) && String(f.borrower_id) !== String(numId))
-    this.saveToStorage(nextList)
-    return result
   }
 
 
@@ -481,14 +515,18 @@ class LendingServiceGateway {
 
       // Handle server error responses (400, 404, 409, 422, 500)
       const err = await res.json().catch(() => null)
-      const errorMsg =
-        (typeof err?.detail === 'string' ? err.detail : null) ||
-        (Array.isArray(err?.detail) ? err.detail.map((e: any) => e.msg).join(', ') : null) ||
-        `Server error (${res.status}): Failed to save payment.`
-      return { success: false, message: errorMsg }
+      const friendlyMsg = formatUserFriendlyErrorMessage(
+        err || { status: res.status },
+        'Unable to record payment remittance. Please try again.'
+      )
+      return { success: false, message: friendlyMsg }
     } catch (err: any) {
       console.error('LendingServiceGateway.recordPayment backend call failed:', err)
-      return { success: false, message: err?.message || 'Network connection failed while saving payment.' }
+      const friendlyMsg = formatUserFriendlyErrorMessage(
+        err,
+        'Unable to record payment remittance. Please try again.'
+      )
+      return { success: false, message: friendlyMsg }
     }
   }
 

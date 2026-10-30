@@ -47,6 +47,7 @@ import {
 import { useSession } from '@/hooks/useSession'
 import { formatPHP } from '@/lib/format'
 import { isDateInRange, formatToYYYYMMDD } from '@/utils/dateUtils'
+import { formatUserFriendlyErrorMessage } from '@/utils/errorUtils'
 import { cn } from '@/lib/utils'
 import {
   type DailyPaymentRecord,
@@ -171,6 +172,9 @@ export const LendingPage: React.FC = () => {
   const [pendingPayment, setPendingPayment] = React.useState<PendingPaymentData | null>(null)
   const [completedReceipt, setCompletedReceipt] = React.useState<CompletedPaymentReceipt | null>(null)
   const [paymentError, setPaymentError] = React.useState<string | null>(null)
+  const [addModalError, setAddModalError] = React.useState<string | null>(null)
+  const [editModalError, setEditModalError] = React.useState<string | null>(null)
+  const [deleteModalError, setDeleteModalError] = React.useState<string | null>(null)
   const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false)
 
   // 3-dots actions menu state
@@ -532,23 +536,25 @@ export const LendingPage: React.FC = () => {
   const handleCreateFacility = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isAudit) return
+    setAddModalError(null)
+
     const principalNum = parseFloat(formData.loanAmount)
     const rateNum = parseFloat(formData.interestRate)
 
     if (!formData.borrowerName.trim()) {
-      alert("Please provide the Borrower's Name.")
+      setAddModalError("Please provide the Borrower's Name.")
       return
     }
     if (isNaN(principalNum) || principalNum <= 0) {
-      alert('Please enter a valid loan amount.')
+      setAddModalError('Please enter a valid loan amount greater than zero.')
       return
     }
     if (isNaN(rateNum) || rateNum < 0) {
-      alert('Please enter a valid interest rate.')
+      setAddModalError('Please enter a valid interest rate.')
       return
     }
     if (!formData.dateBorrowed || !formData.dueDate) {
-      alert('Please specify both Date Borrowed and Due Date.')
+      setAddModalError('Please specify both Date Borrowed and Due Date.')
       return
     }
 
@@ -569,6 +575,7 @@ export const LendingPage: React.FC = () => {
       const updatedList = [newFacility, ...facilities.filter((f) => f.id !== newFacility.id)]
       saveFacilities(updatedList)
       setIsAddModalOpen(false)
+      setAddModalError(null)
 
       // Reset form
       const currentToday = formatToYYYYMMDD(new Date())
@@ -601,7 +608,9 @@ export const LendingPage: React.FC = () => {
       }, 100)
     } catch (err: any) {
       console.error('Failed to create borrower in database:', err)
-      alert(err.message || 'Failed to create borrower in database.')
+      setAddModalError(
+        formatUserFriendlyErrorMessage(err, 'Unable to create borrower record. Please try again.')
+      )
     }
   }
 
@@ -610,6 +619,7 @@ export const LendingPage: React.FC = () => {
     e.stopPropagation()
     if (isAudit) return
     setActiveFacility(facility)
+    setEditModalError(null)
     setEditFormData({
       borrowerName: facility.borrowerName,
       loanAmount: String(facility.loanAmount),
@@ -628,13 +638,14 @@ export const LendingPage: React.FC = () => {
   const handleSaveEditFacility = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isAudit || !activeFacility) return
+    setEditModalError(null)
 
     const principalNum = parseFloat(editFormData.loanAmount)
     const rateNum = parseFloat(editFormData.interestRate)
     const termDaysNum = parseInt(editFormData.termDays || (editFormData.paymentFrequency === 'Daily' ? '40' : '60'), 10) || 40
 
     if (!editFormData.borrowerName.trim() || isNaN(principalNum) || principalNum <= 0) {
-      alert('Please fill out all required fields with valid values.')
+      setEditModalError('Please fill out all required fields with valid values.')
       return
     }
 
@@ -656,10 +667,13 @@ export const LendingPage: React.FC = () => {
       const updatedList = facilities.map((f) => (f.id === activeFacility.id || String(f.borrower_id) === String(borrowerDbId) ? updated : f))
       saveFacilities(updatedList)
       setIsEditModalOpen(false)
+      setEditModalError(null)
       setActiveFacility(updated)
     } catch (err: any) {
       console.error('Failed to update borrower in database:', err)
-      alert(err.message || 'Failed to update borrower in database.')
+      setEditModalError(
+        formatUserFriendlyErrorMessage(err, 'Unable to update borrower details. Please try again.')
+      )
     }
   }
 
@@ -760,7 +774,7 @@ export const LendingPage: React.FC = () => {
 
     const paymentNum = parseFloat(paymentForm.paymentAmount)
     if (isNaN(paymentNum) || paymentNum < 1) {
-      setPaymentError('Payment Amount cannot be lower than ₱1.00.')
+      setPaymentError('Payment Amount cannot be lower than  ₱1.00.')
       return
     }
 
@@ -874,7 +888,9 @@ export const LendingPage: React.FC = () => {
         notes: pendingPayment.notes,
       })
       if (!backendRes.success) {
-        setPaymentError(backendRes.message || 'Payment could not be recorded.')
+        setPaymentError(
+          formatUserFriendlyErrorMessage(backendRes.message, 'Unable to record payment remittance. Please try again.')
+        )
         setIsPaymentConfirmModalOpen(false)
         setIsSubmittingPayment(false)
         return
@@ -971,6 +987,12 @@ export const LendingPage: React.FC = () => {
       setIsDailyPaymentModalOpen(false)
       setPendingPayment(null)
       setIsPaymentSuccessModalOpen(true)
+    } catch (err: any) {
+      console.error('handleConfirmRecordPayment failed:', err)
+      setPaymentError(
+        formatUserFriendlyErrorMessage(err, 'Unable to complete payment transaction. Please try again.')
+      )
+      setIsPaymentConfirmModalOpen(false)
     } finally {
       setIsSubmittingPayment(false)
     }
@@ -981,25 +1003,30 @@ export const LendingPage: React.FC = () => {
     e.stopPropagation()
     if (isAudit) return
     setActiveFacility(facility)
+    setDeleteModalError(null)
     setIsDeleteConfirmOpen(true)
   }
 
   // Confirm Delete
   const handleConfirmDelete = async () => {
     if (isAudit || !activeFacility) return
+    setDeleteModalError(null)
     const borrowerDbId = activeFacility.borrower_id || activeFacility.borrowerId || activeFacility.id
     try {
       await lendingService.deleteBorrower(borrowerDbId)
       const updatedList = facilities.filter((f) => f.id !== activeFacility.id && String(f.borrower_id) !== String(borrowerDbId))
       saveFacilities(updatedList)
       setIsDeleteConfirmOpen(false)
+      setDeleteModalError(null)
       setActiveFacility(null)
       if (viewMode === 'details') {
         setViewMode('list')
       }
     } catch (err: any) {
       console.error('Failed to delete borrower from database:', err)
-      alert(err.message || 'Failed to delete borrower from database.')
+      setDeleteModalError(
+        formatUserFriendlyErrorMessage(err, 'Unable to delete borrower record. Please try again.')
+      )
     }
   }
 
@@ -1568,6 +1595,7 @@ export const LendingPage: React.FC = () => {
                     dateBorrowed: today,
                     dueDate: projected || prev.dueDate,
                   }))
+                  setAddModalError(null)
                   setIsAddModalOpen(true)
                 }}
                 className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-[#960C01] hover:bg-[#800a01] active:bg-[#700801] text-white font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 transition-all cursor-pointer box-border"
@@ -2133,6 +2161,23 @@ export const LendingPage: React.FC = () => {
           </DialogHeader>
 
           <form onSubmit={handleCreateFacility} className="space-y-4 mt-3">
+            {/* Inline Error Banner */}
+            {addModalError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                  <span>{addModalError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddModalError(null)}
+                  className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+                >
+                  &times;
+                </button>
+              </div>
+            )}
+
             {/* Field 1: Name */}
             <div>
               <label className="text-xs font-semibold text-focus block mb-1">
@@ -2423,9 +2468,18 @@ export const LendingPage: React.FC = () => {
               <form onSubmit={handleRecordDailyPayment} className="space-y-5 mt-2">
                 {/* Inline Error Banner */}
                 {paymentError && (
-                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-xs text-rose-700">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
-                    <span>{paymentError}</span>
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                      <span>{paymentError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentError(null)}
+                      className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+                    >
+                      &times;
+                    </button>
                   </div>
                 )}
 
@@ -3067,6 +3121,23 @@ export const LendingPage: React.FC = () => {
 
           {activeFacility && (
             <form onSubmit={handleSaveEditFacility} className="space-y-4 mt-2">
+              {/* Inline Error Banner */}
+              {editModalError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <span>{editModalError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditModalError(null)}
+                    className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+                  >
+                    &times;
+                  </button>
+                </div>
+              )}
+
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
                   Borrower's Name <span className="text-red-500">*</span>
@@ -3273,6 +3344,23 @@ export const LendingPage: React.FC = () => {
               <strong className="text-focus">{activeFacility?.borrowerName}</strong>? This action will remove all recorded payment history and cannot be undone.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Inline Error Banner */}
+          {deleteModalError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start justify-between gap-2 text-xs text-rose-700 mt-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                <span>{deleteModalError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteModalError(null)}
+                className="text-rose-500 hover:text-rose-800 font-bold ml-1 text-sm leading-none"
+              >
+                &times;
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2.5 pt-4">
             <Button
