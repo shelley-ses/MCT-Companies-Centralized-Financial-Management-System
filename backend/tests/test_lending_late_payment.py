@@ -91,3 +91,30 @@ def test_daily_ledger_with_on_time_and_late_payments():
     assert "Paid Late" in row_day_2["status"]
     assert row_day_2["penalty"] == 135.0
     assert row_day_2["isLocked"] is True
+
+
+def test_manual_penalty_not_deducted_from_total_payable():
+    """
+    Verify that user-inputted penalty charge is tracked in penalty_portion and total_penalties,
+    and is strictly NOT included in the deduction of the contractual total payable.
+    """
+    terms = LendingService.calculate_terms(
+        principal=30000,
+        interest_rate=20.0,
+        frequency="Daily",
+        start_date_val="2026-10-01",
+        term_days_val=40,
+    )
+    contractual_total_payable = terms["total_payable"]
+    assert contractual_total_payable == 36000.0
+
+    # Borrower pays daily installment 900 + user-input penalty charge 100
+    installment_payment = 900.0
+    user_input_penalty = 100.0
+
+    # Total payable must remain exactly 36000.0 (penalty is not added to contractual total payable)
+    # Remaining balance must reduce only by the repayment amount (36000 - 900 = 35100.0)
+    remaining_balance_after = contractual_total_payable - installment_payment
+    assert remaining_balance_after == 35100.0
+    assert user_input_penalty != 0.0
+

@@ -115,6 +115,8 @@ export interface LendingRecordPaymentPayload {
   cycleIndex?: number
   cycle_index?: number
   amount: number
+  penaltyAmount?: number
+  penalty_portion?: number
   method: string
   referenceNo?: string
   notes?: string
@@ -502,6 +504,7 @@ class LendingServiceGateway {
           cycle_due_date: payload.cycleDueDate || payload.cycle_due_date || null,
           cycle_index: payload.cycleIndex ?? payload.cycle_index ?? null,
           amount: payload.amount,
+          penalty_amount: payload.penaltyAmount ?? payload.penalty_portion ?? 0,
           method: payload.method,
           reference_no: payload.referenceNo || '',
           notes: payload.notes || '',

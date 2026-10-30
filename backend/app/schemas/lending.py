@@ -65,6 +65,7 @@ class LendingPaymentCreateRequest(BaseModel):
     cycle_due_date: Optional[str] = None
     cycle_index: Optional[int] = None
     amount: Decimal = Field(..., ge=1.0)
+    penalty_amount: Optional[Decimal] = Field(default=Decimal("0.00"), ge=0.0)
     method: str = Field(default="Cash")
     reference_no: Optional[str] = ""
     notes: Optional[str] = ""
@@ -76,6 +77,8 @@ class LendingTransactionCreateRequest(BaseModel):
     cycle_due_date: Optional[str] = None
     cycle_index: Optional[int] = None
     amount: Decimal = Field(..., ge=0.01)
+    penalty_amount: Optional[Decimal] = Field(default=None, ge=0.0)
+    penalty_portion: Optional[Decimal] = Field(default=None, ge=0.0)
     payment_method: str = Field(default="Cash")
     transaction_type: str = Field(default="Repayment")
     reference_no: Optional[str] = ""

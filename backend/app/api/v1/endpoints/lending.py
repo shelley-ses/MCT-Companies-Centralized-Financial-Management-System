@@ -203,11 +203,13 @@ def create_transaction(
     """
     Record a lending transaction with settlement validation and boundary checks.
     """
+    penalty_val = payload.penalty_amount if payload.penalty_amount is not None else payload.penalty_portion
     return LendingService.record_payment(
         db=db,
         borrower_id=payload.borrower_id,
         payment_date_val=payload.payment_date,
         amount_val=payload.amount,
+        penalty_amount_val=penalty_val,
         method=payload.payment_method,
         reference_no=payload.reference_no,
         notes=payload.notes,
@@ -235,6 +237,7 @@ def record_payment(
         borrower_id=payload.borrower_id,
         payment_date_val=payload.payment_date,
         amount_val=payload.amount,
+        penalty_amount_val=payload.penalty_amount,
         method=payload.method,
         reference_no=payload.reference_no,
         notes=payload.notes,

@@ -1266,7 +1266,8 @@ class LendingService:
         borrower_id: int,
         payment_date_val: Any,
         amount_val: Decimal | float,
-        method: str,
+        penalty_amount_val: Optional[Decimal | float | int | str] = None,
+        method: str = "Cash",
         reference_no: Optional[str] = None,
         notes: Optional[str] = None,
         recorded_by: Optional[str] = None,
@@ -1275,8 +1276,8 @@ class LendingService:
         cycle_index_val: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Record a payment remittance in the lending_transactions table with period settlement locking
-        and automated 5% late penalty calculation based on the actual cash received date.
+        Record a payment remittance in the lending_transactions table with period settlement locking.
+        Penalty charges are user-inputted (or 0 if waived) and are NOT deducted from the contractual total payable.
         """
         b = db.query(Borrower).filter(Borrower.borrower_id == borrower_id).first()
 
@@ -1306,7 +1307,7 @@ class LendingService:
                 for t in existing_txs
             ]
 
-            # 1. Terms & current balances
+            # 1. Terms & contractual balances
             terms = cls.calculate_terms(
                 b.principal_amount,
                 b.interest_rate or Decimal("20.00"),
@@ -1333,36 +1334,30 @@ class LendingService:
                     detail=lock_reason or "Period or date is already fully settled and locked.",
                 )
 
-            # 3. Calculate lateness and 5% penalty
+            # 3. Determine lateness and user-input penalty charge
             installment_target = quantize(terms["installment_target"])
             is_late = False
             days_late = 0
-            penalty_portion = Decimal("0.00")
 
             if target_cycle_due and pay_date > target_cycle_due:
                 is_late = True
-                if freq == "Daily":
-                    days_late = (pay_date - target_cycle_due).days
-                    overdue_units = max(1, days_late)
-                elif freq == "Monthly":
-                    overdue_units = max(1, (pay_date.year - target_cycle_due.year) * 12 + (pay_date.month - target_cycle_due.month))
-                    days_late = overdue_units * 30
-                elif freq == "Quarterly":
-                    overdue_units = max(1, ((pay_date.year - target_cycle_due.year) * 12 + (pay_date.month - target_cycle_due.month) + 2) // 3)
-                    days_late = overdue_units * 90
-                else:
-                    overdue_units = max(1, pay_date.year - target_cycle_due.year)
-                    days_late = overdue_units * 365
+                days_late = max(1, (pay_date - target_cycle_due).days)
 
-                penalty_portion = quantize(installment_target * Decimal("0.05") * Decimal(str(overdue_units)))
+            # Penalty is specified directly by user (or 0 if waived), NOT auto-calculated
+            if penalty_amount_val is not None:
+                penalty_portion = quantize(penalty_amount_val)
+            else:
+                penalty_portion = Decimal("0.00")
 
             # Sum penalties from previous transactions
             prev_penalties = sum((Decimal(str(r.get("penalty_portion", 0))) for r in repayment_dicts), Decimal("0.00"))
             total_penalties = prev_penalties + penalty_portion
 
+            # Contractual total payable (Principal + Interest) remains unaltered by penalties.
+            # Only the repayment amount reduces the loan balance.
+            contractual_total_payable = quantize(terms["total_payable"])
             total_paid_before = sum((Decimal(str(r["amount"])) for r in repayment_dicts), Decimal("0.00"))
-            total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
-            remaining_before = max(Decimal("0.00"), total_payable_with_penalties - total_paid_before)
+            remaining_before = max(Decimal("0.00"), contractual_total_payable - total_paid_before)
 
             payment_amount = quantize(amount_val)
             cls.validate_payment_bounds(payment_amount, remaining_before)
@@ -1373,8 +1368,7 @@ class LendingService:
 
             rem_bal = max(Decimal("0.00"), remaining_before - payment_amount)
 
-            # Determine if this payment fully settles the target or is Partially Paid
-            target_with_penalty = installment_target + penalty_portion
+            # Determine if this payment fully settles the installment target or is Partially Paid
             if freq == "Daily":
                 paid_for_date_before = sum(
                     (
@@ -1384,11 +1378,11 @@ class LendingService:
                     ),
                     Decimal("0.00"),
                 )
-                is_period_settled = (paid_for_date_before + payment_amount) >= target_with_penalty or rem_bal <= Decimal("0.00")
+                is_period_settled = (paid_for_date_before + payment_amount) >= installment_target or rem_bal <= Decimal("0.00")
             elif freq == "Monthly":
-                is_period_settled = payment_amount >= target_with_penalty or rem_bal <= Decimal("0.00")
+                is_period_settled = payment_amount >= installment_target or rem_bal <= Decimal("0.00")
             else:
-                is_period_settled = payment_amount >= target_with_penalty or rem_bal <= Decimal("0.00")
+                is_period_settled = payment_amount >= installment_target or rem_bal <= Decimal("0.00")
 
             tx_db_status = "Completed" if is_period_settled else "Partially Paid"
             tx_out_status = "Paid" if is_period_settled else "Partially Paid"
@@ -1421,9 +1415,10 @@ class LendingService:
                         prev_tx.status = "Completed"
 
             # 5. Update borrower status and persistent ledger totals
+            # Penalty is NOT included in the deduction of total payable.
             b.amount_paid = total_paid_before + payment_amount
             b.total_penalties = total_penalties
-            b.total_payable = total_payable_with_penalties
+            b.total_payable = contractual_total_payable
             b.remaining_balance = rem_bal
             if rem_bal <= Decimal("0.00"):
                 b.status = "Fully Paid"
@@ -1517,8 +1512,8 @@ class LendingService:
             )
             total_penalties = Decimal(str(progress["totalPenalties"]))
 
-        total_payable_with_penalties = Decimal(str(terms["total_payable"])) + total_penalties
-        remaining_before = max(Decimal("0.00"), total_payable_with_penalties - total_paid_before)
+        contractual_total_payable = Decimal(str(terms["total_payable"]))
+        remaining_before = max(Decimal("0.00"), contractual_total_payable - total_paid_before)
 
         payment_amount = quantize(amount_val)
         cls.validate_payment_bounds(payment_amount, remaining_before)

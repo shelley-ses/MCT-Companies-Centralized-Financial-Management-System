@@ -264,6 +264,7 @@ export const LendingPage: React.FC = () => {
     referenceNo: string
     notes: string
     cycleIndex?: number
+    penaltyAmount: string
   }>({
     paymentAmount: '',
     paymentDate: formatToYYYYMMDD(new Date()),
@@ -271,6 +272,7 @@ export const LendingPage: React.FC = () => {
     method: 'Cash',
     referenceNo: '',
     notes: '',
+    penaltyAmount: '0',
   })
 
   // Pagination state
@@ -742,6 +744,7 @@ export const LendingPage: React.FC = () => {
       method: 'Cash',
       referenceNo: '',
       notes: '',
+      penaltyAmount: '0',
     })
     setPaymentCalendarMonth(new Date(initialDate || new Date()))
     setIsDailyPaymentModalOpen(true)
@@ -818,17 +821,20 @@ export const LendingPage: React.FC = () => {
       }
     }
 
-    // Determine late status and 5% penalty
+    // Determine late status and user-specified penalty charges
     const isLate = Boolean(targetInstallmentDate && cashReceivedDate > targetInstallmentDate)
     let daysLate = 0
-    let penaltyPortion = 0
     if (isLate && targetInstallmentDate && cashReceivedDate) {
       const d1 = new Date(cashReceivedDate)
       const d2 = new Date(targetInstallmentDate)
       daysLate = Math.max(1, Math.round((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24)))
-      penaltyPortion = Math.round(targetDue * 0.05 * daysLate * 100) / 100
     }
+    // User directly inputs penalty charge (or 0 if waived)
+    const enteredPenalty = Math.max(0, parseFloat(paymentForm.penaltyAmount) || 0)
+    const penaltyPortion = isLate ? enteredPenalty : enteredPenalty
 
+    // Penalty is not included in the deduction of total payable.
+    // Only the loan repayment amount (paymentNum) deducts from remaining loan balance.
     const remainingBalanceAfter = Math.max(
       0,
       Math.round((activeFacility.remainingBalance - paymentNum) * 100) / 100
@@ -883,6 +889,7 @@ export const LendingPage: React.FC = () => {
         cycleDueDate: pendingPayment.cycleDueDate,
         cycleIndex: pendingPayment.cycleIndex,
         amount: pendingPayment.amount,
+        penaltyAmount: pendingPayment.penaltyPortion,
         method: pendingPayment.method,
         referenceNo: pendingPayment.referenceNo,
         notes: pendingPayment.notes,
@@ -897,11 +904,12 @@ export const LendingPage: React.FC = () => {
       }
 
       const assessedPenalty = pendingPayment.penaltyPortion || 0
-      const updatedTotalPayable = Math.round((activeFacility.totalAmountPayable + assessedPenalty) * 100) / 100
+      // Penalty is NOT deducted from total payable; contractual total payable stays unchanged.
       const updatedAmountPaid = Math.round((activeFacility.amountPaid + pendingPayment.amount) * 100) / 100
+      const updatedTotalPenalties = Math.round(((activeFacility.totalPenalties || 0) + assessedPenalty) * 100) / 100
       const updatedRemainingBalance = Math.max(
         0,
-        Math.round((updatedTotalPayable - updatedAmountPaid) * 100) / 100
+        Math.round((activeFacility.remainingBalance - pendingPayment.amount) * 100) / 100
       )
       const updatedStatus: LendingFacility['status'] =
         updatedRemainingBalance <= 0
@@ -960,6 +968,7 @@ export const LendingPage: React.FC = () => {
       const updatedFacility: LendingFacility = {
         ...activeFacility,
         amountPaid: updatedAmountPaid,
+        totalPenalties: updatedTotalPenalties,
         remainingBalance: updatedRemainingBalance,
         status: updatedStatus,
         dailyPayments: [newPaymentRecord, ...existingUpdated],
@@ -2422,15 +2431,16 @@ export const LendingPage: React.FC = () => {
             const isLatePayment = Boolean(targetInstallmentDate && cashReceivedDate > targetInstallmentDate)
 
             let calculatedDaysLate = 0
-            let calculatedPenalty = 0
             if (isLatePayment && targetInstallmentDate && cashReceivedDate) {
               const d1 = new Date(cashReceivedDate)
               const d2 = new Date(targetInstallmentDate)
               calculatedDaysLate = Math.max(1, Math.round((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24)))
-              calculatedPenalty = Math.round(dailyTarget * 0.05 * calculatedDaysLate * 100) / 100
             }
 
-            const maxAllowed = activeFacility.remainingBalance + calculatedPenalty
+            const userPenaltyNum = Math.max(0, parseFloat(paymentForm.penaltyAmount) || 0)
+            // Penalty is not included in the deduction of total payable.
+            // Max allowed for repayment amount is strictly the remaining loan balance.
+            const maxAllowed = activeFacility.remainingBalance
             const currentPaymentNum = parseFloat(paymentForm.paymentAmount)
             const isAmountValid =
               !isNaN(currentPaymentNum) &&
@@ -2661,33 +2671,30 @@ export const LendingPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Late Penalty Banner if late (Placed below calendar) */}
-                    {isLatePayment && (
-                      <div className="p-3 bg-rose-50/90 border border-rose-200 rounded-xl space-y-1.5 text-xs text-rose-900">
-                        <div className="flex items-center justify-between font-bold text-rose-800">
-                          <span className="flex items-center gap-1">
-                            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                            5% Late Payment Penalty
+                    {/* Late Status Information / Breakdown */}
+                    {isLatePayment ? (
+                      <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-1.5 text-xs text-amber-900">
+                        <div className="flex items-center justify-between font-bold text-amber-800">
+                          <span className="flex items-center gap-1.5">
+                            <AlertCircle className="w-4 h-4 text-amber-600" />
+                            Overdue Installment
                           </span>
-                          <span>+{formatPHP(calculatedPenalty)}</span>
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                            {calculatedDaysLate} Day{calculatedDaysLate > 1 ? 's' : ''} Late
+                          </span>
                         </div>
-                        <div className="text-[11px] text-rose-700 flex justify-between items-center">
-                          <span>Overdue penalty ({calculatedDaysLate} day{calculatedDaysLate > 1 ? 's' : ''}):</span>
-                          <span>{formatPHP(periodRemainingDue)} target × 5% × {calculatedDaysLate}</span>
+                        <div className="text-[11px] text-amber-700">
+                          Scheduled due date was <strong>{targetInstallmentDate}</strong>. Input any late penalty charges in the field on the right.
                         </div>
-                        <div className="pt-1.5 border-t border-rose-200/80 flex items-center justify-between font-bold text-xs text-focus">
-                          <span>Total to Pay for this date:</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-emerald-700 text-sm">{formatPHP(periodRemainingDue + calculatedPenalty)}</span>
-                            <button
-                              type="button"
-                              onClick={() => setPaymentForm({ ...paymentForm, paymentAmount: String(periodRemainingDue + calculatedPenalty) })}
-                              className="text-[10px] bg-white border border-rose-300 text-rose-800 px-2 py-0.5 rounded-lg hover:bg-rose-50 cursor-pointer font-semibold shadow-2xs"
-                            >
-                              Apply Total
-                            </button>
-                          </div>
+                        <div className="pt-1.5 border-t border-amber-200/80 flex items-center justify-between font-bold text-xs text-focus">
+                          <span>Installment Due:</span>
+                          <span className="text-emerald-700 text-sm font-mono">{formatPHP(periodRemainingDue)}</span>
                         </div>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 bg-emerald-50/80 border border-emerald-200/80 rounded-xl flex items-center gap-2 text-xs text-emerald-800">
+                        <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span className="text-[11px]">Installment is on-time. No late penalty required.</span>
                       </div>
                     )}
                   </div>
@@ -2704,7 +2711,7 @@ export const LendingPage: React.FC = () => {
                           {isLatePayment ? (
                             <span className="text-rose-600 font-bold flex items-center gap-1">
                               <AlertCircle className="w-3 h-3" />
-                              {calculatedDaysLate} Day{calculatedDaysLate > 1 ? 's' : ''} Late (+5% penalty)
+                              {calculatedDaysLate} Day{calculatedDaysLate > 1 ? 's' : ''} Late
                             </span>
                           ) : (
                             <span className="text-emerald-600 font-semibold flex items-center gap-1">
@@ -2729,6 +2736,34 @@ export const LendingPage: React.FC = () => {
                       </p>
                     </div>
 
+                    {/* Late Payment Charges Input */}
+                    {isLatePayment && (
+                      <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-rose-900 flex items-center gap-1">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                            Late Payment Charges (₱)
+                          </label>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={paymentForm.penaltyAmount}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          onChange={(e) => {
+                            setPaymentError(null)
+                            setPaymentForm({ ...paymentForm, penaltyAmount: e.target.value })
+                          }}
+                          placeholder="0.00"
+                          className="h-9 text-xs sm:text-sm rounded-lg font-semibold bg-white border-rose-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <p className="text-[10px] text-rose-700/90 leading-tight">
+                          * Late payment charges are recorded separately and are not deducted from the loan total payable.
+                        </p>
+                      </div>
+                    )}
+
                     {/* Payment Amount Input */}
                     <div>
                       <div className="flex items-center justify-between mb-1">
@@ -2751,7 +2786,7 @@ export const LendingPage: React.FC = () => {
                           setPaymentError(null)
                           setPaymentForm({ ...paymentForm, paymentAmount: e.target.value })
                         }}
-                        placeholder="Enter payment amount"
+                        placeholder="Enter repayment amount"
                         className="h-10 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       {paymentForm.paymentAmount && !isAmountValid && (
@@ -2762,18 +2797,38 @@ export const LendingPage: React.FC = () => {
                         </p>
                       )}
                       {isAmountValid && (
-                        <div className="mt-2 flex items-center justify-between px-3 py-2 rounded-xl border text-xs bg-slate-50/80 border-slate-200/80">
-                          <span className="text-muted-fg font-medium">Transaction Status Tag:</span>
-                          {willBePartiallyPaid ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                              Partially Paid ({formatPHP(Math.max(0, periodRemainingDue - currentPaymentNum))} short of target)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              <span>Paid</span>
-                            </span>
+                        <div className="mt-2 space-y-1.5">
+                          {userPenaltyNum > 0 && (
+                            <div className="p-2.5 rounded-xl border border-slate-200/90 bg-slate-50 text-xs space-y-1">
+                              <div className="flex justify-between items-center text-muted-fg text-[11px]">
+                                <span>Repayment (reduces loan):</span>
+                                <span className="font-mono font-semibold text-focus">{formatPHP(currentPaymentNum)}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-rose-600 text-[11px]">
+                                <span>Late Payment Charge (fee):</span>
+                                <span className="font-mono font-semibold">+{formatPHP(userPenaltyNum)}</span>
+                              </div>
+                              <div className="pt-1 border-t border-slate-200 flex justify-between items-center font-bold text-focus">
+                                <span>Total Cash to Collect:</span>
+                                <span className="font-mono text-emerald-700 text-sm">
+                                  {formatPHP(currentPaymentNum + userPenaltyNum)}
+                                </span>
+                              </div>
+                            </div>
                           )}
+                          <div className="flex items-center justify-between px-3 py-2 rounded-xl border text-xs bg-slate-50/80 border-slate-200/80">
+                            <span className="text-muted-fg font-medium">Transaction Status Tag:</span>
+                            {willBePartiallyPaid ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                Partially Paid ({formatPHP(Math.max(0, periodRemainingDue - currentPaymentNum))} short of target)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Paid</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2901,22 +2956,35 @@ export const LendingPage: React.FC = () => {
                     </span>
                   )}
                 </div>
-                {Boolean(pendingPayment.penaltyPortion) && (
+                {Boolean(pendingPayment.penaltyPortion) ? (
                   <div className="flex justify-between items-center text-rose-600">
-                    <span className="font-medium">5% Late Penalty Fee:</span>
+                    <span className="font-medium">Late Payment Charges (Fee):</span>
                     <span className="font-bold">+{formatPHP(pendingPayment.penaltyPortion || 0)}</span>
                   </div>
-                )}
+                ) : pendingPayment.isLate ? (
+                  <div className="flex justify-between items-center text-muted-fg">
+                    <span>Late Payment Charges:</span>
+                    <span className="font-semibold text-emerald-600">Waived (₱0.00)</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between items-center">
                   <span className="text-muted-fg">Installment Target:</span>
                   <span className="font-semibold text-focus">{formatPHP(pendingPayment.targetDue)}</span>
                 </div>
                 <div className="flex justify-between items-center border-t border-slate-200/70 pt-2">
-                  <span className="font-semibold text-focus">Payment Amount:</span>
+                  <span className="font-semibold text-focus">Repayment (Deducted from Loan):</span>
                   <span className="font-extrabold text-emerald-600 text-sm">
                     {formatPHP(pendingPayment.amount)}
                   </span>
                 </div>
+                {Boolean(pendingPayment.penaltyPortion) && (
+                  <div className="flex justify-between items-center bg-amber-50/80 p-2 rounded-lg border border-amber-200/80 font-bold">
+                    <span className="text-focus text-[11px]">Total Cash to Collect (Repayment + Late Fee):</span>
+                    <span className="text-amber-800 text-sm font-mono">
+                      {formatPHP(pendingPayment.amount + (pendingPayment.penaltyPortion || 0))}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-muted-fg">Payment Status Tag:</span>
                   {pendingPayment.paymentStatus === 'Partially Paid' ? (
@@ -3061,10 +3129,29 @@ export const LendingPage: React.FC = () => {
                     </span>
                   )}
                 </div>
-                {Boolean(completedReceipt.penaltyPortion) && (
+                {Boolean(completedReceipt.penaltyPortion) ? (
                   <div className="flex justify-between items-center text-rose-600">
-                    <span className="font-medium">5% Late Penalty Fee:</span>
+                    <span className="font-medium">Late Payment Charges (Fee):</span>
                     <span className="font-bold">+{formatPHP(completedReceipt.penaltyPortion || 0)}</span>
+                  </div>
+                ) : completedReceipt.isLate ? (
+                  <div className="flex justify-between items-center text-muted-fg">
+                    <span>Late Payment Charges:</span>
+                    <span className="font-semibold text-emerald-600">Waived (₱0.00)</span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between items-center border-t border-slate-200/70 pt-2">
+                  <span className="font-semibold text-focus">Repayment Amount:</span>
+                  <span className="font-extrabold text-emerald-600 font-mono">
+                    {formatPHP(completedReceipt.amount)}
+                  </span>
+                </div>
+                {Boolean(completedReceipt.penaltyPortion) && (
+                  <div className="flex justify-between items-center bg-amber-50/80 p-2 rounded-lg border border-amber-200/80 font-bold">
+                    <span className="text-focus text-[11px]">Total Cash Collected:</span>
+                    <span className="text-amber-800 text-sm font-mono">
+                      {formatPHP(completedReceipt.amount + (completedReceipt.penaltyPortion || 0))}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between items-center">
