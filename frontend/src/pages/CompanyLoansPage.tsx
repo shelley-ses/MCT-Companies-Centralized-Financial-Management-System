@@ -82,32 +82,6 @@ export const CompanyLoansPage: React.FC = () => {
   const openGroupDetails = async (group: CompanyLoanGroup) => {
     setSelectedGroup(group)
     setRepaymentTimeline([])
-    if (group.key === 'preview-mct-hotel-mct-kitchen-rent') {
-      setRepaymentTimeline([
-        {
-          refNo: 'DEMO-RENT-001',
-          paymentDate: '2026-08-15',
-          amount: 5000,
-          remainingBalance: 25000,
-          reference: 'Bank transfer',
-        },
-        {
-          refNo: 'DEMO-RENT-002',
-          paymentDate: '2026-09-10',
-          amount: 3000,
-          remainingBalance: 12000,
-          reference: 'Check 10042',
-        },
-        {
-          refNo: 'DEMO-RENT-001',
-          paymentDate: '2026-10-05',
-          amount: 5000,
-          remainingBalance: 20000,
-          reference: 'Bank transfer',
-        },
-      ])
-      return
-    }
     try {
       const statements = await Promise.all(
         group.loans.map(async (loan) => ({

@@ -9,6 +9,7 @@ Only a central administrator account can query this endpoint.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import List, Optional
 
@@ -20,6 +21,9 @@ from app.core.dependencies import AdminUser
 from app.db.session import get_db
 from app.db.supabase import get_supabase_admin_client
 from app.models.audit_log import AuditLog
+from app.models.company import Company
+from app.models.user import User
+from app.services.audit_service import _ACTION_DESCRIPTION_MAP
 
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
@@ -37,9 +41,90 @@ class AuditLogOut(BaseModel):
     ip_address: Optional[str] = None
     details: Optional[str] = None
     created_at: Optional[str] = None
+    # Worked out on the server for the Activity Log page (spec 0018)
+    user_name: str = "System"
+    company_name: str = "System"
+    description: str = ""
+    module: str = "General"
+    target: str = "-"
 
     class Config:
         from_attributes = True
+
+
+_MODULE_PREFIXES = (
+    ("SALE_", "Sales"),
+    ("EXPENSE_", "Expense"),
+    ("LOAN_", "Loan"),
+    ("PETTY_CASH_", "Petty Cash"),
+    ("TENANT_", "Tenant"),
+    ("USER_", "User"),
+    ("COMPANY_", "Company"),
+    ("CASH_INFLOW_", "Cash Inflow"),
+    ("BUDGET_", "Budget"),
+    ("STAFF_CREDIT_", "Staff Credit"),
+    ("CATEGORY_", "Category"),
+    ("LOGIN", "Auth"),
+    ("LOGOUT", "Auth"),
+    ("SESSION_", "Auth"),
+    ("ACCOUNT_", "Auth"),
+    ("PASSWORD_", "Auth"),
+    ("FORGOT_PASSWORD", "Auth"),
+)
+
+
+def _module_for(action: str, category: Optional[str]) -> str:
+    for prefix, module in _MODULE_PREFIXES:
+        if action.startswith(prefix):
+            return module
+    return (category or "General").replace("_", " ").title()
+
+
+def _parse_details(raw: Optional[str]) -> dict:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _target_for(details: dict) -> str:
+    if details.get("ref"):
+        return str(details["ref"])
+    if details.get("record_id") is not None:
+        kind = str(details.get("record_type") or "").replace("_", " ").strip()
+        return f"{kind} #{details['record_id']}".strip() if kind else f"#{details['record_id']}"
+    if details.get("email"):
+        return str(details["email"])
+    return "-"
+
+
+def _enrich(db: Session, logs: List[AuditLogOut]) -> List[AuditLogOut]:
+    """Fill in names, a plain description, the module and the record reference (spec 0018, AC-1)."""
+    user_ids = sorted({l.user_id for l in logs if l.user_id is not None})
+    company_ids = sorted({l.company_id for l in logs if l.company_id is not None})
+    users = {}
+    companies = {}
+    try:
+        if user_ids:
+            users = {u[0]: u[1] for u in db.query(User.user_id, User.name).filter(User.user_id.in_(user_ids)).all()}
+        if company_ids:
+            companies = {
+                c[0]: c[1] for c in db.query(Company.company_id, Company.company_name).filter(Company.company_id.in_(company_ids)).all()
+            }
+    except Exception:
+        pass  # names are a nicety; the log rows are still returned
+
+    for log in logs:
+        details = _parse_details(log.details)
+        log.user_name = users.get(log.user_id) or (str(details["email"]) if details.get("email") else "System")
+        log.company_name = companies.get(log.company_id) or "System"
+        log.description = _ACTION_DESCRIPTION_MAP.get(log.action) or log.action.replace("_", " ").capitalize()
+        log.module = _module_for(log.action, log.action_category)
+        log.target = _target_for(details)
+    return logs
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +170,7 @@ def list_audit_logs(
             .execute()
         )
         rows = res.data or []
-        return [
+        return _enrich(db, [
             AuditLogOut(
                 audit_log_id=row["audit_log_id"],
                 user_id=row.get("user_id"),
@@ -97,7 +182,7 @@ def list_audit_logs(
                 created_at=str(row.get("created_at")) if row.get("created_at") else None,
             )
             for row in rows
-        ]
+        ])
     except Exception:
         pass
 
@@ -120,7 +205,7 @@ def list_audit_logs(
         .limit(limit)
         .all()
     )
-    return [
+    return _enrich(db, [
         AuditLogOut(
             audit_log_id=log.audit_log_id,
             user_id=log.user_id,
@@ -132,4 +217,4 @@ def list_audit_logs(
             created_at=str(log.created_at) if log.created_at else None,
         )
         for log in rows_local
-    ]
+    ])

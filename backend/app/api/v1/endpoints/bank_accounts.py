@@ -20,38 +20,49 @@ def check_finance_or_admin(
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
     request: Request = None,
 ):
-    # 1. First verify cryptographic Bearer token if present
-    if request:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header.split(" ", 1)[1].strip()
-            if token and token != "null" and token != "undefined":
-                try:
-                    from app.core.security import verify_token
-                    claims = verify_token(token)
-                    metadata = claims.get("app_metadata", {})
-                    if isinstance(metadata, dict):
-                        if metadata.get("is_admin") is True:
-                            return
-                        token_role = str(metadata.get("role") or "").strip().lower()
-                        if token_role in ["admin", "finance"]:
-                            return
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Only Finance and Administrator accounts can perform this bank action.",
-                        )
-                except HTTPException:
-                    raise
-                except Exception:
-                    pass
-
-    # 2. Strict allowlist check on user_role or X-User-Role header
-    role = (user_role or x_user_role or "").strip().lower()
-    if role not in ["admin", "finance"]:
+    """
+    Strict server-side role enforcement.
+    Client-supplied headers or query params cannot bypass authentication.
+    A cryptographically valid JWT Bearer token with Finance or Admin privileges is mandatory.
+    """
+    if not request:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Finance and Administrator accounts can perform this bank action.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials are required.",
         )
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Missing Bearer token.",
+        )
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token or token in ("null", "undefined"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or empty authentication token.",
+        )
+
+    from app.core.security import verify_token
+    claims = verify_token(token)
+    metadata = claims.get("app_metadata", {})
+    token_role = ""
+    is_admin = False
+    if isinstance(metadata, dict):
+        is_admin = metadata.get("is_admin") is True
+        token_role = str(metadata.get("role") or "").strip().lower()
+
+    user_metadata = claims.get("user_metadata", {})
+    if isinstance(user_metadata, dict) and not token_role:
+        token_role = str(user_metadata.get("role") or "").strip().lower()
+
+    if is_admin or token_role in ["admin", "finance"]:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Only Finance and Administrator accounts can perform this bank action.",
+    )
 
 
 @router.get("", response_model=List[BankAccountOut], summary="List all corporate bank accounts")

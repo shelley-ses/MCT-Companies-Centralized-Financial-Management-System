@@ -58,6 +58,8 @@ interface AuditTransactionModalProps {
   onOpenUpdateLoanStatus?: (loan: LoanItem | null) => void
   editable?: boolean
   initialIsEditing?: boolean
+  /** Still passed by SalesPage and ExpensePage; the origin/dev modal does not use it yet. */
+  statusFilter?: string
 }
 
 const SALES_PAYMENT_METHODS = [

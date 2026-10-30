@@ -1,5 +1,3 @@
-import { websocketService } from '@/services/websocketService'
-
 export interface BankTransaction {
   id: string
   bankAccountId?: string
@@ -53,6 +51,42 @@ export interface DepositWithdrawInput {
   category?: string
   chequeNo?: string
   referenceNo?: string
+}
+
+const BANK_CACHE_STORAGE_KEY = 'mct_bank_accounts_cache_v1'
+const BANK_CACHE_TTL_MS = 60000 // 60s fresh TTL, with instant stale-while-revalidate
+
+interface CachedBankAccountsEntry {
+  data: BankAccount[]
+  timestamp: number
+}
+
+const memoryBankCache = new Map<string, CachedBankAccountsEntry>()
+const inFlightRequests = new Map<string, Promise<BankAccount[]>>()
+
+function normalizeCacheKey(companyName?: string): string {
+  if (!companyName || companyName === 'All Companies') return '__ALL__'
+  return companyName.trim().toLowerCase()
+}
+
+// Purge legacy session storage to eliminate clear-text storage of bank accounts
+if (typeof window !== 'undefined') {
+  try {
+    sessionStorage.removeItem(BANK_CACHE_STORAGE_KEY)
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function clearBankCache(): void {
+  memoryBankCache.clear()
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.removeItem(BANK_CACHE_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function backendHeaders(userRole?: string): Record<string, string> {
@@ -114,7 +148,9 @@ async function handleResponseError(res: Response): Promise<Error> {
   try {
     const data = await res.json()
     if (data && data.detail) {
-      return new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+      return new Error(
+        typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)
+      )
     }
   } catch {
     // fallback
@@ -122,17 +158,92 @@ async function handleResponseError(res: Response): Promise<Error> {
   return new Error(`Request failed with status ${res.status}`)
 }
 
+async function fetchAccountsFromNetwork(companyName?: string): Promise<BankAccount[]> {
+  const key = normalizeCacheKey(companyName)
+  const existingFlight = inFlightRequests.get(key)
+  if (existingFlight) return existingFlight
+
+  const promise = (async () => {
+    try {
+      const url =
+        companyName && companyName !== 'All Companies'
+          ? `/api/v1/bank-accounts?company_name=${encodeURIComponent(companyName)}`
+          : '/api/v1/bank-accounts'
+      const res = await fetch(url, {
+        headers: backendHeaders(),
+      })
+      if (!res.ok) throw await handleResponseError(res)
+      const data = await res.json()
+      const accounts = Array.isArray(data) ? data.map(mapAccountFromBackend) : []
+      const entry: CachedBankAccountsEntry = {
+        data: accounts,
+        timestamp: Date.now(),
+      }
+      memoryBankCache.set(key, entry)
+      return accounts
+    } finally {
+      inFlightRequests.delete(key)
+    }
+  })()
+
+  inFlightRequests.set(key, promise)
+  return promise
+}
+
 export const bankService = {
-  async getAccounts(companyName?: string): Promise<BankAccount[]> {
-    const url = companyName && companyName !== 'All Companies'
-      ? `/api/v1/bank-accounts?company_name=${encodeURIComponent(companyName)}`
-      : '/api/v1/bank-accounts'
-    const res = await fetch(url, {
-      headers: backendHeaders(),
+  invalidateCache(): void {
+    clearBankCache()
+  },
+
+  /**
+   * Synchronously returns cached bank accounts for instant UI initialization (0ms delay).
+   * Falls back to filtering the all-companies cache if a specific company cache isn't warm yet.
+   */
+  getCachedAccounts(companyName?: string): BankAccount[] {
+    const key = normalizeCacheKey(companyName)
+    const mem = memoryBankCache.get(key)
+    if (mem && mem.data.length > 0) return mem.data
+
+    // Fallback: check __ALL__ cache and filter by company name
+    if (key !== '__ALL__') {
+      const allMem = memoryBankCache.get('__ALL__')
+      if (allMem && Array.isArray(allMem.data) && allMem.data.length > 0) {
+        const filtered = allMem.data.filter(
+          (b) => (b.companyName || '').trim().toLowerCase() === key
+        )
+        if (filtered.length > 0) return filtered
+      }
+    }
+
+    return []
+  },
+
+  /**
+   * Warms the cache in the background without blocking callers.
+   */
+  prefetchAccounts(companyName?: string): void {
+    fetchAccountsFromNetwork(companyName).catch(() => {
+      // ignore background prefetch errors
     })
-    if (!res.ok) throw await handleResponseError(res)
-    const data = await res.json()
-    return Array.isArray(data) ? data.map(mapAccountFromBackend) : []
+  },
+
+  async getAccounts(
+    companyName?: string,
+    options?: { forceRefresh?: boolean }
+  ): Promise<BankAccount[]> {
+    const key = normalizeCacheKey(companyName)
+    if (!options?.forceRefresh) {
+      const mem = memoryBankCache.get(key)
+      if (mem && Array.isArray(mem.data) && mem.data.length > 0) {
+        // If still fresh, return immediately; if stale, revalidate in background and return cached immediately
+        if (Date.now() - mem.timestamp >= BANK_CACHE_TTL_MS) {
+          fetchAccountsFromNetwork(companyName).catch(() => {})
+        }
+        return mem.data
+      }
+    }
+
+    return fetchAccountsFromNetwork(companyName)
   },
 
   async getAccount(id: string): Promise<BankAccount> {
@@ -144,7 +255,10 @@ export const bankService = {
     return mapAccountFromBackend(data)
   },
 
-  async createAccount(input: NewBankAccountInput, userRole?: string): Promise<BankAccount> {
+  async createAccount(
+    input: NewBankAccountInput,
+    userRole?: string
+  ): Promise<BankAccount> {
     const payload = {
       bank_name: input.bankName,
       account_name: input.accountName,
@@ -166,12 +280,15 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    const mapped = mapAccountFromBackend(data)
-    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
-    return mapped
+    clearBankCache()
+    return mapAccountFromBackend(data)
   },
 
-  async updateAccount(id: string, input: Partial<NewBankAccountInput>, userRole?: string): Promise<BankAccount> {
+  async updateAccount(
+    id: string,
+    input: Partial<NewBankAccountInput>,
+    userRole?: string
+  ): Promise<BankAccount> {
     const payload: Record<string, any> = {}
     if (input.bankName) payload.bank_name = input.bankName
     if (input.accountName) payload.account_name = input.accountName
@@ -191,9 +308,8 @@ export const bankService = {
     })
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    const mapped = mapAccountFromBackend(data)
-    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
-    return mapped
+    clearBankCache()
+    return mapAccountFromBackend(data)
   },
 
   async deleteAccount(id: string, userRole?: string): Promise<void> {
@@ -202,10 +318,14 @@ export const bankService = {
       headers: backendHeaders(userRole),
     })
     if (!res.ok) throw await handleResponseError(res)
-    websocketService.emitLocal('BANK_UPDATED', { accountId: id })
+    clearBankCache()
   },
 
-  async deposit(id: string, input: DepositWithdrawInput, userRole?: string): Promise<BankAccount> {
+  async deposit(
+    id: string,
+    input: DepositWithdrawInput,
+    userRole?: string
+  ): Promise<BankAccount> {
     const payload = {
       amount: input.amount,
       date: input.date,
@@ -214,19 +334,25 @@ export const bankService = {
       reference_no: input.referenceNo,
     }
 
-    const res = await fetch(`/api/v1/bank-accounts/${encodeURIComponent(id)}/deposit`, {
-      method: 'POST',
-      headers: backendHeaders(userRole),
-      body: JSON.stringify(payload),
-    })
+    const res = await fetch(
+      `/api/v1/bank-accounts/${encodeURIComponent(id)}/deposit`,
+      {
+        method: 'POST',
+        headers: backendHeaders(userRole),
+        body: JSON.stringify(payload),
+      }
+    )
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    const mapped = mapAccountFromBackend(data)
-    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
-    return mapped
+    clearBankCache()
+    return mapAccountFromBackend(data)
   },
 
-  async withdraw(id: string, input: DepositWithdrawInput, userRole?: string): Promise<BankAccount> {
+  async withdraw(
+    id: string,
+    input: DepositWithdrawInput,
+    userRole?: string
+  ): Promise<BankAccount> {
     const payload = {
       amount: input.amount,
       date: input.date,
@@ -235,15 +361,17 @@ export const bankService = {
       cheque_no: input.chequeNo,
     }
 
-    const res = await fetch(`/api/v1/bank-accounts/${encodeURIComponent(id)}/withdraw`, {
-      method: 'POST',
-      headers: backendHeaders(userRole),
-      body: JSON.stringify(payload),
-    })
+    const res = await fetch(
+      `/api/v1/bank-accounts/${encodeURIComponent(id)}/withdraw`,
+      {
+        method: 'POST',
+        headers: backendHeaders(userRole),
+        body: JSON.stringify(payload),
+      }
+    )
     if (!res.ok) throw await handleResponseError(res)
     const data = await res.json()
-    const mapped = mapAccountFromBackend(data)
-    websocketService.emitLocal('BANK_UPDATED', { accountId: mapped.id })
-    return mapped
+    clearBankCache()
+    return mapAccountFromBackend(data)
   },
 }

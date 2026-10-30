@@ -161,11 +161,18 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const [draftStart, setDraftStart] = React.useState<string>(value.startDate || '')
   const [draftEnd, setDraftEnd] = React.useState<string>(value.endDate || '')
 
-  // Sync draft whenever popover is opened
+  // Sync draft whenever popover is opened (defaults to current month if empty)
   React.useEffect(() => {
     if (isCalendarOpen) {
-      setDraftStart(value.startDate || '')
-      setDraftEnd(value.endDate || '')
+      const now = new Date()
+      const currYear = now.getFullYear()
+      const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+      const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+      const defaultStart = `${currYear}-${currMonth}-01`
+      const defaultEnd = `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`
+
+      setDraftStart(value.startDate || defaultStart)
+      setDraftEnd(value.endDate || defaultEnd)
     }
   }, [isCalendarOpen, value.startDate, value.endDate])
 

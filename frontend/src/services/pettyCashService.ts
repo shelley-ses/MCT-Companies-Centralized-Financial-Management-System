@@ -43,6 +43,14 @@ export interface PettyCashLedgerEntry {
   endorsedBy?: string | null
   endorsedAt?: string | null
   financeRemark?: string | null
+  createdAt?: string | null
+  /** Funding bank chosen by Finance at endorsement (spec 0014). No account number is sent. */
+  fundingBankId?: string | null
+  fundingBankName?: string | null
+  fundingAccountName?: string | null
+  fundingCompanyName?: string | null
+  /** The funding bank belongs to the requesting company itself. */
+  isOwnAccount?: boolean
   auditStatus?: 'Verified' | 'Pending Audit' | 'Flagged'
   auditDate?: string | null
   auditedBy?: string | null
@@ -54,6 +62,43 @@ export interface NewPettyCashTopUpInput {
   date: string
   description?: string
   status?: string
+}
+
+/**
+ * A petty cash top-up as shown on the Transaction page ledger. Names both the
+ * requesting company and the company that owns the funding bank, so the page can show a Deposit
+ * for one and a Withdrawal for the other.
+ */
+export interface PettyCashMovement {
+  topupId: number
+  refNo: string
+  /** ISO date, YYYY-MM-DD */
+  date: string
+  amount: number
+  description: string
+  status: string
+  companyId: number
+  companyName: string
+  fundingCompanyId: number | null
+  fundingCompanyName: string
+  /** True when the funding bank belongs to the requesting company itself. */
+  isOwnAccount: boolean
+  createdAt: string | null
+}
+
+interface BackendMovement {
+  topup_id: number
+  reference_no?: string | null
+  topup_date: string
+  amount: string | number
+  description?: string | null
+  status: string
+  company_id: number
+  company_name?: string | null
+  funding_company_id?: number | null
+  funding_company_name?: string | null
+  is_own_account?: boolean
+  created_at?: string | null
 }
 
 export interface PettyCashPeriod {
@@ -94,6 +139,12 @@ interface BackendLedgerEntry {
   endorsed_by?: string | null
   endorsed_at?: string | null
   finance_remark?: string | null
+  created_at?: string | null
+  funding_bank_id?: string | null
+  funding_bank_name?: string | null
+  funding_account_name?: string | null
+  funding_company_name?: string | null
+  is_own_account?: boolean
 }
 
 function backendHeaders(): HeadersInit {
@@ -163,6 +214,12 @@ function mapLedgerEntry(data: BackendLedgerEntry): PettyCashLedgerEntry {
     endorsedBy: data.endorsed_by,
     endorsedAt: data.endorsed_at,
     financeRemark: data.finance_remark,
+    createdAt: data.created_at,
+    fundingBankId: data.funding_bank_id,
+    fundingBankName: data.funding_bank_name,
+    fundingAccountName: data.funding_account_name,
+    fundingCompanyName: data.funding_company_name,
+    isOwnAccount: Boolean(data.is_own_account),
   }
 }
 
@@ -229,6 +286,32 @@ export const pettyCashService = {
     return ((await response.json()) as BackendLedgerEntry[]).map(mapLedgerEntry)
   },
 
+  /**
+   * Top-ups for the Transaction ledger (spec 0013): endorsed or approved, with a funding bank.
+   * When a company is given, returns top-ups where it is the requesting or the funding company.
+   */
+  async getMovements(company?: string): Promise<PettyCashMovement[]> {
+    const query = buildQuery({
+      company_name: company && company !== 'All Companies' ? company : undefined,
+    })
+    const response = await fetch(`/api/v1/petty-cash/movements${query}`, { headers: backendHeaders() })
+    if (!response.ok) throw await getBackendError(response)
+    return ((await response.json()) as BackendMovement[]).map((m) => ({
+      topupId: m.topup_id,
+      refNo: m.reference_no || `PC-${m.topup_id}`,
+      date: m.topup_date,
+      amount: Number(m.amount),
+      description: m.description || 'Petty cash top-up',
+      status: m.status,
+      companyId: m.company_id,
+      companyName: m.company_name || `Company #${m.company_id}`,
+      fundingCompanyId: m.funding_company_id ?? null,
+      fundingCompanyName: m.funding_company_name || 'Funding bank',
+      isOwnAccount: Boolean(m.is_own_account),
+      createdAt: m.created_at ?? null,
+    }))
+  },
+
   async createTopUp(input: NewPettyCashTopUpInput): Promise<void> {
     const response = await fetch('/api/v1/petty-cash/topups', {
       method: 'POST',
@@ -260,11 +343,20 @@ export const pettyCashService = {
     websocketService.emitLocal('PETTY_CASH_UPDATED')
   },
 
-  async endorseTopUp(recordId: number, action: 'endorse' | 'reject', remark: string): Promise<void> {
+  async endorseTopUp(
+    recordId: number,
+    action: 'endorse' | 'reject',
+    remark: string,
+    bankAccountId?: string | null,
+  ): Promise<void> {
     const response = await fetch(`/api/v1/petty-cash/topups/${recordId}/endorse`, {
       method: 'POST',
       headers: backendHeaders(),
-      body: JSON.stringify({ action, remark }),
+      body: JSON.stringify({
+        action,
+        remark,
+        ...(bankAccountId ? { bank_account_id: bankAccountId } : {}),
+      }),
     })
     if (!response.ok) throw await getBackendError(response)
     this.invalidateCache()

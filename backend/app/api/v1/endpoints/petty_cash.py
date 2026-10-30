@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.schemas.petty_cash import (
     PettyCashEndorseIn,
     PettyCashLedgerEntry,
+    PettyCashMovementOut,
     PettyCashReviewIn,
     PettyCashSummaryOut,
     PettyCashTopUpCreate,
@@ -66,6 +67,23 @@ def get_ledger(
     return service.list_ledger(company, start_date, end_date, user_role=role)
 
 
+@router.get(
+    "/movements",
+    response_model=List[PettyCashMovementOut],
+    summary="Petty cash top-ups with requesting and funding company, for the Transaction ledger",
+)
+def get_movements(
+    company_id: Optional[int] = Query(None),
+    company_name: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    service = PettyCashService(db)
+    company = None
+    if company_id or (company_name and company_name.strip().lower() != "all companies"):
+        company = service.resolve_company(company_id, company_name)
+    return service.list_movements(company)
+
+
 @router.post("/topups", response_model=PettyCashTopUpOut, status_code=status.HTTP_201_CREATED, summary="Top up petty cash from sales")
 def create_topup(topup_in: PettyCashTopUpCreate, request: Request, db: Session = Depends(get_db)):
     topup = PettyCashService(db).create_topup(topup_in)
@@ -114,6 +132,7 @@ def endorse_topup(
         action=endorse_in.action,
         remark=endorse_in.remark,
         endorser_name=endorser,
+        bank_account_id=endorse_in.bank_account_id,
     )
     log_transaction(
         db, AuditAction.PETTY_CASH_TOPUP_CREATED,

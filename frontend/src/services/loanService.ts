@@ -32,6 +32,7 @@ export interface LoanItem {
   borrower: string // Borrower company name
   lenderId?: number
   lender: string // Lender company name
+  bankAccountId?: string
   company: string // Selected context company
   status: string
   endorsedBy?: string
@@ -96,36 +97,21 @@ export interface CompanyLoanGroup {
   loans: CompanyLoan[]
 }
 
-const LOANS_STORAGE_KEY = 'mct_loan_records_v2'
-
-function loadStoredLoans(): LoanItem[] {
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem(LOANS_STORAGE_KEY)
-      if (stored !== null) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed)) {
-          return parsed
-        }
-      }
-    } catch {
-      // ignore
-    }
+// Clear legacy local storage to prevent clear-text storage of sensitive banking/financial data
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('mct_loan_records_v2')
+    localStorage.removeItem('mct_loan_records_v1')
+  } catch {
+    // ignore
   }
-  return []
 }
+
+let inMemoryLoans: LoanItem[] = []
 
 function saveStoredLoans(items: LoanItem[]): void {
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(LOANS_STORAGE_KEY, JSON.stringify(items))
-    } catch {
-      // ignore
-    }
-  }
+  inMemoryLoans = items
 }
-
-let inMemoryLoans: LoanItem[] = loadStoredLoans()
 
 const companyNameCache = new Map<string, string>()
 
@@ -195,6 +181,7 @@ function mapBackendLoanToItem(l: any): LoanItem {
     borrower: bName,
     lenderId: l.lender,
     lender: lName,
+    bankAccountId: l.bank_account_id || l.bankAccountId,
     company: bName,
     status: l.status || finalStatus,
     endorsedBy: l.endorsed_by,
@@ -203,12 +190,17 @@ function mapBackendLoanToItem(l: any): LoanItem {
     auditReviewedBy: l.audit_reviewed_by,
     auditReviewedAt: l.audit_reviewed_at,
     auditRemark: l.audit_remark,
-    auditStatus: (l.status === 'Approved' || l.status === 'Paid') ? 'Verified' : 'Pending Audit',
+    // Audit's approval is the audit (spec 0014, AC-8). Every status after approval counts as audited.
+    auditStatus: AUDITED_LOAN_STATUSES.has((l.status || '').trim().toLowerCase()) ? 'Verified' : 'Pending Audit',
+    auditedBy: l.audit_reviewed_by || undefined,
     type: 'Loan',
     createdAt: l.created_at || new Date().toISOString(),
     updatedAt: l.updated_at || new Date().toISOString(),
   }
 }
+
+/** Loan statuses reached only after Internal Audit approved the loan. */
+const AUDITED_LOAN_STATUSES = new Set(['approved', 'paid', 'partially paid', 'overdue'])
 
 const loanCache = new Map<string, { data: any; timestamp: number }>()
 const LOAN_CACHE_TTL = 30000
@@ -697,6 +689,7 @@ export const loanService = {
     id: string,
     payload: {
       action: 'endorse' | 'reject'
+      bankAccountId?: string
       lenderCompany?: string
       interestRate?: number
       dueDate?: string
@@ -731,6 +724,7 @@ export const loanService = {
       },
       body: JSON.stringify({
         action: payload.action,
+        bank_account_id: payload.bankAccountId || null,
         lender_company: payload.lenderCompany,
         interest_rate: payload.interestRate,
         due_date: payload.dueDate || null,

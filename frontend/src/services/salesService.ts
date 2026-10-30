@@ -1,6 +1,11 @@
 import type { DashboardTransactionItem } from './dashboardService'
-import { normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
-import { type ParticularItem, parseParticulars } from '@/utils/particularsUtils'
+import { formatCreatedAt, normalizeDateToYYYYMMDD } from '@/utils/dateUtils'
+import { removeLegacyAuditStorage, saveAuditReview } from './auditReviewApi'
+import {
+  type ParticularItem,
+  parseParticulars,
+  deriveRecordStatusFromParticulars,
+} from '@/utils/particularsUtils'
 
 export interface SalesItem {
   id: string
@@ -12,7 +17,7 @@ export interface SalesItem {
   withdrawal: number
   deposit: number
   netAmount: number
-  category: string       // user-configurable category (from DB Category table)
+  category: string // user-configurable category (from DB Category table)
   paymentMethod?: string // payment method: GCash, Cash, Cheque, Bank Transfer, etc.
   company: string
   items?: ParticularItem[]
@@ -32,21 +37,26 @@ export interface NewSalesInput {
   chequeNo?: string
   particulars: string
   amount: number
-  category?: string        // optional sales category (e.g. Sales Revenue, Catering)
-  paymentMethod?: string  // payment method (GCash, Cash, etc.)
+  category?: string // optional sales category (e.g. Sales Revenue, Catering)
+  paymentMethod?: string // payment method (GCash, Cash, etc.)
   company: string
   status: 'Paid' | 'Pending' | 'On hold' | 'Unpaid'
   items?: ParticularItem[]
   bankAccountId?: string
 }
 
+removeLegacyAuditStorage()
+
 let inMemorySales: SalesItem[] = []
+
 function mapBackendSaleToItem(b: any): SalesItem {
-  const rawDate = b.transaction_date || (b.created_at ? b.created_at.split('T')[0] : '2026-10-01')
+  const rawDate =
+    b.transaction_date || (b.created_at ? b.created_at.split('T')[0] : '2026-10-01')
   const [year, month, day] = rawDate.split('-')
-  const displayDate = month && day ? `${month}/${day}/${year?.slice(2) || '26'}` : rawDate
+  const displayDate =
+    month && day ? `${month}/${day}/${year?.slice(2) || '26'}` : rawDate
   const amt = Number(b.amount) || 0
-  
+
   let chequeNo = b.cheque_no || b.chequeNo || b.reference_no || ''
   let particulars = b.particulars || b.description || 'Sales Entry'
   if (!chequeNo && particulars.includes('[Cheque:')) {
@@ -56,9 +66,14 @@ function mapBackendSaleToItem(b: any): SalesItem {
   }
 
   const parsedItems = parseParticulars(particulars, null, amt)
+  const derivedStatus = deriveRecordStatusFromParticulars(parsedItems, 'Paid')
+
+  const saleId = String(b.sales_id)
+  const resolvedAuditStatus: 'Verified' | 'Pending Audit' | 'Flagged' =
+    b.audit_status === 'Verified' || b.audit_status === 'Flagged' ? b.audit_status : 'Pending Audit'
 
   return {
-    id: String(b.sales_id),
+    id: saleId,
     refNo: chequeNo || `REF-${b.sales_id}`,
     chequeNo: chequeNo || undefined,
     date: displayDate,
@@ -71,9 +86,12 @@ function mapBackendSaleToItem(b: any): SalesItem {
     paymentMethod: b.payment_method || undefined,
     company: b.company_name || 'MCT Kitchen',
     items: parsedItems,
-    status: 'Paid',
-    auditStatus: 'Verified',
-    createdBy: 'Company Auditor',
+    status: derivedStatus,
+    auditStatus: resolvedAuditStatus,
+    auditedBy: b.audited_by || undefined,
+    auditDate: b.audited_at ? formatCreatedAt(b.audited_at) : undefined,
+    auditNotes: b.audit_remarks || undefined,
+    createdBy: b.created_by || 'Company Staff',
     createdAt: b.created_at || new Date().toISOString(),
     type: 'Sales',
   }
@@ -123,6 +141,7 @@ export const salesService = {
             if (cmp !== 0) return cmp
             return Number(b.id) - Number(a.id)
           })
+          inMemorySales = sorted
           salesCache.set(cacheKey, { data: sorted, timestamp: Date.now() })
           return sorted
         }
@@ -146,6 +165,7 @@ export const salesService = {
   },
 
   async addSale(input: NewSalesInput): Promise<SalesItem> {
+    this.invalidateCache()
     const payload = {
       company: input.company,
       transaction_date: input.date,
@@ -178,8 +198,17 @@ export const salesService = {
         const newItem = mapBackendSaleToItem(created)
         if (input.items && input.items.length > 0) {
           newItem.items = input.items
+          newItem.status = deriveRecordStatusFromParticulars(
+            input.items,
+            input.status === 'Unpaid'
+              ? 'Unpaid'
+              : input.status === 'Pending' || input.status === 'On hold'
+                ? 'Pending'
+                : 'Paid'
+          )
         }
         inMemorySales = [newItem, ...inMemorySales]
+        this.invalidateCache()
         return newItem
       } else {
         const errData = await res.json().catch(() => ({}))
@@ -189,12 +218,16 @@ export const salesService = {
         throw new Error(errorMsg)
       }
     } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err
+      }
       console.warn('Backend POST /sales failed, creating local record:', err)
-      // If network error occurred, create local fallback item
       const id = `sale_${Date.now()}`
       const refNo = `REF-${input.date.replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`
       const [year, month, day] = input.date.split('-')
       const displayDate = `${month}/${day}/${year?.slice(2) || '26'}`
+      const parsedItems =
+        input.items || parseParticulars(input.particulars, null, input.amount)
 
       const newItem: SalesItem = {
         id,
@@ -209,16 +242,24 @@ export const salesService = {
         category: input.category || 'None',
         paymentMethod: input.paymentMethod,
         company: input.company,
-        items: input.items || parseParticulars(input.particulars, null, input.amount),
-        status: input.status,
-        auditStatus: 'Verified',
-        createdBy: 'Company Auditor',
-        createdAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        updatedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+        items: parsedItems,
+        status: deriveRecordStatusFromParticulars(
+          parsedItems,
+          input.status === 'Unpaid'
+            ? 'Unpaid'
+            : input.status === 'Pending' || input.status === 'On hold'
+              ? 'Pending'
+              : 'Paid'
+        ),
+        auditStatus: 'Pending Audit',
+        createdBy: 'Company Staff',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         type: 'Sales',
       }
 
       inMemorySales = [newItem, ...inMemorySales]
+      this.invalidateCache()
       return newItem
     }
   },
@@ -227,14 +268,19 @@ export const salesService = {
     id: string,
     input: Partial<NewSalesInput>
   ): Promise<SalesItem> {
+    this.invalidateCache()
     const payload: Record<string, any> = {}
     if (input.date) payload.transaction_date = input.date
     if (input.amount !== undefined) payload.amount = input.amount
-    if (input.particulars) payload.particulars = input.particulars
+    if (input.particulars) {
+      payload.particulars = input.particulars
+      payload.description = input.particulars
+    }
     if (input.category !== undefined) {
       payload.category = input.category === 'None' ? null : input.category
     }
-    if (input.paymentMethod !== undefined) payload.payment_method = input.paymentMethod || null
+    if (input.paymentMethod !== undefined)
+      payload.payment_method = input.paymentMethod || null
     if (input.chequeNo !== undefined) payload.chequeNo = input.chequeNo
 
     try {
@@ -255,7 +301,21 @@ export const salesService = {
       if (res.ok) {
         const updated = await res.json()
         const mapped = mapBackendSaleToItem(updated)
+        if (input.items && input.items.length > 0) {
+          mapped.items = input.items
+          mapped.status = deriveRecordStatusFromParticulars(
+            input.items,
+            mapped.status === 'Unpaid'
+              ? 'Unpaid'
+              : mapped.status === 'Pending'
+                ? 'Pending'
+                : 'Paid'
+          )
+        } else if (input.status) {
+          mapped.status = input.status
+        }
         inMemorySales = inMemorySales.map((s) => (s.id === id ? mapped : s))
+        this.invalidateCache()
         return mapped
       }
     } catch (err) {
@@ -267,27 +327,42 @@ export const salesService = {
       if (s.id !== id) return s
       const amt = input.amount !== undefined ? input.amount : s.deposit
       const [year, month, day] = (input.date || s.rawDate || '').split('-')
-      const displayDate = month && day ? `${month}/${day}/${year?.slice(2) || '26'}` : s.date
+      const displayDate =
+        month && day ? `${month}/${day}/${year?.slice(2) || '26'}` : s.date
+      const updatedParticulars = input.particulars || s.particulars
+      const updatedItems =
+        input.items || parseParticulars(updatedParticulars, s.items, amt)
       return {
         ...s,
         date: input.date ? displayDate : s.date,
         rawDate: input.date || s.rawDate,
-        particulars: input.particulars || s.particulars,
+        particulars: updatedParticulars,
         chequeNo: input.chequeNo !== undefined ? input.chequeNo : s.chequeNo,
         category: input.category || s.category,
         paymentMethod: input.paymentMethod || s.paymentMethod,
         company: input.company || s.company,
-        status: input.status || s.status,
-        items: input.items || s.items,
+        status:
+          input.status ||
+          deriveRecordStatusFromParticulars(
+            updatedItems,
+            s.status === 'Unpaid'
+              ? 'Unpaid'
+              : s.status === 'Pending'
+                ? 'Pending'
+                : 'Paid'
+          ),
+        items: updatedItems,
         deposit: amt,
         netAmount: amt,
         updatedAt: new Date().toISOString(),
       }
     })
+    this.invalidateCache()
     return inMemorySales.find((s) => s.id === id)!
   },
 
   async deleteSale(id: string): Promise<boolean> {
+    this.invalidateCache()
     try {
       const token =
         typeof window !== 'undefined'
@@ -303,6 +378,7 @@ export const salesService = {
       })
       if (res.ok) {
         inMemorySales = inMemorySales.filter((s) => s.id !== id)
+        this.invalidateCache()
         return true
       }
     } catch (err) {
@@ -310,30 +386,39 @@ export const salesService = {
     }
 
     inMemorySales = inMemorySales.filter((s) => s.id !== id)
+    this.invalidateCache()
     return true
   },
 
   async updateSaleAuditStatus(
     id: string,
     auditStatus: 'Verified' | 'Pending Audit' | 'Flagged',
-    auditedBy?: string
+    auditedBy?: string,
+    auditNotes?: string
   ): Promise<SalesItem | null> {
-    const today = new Date().toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: '2-digit',
-    })
-    inMemorySales = inMemorySales.map((s) => {
-      if (s.id !== id) return s
-      return {
-        ...s,
-        auditStatus,
-        auditedBy: auditStatus === 'Verified' ? (auditedBy || 'Admin') : undefined,
-        auditDate: auditStatus === 'Verified' ? today : undefined,
-        updatedAt: new Date().toISOString(),
-      }
-    })
-    return inMemorySales.find((s) => s.id === id) || null
+    // Spec 0014: the server saves the status and stamps who audited and when.
+    // `auditedBy` is kept in the signature for existing callers; the server ignores it.
+    void auditedBy
+    try {
+      const saved = await saveAuditReview('sales', id, auditStatus, auditNotes)
+      const mapped = mapBackendSaleToItem(saved)
+      inMemorySales = inMemorySales.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              auditStatus: mapped.auditStatus,
+              auditedBy: mapped.auditedBy,
+              auditDate: mapped.auditDate,
+              auditNotes: mapped.auditNotes,
+              updatedAt: new Date().toISOString(),
+            }
+          : s
+      )
+      return inMemorySales.find((s) => s.id === id) || mapped
+    } finally {
+      // Success or failure, the next read must come from the server.
+      this.invalidateCache()
+    }
   },
 
   exportCsv(items: SalesItem[], filename = 'sales_report.csv') {

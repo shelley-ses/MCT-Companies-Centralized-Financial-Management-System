@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     petty_cash,
     bank_accounts,
     lending,
+    tenants,
 )
 
 api_router = APIRouter()
@@ -38,3 +39,4 @@ api_router.include_router(bills.router, prefix="/bills", tags=["Bills"])
 api_router.include_router(petty_cash.router, prefix="/petty-cash", tags=["Petty Cash"])
 api_router.include_router(bank_accounts.router, prefix="/bank-accounts", tags=["Bank Accounts"])
 api_router.include_router(lending.router, prefix="/lending", tags=["Lending"])
+api_router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])

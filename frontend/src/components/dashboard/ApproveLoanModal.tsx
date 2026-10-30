@@ -16,13 +16,19 @@ import {
   ChevronDown,
   Check,
   ShieldCheck,
+  Landmark,
+  Clock,
 } from 'lucide-react'
 import {
   loanService,
   type LoanItem,
-  type CompanyOption,
 } from '@/services/loanService'
+import {
+  bankService,
+  type BankAccount,
+} from '@/services/bankService'
 import { formatPHP } from '@/lib/format'
+import { formatCreatedAt } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
 
 interface ApproveLoanModalProps {
@@ -33,84 +39,81 @@ interface ApproveLoanModalProps {
   companies?: string[]
 }
 
-
 export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
   open,
   onOpenChange,
   loan,
   onSuccess,
-  companies: propsCompanies,
 }) => {
-  const [dbCompanies, setDbCompanies] = React.useState<CompanyOption[]>([])
-  const [selectedLender, setSelectedLender] = React.useState('')
+  const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>([])
+  const [selectedBankId, setSelectedBankId] = React.useState('')
   const [interestRate, setInterestRate] = React.useState('0')
   const [dueDate, setDueDate] = React.useState('')
-  const [isLenderDropdownOpen, setIsLenderDropdownOpen] = React.useState(false)
+  const [isBankDropdownOpen, setIsBankDropdownOpen] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [error, setError] = React.useState('')
-  const lenderDropdownRef = React.useRef<HTMLDivElement>(null)
+  const [remark, setRemark] = React.useState('')
+  const bankDropdownRef = React.useRef<HTMLDivElement>(null)
 
-  // Fetch registered companies
+  // Fetch all registered bank accounts
   React.useEffect(() => {
     let mounted = true
-    loanService.getCompanies().then((res) => {
-      if (mounted && res.length > 0) {
-        setDbCompanies(res)
+    bankService.getAccounts().then((accounts) => {
+      if (mounted && accounts) {
+        setBankAccounts(accounts)
       }
-    })
+    }).catch(() => {})
     return () => {
       mounted = false
     }
-  }, [])
+  }, [open])
 
-  const allCompanyNames = React.useMemo(() => {
-    if (dbCompanies.length > 0) {
-      return dbCompanies.map((c) => c.company_name).filter(Boolean)
-    }
-    if (propsCompanies && propsCompanies.length > 0) {
-      return propsCompanies.filter((c) => c !== 'All Companies')
-    }
-    return []
-  }, [dbCompanies, propsCompanies])
-
-  // Filter out borrower company so borrower cannot loan to itself
-  const eligibleLenders = React.useMemo(() => {
-    if (!loan) return allCompanyNames
+  // Filter out bank accounts belonging to the borrower company so borrower does not fund itself
+  const eligibleBanks = React.useMemo(() => {
+    if (!loan) return bankAccounts
     const borrowerNorm = (loan.borrower || '').trim().toLowerCase()
-    return allCompanyNames.filter((c) => c.trim().toLowerCase() !== borrowerNorm)
-  }, [allCompanyNames, loan])
+    return bankAccounts.filter((acc) => {
+      const cNorm = (acc.companyName || '').trim().toLowerCase()
+      return cNorm !== borrowerNorm
+    })
+  }, [bankAccounts, loan])
 
-  const [remark, setRemark] = React.useState('')
+  const selectedBank = React.useMemo(() => {
+    if (selectedBankId) {
+      const match = eligibleBanks.find((b) => b.id === selectedBankId)
+      if (match) return match
+    }
+    return eligibleBanks[0] || null
+  }, [eligibleBanks, selectedBankId])
 
-  // Reset / initialize modal state when opened
+  // Reset modal state when opened
   React.useEffect(() => {
     if (open && loan) {
       setError('')
       setRemark('')
       setIsSubmitting(false)
-      setIsLenderDropdownOpen(false)
+      setIsBankDropdownOpen(false)
       setInterestRate(String(loan.interestRate || 0))
       setDueDate(loan.dueDate || '')
 
-      const initialLender =
-        loan.lender &&
-        !loan.lender.toLowerCase().includes('pending') &&
-        loan.lender.toLowerCase() !== (loan.borrower || '').toLowerCase()
-          ? loan.lender
-          : eligibleLenders[0] || 'MCT Hotel'
-
-      setSelectedLender(initialLender)
+      if (loan.bankAccountId) {
+        setSelectedBankId(loan.bankAccountId)
+      } else if (eligibleBanks.length > 0) {
+        setSelectedBankId(eligibleBanks[0].id)
+      } else {
+        setSelectedBankId('')
+      }
     }
-  }, [open, loan, eligibleLenders])
+  }, [open, loan, eligibleBanks])
 
   // Close dropdown on outside click
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
-        lenderDropdownRef.current &&
-        !lenderDropdownRef.current.contains(e.target as Node)
+        bankDropdownRef.current &&
+        !bankDropdownRef.current.contains(e.target as Node)
       ) {
-        setIsLenderDropdownOpen(false)
+        setIsBankDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -121,16 +124,16 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
 
   const handleEndorse = async () => {
     setError('')
-    if (!selectedLender.trim()) {
-      setError('Please choose what company will provide this loan.')
+    if (!selectedBank) {
+      setError('Please choose a bank account to disburse this loan.')
       return
     }
 
     if (
-      selectedLender.trim().toLowerCase() ===
+      (selectedBank.companyName || '').trim().toLowerCase() ===
       (loan.borrower || '').trim().toLowerCase()
     ) {
-      setError('Lender company cannot be the same as the borrower company.')
+      setError('Lender bank company cannot be the same as the borrower company.')
       return
     }
 
@@ -144,7 +147,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
       const parsedInterest = parseFloat(interestRate) || 0
       const endorsed = await loanService.endorseLoan(loan.id, {
         action: 'endorse',
-        lenderCompany: selectedLender.trim(),
+        bankAccountId: selectedBank.id,
         interestRate: parsedInterest,
         dueDate: dueDate.trim() || undefined,
         remark: remark.trim(),
@@ -182,7 +185,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
+      <DialogContent className="sm:max-w-[540px] rounded-[24px] p-6 sm:p-7 bg-white border border-stroke/30 shadow-2xl [&>button]:top-4 [&>button]:right-4">
         <DialogHeader className="text-left pb-3 border-b border-stroke/20 pr-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 shadow-xs">
@@ -193,7 +196,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
                 Finance Review & Endorse Loan
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-fg font-normal">
-                Assign lender and endorse loan request from{' '}
+                Assign funding bank and endorse loan request from{' '}
                 <span className="font-semibold text-focus">{loan.borrower}</span> to Internal Audit
               </DialogDescription>
             </div>
@@ -225,7 +228,15 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-muted-fg font-medium">Request Date:</span>
-              <span className="font-medium text-focus">{loan.date}</span>
+              <div className="text-right">
+                <span className="font-medium text-focus">{loan.date}</span>
+                {loan.createdAt && (
+                  <span className="text-[11px] text-slate-500 font-normal flex items-center justify-end gap-1 mt-0.5">
+                    <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                    <span>Created: {formatCreatedAt(loan.createdAt)}</span>
+                  </span>
+                )}
+              </div>
             </div>
             <div className="pt-2 border-t border-slate-200/60">
               <span className="text-muted-fg block mb-0.5">Purpose / Particulars:</span>
@@ -235,66 +246,111 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
 
           {/* FINANCE DECISION CONTROLS */}
           <div className="space-y-3.5 pt-1">
-            {/* 1. Choose Lender Company */}
-            <div className="space-y-1.5" ref={lenderDropdownRef}>
+            {/* 1. Choose Funding Bank Account */}
+            <div className="space-y-1.5" ref={bankDropdownRef}>
               <Label className="text-xs font-semibold text-focus flex items-center justify-between">
                 <span>
-                  Choose Lending Company <span className="text-red-500">*</span>
+                  Choose Bank <span className="text-red-500">*</span>
                 </span>
                 <span className="text-[11px] text-muted-fg font-normal">
-                  (Who will finance this loan)
+                  (Bank account to deduct upon audit approval)
                 </span>
               </Label>
 
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setIsLenderDropdownOpen((prev) => !prev)}
+                  onClick={() => setIsBankDropdownOpen((prev) => !prev)}
                   className={cn(
-                    'w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white hover:bg-slate-50 text-focus text-xs sm:text-sm font-medium shadow-2xs flex items-center justify-between transition-colors cursor-pointer',
-                    isLenderDropdownOpen && 'ring-2 ring-blue-500/20 border-blue-600'
+                    'w-full min-h-[44px] px-3 py-2 rounded-xl border border-stroke/60 bg-white hover:bg-slate-50 text-focus text-xs font-medium shadow-2xs flex items-center justify-between transition-colors cursor-pointer text-left',
+                    isBankDropdownOpen && 'ring-2 ring-blue-500/20 border-blue-600'
                   )}
                 >
-                  <div className="flex items-center gap-2 truncate">
-                    <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
-                    <span className="truncate font-semibold text-focus">
-                      {selectedLender || 'Select lending company…'}
-                    </span>
-                  </div>
+                  {selectedBank ? (
+                    <div className="flex items-center gap-2.5 truncate">
+                      <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                        <Landmark className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="truncate">
+                        <div className="font-semibold text-focus flex items-center gap-1.5 truncate">
+                          <span>{selectedBank.bankName}</span>
+                          <span className="text-muted-fg font-normal">•</span>
+                          <span className="text-slate-600">{selectedBank.accountName}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
+                            {selectedBank.companyName}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-muted-fg flex items-center gap-2">
+                          <span>•••• {selectedBank.accountNumber.slice(-4)}</span>
+                          <span>•</span>
+                          <span className="text-emerald-600 font-semibold">
+                            Balance: {formatPHP(selectedBank.currentBalance)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-muted-fg">
+                      <Landmark className="w-4 h-4 text-slate-400" />
+                      <span>Select bank account…</span>
+                    </div>
+                  )}
                   <ChevronDown
                     className={cn(
-                      'w-4 h-4 text-muted-fg shrink-0 transition-transform duration-200',
-                      isLenderDropdownOpen && 'rotate-180'
+                      'w-4 h-4 text-muted-fg shrink-0 transition-transform duration-200 ml-2',
+                      isBankDropdownOpen && 'rotate-180'
                     )}
                   />
                 </button>
 
-                {isLenderDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-56 overflow-y-auto">
+                {isBankDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-stroke/30 shadow-2xl p-2 z-50 animate-in fade-in-50 zoom-in-95 duration-150 max-h-60 overflow-y-auto">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-fg px-2 py-1">
-                      Available Subsidiaries
+                      Available Corporate Bank Accounts
                     </p>
-                    {eligibleLenders.map((comp) => (
-                      <button
-                        key={comp}
-                        type="button"
-                        onClick={() => {
-                          setSelectedLender(comp)
-                          setIsLenderDropdownOpen(false)
-                        }}
-                        className={cn(
-                          'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left cursor-pointer',
-                          selectedLender === comp
-                            ? 'bg-blue-50 text-blue-800 font-semibold'
-                            : 'text-focus/90 hover:bg-slate-50'
-                        )}
-                      >
-                        <span className="truncate">{comp}</span>
-                        {selectedLender === comp && (
-                          <Check className="h-3.5 w-3.5 text-blue-600 shrink-0 ml-2" />
-                        )}
-                      </button>
-                    ))}
+                    {eligibleBanks.length === 0 ? (
+                      <p className="text-xs text-muted-fg px-3 py-2 italic">
+                        No eligible bank accounts registered.
+                      </p>
+                    ) : (
+                      eligibleBanks.map((acc) => (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedBankId(acc.id)
+                            setIsBankDropdownOpen(false)
+                          }}
+                          className={cn(
+                            'w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs transition-colors text-left cursor-pointer border-b border-slate-50 last:border-b-0',
+                            selectedBank?.id === acc.id
+                              ? 'bg-blue-50 text-blue-900 font-semibold'
+                              : 'hover:bg-slate-50 text-focus'
+                          )}
+                        >
+                          <div className="truncate mr-2">
+                            <div className="flex items-center gap-1.5 font-semibold text-focus truncate">
+                              <span>{acc.bankName}</span>
+                              <span className="text-slate-400 font-normal">•</span>
+                              <span className="text-slate-700">{acc.accountName}</span>
+                            </div>
+                            <div className="text-[11px] text-muted-fg flex items-center gap-2 mt-0.5">
+                              <span className="font-medium text-blue-700 bg-blue-100/60 px-1.5 py-0.2 rounded text-[10px]">
+                                {acc.companyName}
+                              </span>
+                              <span>•••• {acc.accountNumber.slice(-4)}</span>
+                              <span>•</span>
+                              <span className="text-emerald-600 font-semibold">
+                                {formatPHP(acc.currentBalance)}
+                              </span>
+                            </div>
+                          </div>
+                          {selectedBank?.id === acc.id && (
+                            <Check className="h-4 w-4 text-blue-600 shrink-0 ml-1" />
+                          )}
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
@@ -360,7 +416,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
           </div>
 
           <p className="text-2xs sm:text-xs text-slate-500 leading-relaxed pt-1">
-            Endorsing forward will transmit this loan request to the Internal Audit team for final compliance review.
+            Endorsing forward will transmit this loan request to the Internal Audit team for final compliance review. Upon audit approval, the loan amount will be deducted from the chosen bank and credited to the borrower.
           </p>
 
           <div className="pt-3 flex items-center justify-between gap-2.5 border-t border-stroke/20">
@@ -384,7 +440,7 @@ export const ApproveLoanModal: React.FC<ApproveLoanModalProps> = ({
               <Button
                 type="button"
                 onClick={handleEndorse}
-                disabled={isSubmitting || !selectedLender || !remark.trim()}
+                disabled={isSubmitting || !selectedBank || !remark.trim()}
                 className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-semibold shadow-xs cursor-pointer flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-4 h-4" />

@@ -44,7 +44,20 @@ class CompanyService:
                 .order_by(Company.company_id.asc())
                 .all()
             )
-            return [self.to_response(company) for company in companies]
+            # Fetch revenue/expense/net-profit for every company in two grouped
+
+            summaries = self.finance_service.get_list_summaries_for_companies(
+                [company.company_id for company in companies]
+            )
+            return [
+                self._build_company_out(
+                    company,
+                    total_revenue=float(summaries[company.company_id]["total_revenue"]),
+                    total_expenses=float(summaries[company.company_id]["total_expenses"]),
+                    net_profit=float(summaries[company.company_id]["net_profit"]),
+                )
+                for company in companies
+            ]
         except SQLAlchemyError as error:
             raise self._database_error("list companies", error)
 
@@ -293,23 +306,40 @@ class CompanyService:
             summary = self.finance_service.get_company_financial_summary(
                 company_id=company.company_id
             )
-            return CompanyOut(
-                id=company.company_id,
-                name=company.company_name,
-                location=company.location,
-                contact_number=company.contact_number,
-                phone=company.phone,
-                starting_balance=float(company.starting_balance),
-                petty_cash=float(getattr(company, "petty_cash", 0.0) or 0.0),
-                logo_url=company.logo_url,
+            return self._build_company_out(
+                company,
                 total_revenue=float(summary.total_revenue),
                 total_expenses=float(summary.total_expenses),
                 net_profit=float(summary.net_profit),
-                created_at=company.created_at,
-                updated_at=company.updated_at,
             )
         except SQLAlchemyError as error:
             raise self._database_error("build company response", error)
+
+    # Assembles a CompanyOut from a company row plus already-computed financial
+    # figures. Shared by the single-company path (to_response) and the batched
+    # list path (list_companies) so the two can never drift apart.
+    def _build_company_out(
+        self,
+        company: Company,
+        total_revenue: float,
+        total_expenses: float,
+        net_profit: float,
+    ) -> CompanyOut:
+        return CompanyOut(
+            id=company.company_id,
+            name=company.company_name,
+            location=company.location,
+            contact_number=company.contact_number,
+            phone=company.phone,
+            starting_balance=float(company.starting_balance),
+            petty_cash=float(getattr(company, "petty_cash", 0.0) or 0.0),
+            logo_url=company.logo_url,
+            total_revenue=total_revenue,
+            total_expenses=total_expenses,
+            net_profit=net_profit,
+            created_at=company.created_at,
+            updated_at=company.updated_at,
+        )
 
     def _database_error(
         self,

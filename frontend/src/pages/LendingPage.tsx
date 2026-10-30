@@ -142,11 +142,17 @@ export const LendingPage: React.FC = () => {
   }, [])
 
   // Filter toolbar state matching SalesPage
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    startDate: '2026-10-01',
-    endDate: '2026-10-31',
-    label: 'Last 30 Days',
-    preset: 'Last 30 Days',
+  const [dateRange, setDateRange] = React.useState<DateRange>(() => {
+    const now = new Date()
+    const currYear = now.getFullYear()
+    const currMonth = String(now.getMonth() + 1).padStart(2, '0')
+    const lastDay = new Date(currYear, now.getMonth() + 1, 0).getDate()
+    return {
+      startDate: `${currYear}-${currMonth}-01`,
+      endDate: `${currYear}-${currMonth}-${String(lastDay).padStart(2, '0')}`,
+      label: 'This Month',
+      preset: 'This Month',
+    }
   })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<'All' | 'Active' | 'Completed' | 'Overdue' | 'Pending'>('All')
@@ -780,7 +786,7 @@ export const LendingPage: React.FC = () => {
       notes: '',
       penaltyAmount: '0',
     })
-    setPaymentCalendarMonth(new Date(initialDate || new Date()))
+    setPaymentCalendarMonth(new Date())
     setIsDailyPaymentModalOpen(true)
   }
   const handleOpenDailyPaymentModal = handleOpenPaymentModal
