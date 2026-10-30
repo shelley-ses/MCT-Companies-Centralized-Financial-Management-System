@@ -445,6 +445,7 @@ export const LendingPage: React.FC = () => {
       'Amount Paid',
       'Remaining Balance',
       'Status',
+      ...(isAudit ? ['Audit Status', 'Audit Date'] : []),
     ]
 
     const rows = filteredFacilities.map((f) => [
@@ -458,6 +459,7 @@ export const LendingPage: React.FC = () => {
       f.amountPaid,
       f.remainingBalance,
       f.status,
+      ...(isAudit ? [f.auditStatus || 'Unreviewed', f.auditDate || ''] : []),
     ])
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
@@ -490,6 +492,7 @@ export const LendingPage: React.FC = () => {
           <td style="text-align: right; color: #059669; font-weight: 600;">${formatPHP(f.amountPaid)}</td>
           <td style="text-align: right; color: #d97706; font-weight: bold;">${formatPHP(f.remainingBalance)}</td>
           <td style="text-align: center;">${f.status}</td>
+          ${isAudit ? `<td style="text-align: center; font-weight: 600;">${f.auditStatus || '-'}</td><td style="text-align: center; font-size: 10px; font-family: monospace;">${f.auditDate || '-'}</td>` : ''}
         </tr>
       `
       )
@@ -525,6 +528,7 @@ export const LendingPage: React.FC = () => {
                 <th style="text-align: right;">Amount Paid</th>
                 <th style="text-align: right;">Remaining Balance</th>
                 <th>Status</th>
+                ${isAudit ? '<th>Audit Status</th><th>Audit Date</th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -1212,6 +1216,18 @@ export const LendingPage: React.FC = () => {
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-focus tracking-tight">
                   {activeFacility.borrowerName}
                 </h1>
+                {activeFacility.auditStatus && (
+                  <span
+                    className={cn(
+                      'inline-block px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider',
+                      activeFacility.auditStatus === 'Verified'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-[#960C01]/10 text-[#960C01] border-[#960C01]/20'
+                    )}
+                  >
+                    {activeFacility.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                 <span className="text-xs sm:text-sm text-muted-fg font-medium">
@@ -1825,53 +1841,95 @@ export const LendingPage: React.FC = () => {
       >
         {/* Table with Requirement 3 columns and Action Buttons */}
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <Table className="w-full table-fixed min-w-[1160px]">
+          <Table className={cn('w-full table-fixed', isAudit ? 'min-w-[1240px]' : 'min-w-[1160px]')}>
             <colgroup>
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '15%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '6%' }} />
+              {isAudit ? (
+                <>
+                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '8.5%' }} />
+                  <col style={{ width: '5.5%' }} />
+                </>
+              ) : (
+                <>
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '6%' }} />
+                </>
+              )}
             </colgroup>
             <TableHeader>
               <TableRow className="border-b border-slate-200/80 bg-slate-50/70 hover:bg-slate-50/70">
-                <TableHead className="w-[18%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  BORROWER'S NAME
+                <TableHead className={cn(isAudit ? "w-[16%]" : "w-[18%]", "px-3 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    BORROWER'S<br />NAME
+                  </div>
                 </TableHead>
-                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  LOAN AMOUNT
+                <TableHead className={cn(isAudit ? "w-[10%]" : "w-[11%]", "px-3 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    LOAN<br />AMOUNT
+                  </div>
                 </TableHead>
-                <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  DATE BORROWED
+                <TableHead className={cn(isAudit ? "w-[9%]" : "w-[10%]", "px-3 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    DATE<br />BORROWED
+                  </div>
                 </TableHead>
-                <TableHead className="w-[10%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  DUE DATE
+                <TableHead className={cn(isAudit ? "w-[9%]" : "w-[10%]", "px-3 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    DUE<br />DATE
+                  </div>
                 </TableHead>
-                <TableHead className="w-[15%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  TOTAL AMOUNT PAYABLE
+                <TableHead className={cn(isAudit ? "w-[14%]" : "w-[15%]", "px-3 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    TOTAL AMOUNT<br />PAYABLE
+                  </div>
                 </TableHead>
-                <TableHead className="w-[11%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  AMOUNT PAID
+                <TableHead className={cn(isAudit ? "w-[10%]" : "w-[11%]", "px-3 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    AMOUNT<br />PAID
+                  </div>
                 </TableHead>
-                <TableHead className="w-[12%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left whitespace-nowrap">
-                  REMAINING BALANCE
+                <TableHead className={cn(isAudit ? "w-[11%]" : "w-[12%]", "px-3 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    REMAINING<br />BALANCE
+                  </div>
                 </TableHead>
-                <TableHead className="w-[7%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
-                  STATUS
+                <TableHead className="w-[7%] px-2.5 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom">
+                  <div className="leading-tight text-center">
+                    STATUS
+                  </div>
                 </TableHead>
-                <TableHead className="w-[6%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center whitespace-nowrap">
-                  ACTIONS
+                {isAudit && (
+                  <TableHead className="w-[8.5%] px-2.5 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom">
+                    <div className="leading-tight text-center">
+                      AUDIT<br />TAG
+                    </div>
+                  </TableHead>
+                )}
+                <TableHead className={cn(isAudit ? "w-[5.5%]" : "w-[6%]", "px-2 py-2.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-fg text-center align-bottom")}>
+                  <div className="leading-tight text-center">
+                    ACTIONS
+                  </div>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedFacilities.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-44 text-center py-8">
+                  <TableCell colSpan={isAudit ? 10 : 9} className="h-44 text-center py-8">
                     <div className="flex flex-col items-center justify-center text-muted-fg">
                       <CreditCard className="h-8 w-8 text-muted-fg/40 mb-2" />
                       <p className="text-sm font-semibold">No borrowers found</p>
@@ -1903,11 +1961,11 @@ export const LendingPage: React.FC = () => {
                       title="Click row to view complete lending and borrower details"
                     >
                       {/* Borrower's Name & Borrower Ref No */}
-                      <TableCell className="w-[18%] px-3.5 py-3.5 text-left">
-                        <div className="font-semibold text-xs text-focus truncate max-w-[200px]" title={facility.borrowerName}>
+                      <TableCell className={cn(isAudit ? "w-[16%]" : "w-[18%]", "px-3 py-3 text-center")}>
+                        <div className="font-semibold text-xs text-focus truncate max-w-[190px] mx-auto text-center" title={facility.borrowerName}>
                           {facility.borrowerName}
                         </div>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <div className="flex items-center justify-center gap-1.5 mt-0.5 flex-wrap">
                           {facility.borrowerContact && (
                             <span className="text-[10px] text-muted-fg truncate max-w-[120px]">
                               {facility.borrowerContact}
@@ -1917,19 +1975,19 @@ export const LendingPage: React.FC = () => {
                       </TableCell>
 
                       {/* 2. Loan Amount */}
-                      <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-semibold text-xs text-focus tabular-nums whitespace-nowrap">
+                      <TableCell className={cn(isAudit ? "w-[10%]" : "w-[11%]", "px-3 py-3 text-center font-semibold text-xs text-focus tabular-nums whitespace-nowrap")}>
                         {formatPHP(facility.loanAmount)}
                       </TableCell>
 
                       {/* 3. Date Borrowed */}
-                      <TableCell className="w-[10%] px-3.5 py-3.5 text-left font-mono text-xs text-muted-fg whitespace-nowrap">
+                      <TableCell className={cn(isAudit ? "w-[9%]" : "w-[10%]", "px-3 py-3 text-center font-mono text-xs text-muted-fg whitespace-nowrap")}>
                         {facility.dateBorrowed}
                       </TableCell>
 
                       {/* 4. Due Date */}
-                      <TableCell className="w-[10%] px-3.5 py-3.5 text-left text-xs whitespace-nowrap">
-                        <div className="font-mono text-muted-fg font-medium">{facility.dueDate}</div>
-                        <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                      <TableCell className={cn(isAudit ? "w-[9%]" : "w-[10%]", "px-3 py-3 text-center text-xs whitespace-nowrap")}>
+                        <div className="font-mono text-muted-fg font-medium text-center">{facility.dueDate}</div>
+                        <div className="text-[10px] text-slate-400 font-sans mt-0.5 text-center">
                           {(() => {
                             const isDaily = !facility.paymentFrequency || facility.paymentFrequency === 'Daily'
                             const t = facility.termDays || (isDaily ? 40 : 2)
@@ -1940,22 +1998,22 @@ export const LendingPage: React.FC = () => {
                       </TableCell>
 
                       {/* 5. Total Amount Payable */}
-                      <TableCell className="w-[15%] px-3.5 py-3.5 text-left font-bold text-xs text-focus tabular-nums whitespace-nowrap">
+                      <TableCell className={cn(isAudit ? "w-[14%]" : "w-[15%]", "px-3 py-3 text-center font-bold text-xs text-focus tabular-nums whitespace-nowrap")}>
                         {formatPHP(facility.totalAmountPayable)}
                       </TableCell>
 
                       {/* 6. Amount Paid */}
-                      <TableCell className="w-[11%] px-3.5 py-3.5 text-left font-semibold text-xs text-emerald-600 tabular-nums whitespace-nowrap">
+                      <TableCell className={cn(isAudit ? "w-[10%]" : "w-[11%]", "px-3 py-3 text-center font-semibold text-xs text-emerald-600 tabular-nums whitespace-nowrap")}>
                         {formatPHP(facility.amountPaid)}
                       </TableCell>
 
                       {/* 7. Remaining Balance */}
-                      <TableCell className="w-[12%] px-3.5 py-3.5 text-left font-bold text-xs text-amber-600 tabular-nums whitespace-nowrap">
-                        <div>{formatPHP(facility.remainingBalance)}</div>
+                      <TableCell className={cn(isAudit ? "w-[11%]" : "w-[12%]", "px-3 py-3 text-center font-bold text-xs text-amber-600 tabular-nums whitespace-nowrap")}>
+                        <div className="text-center">{formatPHP(facility.remainingBalance)}</div>
                       </TableCell>
 
                       {/* 8. Status */}
-                      <TableCell className="w-[7%] px-3.5 py-3.5 text-center whitespace-nowrap">
+                      <TableCell className="w-[7%] px-2.5 py-3 text-center whitespace-nowrap">
                         <span
                           className={cn(
                             'inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold border uppercase tracking-wider',
@@ -1964,30 +2022,40 @@ export const LendingPage: React.FC = () => {
                         >
                           {facility.status}
                         </span>
-
-                        {facility.auditStatus && (
-                          <div className="mt-1 flex items-center justify-center gap-1">
-                            <span
-                              className={cn(
-                                'inline-block px-1.5 py-0.2 rounded text-[9.5px] font-bold border',
-                                facility.auditStatus === 'Verified'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : 'bg-[#960C01]/10 text-[#960C01] border-[#960C01]/20'
-                              )}
-                            >
-                              {facility.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
-                            </span>
-                          </div>
-                        )}
-                        {facility.auditDate && (
-                          <span className="block text-[9.5px] text-muted-fg font-mono mt-0.5">
-                            {facility.auditDate}
-                          </span>
-                        )}
                       </TableCell>
 
-                      {/* 9. Actions: 3 dots dropdown (Edit, Delete, Update) */}
-                      <TableCell className="w-[6%] px-3.5 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {/* 9. Audit Tag (Dedicated column for Auditor account) */}
+                      {isAudit && (
+                        <TableCell className="w-[8.5%] px-2.5 py-3 text-center whitespace-nowrap">
+                          {facility.auditStatus ? (
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                              <span
+                                className={cn(
+                                  'inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider',
+                                  facility.auditStatus === 'Verified'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-[#960C01]/10 text-[#960C01] border-[#960C01]/20'
+                                )}
+                              >
+                                {facility.auditStatus === 'Verified' ? 'Audited' : 'Discrepancy'}
+                              </span>
+                              {facility.auditDate && (
+                                <span
+                                  className="block text-[9.5px] text-muted-fg font-mono whitespace-nowrap mt-0.5"
+                                  title={facility.auditedBy ? `Audited by ${facility.auditedBy}` : undefined}
+                                >
+                                  {facility.auditDate}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-fg/40 font-mono">-</span>
+                          )}
+                        </TableCell>
+                      )}
+
+                      {/* 10. Actions: 3 dots dropdown (Edit, Delete, Update for staff; Mark Audit / Flag Discrepancy for Auditor) */}
+                      <TableCell className={cn(isAudit ? "w-[5.5%]" : "w-[6%]", "px-2 py-3 text-center whitespace-nowrap")} onClick={(e) => e.stopPropagation()}>
                         <Button
                           type="button"
                           variant="ghost"
