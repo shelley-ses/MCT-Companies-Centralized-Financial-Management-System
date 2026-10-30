@@ -1380,20 +1380,18 @@ class LendingService:
             rem_bal = max(Decimal("0.00"), remaining_before - payment_amount)
 
             # Determine if this payment fully settles the installment target or is Partially Paid
-            if freq == "Daily":
-                paid_for_date_before = sum(
-                    (
-                        Decimal(str(r["amount"]))
-                        for r in repayment_dicts
-                        if str(r.get("cycle_due_date") or r.get("date") or "").split("T")[0] == target_cycle_due.isoformat()
-                    ),
-                    Decimal("0.00"),
-                )
-                is_period_settled = (paid_for_date_before + payment_amount) >= installment_target or rem_bal <= Decimal("0.00")
-            elif freq == "Monthly":
-                is_period_settled = payment_amount >= installment_target or rem_bal <= Decimal("0.00")
-            else:
-                is_period_settled = payment_amount >= installment_target or rem_bal <= Decimal("0.00")
+            paid_for_cycle_before = sum(
+                (
+                    Decimal(str(r["amount"]))
+                    for r in repayment_dicts
+                    if (
+                        (cycle_index_val is not None and (r.get("cycle_index") == cycle_index_val or r.get("month_index") == cycle_index_val))
+                        or str(r.get("cycle_due_date") or r.get("date") or "").split("T")[0] == target_cycle_due.isoformat()
+                    )
+                ),
+                Decimal("0.00"),
+            )
+            is_period_settled = (paid_for_cycle_before + payment_amount) >= installment_target or rem_bal <= Decimal("0.00")
 
             tx_db_status = "Completed" if is_period_settled else "Partially Paid"
             tx_out_status = "Paid" if is_period_settled else "Partially Paid"
@@ -1422,7 +1420,11 @@ class LendingService:
             if is_period_settled:
                 for prev_tx in existing_txs:
                     prev_cycle_due = prev_tx.cycle_due_date or prev_tx.payment_date
-                    if prev_cycle_due == target_cycle_due and prev_tx.status == "Partially Paid":
+                    matches_cycle = (
+                        (cycle_index_val is not None and prev_tx.cycle_index == cycle_index_val)
+                        or (prev_cycle_due == target_cycle_due)
+                    )
+                    if matches_cycle and prev_tx.status in {"Partially Paid", "Partial"}:
                         prev_tx.status = "Completed"
 
             # 5. Update borrower status and persistent ledger totals

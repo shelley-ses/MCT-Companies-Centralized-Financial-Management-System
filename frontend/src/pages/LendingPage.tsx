@@ -585,7 +585,7 @@ export const LendingPage: React.FC = () => {
         termDays: termDaysNum,
         dateBorrowed: formData.dateBorrowed,
         dueDate: formData.dueDate,
-        notes: formData.notes.trim() || 'Everyday micro-credit lending facility.',
+        notes: formData.notes.trim(),
       })
 
       const updatedList = [newFacility, ...facilities.filter((f) => f.id !== newFacility.id)]
@@ -991,10 +991,12 @@ export const LendingPage: React.FC = () => {
       // If this payment completes a previously partially-paid date/period, update prior partial records on that date/period to Paid & locked
       const existingUpdated = (activeFacility.dailyPayments || []).map((prev) => {
         if (pendingPayment.paymentStatus === 'Paid') {
-          if (isDaily && prev.date === pendingPayment.paymentDate && (prev.status === 'Partial' || prev.status === 'Partially Paid')) {
-            return { ...prev, status: 'Paid' as const, isLocked: true }
-          }
-          if (!isDaily && pendingPayment.monthIndex && prev.monthIndex === pendingPayment.monthIndex && (prev.status === 'Partial' || prev.status === 'Partially Paid')) {
+          const prevCycleDue = prev.cycle_due_date || prev.cycleDueDate
+          const isSameTargetDue = Boolean(prevCycleDue && pendingPayment.cycleDueDate && prevCycleDue === pendingPayment.cycleDueDate)
+          const isSameMonthIdx = Boolean(pendingPayment.monthIndex && prev.monthIndex === pendingPayment.monthIndex)
+          const isSameDailyDate = isDaily && prev.date === pendingPayment.paymentDate
+
+          if ((isSameTargetDue || isSameMonthIdx || isSameDailyDate) && (prev.status === 'Partial' || prev.status === 'Partially Paid')) {
             return { ...prev, status: 'Paid' as const, isLocked: true }
           }
         }
@@ -1132,6 +1134,31 @@ export const LendingPage: React.FC = () => {
     const historyStartIndex = (safeHistoryPage - 1) * HISTORY_ITEMS_PER_PAGE
     const historyEndIndex = Math.min(historyStartIndex + HISTORY_ITEMS_PER_PAGE, filteredHistoryPayments.length)
     const paginatedHistoryPayments = filteredHistoryPayments.slice(historyStartIndex, historyEndIndex)
+
+    // Build cycle settlement map to know whether an installment cycle has reached its full target
+    const isDaily = !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
+    const dailyTarget = getFacilityDailyTarget(activeFacility)
+    const cycleSettledMap = new Map<string, boolean>()
+
+    if (isDaily) {
+      const paidByDate = new Map<string, number>()
+      ;(activeFacility.dailyPayments || []).forEach((p) => {
+        const d = p.cycle_due_date || p.cycleDueDate || p.date || p.payment_date
+        if (d) paidByDate.set(d, (paidByDate.get(d) || 0) + (p.amount || 0))
+      })
+      paidByDate.forEach((total, d) => {
+        if (total >= dailyTarget - 0.005 || activeFacility.remainingBalance <= 0.005) {
+          cycleSettledMap.set(d, true)
+        }
+      })
+    } else {
+      const progress = getMonthlyProgress(activeFacility)
+      progress.months.forEach((m) => {
+        if (m.status === 'Paid' || m.remaining <= 0.005 || activeFacility.remainingBalance <= 0.005) {
+          cycleSettledMap.set(m.dueDate, true)
+        }
+      })
+    }
 
     const calculatedInterest =
       (activeFacility as any).interestAmount ??
@@ -1457,9 +1484,10 @@ export const LendingPage: React.FC = () => {
                           </tr>
                         ) : (
                           paginatedHistoryPayments.map((p) => {
-                            const isPartial = p.status === 'Partial' || p.status === 'Partially Paid'
                             const installmentDate = p.cycle_due_date || p.cycleDueDate || p.date || '-'
                             const paymentDate = p.date || p.payment_date || '-'
+                            const isCycleSettled = cycleSettledMap.has(installmentDate)
+                            const isPartial = !isCycleSettled && (p.status === 'Partial' || p.status === 'Partially Paid')
                             return (
                               <tr
                                 key={p.id}
@@ -1482,12 +1510,12 @@ export const LendingPage: React.FC = () => {
                                   ) : (p.is_late || p.isLate || (p.status && p.status.includes('Late'))) ? (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
                                       <AlertCircle className="w-2.5 h-2.5 text-[#960C01]" />
-                                      <span>{p.status || `Paid Late (${p.days_late || p.daysLate || ''}d)`}</span>
+                                      <span>Paid</span>
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                       <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                      <span>{p.status || 'Paid'}</span>
+                                      <span>Paid</span>
                                     </span>
                                   )}
                                 </td>
