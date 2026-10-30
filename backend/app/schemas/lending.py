@@ -27,7 +27,7 @@ class LendingCalculateResponse(BaseModel):
     due_date: str
 
 
-class LendingFacilityCreateRequest(BaseModel):
+class BorrowerCreateRequest(BaseModel):
     borrower_name: str = Field(..., min_length=1)
     borrower_contact: Optional[str] = ""
     borrower_address: Optional[str] = ""
@@ -40,19 +40,45 @@ class LendingFacilityCreateRequest(BaseModel):
     notes: Optional[str] = ""
 
 
+class BorrowerUpdateRequest(BaseModel):
+    borrower_name: Optional[str] = None
+    borrower_contact: Optional[str] = None
+    borrower_address: Optional[str] = None
+    loan_amount: Optional[Decimal] = None
+    interest_rate: Optional[Decimal] = None
+    payment_frequency: Optional[str] = None
+    term_days: Optional[int] = None
+    date_borrowed: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class BorrowerDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Borrower deleted successfully."
+
+
 class LendingPaymentCreateRequest(BaseModel):
-    facility_id: int
+    borrower_id: int
     payment_date: str
+    cycle_due_date: Optional[str] = None
+    cycle_index: Optional[int] = None
     amount: Decimal = Field(..., ge=1.0)
+    penalty_amount: Optional[Decimal] = Field(default=Decimal("0.00"), ge=0.0)
     method: str = Field(default="Cash")
     reference_no: Optional[str] = ""
     notes: Optional[str] = ""
 
 
 class LendingTransactionCreateRequest(BaseModel):
-    facility_id: int
+    borrower_id: int
     payment_date: str
+    cycle_due_date: Optional[str] = None
+    cycle_index: Optional[int] = None
     amount: Decimal = Field(..., ge=0.01)
+    penalty_amount: Optional[Decimal] = Field(default=None, ge=0.0)
+    penalty_portion: Optional[Decimal] = Field(default=None, ge=0.0)
     payment_method: str = Field(default="Cash")
     transaction_type: str = Field(default="Repayment")
     reference_no: Optional[str] = ""
@@ -61,14 +87,16 @@ class LendingTransactionCreateRequest(BaseModel):
 
 class LendingTransactionOut(BaseModel):
     transaction_id: int
-    facility_id: int
+    borrower_id: int
     transaction_ref_no: Optional[str] = None
     transaction_type: str = "Repayment"
     payment_date: str
     due_date: Optional[str] = None
+    cycle_index: Optional[int] = None
+    cycle_due_date: Optional[str] = None
+    is_late: bool = False
+    days_late: int = 0
     amount: float
-    principal_portion: float = 0.0
-    interest_portion: float = 0.0
     penalty_portion: float = 0.0
     remaining_balance: Optional[float] = None
     payment_method: str = "Cash"
@@ -83,6 +111,8 @@ class LendingTransactionOut(BaseModel):
 
 class DailyPaymentRecordOut(BaseModel):
     id: str
+    transaction_ref_no: Optional[str] = None
+    transactionRefNo: Optional[str] = None
     date: str
     amount: float
     method: str
@@ -92,10 +122,17 @@ class DailyPaymentRecordOut(BaseModel):
     timestamp: str
     isLocked: Optional[bool] = False
     penalty: Optional[float] = 0.0
+    cycle_index: Optional[int] = None
+    cycle_due_date: Optional[str] = None
+    is_late: Optional[bool] = False
+    days_late: Optional[int] = 0
 
 
-class LendingFacilityOut(BaseModel):
+class BorrowerOut(BaseModel):
     id: str
+    borrower_id: int
+    borrower_ref_no: Optional[str] = None
+    borrowerRefNo: Optional[str] = None
     loanId: int
     loanRefNo: str
     borrowerName: str
@@ -126,7 +163,8 @@ class LendingFacilityOut(BaseModel):
 
 
 class LendingLedgerResponse(BaseModel):
-    facility_id: str
+    borrower_id: str
+    borrower_ref_no: str
     loan_ref_no: str
     borrower_name: str
     borrower_contact: Optional[str] = ""
@@ -150,3 +188,4 @@ class LendingLedgerResponse(BaseModel):
     ledger_items: List[Dict[str, Any]]
     monthly_progress: Optional[Dict[str, Any]] = None
     next_installment: Optional[Dict[str, Any]] = None
+

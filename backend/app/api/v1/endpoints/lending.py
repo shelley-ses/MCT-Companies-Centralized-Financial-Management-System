@@ -7,11 +7,13 @@ from app.services.lending_service import LendingService
 from app.schemas.lending import (
     LendingCalculateRequest,
     LendingCalculateResponse,
-    LendingFacilityCreateRequest,
+    BorrowerCreateRequest,
+    BorrowerUpdateRequest,
+    BorrowerDeleteResponse,
+    BorrowerOut,
     LendingPaymentCreateRequest,
     LendingTransactionCreateRequest,
     LendingTransactionOut,
-    LendingFacilityOut,
     LendingLedgerResponse,
 )
 
@@ -21,14 +23,14 @@ router = APIRouter()
 @router.post(
     "/calculate",
     response_model=LendingCalculateResponse,
-    summary="Stateless lending facility terms and installment calculation",
+    summary="Stateless loan terms and installment calculation",
 )
 def calculate_terms(payload: LendingCalculateRequest):
     """
     Pure calculation endpoint computing interest, total payable, and installment amounts
     based on principal, interest rate, payment frequency, and schedule dates.
     """
-    return LendingService.calculate_facility(
+    return LendingService.calculate_terms(
         principal=payload.principal,
         interest_rate=payload.interest_rate,
         frequency=payload.payment_frequency,
@@ -39,51 +41,50 @@ def calculate_terms(payload: LendingCalculateRequest):
 
 
 @router.get(
-    "/facilities",
-    response_model=List[LendingFacilityOut],
-    summary="List lending facilities with balance and schedule aggregates",
+    "/borrowers",
+    response_model=List[BorrowerOut],
+    summary="List borrowers with balance and schedule aggregates",
 )
-def list_facilities(
-    borrower: Optional[str] = Query(None, description="Filter facilities by borrower name"),
-    company_id: Optional[int] = Query(None, deprecated=True),
+def list_borrowers(
+    borrower: Optional[str] = Query(None, description="Filter by borrower name"),
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve all lending facilities, computing real-time amount paid, remaining balance,
+    Retrieve all borrowers, computing real-time amount paid, remaining balance,
     and schedule aggregates.
     """
-    return LendingService.get_facilities(db=db, borrower_query=borrower)
+    return LendingService.get_borrowers(db=db, borrower_query=borrower)
 
 
 @router.get(
-    "/facilities/{facility_id}",
-    response_model=LendingFacilityOut,
-    summary="Get single lending facility details",
+    "/borrowers/{borrower_id}",
+    response_model=BorrowerOut,
+    summary="Get single borrower details",
 )
-def get_facility(
-    facility_id: int,
+def get_borrower(
+    borrower_id: int,
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve single facility details by ID.
+    Retrieve single borrower details by ID.
     """
-    return LendingService.get_facility(db=db, facility_id=facility_id)
+    return LendingService.get_borrower(db=db, borrower_id=borrower_id)
 
 
 @router.post(
-    "/facilities",
-    response_model=LendingFacilityOut,
+    "/borrowers",
+    response_model=BorrowerOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new lending facility",
+    summary="Create a new borrower",
 )
-def create_facility(
-    payload: LendingFacilityCreateRequest,
+def create_borrower(
+    payload: BorrowerCreateRequest,
     db: Session = Depends(get_db),
 ):
     """
-    Create a new lending facility record in lending_facilities table and calculate loan terms.
+    Create a new borrower record in the borrowers database table and calculate loan terms.
     """
-    return LendingService.create_facility(
+    return LendingService.create_borrower(
         db=db,
         borrower_name=payload.borrower_name,
         borrower_contact=payload.borrower_contact,
@@ -98,20 +99,55 @@ def create_facility(
     )
 
 
-@router.get(
-    "/ledger/{facility_id}",
-    response_model=LendingLedgerResponse,
-    summary="Get complete facility schedule ledger and installment progress",
+@router.put(
+    "/borrowers/{borrower_id}",
+    response_model=BorrowerOut,
+    summary="Update an existing borrower",
 )
-def get_ledger(
-    facility_id: int,
+def update_borrower(
+    borrower_id: int,
+    payload: BorrowerUpdateRequest,
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve the full schedule ledger for a facility. For daily loans, missed days are
+    Update borrower details and loan terms in the database.
+    """
+    return LendingService.update_borrower(
+        db=db,
+        borrower_id=borrower_id,
+        payload=payload.model_dump(exclude_unset=True),
+    )
+
+
+@router.delete(
+    "/borrowers/{borrower_id}",
+    response_model=BorrowerDeleteResponse,
+    summary="Delete a borrower and associated transactions",
+)
+def delete_borrower(
+    borrower_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a borrower and all linked transactions from the database.
+    """
+    return LendingService.delete_borrower(db=db, borrower_id=borrower_id)
+
+
+@router.get(
+    "/ledger/{borrower_id}",
+    response_model=LendingLedgerResponse,
+    summary="Get complete borrower schedule ledger and installment progress",
+)
+def get_ledger(
+    borrower_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve the full schedule ledger for a borrower. For daily loans, missed days are
     automatically derived. For monthly loans, installment cycle progress and due dates are generated.
     """
-    return LendingService.get_facility_ledger(db=db, loan_id=facility_id)
+    return LendingService.get_borrower_ledger(db=db, borrower_id=borrower_id)
 
 
 @router.get(
@@ -120,7 +156,7 @@ def get_ledger(
     summary="List and filter all lending transactions",
 )
 def list_transactions(
-    facility_id: Optional[int] = Query(None, description="Filter by facility ID"),
+    borrower_id: Optional[int] = Query(None, description="Filter by borrower ID"),
     transaction_type: Optional[str] = Query(None, description="Filter by transaction type"),
     payment_method: Optional[str] = Query(None, description="Filter by payment method (Cash, GCash, Bank Transfer)"),
     date_from: Optional[str] = Query(None, description="Filter transactions starting from date (YYYY-MM-DD)"),
@@ -132,7 +168,7 @@ def list_transactions(
     """
     return LendingService.get_transactions(
         db=db,
-        facility_id=facility_id,
+        borrower_id=borrower_id,
         transaction_type=transaction_type,
         payment_method=payment_method,
         date_from=date_from,
@@ -167,22 +203,26 @@ def create_transaction(
     """
     Record a lending transaction with settlement validation and boundary checks.
     """
+    penalty_val = payload.penalty_amount if payload.penalty_amount is not None else payload.penalty_portion
     return LendingService.record_payment(
         db=db,
-        loan_id=payload.facility_id,
+        borrower_id=payload.borrower_id,
         payment_date_val=payload.payment_date,
         amount_val=payload.amount,
+        penalty_amount_val=penalty_val,
         method=payload.payment_method,
         reference_no=payload.reference_no,
         notes=payload.notes,
         transaction_type=payload.transaction_type,
+        cycle_due_date_val=payload.cycle_due_date,
+        cycle_index_val=payload.cycle_index,
     )
 
 
 @router.post(
     "/payments",
     status_code=status.HTTP_201_CREATED,
-    summary="Record a payment remittance (compatibility endpoint)",
+    summary="Record a payment remittance",
 )
 def record_payment(
     payload: LendingPaymentCreateRequest,
@@ -194,10 +234,13 @@ def record_payment(
     """
     return LendingService.record_payment(
         db=db,
-        loan_id=payload.facility_id,
+        borrower_id=payload.borrower_id,
         payment_date_val=payload.payment_date,
         amount_val=payload.amount,
+        penalty_amount_val=payload.penalty_amount,
         method=payload.method,
         reference_no=payload.reference_no,
         notes=payload.notes,
+        cycle_due_date_val=payload.cycle_due_date,
+        cycle_index_val=payload.cycle_index,
     )

@@ -63,9 +63,17 @@
     }
   }
 
+  input[type="date"] {
+    position: relative;
+  }
+
   input[type="date"]::-webkit-calendar-picker-indicator {
     cursor: pointer;
-    margin: auto 0;
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
   }
 }
 
