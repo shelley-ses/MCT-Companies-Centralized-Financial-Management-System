@@ -179,6 +179,7 @@ export const LendingPage: React.FC = () => {
   const [deleteModalError, setDeleteModalError] = React.useState<string | null>(null)
   const [isSubmittingPayment, setIsSubmittingPayment] = React.useState(false)
   const [isCreatingBorrower, setIsCreatingBorrower] = React.useState(false)
+  const [isUpdatingBorrower, setIsUpdatingBorrower] = React.useState(false)
   const [isDeletingBorrower, setIsDeletingBorrower] = React.useState(false)
 
   // 3-dots actions menu state
@@ -669,6 +670,7 @@ export const LendingPage: React.FC = () => {
 
     const borrowerDbId = activeFacility.borrower_id || activeFacility.borrowerId || activeFacility.id
 
+    setIsUpdatingBorrower(true)
     try {
       const updated = await lendingService.updateBorrower(borrowerDbId, {
         borrowerName: editFormData.borrowerName.trim(),
@@ -692,6 +694,8 @@ export const LendingPage: React.FC = () => {
       setEditModalError(
         formatUserFriendlyErrorMessage(err, 'Unable to update borrower details. Please try again.')
       )
+    } finally {
+      setIsUpdatingBorrower(false)
     }
   }
 
@@ -3410,7 +3414,14 @@ export const LendingPage: React.FC = () => {
             </DialogDescription>
           </DialogHeader>
 
-          {activeFacility && (
+          {activeFacility && (() => {
+            const isTermsLocked = Boolean(
+              (activeFacility.amountPaid && activeFacility.amountPaid > 0) ||
+              (activeFacility.dailyPayments && activeFacility.dailyPayments.length > 0) ||
+              (activeFacility.dateBorrowed && activeFacility.dateBorrowed < formatToYYYYMMDD(new Date()))
+            )
+
+            return (
             <form onSubmit={handleSaveEditFacility} className="space-y-4 mt-2">
               {/* Inline Error Banner */}
               {editModalError && (
@@ -3453,11 +3464,16 @@ export const LendingPage: React.FC = () => {
                     type="number"
                     min="1000"
                     step="500"
+                    readOnly={isTermsLocked}
+                    disabled={isTermsLocked}
                     value={editFormData.loanAmount}
                     onChange={(e) =>
                       setEditFormData({ ...editFormData, loanAmount: e.target.value })
                     }
-                    className="h-10 text-xs sm:text-sm rounded-xl"
+                    className={cn(
+                      'h-10 text-xs sm:text-sm rounded-xl',
+                      isTermsLocked && 'bg-slate-100 text-muted-fg cursor-not-allowed select-none'
+                    )}
                   />
                 </div>
 
@@ -3470,11 +3486,16 @@ export const LendingPage: React.FC = () => {
                     type="number"
                     step="0.1"
                     min="0"
+                    readOnly={isTermsLocked}
+                    disabled={isTermsLocked}
                     value={editFormData.interestRate}
                     onChange={(e) =>
                       setEditFormData({ ...editFormData, interestRate: e.target.value })
                     }
-                    className="h-10 text-xs sm:text-sm rounded-xl"
+                    className={cn(
+                      'h-10 text-xs sm:text-sm rounded-xl',
+                      isTermsLocked && 'bg-slate-100 text-muted-fg cursor-not-allowed select-none'
+                    )}
                   />
                 </div>
               </div>
@@ -3486,6 +3507,7 @@ export const LendingPage: React.FC = () => {
                   </label>
                   <select
                     value={editFormData.paymentFrequency}
+                    disabled={isTermsLocked}
                     onChange={(e) => {
                       const freq = e.target.value as 'Daily' | 'Monthly'
                       let newTerm = editFormData.termDays
@@ -3502,7 +3524,10 @@ export const LendingPage: React.FC = () => {
                         dueDate: newDue || editFormData.dueDate,
                       })
                     }}
-                    className="w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20"
+                    className={cn(
+                      'w-full h-10 px-3 rounded-xl border border-stroke/60 bg-white text-xs sm:text-sm text-focus focus:outline-none focus:ring-2 focus:ring-focus/20',
+                      isTermsLocked && 'bg-slate-100 text-muted-fg cursor-not-allowed select-none'
+                    )}
                   >
                     <option value="Daily">Daily</option>
                     <option value="Monthly">Monthly</option>
@@ -3517,6 +3542,8 @@ export const LendingPage: React.FC = () => {
                     required
                     type="number"
                     min="1"
+                    readOnly={isTermsLocked}
+                    disabled={isTermsLocked}
                     value={editFormData.termDays}
                     onChange={(e) => {
                       const val = e.target.value
@@ -3528,7 +3555,10 @@ export const LendingPage: React.FC = () => {
                       })
                     }}
                     placeholder={editFormData.paymentFrequency === 'Daily' ? '40' : '1'}
-                    className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
+                    className={cn(
+                      'h-10 text-xs sm:text-sm rounded-xl font-semibold',
+                      isTermsLocked && 'bg-slate-100 text-muted-fg cursor-not-allowed select-none'
+                    )}
                   />
                 </div>
               </div>
@@ -3541,6 +3571,8 @@ export const LendingPage: React.FC = () => {
                   <Input
                     required
                     type="date"
+                    readOnly={isTermsLocked}
+                    disabled={isTermsLocked}
                     value={editFormData.dateBorrowed}
                     onChange={(e) => {
                       const val = e.target.value
@@ -3551,14 +3583,16 @@ export const LendingPage: React.FC = () => {
                         dueDate: newDue || editFormData.dueDate,
                       })
                     }}
-                    className="h-10 text-xs sm:text-sm rounded-xl"
+                    className={cn(
+                      'h-10 text-xs sm:text-sm rounded-xl',
+                      isTermsLocked && 'bg-slate-100 text-muted-fg cursor-not-allowed select-none'
+                    )}
                   />
                 </div>
 
                 <div>
                   <label className="text-xs font-semibold text-focus flex items-center justify-between mb-1">
                     <span>Due Date (Read-only)</span>
-                    <Lock className="w-3 h-3 text-muted-fg" />
                   </label>
                   <Input
                     required
@@ -3609,20 +3643,30 @@ export const LendingPage: React.FC = () => {
                 <Button
                   type="button"
                   variant="outline"
+                  disabled={isUpdatingBorrower}
                   onClick={() => setIsEditModalOpen(false)}
-                  className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer"
+                  className="h-10 px-4 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer"
+                  disabled={isUpdatingBorrower}
+                  className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#960C01] hover:bg-[#800a01] text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
-                  Save Changes
+                  {isUpdatingBorrower ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
                 </Button>
               </div>
             </form>
-          )}
+            )
+          })()}
         </DialogContent>
       </Dialog>
 

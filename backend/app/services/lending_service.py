@@ -1225,11 +1225,37 @@ class LendingService:
         has_due = payload.get("due_date") is not None
 
         if has_amount or has_rate or has_freq or has_term or has_start or has_due:
-            p = quantize(payload["loan_amount"]) if has_amount else quantize(b.principal_amount)
-            r = Decimal(str(payload["interest_rate"])) if has_rate else quantize(b.interest_rate or Decimal("20.00"))
-            freq = (payload["payment_frequency"] or b.payment_frequency or "Daily").strip().capitalize() if has_freq else (b.payment_frequency or "Daily").strip().capitalize()
-            term_days = int(payload["term_days"]) if has_term and int(payload["term_days"]) > 0 else (b.term_days or (40 if freq == "Daily" else 2))
-            start = parse_date(payload["date_borrowed"]) if has_start else b.date_borrowed
+            p_candidate = quantize(payload["loan_amount"]) if has_amount else quantize(b.principal_amount)
+            r_candidate = Decimal(str(payload["interest_rate"])) if has_rate else quantize(b.interest_rate or Decimal("20.00"))
+            freq_candidate = (payload["payment_frequency"] or b.payment_frequency or "Daily").strip().capitalize() if has_freq else (b.payment_frequency or "Daily").strip().capitalize()
+            term_candidate = int(payload["term_days"]) if has_term and int(payload["term_days"]) > 0 else (b.term_days or (40 if freq_candidate == "Daily" else 2))
+            start_candidate = parse_date(payload["date_borrowed"]) if has_start else b.date_borrowed
+
+            is_terms_different = (
+                p_candidate != quantize(b.principal_amount)
+                or r_candidate != quantize(b.interest_rate or Decimal("20.00"))
+                or freq_candidate != (b.payment_frequency or "Daily").strip().capitalize()
+                or term_candidate != (b.term_days or (40 if freq_candidate == "Daily" else 2))
+                or start_candidate != b.date_borrowed
+            )
+
+            if is_terms_different:
+                # Check if payments have started or start date is in the past
+                tx_count = db.query(LendingTransaction).filter(LendingTransaction.borrower_id == b.borrower_id).count()
+                today_d = date.today()
+                is_started = (b.amount_paid and b.amount_paid > Decimal("0.00")) or tx_count > 0 or (b.date_borrowed and b.date_borrowed < today_d)
+
+                if is_started:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Cannot modify loan financial terms after the lending period has commenced or payments have been recorded."
+                    )
+
+            p = p_candidate
+            r = r_candidate
+            freq = freq_candidate
+            term_days = term_candidate
+            start = start_candidate
             due = parse_date(payload["due_date"]) if has_due else None
 
             terms = cls.calculate_terms(p, r, freq, start, due, term_days)
