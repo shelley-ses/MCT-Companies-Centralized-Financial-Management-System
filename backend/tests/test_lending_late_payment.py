@@ -159,3 +159,85 @@ def test_negative_penalty_disallowed():
         pass
 
 
+def test_monthly_october_31_due_dates_and_lateness():
+    """
+    Verify that when borrowed on October 31 with Monthly frequency:
+    - Month 1 is due November 30 (clamped to 30 days of Nov).
+    - Month 2 is due December 31.
+    - Payment received in November (e.g. Nov 15) is on-time (is_late=False).
+    - Payment received in December (e.g. Dec 5) is late (is_late=True, days_late=5).
+    """
+    borrowed_date = "2026-10-31"
+    final_due_date = "2026-12-31"
+
+    # Cycle 1 due date
+    cycle_1_due = LendingService.get_cycle_due_date(
+        date_borrowed_val=borrowed_date,
+        final_due_date_val=final_due_date,
+        frequency="Monthly",
+        cycle_index=1,
+        total_cycles=2,
+    )
+    assert cycle_1_due == "2026-11-30"
+
+    # Cycle 2 due date
+    cycle_2_due = LendingService.get_cycle_due_date(
+        date_borrowed_val=borrowed_date,
+        final_due_date_val=final_due_date,
+        frequency="Monthly",
+        cycle_index=2,
+        total_cycles=2,
+    )
+    assert cycle_2_due == "2026-12-31"
+
+    # Test payment on Nov 15 for Month 1 (due Nov 30) -> On-Time
+    pay_date_nov_15 = date(2026, 11, 15)
+    due_date_nov_30 = date(2026, 11, 30)
+    is_late_nov = pay_date_nov_15 > due_date_nov_30
+    assert is_late_nov is False
+
+    # Test payment on Dec 5 for Month 1 (due Nov 30) -> Late by 5 days
+    pay_date_dec_5 = date(2026, 12, 5)
+    is_late_dec = pay_date_dec_5 > due_date_nov_30
+    days_late = (pay_date_dec_5 - due_date_nov_30).days
+    assert is_late_dec is True
+    assert days_late == 5
+
+
+def test_monthly_terms_calculation_with_months_input():
+    # Test case from user: ₱100,000 principal, 20% interest, Monthly, 6 months term
+    terms = LendingService.calculate_terms(
+        principal=100000,
+        interest_rate=20.0,
+        frequency="Monthly",
+        start_date_val="2026-10-30",
+        term_days_val=6,
+    )
+    assert terms["principal"] == 100000.0
+    assert terms["interest"] == 20000.0
+    assert terms["total_payable"] == 120000.0
+    assert terms["cycle_count"] == 6
+    assert terms["installment_target"] == 20000.0
+    assert terms["due_date"] == "2027-04-30"
+
+
+def test_monthly_terms_calculation_single_month():
+    # 1 month term: ₱100,000 principal, 20% interest -> ₱120,000 total payable, ₱120,000 installment
+    terms = LendingService.calculate_terms(
+        principal=100000,
+        interest_rate=20.0,
+        frequency="Monthly",
+        start_date_val="2026-10-31",
+        term_days_val=1,
+    )
+    assert terms["principal"] == 100000.0
+    assert terms["interest"] == 20000.0
+    assert terms["total_payable"] == 120000.0
+    assert terms["cycle_count"] == 1
+    assert terms["installment_target"] == 120000.0
+    # Clamped to Nov 30 because November has 30 days
+    assert terms["due_date"] == "2026-11-30"
+
+
+
+

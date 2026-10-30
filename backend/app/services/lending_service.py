@@ -95,26 +95,6 @@ class LendingService:
                 return final_due.isoformat()
             return target.isoformat()
 
-        if freq == "Quarterly":
-            month_offset = cycle_index * 3
-            target_year = borrowed.year + (borrowed.month - 1 + month_offset) // 12
-            target_month = ((borrowed.month - 1 + month_offset) % 12) + 1
-            max_day = monthrange(target_year, target_month)[1]
-            target_day = min(borrowed.day, max_day)
-            target = date(target_year, target_month, target_day)
-            if final_due and target > final_due:
-                return final_due.isoformat()
-            return target.isoformat()
-
-        if freq == "Annually":
-            target_year = borrowed.year + cycle_index
-            max_day = monthrange(target_year, borrowed.month)[1]
-            target_day = min(borrowed.day, max_day)
-            target = date(target_year, borrowed.month, target_day)
-            if final_due and target > final_due:
-                return final_due.isoformat()
-            return target.isoformat()
-
         return final_due.isoformat() if final_due else borrowed.isoformat()
 
     @classmethod
@@ -129,40 +109,47 @@ class LendingService:
     ) -> Dict[str, Any]:
         """
         Authoritative calculation of loan financial terms, installment targets, and 5% penalty rate.
-        Defaults: 40 days for Daily, 60 days for Monthly, and 20.0% interest rate.
+        Defaults: 40 days for Daily, 2 months for Monthly, and 20.0% interest rate.
         """
         p = quantize(principal)
         r = quantize(interest_rate if interest_rate is not None else Decimal("20.00"))
         start = parse_date(start_date_val) or date.today()
         freq = (frequency or "Daily").strip().capitalize()
-        if freq not in {"Daily", "Monthly", "Quarterly", "Annually"}:
+        if freq not in {"Daily", "Monthly"}:
             freq = "Daily"
 
         if term_days_val is not None and int(term_days_val) > 0:
             term_days = int(term_days_val)
         else:
-            term_days = 40 if freq == "Daily" else (60 if freq == "Monthly" else 90)
+            term_days = 40 if freq == "Daily" else 2
 
         due = parse_date(due_date_val)
         if not due:
-            due = start + timedelta(days=term_days)
+            if freq == "Daily":
+                due = start + timedelta(days=term_days)
+            else:  # Monthly
+                due_cycles = term_days if term_days <= 36 else max(1, term_days // 30)
+                due_iso = cls.get_cycle_due_date(start, None, "Monthly", due_cycles, due_cycles)
+                due = parse_date(due_iso) or (start + timedelta(days=due_cycles * 30))
 
         interest = quantize(p * (r / Decimal("100.00")))
         total_payable = quantize(p + interest)
 
         if freq == "Daily":
+            if not due:
+                due = start + timedelta(days=term_days)
             cycles = max(1, term_days)
             installment = quantize(total_payable / Decimal(str(cycles)))
-        elif freq == "Monthly":
-            cycles = max(1, term_days // 30) if term_days else cls.get_months_between(start, due)
-            installment = quantize(total_payable / Decimal(str(cycles)))
-        elif freq == "Quarterly":
-            months = cls.get_months_between(start, due)
-            cycles = max(1, (months + 2) // 3)
-            installment = quantize(total_payable / Decimal(str(cycles)))
-        else:  # Annually
-            years = max(1, due.year - start.year)
-            cycles = years
+        else:  # Monthly
+            if term_days <= 36:
+                cycles = max(1, term_days)
+            elif due and start:
+                cycles = max(1, cls.get_months_between(start, due))
+            else:
+                cycles = max(1, term_days // 30)
+            if not due:
+                due_iso = cls.get_cycle_due_date(start, None, "Monthly", cycles, cycles)
+                due = parse_date(due_iso) or (start + timedelta(days=cycles * 30))
             installment = quantize(total_payable / Decimal(str(cycles)))
 
         penalty_rate = Decimal("5.00")
@@ -195,7 +182,14 @@ class LendingService:
         """
         Calculate installment breakdown, forward advance crediting, and flat 5% penalties for monthly loans.
         """
-        total_months = max(1, term_days // 30) if term_days else cls.get_months_between(date_borrowed_val, due_date_val)
+        if term_days and term_days <= 36:
+            total_months = max(1, int(term_days))
+        elif due_date_val and date_borrowed_val:
+            total_months = max(1, cls.get_months_between(date_borrowed_val, due_date_val))
+        elif term_days and term_days > 0:
+            total_months = max(1, term_days // 30)
+        else:
+            total_months = 2
         payable_dec = quantize(total_payable)
         target_per_month = quantize(payable_dec / Decimal(str(total_months)))
         today_iso = date.today().isoformat()
@@ -203,10 +197,25 @@ class LendingService:
         # Aggregate payments made per month index or payment date
         month_paid_map: Dict[int, Decimal] = {}
         for r in repayments:
-            idx = r.get("month_index")
+            idx = r.get("month_index") or r.get("cycle_index")
             amt = quantize(r.get("amount", 0))
             if idx is not None and int(idx) >= 1:
                 month_paid_map[int(idx)] = month_paid_map.get(int(idx), Decimal("0.00")) + amt
+            elif r.get("cycle_due_date"):
+                target_due = str(r.get("cycle_due_date")).split("T")[0]
+                matched = False
+                for m_check in range(1, total_months + 1):
+                    c_due = cls.get_cycle_due_date(date_borrowed_val, due_date_val, "Monthly", m_check, total_months)
+                    if c_due == target_due:
+                        month_paid_map[m_check] = month_paid_map.get(m_check, Decimal("0.00")) + amt
+                        matched = True
+                        break
+                if not matched:
+                    p_date = parse_date(r.get("date") or r.get("payment_date"))
+                    start = parse_date(date_borrowed_val) or date.today()
+                    if p_date and p_date >= start:
+                        m_idx = min(total_months, max(1, ((p_date.year - start.year) * 12 + (p_date.month - start.month) + 1)))
+                        month_paid_map[m_idx] = month_paid_map.get(m_idx, Decimal("0.00")) + amt
             else:
                 p_date = parse_date(r.get("date") or r.get("payment_date"))
                 start = parse_date(date_borrowed_val) or date.today()
@@ -314,21 +323,15 @@ class LendingService:
         if freq == "Daily":
             return None
 
+        if freq != "Monthly":
+            return None
+
         total_months = cls.get_months_between(date_borrowed_val, due_date_val)
         payable_dec = quantize(total_payable)
         paid_dec = quantize(amount_paid)
 
-        if freq == "Monthly":
-            total_cycles = total_months
-            cycle_name = "Month"
-        elif freq == "Quarterly":
-            total_cycles = max(1, (total_months + 2) // 3)
-            cycle_name = "Quarter"
-        else:  # Annually
-            start = parse_date(date_borrowed_val) or date.today()
-            due = parse_date(due_date_val) or (start + timedelta(days=365))
-            total_cycles = max(1, due.year - start.year)
-            cycle_name = "Year"
+        total_cycles = total_months
+        cycle_name = "Month"
 
         target_per_cycle = quantize(payable_dec / Decimal(str(total_cycles)))
         completed_cycles = int(paid_dec // target_per_cycle) if target_per_cycle > 0 else 0
@@ -1113,10 +1116,11 @@ class LendingService:
 
         start = parse_date(date_borrowed_val) or date.today()
         freq = (frequency or "Daily").strip().capitalize()
-        term_days = int(term_days_val) if term_days_val and int(term_days_val) > 0 else (40 if freq == "Daily" else 60)
-        due = parse_date(due_date_val) or (start + timedelta(days=term_days))
+        term_days = int(term_days_val) if term_days_val and int(term_days_val) > 0 else (40 if freq == "Daily" else 2)
+        due = parse_date(due_date_val)
 
         terms = cls.calculate_terms(p, interest_rate, freq, start, due, term_days)
+        due = parse_date(terms["due_date"])
 
         ref_no = f"LN-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() % 10000):04d}"
 
@@ -1224,11 +1228,12 @@ class LendingService:
             p = quantize(payload["loan_amount"]) if has_amount else quantize(b.principal_amount)
             r = Decimal(str(payload["interest_rate"])) if has_rate else quantize(b.interest_rate or Decimal("20.00"))
             freq = (payload["payment_frequency"] or b.payment_frequency or "Daily").strip().capitalize() if has_freq else (b.payment_frequency or "Daily").strip().capitalize()
-            term_days = int(payload["term_days"]) if has_term and int(payload["term_days"]) > 0 else (b.term_days or (40 if freq == "Daily" else 60))
+            term_days = int(payload["term_days"]) if has_term and int(payload["term_days"]) > 0 else (b.term_days or (40 if freq == "Daily" else 2))
             start = parse_date(payload["date_borrowed"]) if has_start else b.date_borrowed
-            due = parse_date(payload["due_date"]) if has_due else (start + timedelta(days=term_days))
+            due = parse_date(payload["due_date"]) if has_due else None
 
             terms = cls.calculate_terms(p, r, freq, start, due, term_days)
+            due = parse_date(terms["due_date"])
             b.principal_amount = p
             b.interest_rate = Decimal(str(terms["interest_rate"]))
             b.total_payable = Decimal(str(terms["total_payable"]))

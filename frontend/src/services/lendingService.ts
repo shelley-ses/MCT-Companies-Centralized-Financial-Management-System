@@ -48,7 +48,7 @@ export interface LendingFacility {
   amountPaid: number
   remainingBalance: number
   status: 'Active' | 'Completed' | 'Overdue' | 'Pending'
-  paymentFrequency?: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+  paymentFrequency?: 'Daily' | 'Monthly'
   termDays?: number
   penaltyRate?: number
   penaltyPerCycle?: number
@@ -71,7 +71,7 @@ export type BorrowerCreatePayload = LendingCreateFacilityPayload
 export interface LendingCalculateParams {
   principal: number
   interestRate: number
-  paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+  paymentFrequency: 'Daily' | 'Monthly'
   dateBorrowed: string
   dueDate?: string
   termDays?: number
@@ -98,7 +98,7 @@ export interface LendingCreateFacilityPayload {
   borrowerAddress?: string
   loanAmount: number
   interestRate: number
-  paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+  paymentFrequency: 'Daily' | 'Monthly'
   dateBorrowed: string
   dueDate?: string
   termDays?: number
@@ -247,7 +247,7 @@ class LendingServiceGateway {
    * Calculate facility terms by calling backend service, with local fallback.
    */
   async calculateTerms(params: LendingCalculateParams): Promise<LendingCalculateResult> {
-    const termDays = params.termDays || (params.paymentFrequency === 'Daily' ? 40 : 60)
+    const termDays = params.termDays || (params.paymentFrequency === 'Daily' ? 40 : 2)
     try {
       const res = await fetch('/api/v1/lending/calculate', {
         method: 'POST',
@@ -273,8 +273,13 @@ class LendingServiceGateway {
     const r = params.interestRate
     const interest = Math.round((p * (r / 100)) * 100) / 100
     const total = p + interest
-    const cycleCount = params.paymentFrequency === 'Daily' ? termDays : Math.max(1, Math.round(termDays / 30))
-    const installmentTarget = Math.round((total / cycleCount) * 100) / 100
+    let cycleCount = termDays
+    if (params.paymentFrequency === 'Daily') {
+      cycleCount = termDays
+    } else {
+      cycleCount = termDays <= 36 ? termDays : Math.max(1, Math.round(termDays / 30))
+    }
+    const installmentTarget = Math.round((total / Math.max(1, cycleCount)) * 100) / 100
     const penaltyRate = 5.0
     const penaltyPerCycle = Math.round((installmentTarget * (penaltyRate / 100)) * 100) / 100
 
@@ -340,7 +345,7 @@ class LendingServiceGateway {
    * Create a new borrower via backend, saving directly to Supabase database.
    */
   async createFacility(payload: LendingCreateFacilityPayload): Promise<LendingFacility> {
-    const termDays = payload.termDays || (payload.paymentFrequency === 'Daily' ? 40 : 60)
+    const termDays = payload.termDays || (payload.paymentFrequency === 'Daily' ? 40 : 2)
     try {
       const res = await fetch('/api/v1/lending/borrowers', {
         method: 'POST',
@@ -576,48 +581,85 @@ export function getMonthsBetween(startDate: string, endDate: string): number {
 export function getCycleDueDate(
   dateBorrowed: string,
   finalDueDate: string,
-  frequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually',
+  frequency: 'Daily' | 'Monthly',
   cycleIndex: number,
   totalCycles: number
 ): string {
   if (!dateBorrowed) return finalDueDate
-  if (cycleIndex >= totalCycles) return finalDueDate
+  if (cycleIndex >= totalCycles && finalDueDate) return finalDueDate
 
-  const start = new Date(dateBorrowed)
-  if (isNaN(start.getTime())) return finalDueDate
+  const dateParts = dateBorrowed.split('T')[0].split('-')
+  let startYear = parseInt(dateParts[0], 10)
+  let startMonth = parseInt(dateParts[1], 10) - 1
+  let startDay = parseInt(dateParts[2], 10)
+
+  if (isNaN(startYear) || isNaN(startMonth) || isNaN(startDay)) {
+    const parsed = new Date(dateBorrowed)
+    if (isNaN(parsed.getTime())) return finalDueDate
+    startYear = parsed.getFullYear()
+    startMonth = parsed.getMonth()
+    startDay = parsed.getDate()
+  }
 
   if (frequency === 'Monthly') {
-    const target = new Date(start)
-    target.setMonth(target.getMonth() + cycleIndex)
+    const targetYear = startYear + Math.floor((startMonth + cycleIndex) / 12)
+    const targetMonth = (startMonth + cycleIndex) % 12
+    const maxDays = new Date(targetYear, targetMonth + 1, 0).getDate()
+    const targetDay = Math.min(startDay, maxDays)
+    const target = new Date(targetYear, targetMonth, targetDay)
     return formatToYYYYMMDD(target)
   }
-  if (frequency === 'Quarterly') {
-    const target = new Date(start)
-    target.setMonth(target.getMonth() + cycleIndex * 3)
-    return formatToYYYYMMDD(target)
-  }
-  if (frequency === 'Annually') {
-    const target = new Date(start)
-    target.setFullYear(target.getFullYear() + cycleIndex)
-    return formatToYYYYMMDD(target)
-  }
-  const target = new Date(start)
-  target.setDate(target.getDate() + cycleIndex)
+  const target = new Date(startYear, startMonth, startDay + cycleIndex)
   return formatToYYYYMMDD(target)
 }
 
 export function getMonthlyProgress(facility: LendingFacility) {
-  const termDays = facility.termDays || 60
-  const totalMonths = Math.max(1, Math.round(termDays / 30))
+  const termDays = facility.termDays || 2
+  let totalMonths = 2
+  if (termDays <= 36) {
+    totalMonths = Math.max(1, termDays)
+  } else if (facility.dateBorrowed && facility.dueDate) {
+    const start = new Date(facility.dateBorrowed)
+    const due = new Date(facility.dueDate)
+    if (!isNaN(start.getTime()) && !isNaN(due.getTime())) {
+      totalMonths = Math.max(
+        1,
+        (due.getFullYear() - start.getFullYear()) * 12 + (due.getMonth() - start.getMonth())
+      )
+      if (due.getDate() > start.getDate()) totalMonths += 1
+    }
+  } else {
+    totalMonths = Math.max(1, Math.round(termDays / 30))
+  }
   const monthTarget = Math.round((facility.totalAmountPayable / totalMonths) * 100) / 100
   const penaltyPerMonth = Math.round((monthTarget * 0.05) * 100) / 100
   const todayStr = formatToYYYYMMDD(new Date())
 
-  // Aggregate payments by monthIndex or payment date
+  // Aggregate payments by monthIndex, cycleIndex, cycleDueDate or payment date
   const monthPaidMap = new Map<number, number>()
   ;(facility.dailyPayments || []).forEach((r) => {
-    if (r.monthIndex && r.monthIndex >= 1) {
-      monthPaidMap.set(r.monthIndex, (monthPaidMap.get(r.monthIndex) || 0) + (r.amount || 0))
+    const cycleIdx = r.monthIndex ?? r.cycle_index ?? r.cycleIndex
+    if (cycleIdx !== undefined && cycleIdx >= 1) {
+      monthPaidMap.set(cycleIdx, (monthPaidMap.get(cycleIdx) || 0) + (r.amount || 0))
+    } else if (r.cycle_due_date || r.cycleDueDate) {
+      const targetDue = r.cycle_due_date || r.cycleDueDate
+      let matched = false
+      for (let i = 1; i <= totalMonths; i++) {
+        const cDueDate = getCycleDueDate(facility.dateBorrowed, facility.dueDate, 'Monthly', i, totalMonths)
+        if (cDueDate === targetDue) {
+          monthPaidMap.set(i, (monthPaidMap.get(i) || 0) + (r.amount || 0))
+          matched = true
+          break
+        }
+      }
+      if (!matched && r.date && facility.dateBorrowed) {
+        const start = new Date(facility.dateBorrowed)
+        const pDate = new Date(r.date)
+        if (!isNaN(start.getTime()) && !isNaN(pDate.getTime()) && pDate >= start) {
+          const mIdx = Math.min(totalMonths, Math.max(1, (pDate.getFullYear() - start.getFullYear()) * 12 + (pDate.getMonth() - start.getMonth()) + 1))
+          monthPaidMap.set(mIdx, (monthPaidMap.get(mIdx) || 0) + (r.amount || 0))
+        }
+      }
     } else if (r.date && facility.dateBorrowed) {
       const start = new Date(facility.dateBorrowed)
       const pDate = new Date(r.date)
@@ -736,36 +778,6 @@ export function getNextInstallmentInfo(facility: LendingFacility): {
       target: progress.activeMonth.target,
       remaining: progress.activeMonth.remaining,
       isOverdue: progress.activeMonth.isOverdue,
-    }
-  }
-  if (freq === 'Quarterly') {
-    const totalMonths = getMonthsBetween(facility.dateBorrowed, facility.dueDate)
-    const totalQuarters = Math.max(1, Math.round(totalMonths / 3))
-    const quarterTarget = Math.round(facility.totalAmountPayable / totalQuarters)
-    const paidQuarters = Math.floor(facility.amountPaid / quarterTarget)
-    const activeQuarter = Math.min(totalQuarters, paidQuarters + 1)
-    const qDueDate = getCycleDueDate(facility.dateBorrowed, facility.dueDate, 'Quarterly', activeQuarter, totalQuarters)
-    return {
-      periodLabel: `Quarter ${activeQuarter}`,
-      dueDate: qDueDate,
-      target: quarterTarget,
-      remaining: Math.min(facility.remainingBalance, quarterTarget),
-      isOverdue: todayStr > qDueDate,
-    }
-  }
-  if (freq === 'Annually') {
-    const totalMonths = getMonthsBetween(facility.dateBorrowed, facility.dueDate)
-    const totalYears = Math.max(1, Math.round(totalMonths / 12))
-    const yearTarget = Math.round(facility.totalAmountPayable / totalYears)
-    const paidYears = Math.floor(facility.amountPaid / yearTarget)
-    const activeYear = Math.min(totalYears, paidYears + 1)
-    const yDueDate = getCycleDueDate(facility.dateBorrowed, facility.dueDate, 'Annually', activeYear, totalYears)
-    return {
-      periodLabel: `Year ${activeYear}`,
-      dueDate: yDueDate,
-      target: yearTarget,
-      remaining: Math.min(facility.remainingBalance, yearTarget),
-      isOverdue: todayStr > yDueDate,
     }
   }
   return null

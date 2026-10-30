@@ -57,6 +57,7 @@ import {
   LENDING_STORAGE_KEY as STORAGE_KEY,
   getMonthlyProgress,
   getNextInstallmentInfo,
+  getCycleDueDate,
 } from '@/services/lendingService'
 
 // Period options matching Sales Page
@@ -194,15 +195,24 @@ export const LendingPage: React.FC = () => {
   const [highlightedFacilityId, setHighlightedFacilityId] = React.useState<string | null>(null)
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 
-  // Helper to project due date from start date and term days
-  const calculateProjectedDueDate = React.useCallback((startDateStr: string, daysStr: string): string => {
-    if (!startDateStr) return ''
-    const d = new Date(startDateStr)
-    const days = parseInt(daysStr, 10)
-    if (isNaN(d.getTime()) || isNaN(days) || days <= 0) return ''
-    d.setDate(d.getDate() + days)
-    return formatToYYYYMMDD(d)
-  }, [])
+  // Helper to project due date from start date, term count, and payment frequency
+  const calculateProjectedDueDate = React.useCallback(
+    (startDateStr: string, termStr: string, freq: 'Daily' | 'Monthly' = 'Daily'): string => {
+      if (!startDateStr) return ''
+      const termNum = parseInt(termStr, 10)
+      if (isNaN(termNum) || termNum <= 0) return ''
+
+      if (freq === 'Daily') {
+        const d = new Date(startDateStr)
+        if (isNaN(d.getTime())) return ''
+        d.setDate(d.getDate() + termNum)
+        return formatToYYYYMMDD(d)
+      }
+
+      return getCycleDueDate(startDateStr, '', freq, termNum, termNum)
+    },
+    []
+  )
 
   // Form state for New Lending Facility Modal
   // Default 40 term days for Daily and 20.0% interest rate
@@ -213,7 +223,7 @@ export const LendingPage: React.FC = () => {
     termDays: string
     dateBorrowed: string
     dueDate: string
-    paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+    paymentFrequency: 'Daily' | 'Monthly'
     notes: string
   }>(() => {
     const today = formatToYYYYMMDD(new Date())
@@ -240,7 +250,7 @@ export const LendingPage: React.FC = () => {
     dateBorrowed: string
     dueDate: string
     status: LendingFacility['status']
-    paymentFrequency: 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
+    paymentFrequency: 'Daily' | 'Monthly'
     notes: string
   }>({
     borrowerName: '',
@@ -563,7 +573,7 @@ export const LendingPage: React.FC = () => {
       return
     }
 
-    const termDaysNum = parseInt(formData.termDays || (formData.paymentFrequency === 'Daily' ? '40' : '60'), 10)
+    const termDaysNum = parseInt(formData.termDays || (formData.paymentFrequency === 'Daily' ? '40' : '2'), 10)
 
     setIsCreatingBorrower(true)
     try {
@@ -632,7 +642,7 @@ export const LendingPage: React.FC = () => {
       borrowerName: facility.borrowerName,
       loanAmount: String(facility.loanAmount),
       interestRate: String(facility.interestRate),
-      termDays: String(facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 60)),
+      termDays: String(facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 2)),
       dateBorrowed: facility.dateBorrowed,
       dueDate: facility.dueDate,
       status: facility.status,
@@ -650,7 +660,7 @@ export const LendingPage: React.FC = () => {
 
     const principalNum = parseFloat(editFormData.loanAmount)
     const rateNum = parseFloat(editFormData.interestRate)
-    const termDaysNum = parseInt(editFormData.termDays || (editFormData.paymentFrequency === 'Daily' ? '40' : '60'), 10) || 40
+    const termDaysNum = parseInt(editFormData.termDays || (editFormData.paymentFrequency === 'Daily' ? '40' : '2'), 10) || (editFormData.paymentFrequency === 'Daily' ? 40 : 2)
 
     if (!editFormData.borrowerName.trim() || isNaN(principalNum) || principalNum <= 0) {
       setEditModalError('Please fill out all required fields with valid values.')
@@ -685,13 +695,13 @@ export const LendingPage: React.FC = () => {
     }
   }
 
-  // Helper to get daily target for a facility
+  // Helper to get daily or periodic installment target for a facility
   const getFacilityDailyTarget = React.useCallback((facility: LendingFacility): number => {
-    const termDays = facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 60)
-    return (
-      facility.installmentTarget ||
-      Math.round((facility.totalAmountPayable / Math.max(1, termDays)) * 100) / 100
-    )
+    if (facility.installmentTarget) return facility.installmentTarget
+    const isDaily = !facility.paymentFrequency || facility.paymentFrequency === 'Daily'
+    const termVal = facility.termDays || (isDaily ? 40 : 2)
+    const cycles = isDaily ? termVal : (termVal <= 36 ? termVal : Math.max(1, Math.round(termVal / 30)))
+    return Math.round((facility.totalAmountPayable / Math.max(1, cycles)) * 100) / 100
   }, [])
 
   // Open Update Payment Modal ("Update" action button)
@@ -742,11 +752,21 @@ export const LendingPage: React.FC = () => {
       }
     }
 
+    let initialCycleIndex: number | undefined = undefined
+    if (facility.paymentFrequency === 'Monthly') {
+      const progress = getMonthlyProgress(facility)
+      if (progress.activeMonth) {
+        initialDate = progress.activeMonth.dueDate
+        initialCycleIndex = progress.activeMonth.monthIndex
+      }
+    }
+
     const todayFormatted = formatToYYYYMMDD(new Date())
     setPaymentForm({
       paymentAmount: '',
       paymentDate: todayFormatted,
       targetInstallmentDate: initialDate,
+      cycleIndex: initialCycleIndex,
       method: 'Cash',
       referenceNo: '',
       notes: '',
@@ -811,16 +831,20 @@ export const LendingPage: React.FC = () => {
 
     if (isMonthly) {
       const progress = getMonthlyProgress(activeFacility)
-      const currentMonth = progress.activeMonth
-      resolvedMonthIndex = currentMonth.monthIndex
-      resolvedPeriodLabel = `Month ${currentMonth.monthIndex}`
-      targetDue = currentMonth.target
-      alreadyPaidForPeriod = currentMonth.paid
-      periodRemainingBefore = Math.min(activeFacility.remainingBalance, currentMonth.remaining)
+      const targetMonth = progress.months.find(
+        (m) =>
+          (paymentForm.cycleIndex && m.monthIndex === paymentForm.cycleIndex) ||
+          m.dueDate === targetInstallmentDate
+      ) || progress.activeMonth
+      resolvedMonthIndex = targetMonth.monthIndex
+      resolvedPeriodLabel = `Month ${targetMonth.monthIndex}`
+      targetDue = targetMonth.target
+      alreadyPaidForPeriod = targetMonth.paid
+      periodRemainingBefore = Math.min(activeFacility.remainingBalance, targetMonth.remaining)
 
-      if (paymentNum > currentMonth.remaining + 0.005) {
+      if (paymentNum > targetMonth.remaining + 0.005) {
         setPaymentError(
-          `For Month ${currentMonth.monthIndex}, the maximum due is ${formatPHP(currentMonth.remaining)}. Please settle this month first before paying for subsequent months.`
+          `For Month ${targetMonth.monthIndex}, the maximum due is ${formatPHP(targetMonth.remaining)}.`
         )
         return
       }
@@ -1119,14 +1143,20 @@ export const LendingPage: React.FC = () => {
       0
     )
     const facilityPenalties = Math.max(activeFacility.totalPenalties || 0, totalPaidPenalties)
+    const isDailyFacility = !activeFacility.paymentFrequency || activeFacility.paymentFrequency === 'Daily'
+    const termCount =
+      activeFacility.termDays || (isDailyFacility ? 40 : 2)
+    const cycleCount = isDailyFacility
+      ? termCount
+      : (termCount <= 36 ? termCount : Math.max(1, Math.round(termCount / 30)))
     const installmentTargetAmount =
       activeFacility.installmentTarget ||
-      Math.round(
-        (contractualTotalPayable /
-          (activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60))) *
-          100
-      ) / 100
-    const termDaysCount = activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)
+      Math.round((contractualTotalPayable / Math.max(1, cycleCount)) * 100) / 100
+    const termUnitLabel = isDailyFacility
+      ? 'Days'
+      : termCount === 1
+      ? 'Month'
+      : 'Months'
 
     return (
       <div className="space-y-6 animate-in fade-in duration-200">
@@ -1162,7 +1192,7 @@ export const LendingPage: React.FC = () => {
                 </span>
                 <span className="text-muted-fg/40">•</span>
                 <span className="text-xs sm:text-sm text-muted-fg font-medium">
-                  Term: <strong className="text-focus">{activeFacility.termDays || (activeFacility.paymentFrequency === 'Daily' ? 40 : 60)} Days</strong>
+                  Term: <strong className="text-focus">{termCount} {termUnitLabel}</strong>
                 </span>
                 {activeFacility.borrowerContact && (
                   <>
@@ -1868,7 +1898,12 @@ export const LendingPage: React.FC = () => {
                       <TableCell className="w-[10%] px-3.5 py-3.5 text-left text-xs whitespace-nowrap">
                         <div className="font-mono text-muted-fg font-medium">{facility.dueDate}</div>
                         <div className="text-[10px] text-slate-400 font-sans mt-0.5">
-                          {facility.termDays || (facility.paymentFrequency === 'Daily' ? 40 : 60)} days term
+                          {(() => {
+                            const isDaily = !facility.paymentFrequency || facility.paymentFrequency === 'Daily'
+                            const t = facility.termDays || (isDaily ? 40 : 2)
+                            const unit = isDaily ? 'days' : t === 1 ? 'month' : 'months'
+                            return `${t} ${unit} term`
+                          })()}
                         </div>
                       </TableCell>
 
@@ -2245,7 +2280,7 @@ export const LendingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Field 4 & 5: Payment Schedule & Term Days */}
+            {/* Field 4 & 5: Payment Schedule & Term */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
@@ -2254,9 +2289,14 @@ export const LendingPage: React.FC = () => {
                 <select
                   value={formData.paymentFrequency}
                   onChange={(e) => {
-                    const freq = e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
-                    const newTerm = freq === 'Daily' ? '40' : (freq === 'Monthly' ? '60' : formData.termDays)
-                    const newDue = calculateProjectedDueDate(formData.dateBorrowed, newTerm)
+                    const freq = e.target.value as 'Daily' | 'Monthly'
+                    let newTerm = formData.termDays
+                    if (freq === 'Daily' && formData.paymentFrequency !== 'Daily') {
+                      newTerm = '40'
+                    } else if (freq === 'Monthly' && (formData.paymentFrequency === 'Daily' || parseInt(formData.termDays, 10) > 36)) {
+                      newTerm = '1'
+                    }
+                    const newDue = calculateProjectedDueDate(formData.dateBorrowed, newTerm, freq)
                     setFormData({
                       ...formData,
                       paymentFrequency: freq,
@@ -2268,14 +2308,12 @@ export const LendingPage: React.FC = () => {
                 >
                   <option value="Daily">Daily</option>
                   <option value="Monthly">Monthly</option>
-                  <option value="Quarterly">Quarterly</option>
-                  <option value="Annually">Annually</option>
                 </select>
               </div>
 
               <div>
                 <label className="text-xs font-semibold text-focus block mb-1">
-                  Term (Days) <span className="text-[#960C01]">*</span>
+                  Term ({formData.paymentFrequency === 'Daily' ? 'Days' : 'Months'}) <span className="text-[#960C01]">*</span>
                 </label>
                 <Input
                   required
@@ -2284,14 +2322,14 @@ export const LendingPage: React.FC = () => {
                   value={formData.termDays}
                   onChange={(e) => {
                     const val = e.target.value
-                    const newDue = calculateProjectedDueDate(formData.dateBorrowed, val)
+                    const newDue = calculateProjectedDueDate(formData.dateBorrowed, val, formData.paymentFrequency)
                     setFormData({
                       ...formData,
                       termDays: val,
                       dueDate: newDue || formData.dueDate,
                     })
                   }}
-                  placeholder="40"
+                  placeholder={formData.paymentFrequency === 'Daily' ? '40' : '1'}
                   className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
                 />
               </div>
@@ -2309,7 +2347,7 @@ export const LendingPage: React.FC = () => {
                   value={formData.dateBorrowed}
                   onChange={(e) => {
                     const val = e.target.value
-                    const newDue = calculateProjectedDueDate(val, formData.termDays)
+                    const newDue = calculateProjectedDueDate(val, formData.termDays, formData.paymentFrequency)
                     setFormData({
                       ...formData,
                       dateBorrowed: val,
@@ -2330,7 +2368,7 @@ export const LendingPage: React.FC = () => {
                   readOnly
                   tabIndex={-1}
                   value={formData.dueDate}
-                  title="Due Date is automatically calculated from Date Borrowed and Term (Days)"
+                  title="Due Date is automatically calculated from Date Borrowed and Term"
                   className="h-10 text-xs sm:text-sm rounded-xl font-mono bg-slate-100 text-muted-fg cursor-not-allowed select-none pointer-events-none border-slate-200"
                 />
               </div>
@@ -2342,9 +2380,16 @@ export const LendingPage: React.FC = () => {
               const r = parseFloat(formData.interestRate || '20.0') || 0
               const interest = p * (r / 100)
               const totalPayable = p + interest
-              const termDays = parseInt(formData.termDays || '40', 10) || 40
-              const cycleCount = formData.paymentFrequency === 'Daily' ? termDays : Math.max(1, Math.round(termDays / 30))
+              const isDaily = formData.paymentFrequency === 'Daily'
+              const termNum = parseInt(formData.termDays || (isDaily ? '40' : '1'), 10) || 1
+              const cycleCount = isDaily ? termNum : (termNum <= 36 ? termNum : Math.max(1, Math.round(termNum / 30)))
               const installmentTarget = cycleCount > 0 ? totalPayable / cycleCount : totalPayable
+
+              const unitLabel = isDaily ? 'day' : 'month'
+
+              const termLabel = isDaily
+                ? `${termNum} days`
+                : `${termNum} month${termNum > 1 ? 's' : ''}`
 
               return (
                 <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5 text-xs">
@@ -2362,11 +2407,11 @@ export const LendingPage: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center text-muted-fg text-[11px] pt-0.5">
                     <span>
-                      {formData.paymentFrequency} Installment Target ({termDays} days):
+                      {formData.paymentFrequency} Installment Target ({termLabel}):
                     </span>
                     <span className="font-bold text-focus">
                       {formatPHP(installmentTarget)}{' '}
-                      / {formData.paymentFrequency === 'Daily' ? 'day' : 'month'}
+                      / {unitLabel}
                     </span>
                   </div>
                 </div>
@@ -2473,7 +2518,12 @@ export const LendingPage: React.FC = () => {
 
             if (isMonthly) {
               const progress = getMonthlyProgress(activeFacility)
-              periodRemainingDue = Math.min(activeFacility.remainingBalance, progress.activeMonth.remaining)
+              const selectedMonth = progress.months.find(
+                (m) =>
+                  (paymentForm.cycleIndex && m.monthIndex === paymentForm.cycleIndex) ||
+                  m.dueDate === targetInstallmentDate
+              ) || progress.activeMonth
+              periodRemainingDue = Math.min(activeFacility.remainingBalance, selectedMonth.remaining)
             } else if (!isDaily) {
               const nextInst = getNextInstallmentInfo(activeFacility)
               if (nextInst) {
@@ -2507,181 +2557,276 @@ export const LendingPage: React.FC = () => {
 
                 {/* Two-Column Layout: Left = Calendar, Right = Payment Fields */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                  {/* Left Column: Interactive Calendar Date Picker */}
+                  {/* Left Column: Interactive Calendar Date Picker for Daily, or Month Selector for Monthly */}
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-focus">
-                        Installment Date <span className="text-[#960C01]">*</span>
-                      </label>
-                      <span className="text-[11px] font-mono font-bold text-focus">
-                        {targetInstallmentDate ? `Target: ${targetInstallmentDate}` : 'Please select date'}
-                      </span>
-                    </div>
-
-                    <div className="border border-stroke/60 rounded-xl p-3.5 bg-white space-y-2.5">
-                      {/* Month Header & Controls */}
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-xs font-bold text-focus">
-                          {paymentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const prev = new Date(paymentCalendarMonth)
-                              prev.setMonth(prev.getMonth() - 1)
-                              setPaymentCalendarMonth(prev)
-                            }}
-                            className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
-                            aria-label="Previous month"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = new Date(paymentCalendarMonth)
-                              next.setMonth(next.getMonth() + 1)
-                              setPaymentCalendarMonth(next)
-                            }}
-                            className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
-                            aria-label="Next month"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
+                    {isMonthly ? (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-focus">
+                            Installment Month <span className="text-[#960C01]">*</span>
+                          </label>
+                          <span className="text-[11px] font-mono font-bold text-focus">
+                            {targetInstallmentDate ? `Target: ${targetInstallmentDate}` : 'Please select month'}
+                          </span>
                         </div>
-                      </div>
 
-                      {/* Weekday labels */}
-                      <div className="grid grid-cols-7 gap-1 text-center text-[10.5px] font-bold text-muted-fg uppercase py-1 border-b border-slate-100">
-                        <span>Su</span>
-                        <span>Mo</span>
-                        <span>Tu</span>
-                        <span>We</span>
-                        <span>Th</span>
-                        <span>Fr</span>
-                        <span>Sa</span>
-                      </div>
-
-                      {/* Days Grid */}
-                      {(() => {
-                        const calYear = paymentCalendarMonth.getFullYear()
-                        const calMonth = paymentCalendarMonth.getMonth()
-                        const firstDay = new Date(calYear, calMonth, 1).getDay()
-                        const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
-
-                        const paidByDateMap = new Map<string, number>()
-                        ;(activeFacility.dailyPayments || []).forEach((p) => {
-                          const dt = p.cycle_due_date || p.cycleDueDate || p.date
-                          if (!dt) return
-                          paidByDateMap.set(dt, (paidByDateMap.get(dt) || 0) + (p.amount || 0))
-                        })
-
-                        const startBorrowed = activeFacility.dateBorrowed || ''
-                        const todayStr = formatToYYYYMMDD(new Date())
-
-                        return (
-                          <div className="grid grid-cols-7 gap-1 text-center">
-                            {Array.from({ length: firstDay }).map((_, i) => (
-                              <div key={`cal-empty-${i}`} className="h-9" />
-                            ))}
-
-                            {Array.from({ length: totalDays }).map((_, i) => {
-                              const d = i + 1
-                              const dStr = String(d).padStart(2, '0')
-                              const mStr = String(calMonth + 1).padStart(2, '0')
-                              const dateStr = `${calYear}-${mStr}-${dStr}`
-
-                              const isBefore = startBorrowed ? dateStr < startBorrowed : false
-                              const paidOnDate = paidByDateMap.get(dateStr) || 0
-                              const isPaid = paidOnDate >= dailyTarget - 0.005 && dailyTarget > 0
-                              const isPartial = !isPaid && paidOnDate > 0
-                              const isMissed = !isBefore && !isPaid && dateStr < todayStr
-                              const isSelected = targetInstallmentDate === dateStr
-                              const isDisabled = isBefore || isPaid
+                        <div className="border border-stroke/60 rounded-xl p-3 bg-white space-y-2 max-h-[300px] overflow-y-auto">
+                          {(() => {
+                            const progress = getMonthlyProgress(activeFacility)
+                            return progress.months.map((m) => {
+                              const isSelected =
+                                paymentForm.cycleIndex === m.monthIndex ||
+                                (!paymentForm.cycleIndex && targetInstallmentDate === m.dueDate)
+                              const isFullyPaid = m.status === 'Paid' || m.remaining <= 0.005
 
                               return (
                                 <button
-                                  key={dateStr}
+                                  key={`month-select-${m.monthIndex}`}
                                   type="button"
-                                  disabled={isDisabled}
+                                  disabled={isFullyPaid}
                                   onClick={() => {
-                                    if (!isDisabled) {
+                                    if (!isFullyPaid) {
                                       setPaymentError(null)
                                       setPaymentForm({
                                         ...paymentForm,
-                                        targetInstallmentDate: dateStr,
+                                        targetInstallmentDate: m.dueDate,
+                                        cycleIndex: m.monthIndex,
                                       })
                                     }
                                   }}
                                   className={cn(
-                                    'h-9 rounded-lg text-xs font-medium flex flex-col items-center justify-center relative transition-all',
-                                    isSelected &&
-                                      'bg-[#960C01] text-white font-bold shadow-xs ring-2 ring-[#960C01]/30 z-10',
-                                    !isSelected &&
-                                      isPaid &&
-                                      'bg-emerald-50 text-emerald-700 border border-emerald-200/80 cursor-not-allowed opacity-90',
-                                    !isSelected &&
-                                      isPartial &&
-                                      'bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer font-semibold',
-                                    !isSelected &&
-                                      isMissed &&
-                                      'bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/30 cursor-pointer font-bold hover:bg-[#960C01]/20',
-                                    !isSelected &&
-                                      isBefore &&
-                                      'text-slate-300 cursor-not-allowed bg-slate-50/50',
-                                    !isSelected &&
-                                      !isPaid &&
-                                      !isPartial &&
-                                      !isMissed &&
-                                      !isBefore &&
-                                      'hover:bg-slate-100 text-focus cursor-pointer hover:font-bold border border-transparent'
+                                    'w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between',
+                                    isSelected && 'border-[#960C01] bg-[#960C01]/5 ring-1 ring-[#960C01]',
+                                    !isSelected && isFullyPaid && 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed',
+                                    !isSelected && !isFullyPaid && 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 cursor-pointer'
                                   )}
-                                  title={
-                                    isPaid
-                                      ? `${dateStr}: Fully Paid & Locked (Cannot select)`
-                                      : isBefore
-                                      ? `${dateStr}: Prior to loan date`
-                                      : isMissed
-                                      ? `${dateStr}: Missed installment (Due ${dateStr}) — Click to settle`
-                                      : isPartial
-                                      ? `${dateStr}: Partially Paid (${formatPHP(paidOnDate)} of ${formatPHP(dailyTarget)}) — Select to pay remaining ${formatPHP(Math.max(0, dailyTarget - paidOnDate))}`
-                                      : `Select ${dateStr}`
-                                  }
                                 >
-                                  <span>{d}</span>
-                                  {isPaid && <Check className="h-2.5 w-2.5 text-emerald-600 -mt-0.5" />}
-                                  {isPartial && !isSelected && (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 absolute bottom-1" />
-                                  )}
-                                  {isMissed && !isSelected && (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-[#960C01] absolute bottom-1" />
-                                  )}
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold text-focus">
+                                        Month {m.monthIndex}
+                                      </span>
+                                      <span className="text-[10px] font-mono text-muted-fg">
+                                        Due: {m.dueDate}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-muted-fg">
+                                      Target: <span className="font-semibold text-focus">{formatPHP(m.target)}</span>
+                                      {m.paid > 0 && (
+                                        <> • Paid: <span className="font-semibold text-emerald-600">{formatPHP(m.paid)}</span></>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    {isFullyPaid ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                        Paid
+                                      </span>
+                                    ) : m.status === 'Partially Paid' ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                        Partial ({formatPHP(m.remaining)} due)
+                                      </span>
+                                    ) : m.isOverdue ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/20">
+                                        <AlertCircle className="w-2.5 h-2.5 text-[#960C01]" />
+                                        Overdue
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                        Due {formatPHP(m.remaining)}
+                                      </span>
+                                    )}
+                                  </div>
                                 </button>
                               )
-                            })}
-                          </div>
-                        )
-                      })()}
+                            })
+                          })()}
+                        </div>
 
-                      {/* Calendar Legend */}
-                      <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-fg pt-2 border-t border-slate-100 gap-1.5">
-                        <div className="flex items-center gap-2.5">
-                          <span className="flex items-center gap-1 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Paid
-                          </span>
-                          <span className="flex items-center gap-1 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Selected
-                          </span>
-                          <span className="flex items-center gap-1 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Partial
-                          </span>
-                          <span className="flex items-center gap-1 font-medium">
-                            <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Missed
+                        <p className="text-[10.5px] text-muted-fg leading-tight">
+                          Select the monthly installment cycle you are recording cash payment for.
+                        </p>
+                      </div>
+                    ) : (
+                      /* Daily Calendar Date Picker */
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-semibold text-focus">
+                            Installment Date <span className="text-[#960C01]">*</span>
+                          </label>
+                          <span className="text-[11px] font-mono font-bold text-focus">
+                            {targetInstallmentDate ? `Target: ${targetInstallmentDate}` : 'Please select date'}
                           </span>
                         </div>
+
+                        <div className="border border-stroke/60 rounded-xl p-3.5 bg-white space-y-2.5">
+                          {/* Month Header & Controls */}
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-xs font-bold text-focus">
+                              {paymentCalendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const prev = new Date(paymentCalendarMonth)
+                                  prev.setMonth(prev.getMonth() - 1)
+                                  setPaymentCalendarMonth(prev)
+                                }}
+                                className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
+                                aria-label="Previous month"
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = new Date(paymentCalendarMonth)
+                                  next.setMonth(next.getMonth() + 1)
+                                  setPaymentCalendarMonth(next)
+                                }}
+                                className="p-1 rounded-md hover:bg-slate-100 text-muted-fg hover:text-focus cursor-pointer"
+                                aria-label="Next month"
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Weekday labels */}
+                          <div className="grid grid-cols-7 gap-1 text-center text-[10.5px] font-bold text-muted-fg uppercase py-1 border-b border-slate-100">
+                            <span>Su</span>
+                            <span>Mo</span>
+                            <span>Tu</span>
+                            <span>We</span>
+                            <span>Th</span>
+                            <span>Fr</span>
+                            <span>Sa</span>
+                          </div>
+
+                          {/* Days Grid */}
+                          {(() => {
+                            const calYear = paymentCalendarMonth.getFullYear()
+                            const calMonth = paymentCalendarMonth.getMonth()
+                            const firstDay = new Date(calYear, calMonth, 1).getDay()
+                            const totalDays = new Date(calYear, calMonth + 1, 0).getDate()
+
+                            const paidByDateMap = new Map<string, number>()
+                            ;(activeFacility.dailyPayments || []).forEach((p) => {
+                              const dt = p.cycle_due_date || p.cycleDueDate || p.date
+                              if (!dt) return
+                              paidByDateMap.set(dt, (paidByDateMap.get(dt) || 0) + (p.amount || 0))
+                            })
+
+                            const startBorrowed = activeFacility.dateBorrowed || ''
+                            const todayStr = formatToYYYYMMDD(new Date())
+
+                            return (
+                              <div className="grid grid-cols-7 gap-1 text-center">
+                                {Array.from({ length: firstDay }).map((_, i) => (
+                                  <div key={`cal-empty-${i}`} className="h-9" />
+                                ))}
+
+                                {Array.from({ length: totalDays }).map((_, i) => {
+                                  const d = i + 1
+                                  const dStr = String(d).padStart(2, '0')
+                                  const mStr = String(calMonth + 1).padStart(2, '0')
+                                  const dateStr = `${calYear}-${mStr}-${dStr}`
+
+                                  const isBefore = startBorrowed ? dateStr < startBorrowed : false
+                                  const paidOnDate = paidByDateMap.get(dateStr) || 0
+                                  const isPaid = paidOnDate >= dailyTarget - 0.005 && dailyTarget > 0
+                                  const isPartial = !isPaid && paidOnDate > 0
+                                  const isMissed = !isBefore && !isPaid && dateStr < todayStr
+                                  const isSelected = targetInstallmentDate === dateStr
+                                  const isDisabled = isBefore || isPaid
+
+                                  return (
+                                    <button
+                                      key={dateStr}
+                                      type="button"
+                                      disabled={isDisabled}
+                                      onClick={() => {
+                                        if (!isDisabled) {
+                                          setPaymentError(null)
+                                          setPaymentForm({
+                                            ...paymentForm,
+                                            targetInstallmentDate: dateStr,
+                                          })
+                                        }
+                                      }}
+                                      className={cn(
+                                        'h-9 rounded-lg text-xs font-medium flex flex-col items-center justify-center relative transition-all',
+                                        isSelected &&
+                                          'bg-[#960C01] text-white font-bold shadow-xs ring-2 ring-[#960C01]/30 z-10',
+                                        !isSelected &&
+                                          isPaid &&
+                                          'bg-emerald-50 text-emerald-700 border border-emerald-200/80 cursor-not-allowed opacity-90',
+                                        !isSelected &&
+                                          isPartial &&
+                                          'bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer font-semibold',
+                                        !isSelected &&
+                                          isMissed &&
+                                          'bg-[#960C01]/10 text-[#960C01] border border-[#960C01]/30 cursor-pointer font-bold hover:bg-[#960C01]/20',
+                                        !isSelected &&
+                                          isBefore &&
+                                          'text-slate-300 cursor-not-allowed bg-slate-50/50',
+                                        !isSelected &&
+                                          !isPaid &&
+                                          !isPartial &&
+                                          !isMissed &&
+                                          !isBefore &&
+                                          'hover:bg-slate-100 text-focus cursor-pointer hover:font-bold border border-transparent'
+                                      )}
+                                      title={
+                                        isPaid
+                                          ? `${dateStr}: Fully Paid & Locked (Cannot select)`
+                                          : isBefore
+                                          ? `${dateStr}: Prior to loan date`
+                                          : isMissed
+                                          ? `${dateStr}: Missed installment (Due ${dateStr}) — Click to settle`
+                                          : isPartial
+                                          ? `${dateStr}: Partially Paid (${formatPHP(paidOnDate)} of ${formatPHP(dailyTarget)}) — Select to pay remaining ${formatPHP(Math.max(0, dailyTarget - paidOnDate))}`
+                                          : `Select ${dateStr}`
+                                      }
+                                    >
+                                      <span>{d}</span>
+                                      {isPaid && <Check className="h-2.5 w-2.5 text-emerald-600 -mt-0.5" />}
+                                      {isPartial && !isSelected && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 absolute bottom-1" />
+                                      )}
+                                      {isMissed && !isSelected && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-[#960C01] absolute bottom-1" />
+                                      )}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })()}
+
+                          {/* Calendar Legend */}
+                          <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-fg pt-2 border-t border-slate-100 gap-1.5">
+                            <div className="flex items-center gap-2.5">
+                              <span className="flex items-center gap-1 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Paid
+                              </span>
+                              <span className="flex items-center gap-1 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Selected
+                              </span>
+                              <span className="flex items-center gap-1 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Partial
+                              </span>
+                              <span className="flex items-center gap-1 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-[#960C01] inline-block" /> Missed
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Late Status Information / Breakdown */}
                     {isLatePayment ? (
@@ -3314,9 +3459,14 @@ export const LendingPage: React.FC = () => {
                   <select
                     value={editFormData.paymentFrequency}
                     onChange={(e) => {
-                      const freq = e.target.value as 'Daily' | 'Monthly' | 'Quarterly' | 'Annually'
-                      const newTerm = freq === 'Daily' ? '40' : freq === 'Monthly' ? '60' : editFormData.termDays
-                      const newDue = calculateProjectedDueDate(editFormData.dateBorrowed, newTerm)
+                      const freq = e.target.value as 'Daily' | 'Monthly'
+                      let newTerm = editFormData.termDays
+                      if (freq === 'Daily' && editFormData.paymentFrequency !== 'Daily') {
+                        newTerm = '40'
+                      } else if (freq === 'Monthly' && (editFormData.paymentFrequency === 'Daily' || parseInt(editFormData.termDays, 10) > 36)) {
+                        newTerm = '1'
+                      }
+                      const newDue = calculateProjectedDueDate(editFormData.dateBorrowed, newTerm, freq)
                       setEditFormData({
                         ...editFormData,
                         paymentFrequency: freq,
@@ -3328,14 +3478,12 @@ export const LendingPage: React.FC = () => {
                   >
                     <option value="Daily">Daily</option>
                     <option value="Monthly">Monthly</option>
-                    <option value="Quarterly">Quarterly</option>
-                    <option value="Annually">Annually</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="text-xs font-semibold text-focus block mb-1">
-                    Term (Days) <span className="text-[#960C01]">*</span>
+                    Term ({editFormData.paymentFrequency === 'Daily' ? 'Days' : 'Months'}) <span className="text-[#960C01]">*</span>
                   </label>
                   <Input
                     required
@@ -3344,13 +3492,14 @@ export const LendingPage: React.FC = () => {
                     value={editFormData.termDays}
                     onChange={(e) => {
                       const val = e.target.value
-                      const newDue = calculateProjectedDueDate(editFormData.dateBorrowed, val)
+                      const newDue = calculateProjectedDueDate(editFormData.dateBorrowed, val, editFormData.paymentFrequency)
                       setEditFormData({
                         ...editFormData,
                         termDays: val,
                         dueDate: newDue || editFormData.dueDate,
                       })
                     }}
+                    placeholder={editFormData.paymentFrequency === 'Daily' ? '40' : '1'}
                     className="h-10 text-xs sm:text-sm rounded-xl font-semibold"
                   />
                 </div>
@@ -3367,7 +3516,7 @@ export const LendingPage: React.FC = () => {
                     value={editFormData.dateBorrowed}
                     onChange={(e) => {
                       const val = e.target.value
-                      const newDue = calculateProjectedDueDate(val, editFormData.termDays)
+                      const newDue = calculateProjectedDueDate(val, editFormData.termDays, editFormData.paymentFrequency)
                       setEditFormData({
                         ...editFormData,
                         dateBorrowed: val,
