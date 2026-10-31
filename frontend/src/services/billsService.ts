@@ -242,6 +242,12 @@ export function validatePaymentInput(payment: {
 // BACKEND SERIALIZATION HELPERS
 // ==========================================
 
+function emitBillsNotificationRefresh(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mct:notifications-updated'))
+  }
+}
+
 function backendHeaders(): HeadersInit {
   const token = typeof window !== 'undefined' ? sessionStorage.getItem('mct_access_token') : null
   return {
@@ -457,7 +463,9 @@ export const billsService = {
       if (!response.ok) {
         throw await getBackendError(response, 'Unable to create bill record. Please try again.')
       }
-      return mapBackendBill(await response.json())
+      const created = mapBackendBill(await response.json())
+      emitBillsNotificationRefresh()
+      return created
     } catch (err: any) {
       throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to create bill record. Please try again.'))
     }
@@ -487,7 +495,9 @@ export const billsService = {
       if (!response.ok) {
         throw await getBackendError(response, 'Unable to update bill record. Please try again.')
       }
-      return mapBackendBill(await response.json())
+      const updated = mapBackendBill(await response.json())
+      emitBillsNotificationRefresh()
+      return updated
     } catch (err: any) {
       throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to update bill record. Please try again.'))
     }
@@ -502,6 +512,7 @@ export const billsService = {
       if (!response.ok) {
         throw await getBackendError(response, 'Unable to delete bill record. Please try again.')
       }
+      emitBillsNotificationRefresh()
       return true
     } catch (err: any) {
       throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to delete bill record. Please try again.'))
@@ -545,7 +556,9 @@ export const billsService = {
       if (!response.ok) {
         throw await getBackendError(response, 'Unable to record payment. Please try again.')
       }
-      return mapBackendBill(await response.json())
+      const recorded = mapBackendBill(await response.json())
+      emitBillsNotificationRefresh()
+      return recorded
     } catch (err: any) {
       throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to record payment. Please try again.'))
     }
@@ -563,7 +576,9 @@ export const billsService = {
       if (!response.ok) {
         throw await getBackendError(response, 'Unable to delete payment record. Please try again.')
       }
-      return mapBackendBill(await response.json())
+      const afterDelete = mapBackendBill(await response.json())
+      emitBillsNotificationRefresh()
+      return afterDelete
     } catch (err: any) {
       throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to delete payment record. Please try again.'))
     }
@@ -578,7 +593,9 @@ export const billsService = {
       if (!response.ok) {
         throw await getBackendError(response, 'Unable to reset bill status. Please try again.')
       }
-      return mapBackendBill(await response.json())
+      const reset = mapBackendBill(await response.json())
+      emitBillsNotificationRefresh()
+      return reset
     } catch (err: any) {
       throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to reset bill status. Please try again.'))
     }
