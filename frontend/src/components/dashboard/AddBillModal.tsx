@@ -384,13 +384,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             {/* 5. Recurrence Dynamic Controls */}
             {billingCycle === 'Daily' && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                  <span>Effective Schedule</span>
-                </Label>
-                <div className="w-full h-10 px-3 rounded-xl border border-stroke/40 bg-slate-50 text-xs text-muted-fg font-medium flex items-center">
-                  <span>Effective immediately: Due every calendar day starting today.</span>
-                </div>
+               
               </div>
             )}
 
@@ -413,9 +407,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                   ))}
                   <option value={31}>Due every 31st (or last day of month)</option>
                 </select>
-                <p className="text-[11px] text-muted-fg font-normal">
-                  🔁 Effective immediately for current month. Shorter months automatically clamp to month-end.
-                </p>
               </div>
             )}
 
@@ -450,9 +441,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     ))}
                   </select>
                 </div>
-                <p className="text-[11px] text-muted-fg font-normal">
-                  🔁 Recurs annually every year on {MONTH_NAMES[yearlyMonth - 1]} {yearlyDay}{getOrdinalSuffix(yearlyDay)}.
-                </p>
               </div>
             )}
           </div>

@@ -372,9 +372,6 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                   ))}
                   <option value={31}>Due every 31st (or last day of month)</option>
                 </select>
-                <p className="text-[11px] text-muted-fg font-normal">
-                  🔁 Effective immediately for current month. Shorter months automatically clamp to month-end.
-                </p>
               </div>
             )}
 
@@ -409,9 +406,6 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                     ))}
                   </select>
                 </div>
-                <p className="text-[11px] text-muted-fg font-normal">
-                  🔁 Recurs annually every year on {MONTH_NAMES[yearlyMonth - 1]} {yearlyDay}{getOrdinalSuffix(yearlyDay)}.
-                </p>
               </div>
             )}
           </div>

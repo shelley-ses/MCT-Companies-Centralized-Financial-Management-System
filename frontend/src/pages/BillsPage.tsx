@@ -58,6 +58,7 @@ import { BillDetailPageView } from '@/components/dashboard/BillDetailPageView'
 import { RecordBillPaymentModal } from '@/components/dashboard/RecordBillPaymentModal'
 import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
 import { isCompanyMatch } from '@/utils/companyUtils'
+import { formatDisplayDate } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
 
 const DEFAULT_COMPANY_LIST = ['All Companies']
@@ -1029,7 +1030,7 @@ export const BillsPage: React.FC = () => {
                       {/* Due Date & Reminder */}
                       <TableCell className="w-[16%] px-3 py-3.5 text-xs text-left truncate">
                         <div className="flex flex-col min-w-0">
-                          <span className="font-semibold text-focus truncate">{bill.dueDate}</span>
+                          <span className="font-semibold text-focus truncate">{formatDisplayDate(bill.dueDate)}</span>
                           <span className="text-[11px] text-amber-600 flex items-center gap-1 truncate font-medium">
                             <BellRing className="w-2.5 h-2.5 shrink-0" />
                             <span className="truncate">

@@ -4,7 +4,6 @@ import {
   Pencil,
   ChevronLeft,
   ChevronRight,
-  Check,
   AlertCircle,
   FileText,
   Coins,
@@ -26,7 +25,29 @@ import {
   getBillPaymentOptions,
   type BillItem,
 } from '@/services/billsService'
+import { formatDisplayDate } from '@/utils/dateUtils'
 import { cn } from '@/lib/utils'
+
+function formatPeriodDisplay(periodLabelOrKey?: string): string {
+  if (!periodLabelOrKey) return '—'
+  const trimmed = periodLabelOrKey.trim()
+  if (/[a-zA-Z]/.test(trimmed)) {
+    return trimmed
+  }
+  const dayMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dayMatch) {
+    return formatDisplayDate(trimmed)
+  }
+  const monthMatch = trimmed.match(/^(\d{4})-(\d{2})$/)
+  if (monthMatch) {
+    const [, y, m] = monthMatch
+    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1)
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    }
+  }
+  return trimmed
+}
 
 interface BillDetailPageViewProps {
   bill: BillItem
@@ -70,22 +91,20 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
       ? nextPayable.remainingAmount
       : Math.max(0, bill.amount - (nextPayable?.paidAmount || 0))
 
-  // Build unified ledger entries combining recorded payments and scheduled pending/overdue periods
+  // Build ledger entries from recorded payment transactions only
   const ledgerRows = React.useMemo(() => {
     const rows: Array<{
       id: string
       date: string
       periodLabel?: string
-      status: 'Paid' | 'Partially Paid' | 'Pending'
+      status: 'Paid' | 'Partially Paid'
       amount: number
       method: string
       referenceNo: string
       notes: string
     }> = []
 
-    const recordedPeriodKeys = new Set<string>()
     payments.forEach((p) => {
-      if (p.periodKey) recordedPeriodKeys.add(p.periodKey)
       const matchedPeriod = schedule.find((sp) => sp.key === p.periodKey)
       const isPartial = Boolean(matchedPeriod?.partiallyPaid || (p.amount > 0 && p.amount < bill.amount))
       rows.push({
@@ -100,36 +119,31 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
       })
     })
 
-    // Add unpaid scheduled periods
-    schedule.forEach((sp) => {
-      if (!sp.paid && !recordedPeriodKeys.has(sp.key)) {
-        rows.push({
-          id: `sched-${sp.key}`,
-          date: sp.periodDate || `${sp.key}-${String(dueDay).padStart(2, '0')}`,
-          periodLabel: sp.label,
-          status: 'Pending',
-          amount: 0,
-          method: '—',
-          referenceNo: '—',
-          notes: `Scheduled (${sp.label})`,
-        })
-      }
-    })
-
     return rows
-  }, [payments, schedule, bill.amount, dueDay])
+  }, [payments, schedule, bill.amount])
 
   const filteredLedgerRows = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return ledgerRows
     return ledgerRows.filter((r) => {
       const matchDate = (r.date || '').toLowerCase().includes(q)
+      const matchFormattedDate = formatDisplayDate(r.date).toLowerCase().includes(q)
       const matchPeriod = (r.periodLabel || '').toLowerCase().includes(q)
+      const matchFormattedPeriod = formatPeriodDisplay(r.periodLabel || r.date).toLowerCase().includes(q)
       const matchRef = (r.referenceNo || '').toLowerCase().includes(q)
       const matchNotes = (r.notes || '').toLowerCase().includes(q)
       const matchMethod = (r.method || '').toLowerCase().includes(q)
       const matchStatus = (r.status || '').toLowerCase().includes(q)
-      return matchDate || matchPeriod || matchRef || matchNotes || matchMethod || matchStatus
+      return (
+        matchDate ||
+        matchFormattedDate ||
+        matchPeriod ||
+        matchFormattedPeriod ||
+        matchRef ||
+        matchNotes ||
+        matchMethod ||
+        matchStatus
+      )
     })
   }, [ledgerRows, searchQuery])
 
@@ -251,7 +265,7 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
             Next Due Date
           </span>
           <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
-            {bill.dueDate}
+            {formatDisplayDate(bill.dueDate)}
           </span>
         </div>
       </div>
@@ -282,7 +296,7 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
             </div>
             <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
               <span className="text-muted-fg">Scheduled Due Date</span>
-              <span className="font-mono font-semibold text-focus">{bill.dueDate}</span>
+              <span className="font-semibold text-focus">{formatDisplayDate(bill.dueDate)}</span>
             </div>
             <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
               <span className="text-muted-fg">Due Date Reminder</span>
@@ -348,7 +362,7 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
                   <span>Payment Schedule & History</span>
                 </h2>
                 <p className="text-[11px] text-muted-fg mt-0.5">
-                  Showing Payment History made for this Bill
+                  Showing Payment Transactions made for this Bill
                 </p>
               </div>
 
@@ -379,6 +393,9 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
                 <TableHeader>
                   <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
                     <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
+                      Billing Period
+                    </TableHead>
+                    <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3">
                       Payment Date
                     </TableHead>
                     <TableHead className="text-[11px] font-bold uppercase text-muted-fg py-2.5 px-3 text-center">
@@ -401,10 +418,10 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
                 <TableBody>
                   {paginatedLedger.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="h-36 text-center text-xs text-muted-fg">
+                      <TableCell colSpan={7} className="h-36 text-center text-xs text-muted-fg">
                         {searchQuery
                           ? `No payment records found matching "${searchQuery}".`
-                          : 'No payment schedule or history records found.'}
+                          : 'No payment transactions recorded yet.'}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -418,17 +435,19 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
 
                       return (
                         <TableRow key={entry.id} className="hover:bg-slate-50/60 border-b border-slate-100">
-                          <TableCell className="py-3 px-3 font-mono text-xs font-semibold text-focus whitespace-nowrap">
-                            {entry.date}
+                          <TableCell className="py-3 px-3 text-xs font-semibold text-focus whitespace-nowrap">
+                            {formatPeriodDisplay(entry.periodLabel || entry.date)}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-xs text-muted-fg whitespace-nowrap">
+                            {formatDisplayDate(entry.date)}
                           </TableCell>
                           <TableCell className="py-3 px-3 text-center whitespace-nowrap">
                             <span
                               className={cn(
-                                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider',
+                                'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider',
                                 badgeStyle
                               )}
                             >
-                              {entry.status === 'Paid' && <Check className="h-2.5 w-2.5 stroke-[3]" />}
                               {entry.status}
                             </span>
                           </TableCell>
