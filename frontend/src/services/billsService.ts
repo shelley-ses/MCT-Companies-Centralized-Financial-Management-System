@@ -11,17 +11,6 @@ export interface BillPaymentRecord {
   createdAt: string
 }
 
-export type BillCategory =
-  | 'Electricity'
-  | 'Water'
-  | 'Internet & Telecom'
-  | 'Rent & Lease'
-  | 'Software & Cloud'
-  | 'Janitorial & Security'
-  | 'Government & Taxes'
-  | 'Insurance'
-  | 'Others'
-
 export type BillStatus = 'Unpaid' | 'Paid' | 'Overdue' | 'Due Soon' | 'Partially Paid'
 export type BillRecurring = 'Daily' | 'Monthly' | 'Yearly'
 
@@ -43,8 +32,6 @@ export interface BillItem {
   id: string
   billerName: string
   company: string
-  category?: string
-  accountNo?: string
   amount: number
   dueDate: string // YYYY-MM-DD
   dueDayOfMonth?: number
@@ -70,8 +57,6 @@ export interface BillItem {
 export interface NewBillInput {
   billerName: string
   company: string
-  category?: string
-  accountNo?: string
   amount: number
   dueDate: string
   dueDayOfMonth?: number
@@ -83,8 +68,6 @@ export interface NewBillInput {
 export interface UpdateBillInput {
   billerName?: string
   company?: string
-  category?: string
-  accountNo?: string
   amount?: number
   dueDate?: string
   dueDayOfMonth?: number
@@ -113,18 +96,6 @@ export interface BillReminder {
   daysDiff: number
   message: string
 }
-
-export const BILL_CATEGORIES: readonly BillCategory[] = [
-  'Electricity',
-  'Water',
-  'Internet & Telecom',
-  'Rent & Lease',
-  'Software & Cloud',
-  'Janitorial & Security',
-  'Government & Taxes',
-  'Insurance',
-  'Others',
-]
 
 type BackendPeriod = {
   period_key: string

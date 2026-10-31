@@ -71,7 +71,7 @@ export const BillsPage: React.FC = () => {
   const isAdmin = userRole === 'admin' || isAudit
   const isFinance = userRole === 'finance'
   const isCompanyScoped = !isAdmin && !isFinance
-  const assignedCompany = user?.assignedCompany || 'MCT Kitchen'
+  const assignedCompany = user?.assignedCompany || ''
 
   // Data states
   const [bills, setBills] = React.useState<BillItem[]>([])
@@ -199,20 +199,10 @@ export const BillsPage: React.FC = () => {
     setLoading(true)
     try {
       const data = await billsService.getBills()
-      let auditRecords: Record<string, any> = {}
-      try {
-        const stored = localStorage.getItem('bills_audit_records')
-        if (stored) auditRecords = JSON.parse(stored)
-      } catch { }
-      const merged = data.map((b) => {
-        if (auditRecords[b.id]) {
-          return { ...b, ...auditRecords[b.id] }
-        }
-        return b
-      })
-      setBills(merged)
+      setBills(data)
     } catch (err) {
       console.error('Failed to load bills:', err)
+      setBills([])
     } finally {
       setLoading(false)
     }
@@ -235,14 +225,6 @@ export const BillsPage: React.FC = () => {
     setBills((prev) => prev.map((item) => (item.id === bill.id ? updated : item)))
     if (selectedDetailBill?.id === bill.id) {
       setSelectedDetailBill(updated)
-    }
-    try {
-      const stored = localStorage.getItem('bills_audit_records')
-      const records = stored ? JSON.parse(stored) : {}
-      records[bill.id] = { auditStatus: status, auditDate: timestamp, auditedBy: user?.fullName || 'Audit' }
-      localStorage.setItem('bills_audit_records', JSON.stringify(records))
-    } catch {
-      // ignore
     }
     setOpenMenuBillId(null)
     setMenuPosition(null)
@@ -289,11 +271,9 @@ export const BillsPage: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         const matchName = bill.billerName.toLowerCase().includes(q)
-        const matchAcc = (bill.accountNo || '').toLowerCase().includes(q)
         const matchComp = bill.company.toLowerCase().includes(q)
-        const matchCat = (bill.category || '').toLowerCase().includes(q)
         const matchNotes = (bill.notes || '').toLowerCase().includes(q)
-        if (!matchName && !matchAcc && !matchComp && !matchCat && !matchNotes) {
+        if (!matchName && !matchComp && !matchNotes) {
           return false
         }
       }
@@ -403,17 +383,16 @@ export const BillsPage: React.FC = () => {
     const companyTitle = isCompanyScoped ? assignedCompany : selectedCompany
     const rowsHtml =
       filteredBills.length === 0
-        ? `<tr><td colspan="7" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No monthly bills found matching the selected filters.</td></tr>`
+        ? `<tr><td colspan="6" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No bills found matching the selected filters.</td></tr>`
         : filteredBills
           .map(
             (b) => `
         <tr>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${b.billerName}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${b.company}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${b.category}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-size: 11px;">${b.accountNo || '—'}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 600;">₱${b.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.dueDate}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.billingCycle}</td>
           <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.status}</td>
         </tr>
       `
@@ -424,7 +403,7 @@ export const BillsPage: React.FC = () => {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Monthly Bills Report - ${companyTitle}</title>
+          <title>Bills Report - ${companyTitle}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0F172A; padding: 24px; }
             h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: #960C01; }
@@ -440,16 +419,15 @@ export const BillsPage: React.FC = () => {
         </head>
         <body>
           <h1>MCT Group of Companies</h1>
-          <p>Monthly Bills Report for <strong>${companyTitle}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
+          <p>Bills Report for <strong>${companyTitle}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
           <table>
             <thead>
               <tr>
                 <th>Biller Name</th>
                 <th>Company</th>
-                <th>Category</th>
-                <th>Account No</th>
                 <th style="text-align: right;">Amount</th>
                 <th style="text-align: center;">Due Date</th>
+                <th style="text-align: center;">Cycle</th>
                 <th style="text-align: center;">Status</th>
               </tr>
             </thead>
@@ -671,7 +649,7 @@ export const BillsPage: React.FC = () => {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-fg pointer-events-none" />
             <Input
               type="search"
-              placeholder="Search by biller, account number, company, category, or notes…"
+              placeholder="Search by biller, company, or notes…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-10 sm:h-11 pl-11 pr-4 rounded-full border border-stroke/40 bg-white text-sm text-focus placeholder:text-muted-fg/80 shadow-xs focus-visible:ring-1 focus-visible:ring-focus w-full"

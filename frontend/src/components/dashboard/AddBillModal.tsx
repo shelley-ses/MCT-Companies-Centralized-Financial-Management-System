@@ -36,18 +36,6 @@ interface AddBillModalProps {
   companies?: string[]
 }
 
-const DEFAULT_COMPANIES = [
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
-
 const MONTH_NAMES = [
   'January',
   'February',
@@ -89,8 +77,8 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const isAdmin = user?.role === 'Admin'
   const canChooseCompany = isFinance || isAdmin
 
-  const [dbCompanies, setDbCompanies] = React.useState<string[]>(
-    propsCompanies || DEFAULT_COMPANIES
+  const [dbCompanies, setDbCompanies] = React.useState<string[]>(() =>
+    propsCompanies?.filter((c) => c !== 'All Companies') || []
   )
 
   React.useEffect(() => {
@@ -98,7 +86,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     loanService.getCompanies().then((res) => {
       if (mounted && res.length > 0) {
         const names = res.map((c) => c.company_name).filter(Boolean)
-        setDbCompanies(Array.from(new Set([...names, ...DEFAULT_COMPANIES])))
+        setDbCompanies(names)
       }
     })
     return () => {
@@ -111,7 +99,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   // Form states
   const [billerName, setBillerName] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [company, setCompany] = React.useState(assignedCompany || 'MCT Kitchen')
+  const [company, setCompany] = React.useState(assignedCompany || propsCompanies?.find((c) => c !== 'All Companies') || '')
   const [billingCycle, setBillingCycle] = React.useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly')
 
   // Recurrence-specific schedule states (effective immediately)
@@ -168,7 +156,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       setDueDayOfMonth(now.getDate())
       setYearlyMonth(now.getMonth() + 1)
       setYearlyDay(now.getDate())
-      setCompany(assignedCompany || 'MCT Kitchen')
+      setCompany(assignedCompany || propsCompanies?.find((c) => c !== 'All Companies') || dbCompanies[0] || '')
       setBillingCycle('Monthly')
       setReminderDaysBefore(5)
       setNotes('')
@@ -228,8 +216,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     try {
       const input: NewBillInput = {
         billerName: billerName.trim(),
-        category: 'General',
-        accountNo: '',
         amount: numAmount,
         dueDate: computedDueDate,
         dueDayOfMonth: billingCycle === 'Monthly' ? dueDayOfMonth : undefined,

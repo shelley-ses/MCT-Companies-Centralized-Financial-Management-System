@@ -544,80 +544,58 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-2 gap-2.5">
-                    {(() => {
-                      const baseYr = new Date(`${bill.initialDueDate || bill.dueDate}T00:00:00`).getFullYear() || 2025
-                      const years = [baseYr, baseYr + 1, baseYr + 2, baseYr + 3]
+                    {allPeriods.map((period) => {
+                      const isSelected = selectedPeriod?.key === period.key
+                      const state = getPeriodState(period)
 
-                      return years.map((yr) => {
-                        const yearKey = String(yr)
-                        const period = allPeriods.find((p) => p.key === yearKey)
-                        const isSelected = selectedPeriod?.key === yearKey
-                        const state = period ? getPeriodState(period) : (yr > new Date().getFullYear() ? 'advance' : 'overdue')
-
-                        return (
-                          <button
-                            key={yearKey}
-                            type="button"
-                            onClick={() => {
-                              if (period) {
-                                handleSelectPeriod(period)
-                              } else {
-                                const synth: BillPaymentPeriod = {
-                                  key: yearKey,
-                                  label: `${yearKey} Annual`,
-                                  paid: false,
-                                  paidAmount: 0,
-                                  remainingAmount: bill.amount,
-                                  periodDate: `${yearKey}-01-01`,
-                                  isFuture: yr > new Date().getFullYear(),
-                                }
-                                handleSelectPeriod(synth)
-                              }
-                            }}
-                            className={cn(
-                              'p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer min-h-[70px]',
-                              isSelected && 'border-[#960C01] bg-[#960C01]/5 ring-2 ring-[#960C01]/20',
-                              !isSelected && state === 'paid' && 'bg-emerald-50/70 border-emerald-200 text-emerald-900',
-                              !isSelected && state === 'partial' && 'bg-amber-50/80 border-amber-300 text-amber-900',
-                              !isSelected && state === 'overdue' && 'bg-[#960C01]/10 border-[#960C01]/25 text-[#960C01]',
-                              !isSelected && state === 'advance' && 'bg-purple-50/60 border-purple-200 text-purple-900',
-                              !isSelected && state === 'current' && 'bg-white border-slate-200 hover:bg-slate-50 text-focus'
-                            )}
-                          >
-                            <div className="flex items-center justify-between w-full">
-                              <span className="text-sm font-bold">{yr}</span>
-                              <span
-                                className={cn(
-                                  'px-2 py-0.5 rounded text-[10px] font-semibold border',
-                                  state === 'paid' && 'bg-emerald-100 text-emerald-800 border-emerald-200',
-                                  state === 'partial' && 'bg-amber-100 text-amber-800 border-amber-300',
-                                  state === 'overdue' && 'bg-[#960C01]/15 text-[#960C01] border-[#960C01]/30',
-                                  state === 'advance' && 'bg-purple-100 text-purple-800 border-purple-200',
-                                  state === 'current' && 'bg-slate-100 text-slate-700 border-slate-200'
-                                )}
-                              >
-                                {state === 'paid'
-                                  ? 'Paid'
-                                  : state === 'partial'
-                                  ? 'Partial'
-                                  : state === 'overdue'
-                                  ? 'Overdue'
-                                  : state === 'advance'
-                                  ? 'Advance'
-                                  : 'Due Soon'}
-                              </span>
-                            </div>
-                            <span className="text-[11px] tabular-nums mt-1 text-muted-fg font-medium">
+                      return (
+                        <button
+                          key={period.key}
+                          type="button"
+                          onClick={() => handleSelectPeriod(period)}
+                          className={cn(
+                            'p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer min-h-[70px]',
+                            isSelected && 'border-[#960C01] bg-[#960C01]/5 ring-2 ring-[#960C01]/20',
+                            !isSelected && state === 'paid' && 'bg-emerald-50/70 border-emerald-200 text-emerald-900',
+                            !isSelected && state === 'partial' && 'bg-amber-50/80 border-amber-300 text-amber-900',
+                            !isSelected && state === 'overdue' && 'bg-[#960C01]/10 border-[#960C01]/25 text-[#960C01]',
+                            !isSelected && state === 'advance' && 'bg-purple-50/60 border-purple-200 text-purple-900',
+                            !isSelected && state === 'current' && 'bg-white border-slate-200 hover:bg-slate-50 text-focus'
+                          )}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-sm font-bold">{period.label || period.key}</span>
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded text-[10px] font-semibold border',
+                                state === 'paid' && 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                                state === 'partial' && 'bg-amber-100 text-amber-800 border-amber-300',
+                                state === 'overdue' && 'bg-[#960C01]/15 text-[#960C01] border-[#960C01]/30',
+                                state === 'advance' && 'bg-purple-100 text-purple-800 border-purple-200',
+                                state === 'current' && 'bg-slate-100 text-slate-700 border-slate-200'
+                              )}
+                            >
                               {state === 'paid'
-                                ? '₱0.00 left'
-                                : state === 'partial' && period?.remainingAmount
-                                ? `${formatPHP(period.remainingAmount)} left`
-                                : formatPHP(bill.amount)}
+                                ? 'Paid'
+                                : state === 'partial'
+                                ? 'Partial'
+                                : state === 'overdue'
+                                ? 'Overdue'
+                                : state === 'advance'
+                                ? 'Advance'
+                                : 'Due Soon'}
                             </span>
-                          </button>
-                        )
-                      })
-                    })()}
+                          </div>
+                          <span className="text-[11px] tabular-nums mt-1 text-muted-fg font-medium">
+                            {state === 'paid'
+                              ? '₱0.00 left'
+                              : state === 'partial' && period.remainingAmount
+                              ? `${formatPHP(period.remainingAmount)} left`
+                              : formatPHP(bill.amount)}
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}

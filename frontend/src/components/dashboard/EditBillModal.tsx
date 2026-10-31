@@ -36,18 +36,6 @@ interface EditBillModalProps {
   companies?: string[]
 }
 
-const DEFAULT_COMPANIES = [
-  'MCT Kitchen',
-  'MCT Hotel',
-  'JK Cafe',
-  'Annex Nine',
-  'Merillon',
-  'JK Printing',
-  'Speedbox',
-  'JK Property and Ventures',
-  'Golden Sunburst Ventures',
-]
-
 const MONTH_NAMES = [
   'January',
   'February',
@@ -89,8 +77,8 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   const isAdmin = user?.role === 'Admin'
   const canChooseCompany = isFinance || isAdmin
 
-  const [dbCompanies, setDbCompanies] = React.useState<string[]>(
-    propsCompanies || DEFAULT_COMPANIES
+  const [dbCompanies, setDbCompanies] = React.useState<string[]>(() =>
+    propsCompanies?.filter((c) => c !== 'All Companies') || []
   )
 
   React.useEffect(() => {
@@ -98,7 +86,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
     loanService.getCompanies().then((res) => {
       if (mounted && res.length > 0) {
         const names = res.map((c) => c.company_name).filter(Boolean)
-        setDbCompanies(Array.from(new Set([...names, ...DEFAULT_COMPANIES])))
+        setDbCompanies(names)
       }
     })
     return () => {
@@ -170,7 +158,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
 
       setBillerName(bill.billerName || '')
       setAmount(bill.amount?.toString() || '')
-      setCompany(bill.company || 'MCT Kitchen')
+      setCompany(bill.company || '')
       setBillingCycle(cycle)
 
       const day = bill.dueDayOfMonth || (anchorDate ? parsedDate.getDate() : 1)
