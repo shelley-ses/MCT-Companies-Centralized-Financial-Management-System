@@ -75,6 +75,8 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
   const [paymentDate, setPaymentDate] = React.useState<string>(getTodayIso())
   const [selectedPeriod, setSelectedPeriod] = React.useState<BillPaymentPeriod | null>(null)
   const [amountInput, setAmountInput] = React.useState<string>('')
+  const [isInstallment, setIsInstallment] = React.useState<boolean>(false)
+  const [totalBilledInput, setTotalBilledInput] = React.useState<string>('')
   const [paymentMethod, setPaymentMethod] = React.useState<string>('Cash')
   const [referenceNo, setReferenceNo] = React.useState<string>('')
   const [notes, setNotes] = React.useState<string>('')
@@ -92,16 +94,26 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
     if (open && bill) {
       const options = getBillPaymentOptions(bill)
       const nextP = options.nextPayable
-      const remaining =
-        nextP?.remainingAmount !== undefined && nextP.remainingAmount > 0
-          ? nextP.remainingAmount
-          : nextP?.paidAmount && nextP.paidAmount > 0
-          ? Math.max(0, bill.amount - nextP.paidAmount)
-          : bill.amount
 
       setSelectedPeriod(nextP)
-      setAmountInput(String(remaining > 0 ? remaining : bill.amount))
-      setPaymentDate(getTodayIso()) // Payment date is current date by default
+      setPaymentDate(getTodayIso())
+
+      if (nextP?.partiallyPaid) {
+        setIsInstallment(false)
+        setTotalBilledInput(String(nextP.billedAmount || ''))
+        setAmountInput(String(nextP.remainingAmount || ''))
+      } else {
+        setIsInstallment(false)
+        setTotalBilledInput('')
+        const defaultAmt = nextP?.billedAmount
+          ? String(nextP.billedAmount)
+          : bill.latestAmount
+          ? String(bill.latestAmount)
+          : bill.amount > 0
+          ? String(bill.amount)
+          : ''
+        setAmountInput(defaultAmt)
+      }
 
       // Sync selector navigation
       const baseDate = new Date(`${nextP?.periodDate || bill.dueDate}T00:00:00`)
@@ -128,21 +140,34 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
   // Calculate remaining balance for currently selected period
   const isPeriodPaid = Boolean(selectedPeriod?.paid)
   const isPeriodPartiallyPaid = Boolean(selectedPeriod?.partiallyPaid)
-  const periodRemainingBalance =
-    selectedPeriod?.remainingAmount !== undefined && selectedPeriod.remainingAmount > 0
-      ? selectedPeriod.remainingAmount
-      : isPeriodPaid
-      ? 0
-      : selectedPeriod?.paidAmount && selectedPeriod.paidAmount > 0
-      ? Math.max(0, bill.amount - selectedPeriod.paidAmount)
-      : bill.amount
+
+  const periodRemainingBalance = isPeriodPartiallyPaid
+    ? (selectedPeriod?.remainingAmount ?? 0)
+    : isPeriodPaid
+    ? 0
+    : Infinity
 
   const parsedAmount = parseFloat(amountInput)
-  const isAmountValid =
-    !isNaN(parsedAmount) && parsedAmount >= 1 && parsedAmount <= (periodRemainingBalance + 0.01)
+  const parsedTotalBilled = parseFloat(totalBilledInput)
 
-  const willBePartiallyPaid =
-    isAmountValid && parsedAmount < periodRemainingBalance - 0.005
+  let isAmountValid = false
+  let willBePartiallyPaid = false
+
+  if (isPeriodPartiallyPaid) {
+    isAmountValid = !isNaN(parsedAmount) && parsedAmount >= 1 && parsedAmount <= (periodRemainingBalance + 0.01)
+    willBePartiallyPaid = isAmountValid && parsedAmount < periodRemainingBalance - 0.005
+  } else if (isInstallment) {
+    isAmountValid =
+      !isNaN(parsedTotalBilled) &&
+      parsedTotalBilled >= 1 &&
+      !isNaN(parsedAmount) &&
+      parsedAmount >= 1 &&
+      parsedAmount <= parsedTotalBilled
+    willBePartiallyPaid = isAmountValid && parsedAmount < parsedTotalBilled - 0.005
+  } else {
+    isAmountValid = !isNaN(parsedAmount) && parsedAmount >= 1
+    willBePartiallyPaid = false
+  }
 
   // Period state resolver helper
   const getPeriodState = (period: BillPaymentPeriod) => {
@@ -169,14 +194,23 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
     }
 
     setSelectedPeriod(period)
-    const rem =
-      period.remainingAmount !== undefined && period.remainingAmount > 0
-        ? period.remainingAmount
-        : period.paidAmount && period.paidAmount > 0
-        ? Math.max(0, bill.amount - period.paidAmount)
-        : bill.amount
 
-    setAmountInput(String(rem > 0 ? rem : bill.amount))
+    if (period.partiallyPaid) {
+      setIsInstallment(false)
+      setTotalBilledInput(String(period.billedAmount || ''))
+      setAmountInput(String(period.remainingAmount || ''))
+    } else {
+      setIsInstallment(false)
+      setTotalBilledInput('')
+      const defaultAmt = period.billedAmount
+        ? String(period.billedAmount)
+        : bill.latestAmount
+        ? String(bill.latestAmount)
+        : bill.amount > 0
+        ? String(bill.amount)
+        : ''
+      setAmountInput(defaultAmt)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -199,13 +233,31 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
     }
 
     if (!isAmountValid) {
-      setError(
-        parsedAmount < 1
-          ? 'Payment amount cannot be lower than ₱1.00.'
-          : `Payment amount cannot exceed remaining period balance (${formatPHP(periodRemainingBalance)}).`
-      )
+      if (isPeriodPartiallyPaid) {
+        setError(
+          parsedAmount < 1
+            ? 'Payment amount cannot be lower than ₱1.00.'
+            : `Payment amount cannot exceed remaining period balance (${formatPHP(periodRemainingBalance)}).`
+        )
+      } else if (isInstallment) {
+        if (isNaN(parsedTotalBilled) || parsedTotalBilled < 1) {
+          setError('Please provide a valid Total Statement Amount of at least ₱1.00.')
+        } else if (parsedAmount > parsedTotalBilled) {
+          setError(`Payment amount cannot exceed statement amount (${formatPHP(parsedTotalBilled)}).`)
+        } else {
+          setError('Payment amount cannot be lower than ₱1.00.')
+        }
+      } else {
+        setError('Payment amount cannot be lower than ₱1.00.')
+      }
       return
     }
+
+    const billedAmountToPass = isPeriodPartiallyPaid
+      ? selectedPeriod.billedAmount
+      : isInstallment
+      ? parsedTotalBilled
+      : parsedAmount
 
     try {
       setIsSubmitting(true)
@@ -213,12 +265,13 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
         periodKey: selectedPeriod.key,
         paymentDate,
         amount: parsedAmount,
+        billedAmount: billedAmountToPass,
         paymentMethod,
         referenceNo: referenceNo.trim() || undefined,
         notes: notes.trim() || undefined,
       })
 
-      const isFull = parsedAmount >= periodRemainingBalance - 0.005
+      const isFull = !willBePartiallyPaid
       setSuccessBanner(
         isFull
           ? `Full payment of ${formatPHP(parsedAmount)} recorded for ${selectedPeriod.label}! Period marked as Paid.`
@@ -364,7 +417,6 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                                 if (period) {
                                   handleSelectPeriod(period)
                                 } else {
-                                  // Synthesize daily period if not yet pre-rendered
                                   const synth: BillPaymentPeriod = {
                                     key: dateKey,
                                     label: new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, {
@@ -374,7 +426,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                                     }),
                                     paid: false,
                                     paidAmount: 0,
-                                    remainingAmount: bill.amount,
+                                    remainingAmount: 0,
                                     periodDate: dateKey,
                                     isFuture: dateKey > todayStr,
                                   }
@@ -465,7 +517,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                                 label: `${MONTH_FULL_NAMES[idx]} ${selectedYear}`,
                                 paid: false,
                                 paidAmount: 0,
-                                remainingAmount: bill.amount,
+                                remainingAmount: 0,
                                 periodDate: `${monthKey}-01`,
                                 isFuture: monthKey > todayStr.slice(0, 7),
                               }
@@ -511,7 +563,11 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                               ? '₱0.00 left'
                               : state === 'partial' && period?.remainingAmount
                               ? `${formatPHP(period.remainingAmount)} left`
-                              : formatPHP(bill.amount)}
+                              : period?.billedAmount
+                              ? `${formatPHP(period.billedAmount)} due`
+                              : bill.latestAmount
+                              ? `${formatPHP(bill.latestAmount)} est.`
+                              : '—'}
                           </span>
                         </button>
                       )
@@ -591,7 +647,11 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                               ? '₱0.00 left'
                               : state === 'partial' && period.remainingAmount
                               ? `${formatPHP(period.remainingAmount)} left`
-                              : formatPHP(bill.amount)}
+                              : period.billedAmount
+                              ? `${formatPHP(period.billedAmount)} due`
+                              : bill.latestAmount
+                              ? `${formatPHP(bill.latestAmount)} est.`
+                              : '—'}
                           </span>
                         </button>
                       )
@@ -625,13 +685,15 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                     <span className="text-sm sm:text-base font-bold text-focus">
                       {selectedPeriod.label}
                     </span>
-                    <span className="text-xs font-semibold text-focus tabular-nums">
-                      Remaining: <strong className="text-sm font-bold text-focus">{formatPHP(periodRemainingBalance)}</strong>
-                    </span>
+                    {isPeriodPartiallyPaid && (
+                      <span className="text-xs font-semibold text-focus tabular-nums">
+                        Remaining: <strong className="text-sm font-bold text-focus">{formatPHP(periodRemainingBalance)}</strong>
+                      </span>
+                    )}
                   </div>
-                  {isPeriodPartiallyPaid && selectedPeriod.paidAmount && (
+                  {isPeriodPartiallyPaid && selectedPeriod.paidAmount !== undefined && (
                     <p className="text-[11px] text-amber-800 font-medium">
-                      Already paid: {formatPHP(selectedPeriod.paidAmount)} of {formatPHP(bill.amount)}
+                      Already paid: {formatPHP(selectedPeriod.paidAmount)} of {selectedPeriod.billedAmount ? formatPHP(selectedPeriod.billedAmount) : formatPHP(bill.amount)}
                     </p>
                   )}
                 </div>
@@ -656,15 +718,75 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                 />
               </div>
 
-              {/* 2. Payment Amount Input */}
+              {/* Installment / Partial Payment Toggle for Fresh Periods */}
+              {!isPeriodPartiallyPaid && (
+                <div className="p-3 rounded-xl border border-stroke/60 bg-slate-50/70 flex items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="installment-toggle"
+                    checked={isInstallment}
+                    onChange={(e) => {
+                      setIsInstallment(e.target.checked)
+                      if (!e.target.checked) {
+                        setTotalBilledInput('')
+                      }
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded text-[#960C01] focus:ring-[#960C01] border-stroke/60 cursor-pointer"
+                  />
+                  <label htmlFor="installment-toggle" className="text-xs font-semibold text-focus cursor-pointer leading-tight">
+                    Pay in Installment / Partial Payment
+                    <span className="block text-[11px] font-normal text-muted-fg mt-0.5">
+                      Check this if paying only a portion of the statement amount.
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* Total Statement Amount (Only shown if user chose installment payment) */}
+              {isInstallment && !isPeriodPartiallyPaid && (
+                <div className="space-y-1.5 animate-in fade-in duration-150">
+                  <label className="text-xs font-semibold text-focus flex items-center justify-between">
+                    <span>Total Period Statement Amount (₱) <span className="text-[#960C01]">*</span></span>
+                    <span className="text-[11px] text-muted-fg font-normal">Full amount on bill statement</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-fg">
+                      ₱
+                    </span>
+                    <Input
+                      required
+                      type="number"
+                      min="1"
+                      step="any"
+                      value={totalBilledInput}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      onChange={(e) => {
+                        setError('')
+                        setTotalBilledInput(e.target.value)
+                      }}
+                      placeholder="e.g. 5420.50"
+                      className="h-10 pl-7 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Payment Amount Input */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-focus">
                     Payment Amount (₱) <span className="text-[#960C01]">*</span>
                   </label>
-                  <span className="text-[11px] text-muted-fg font-medium">
-                    Max: {formatPHP(periodRemainingBalance)}
-                  </span>
+                  {isPeriodPartiallyPaid && (
+                    <span className="text-[11px] text-muted-fg font-medium">
+                      Max: {formatPHP(periodRemainingBalance)}
+                    </span>
+                  )}
+                  {isInstallment && !isNaN(parsedTotalBilled) && parsedTotalBilled > 0 && (
+                    <span className="text-[11px] text-muted-fg font-medium">
+                      Max: {formatPHP(parsedTotalBilled)}
+                    </span>
+                  )}
                 </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-fg">
@@ -674,7 +796,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                     required
                     type="number"
                     min="1"
-                    max={periodRemainingBalance}
+                    max={isPeriodPartiallyPaid ? periodRemainingBalance : isInstallment ? parsedTotalBilled : undefined}
                     step="any"
                     value={amountInput}
                     onWheel={(e) => e.currentTarget.blur()}
@@ -692,7 +814,13 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                   <div className="pt-1">
                     {willBePartiallyPaid ? (
                       <p className="text-[11px] text-amber-800 font-medium bg-amber-50/80 border border-amber-200/80 rounded-xl px-2.5 py-1.5">
-                        Installment Payment: {formatPHP(Math.max(0, periodRemainingBalance - parsedAmount))} will remain as <strong>Partially Paid</strong>.
+                        Installment Payment:{' '}
+                        {formatPHP(
+                          isPeriodPartiallyPaid
+                            ? Math.max(0, periodRemainingBalance - parsedAmount)
+                            : Math.max(0, parsedTotalBilled - parsedAmount)
+                        )}{' '}
+                        will remain as <strong>Partially Paid</strong>.
                       </p>
                     ) : (
                       <p className="text-[11px] text-emerald-800 font-medium bg-emerald-50/80 border border-emerald-200/80 rounded-xl px-2.5 py-1.5">

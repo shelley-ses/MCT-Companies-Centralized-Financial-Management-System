@@ -16,7 +16,7 @@ class Bill(Base):
         index=True,
     )
     bill_name = Column(String(255), nullable=False)
-    amount = Column(Numeric(15, 2), nullable=False)
+    amount = Column(Numeric(15, 2), nullable=True, default=0.00)
     recurring = Column(String(50), nullable=False, default="monthly")
     due_date = Column(Date, nullable=False)
     due_date_reminder = Column(Integer, nullable=False, default=3)
@@ -47,6 +47,7 @@ class BillPayment(Base):
     period_key = Column(String(20), nullable=False, index=True)
     payment_date = Column(Date, nullable=False)
     amount = Column(Numeric(15, 2), nullable=False)
+    billed_amount = Column(Numeric(15, 2), nullable=True)
     payment_method = Column(String(50), nullable=False)
     reference_no = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)

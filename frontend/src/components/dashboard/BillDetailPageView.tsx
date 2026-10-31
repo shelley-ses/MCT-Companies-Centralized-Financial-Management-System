@@ -89,7 +89,9 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
       ? 0
       : nextPayable?.remainingAmount !== undefined
       ? nextPayable.remainingAmount
-      : Math.max(0, bill.amount - (nextPayable?.paidAmount || 0))
+      : nextPayable?.billedAmount !== undefined
+      ? Math.max(0, nextPayable.billedAmount - (nextPayable?.paidAmount || 0))
+      : bill.latestAmount || bill.amount || 0
 
   // Build ledger entries from recorded payment transactions only
   const ledgerRows = React.useMemo(() => {
@@ -106,7 +108,11 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
 
     payments.forEach((p) => {
       const matchedPeriod = schedule.find((sp) => sp.key === p.periodKey)
-      const isPartial = Boolean(matchedPeriod?.partiallyPaid || (p.amount > 0 && p.amount < bill.amount))
+      const isPartial = Boolean(
+        matchedPeriod?.partiallyPaid ||
+        (matchedPeriod?.billedAmount && p.amount < matchedPeriod.billedAmount) ||
+        (bill.amount > 0 && p.amount < bill.amount)
+      )
       rows.push({
         id: p.id,
         date: p.paymentDate,
@@ -235,10 +241,14 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white border border-stroke/60 rounded-2xl p-4 shadow-2xs">
           <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-fg block">
-            Bill Amount
+            Latest Billed / Paid
           </span>
           <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
-            {formatPHP(bill.amount)}
+            {bill.latestAmount && bill.latestAmount > 0
+              ? formatPHP(bill.latestAmount)
+              : bill.amount && bill.amount > 0
+              ? formatPHP(bill.amount)
+              : '—'}
           </span>
         </div>
 
@@ -256,7 +266,11 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
             Current Period Due
           </span>
           <span className="text-base sm:text-lg font-extrabold text-focus tabular-nums mt-1 block">
-            {formatPHP(bill.amount)}
+            {bill.status === 'Paid'
+              ? '₱0.00'
+              : currentRemainingDue > 0
+              ? formatPHP(currentRemainingDue)
+              : '—'}
           </span>
         </div>
 
@@ -314,7 +328,7 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
                   bill.status === 'Paid'
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : bill.status === 'Overdue'
-                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    ? 'bg-[#960C01]/10 text-[#960C01] border-[#960C01]/25'
                     : bill.status === 'Due Soon'
                     ? 'bg-amber-50 text-amber-700 border-amber-200'
                     : bill.status === 'Partially Paid'

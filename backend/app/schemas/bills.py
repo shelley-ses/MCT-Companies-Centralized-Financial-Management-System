@@ -9,7 +9,7 @@ class BillBase(BaseModel):
     company_id: Optional[int] = None
     company: Optional[str] = Field(None, min_length=1, max_length=100)
     bill_name: str = Field(..., min_length=1, max_length=255)
-    amount: Decimal = Field(..., gt=0, decimal_places=2)
+    amount: Optional[Decimal] = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
     recurring: Literal["daily", "monthly", "yearly"] = Field(
         default="monthly",
         description="daily, monthly, or yearly",
@@ -35,7 +35,7 @@ class BillUpdate(BaseModel):
     company_id: Optional[int] = None
     company: Optional[str] = Field(None, min_length=1, max_length=100)
     bill_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    amount: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     recurring: Optional[Literal["daily", "monthly", "yearly"]] = None
     due_date: Optional[date] = None
     due_date_reminder: Optional[int] = Field(None, ge=0)
@@ -46,6 +46,7 @@ class BillPaymentCreate(BaseModel):
     period_key: Optional[str] = None
     payment_date: date
     amount: Decimal = Field(..., gt=0, decimal_places=2)
+    billed_amount: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     payment_method: str = Field(..., min_length=1, max_length=50)
     reference_no: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = None
@@ -65,6 +66,7 @@ class BillPeriodOut(BaseModel):
     period_date: date
     paid: bool
     partially_paid: bool = False
+    billed_amount: Optional[Decimal] = None
     paid_amount: Decimal = Decimal("0.00")
     remaining_amount: Decimal = Decimal("0.00")
     payment_date: Optional[date] = None
@@ -77,6 +79,7 @@ class BillPeriodOut(BaseModel):
 
 class BillOut(BillBase):
     bill_id: int
+    latest_amount: Optional[Decimal] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     payments: List[BillPaymentOut] = []

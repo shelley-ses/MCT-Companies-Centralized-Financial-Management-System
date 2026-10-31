@@ -98,7 +98,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
 
   // Form states
   const [billerName, setBillerName] = React.useState('')
-  const [amount, setAmount] = React.useState('')
   const [company, setCompany] = React.useState(assignedCompany || propsCompanies?.find((c) => c !== 'All Companies') || '')
   const [billingCycle, setBillingCycle] = React.useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly')
 
@@ -114,7 +113,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const [error, setError] = React.useState('')
   const [fieldErrors, setFieldErrors] = React.useState<{
     billerName?: string
-    amount?: string
     dueDate?: string
   }>({})
 
@@ -152,7 +150,6 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     if (open) {
       const now = new Date()
       setBillerName('')
-      setAmount('')
       setDueDayOfMonth(now.getDate())
       setYearlyMonth(now.getMonth() + 1)
       setYearlyDay(now.getDate())
@@ -169,16 +166,10 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const errors: { billerName?: string; amount?: string; dueDate?: string } = {}
+    const errors: { billerName?: string; dueDate?: string } = {}
 
     if (!billerName.trim()) {
       errors.billerName = 'Bill / Provider name is required.'
-    }
-
-    const cleanAmount = amount.replace(/,/g, '').trim()
-    const numAmount = parseFloat(cleanAmount)
-    if (!cleanAmount || isNaN(numAmount) || numAmount < 1 || cleanAmount.startsWith('0')) {
-      errors.amount = 'Bill amount cannot start with 0 and must be at least ₱1.00.'
     }
 
     const computedDueDate = getComputedDueDate()
@@ -216,7 +207,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     try {
       const input: NewBillInput = {
         billerName: billerName.trim(),
-        amount: numAmount,
+        amount: 0,
         dueDate: computedDueDate,
         dueDayOfMonth: billingCycle === 'Monthly' ? dueDayOfMonth : undefined,
         company: targetCompany,
@@ -241,7 +232,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[660px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl">
+      <DialogContent className="sm:max-w-[620px] max-h-[85vh] overflow-y-auto rounded-[24px] p-6 sm:p-8 bg-white border border-stroke/30 shadow-2xl">
         <DialogHeader className="text-left pb-4 border-b border-stroke/20 pr-8">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#960C01] text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -252,7 +243,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                 Add Recurring Bill
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-muted-fg font-normal">
-                Set up a recurring bill, payment amount, and due date reminder
+                Set up a recurring bill schedule and due date reminder
               </DialogDescription>
             </div>
           </div>
@@ -338,114 +329,64 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 4. Amount */}
+          {/* 4. Recurrence Dynamic Schedule */}
+          {billingCycle === 'Monthly' && (
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <span>Amount (₱)</span>
+                <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                <span>Due Day of the Month</span>
                 <span className="text-red-500">*</span>
               </Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-fg">
-                  ₱
-                </span>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    if (val.startsWith('0')) {
-                      setFieldErrors((p) => ({
-                        ...p,
-                        amount: 'Amount cannot start with 0 and must be at least ₱1.00.',
-                      }))
-                      return
-                    }
-                    if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
-                      setAmount(val)
-                      if (fieldErrors.amount) {
-                        setFieldErrors((p) => ({ ...p, amount: undefined }))
-                      }
-                    }
-                  }}
-                  className={cn(
-                    'h-10 pl-7 rounded-xl border-stroke/50 text-xs font-mono font-medium',
-                    fieldErrors.amount && 'border-red-500 focus-visible:ring-red-200'
-                  )}
-                />
-              </div>
-              {fieldErrors.amount && (
-                <p className="text-[11px] text-red-600 font-medium">{fieldErrors.amount}</p>
-              )}
+              <select
+                value={dueDayOfMonth}
+                onChange={(e) => setDueDayOfMonth(parseInt(e.target.value, 10))}
+                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+              >
+                {Array.from({ length: 30 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>
+                    Due every {d}{getOrdinalSuffix(d)} of the month
+                  </option>
+                ))}
+                <option value={31}>Due every 31st (or last day of month)</option>
+              </select>
             </div>
+          )}
 
-            {/* 5. Recurrence Dynamic Controls */}
-            {billingCycle === 'Daily' && (
-              <div className="space-y-1.5">
-               
-              </div>
-            )}
-
-            {billingCycle === 'Monthly' && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                  <span>Due Day of the Month</span>
-                  <span className="text-red-500">*</span>
-                </Label>
+          {billingCycle === 'Yearly' && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                <span>Annual Renewal (Month & Day)</span>
+                <span className="text-red-500">*</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
                 <select
-                  value={dueDayOfMonth}
-                  onChange={(e) => setDueDayOfMonth(parseInt(e.target.value, 10))}
+                  value={yearlyMonth}
+                  onChange={(e) => setYearlyMonth(parseInt(e.target.value, 10))}
                   className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
                 >
-                  {Array.from({ length: 30 }, (_, i) => i + 1).map((d) => (
-                    <option key={d} value={d}>
-                      Due every {d}{getOrdinalSuffix(d)} of the month
+                  {MONTH_NAMES.map((m, idx) => (
+                    <option key={m} value={idx + 1}>
+                      {m}
                     </option>
                   ))}
-                  <option value={31}>Due every 31st (or last day of month)</option>
+                </select>
+                <select
+                  value={yearlyDay}
+                  onChange={(e) => setYearlyDay(parseInt(e.target.value, 10))}
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                >
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                    <option key={d} value={d}>
+                      Day {d} ({d}{getOrdinalSuffix(d)})
+                    </option>
+                  ))}
                 </select>
               </div>
-            )}
+            </div>
+          )}
 
-            {billingCycle === 'Yearly' && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                  <span>Annual Renewal (Month & Day)</span>
-                  <span className="text-red-500">*</span>
-                </Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={yearlyMonth}
-                    onChange={(e) => setYearlyMonth(parseInt(e.target.value, 10))}
-                    className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-                  >
-                    {MONTH_NAMES.map((m, idx) => (
-                      <option key={m} value={idx + 1}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={yearlyDay}
-                    onChange={(e) => setYearlyDay(parseInt(e.target.value, 10))}
-                    className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-                  >
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={d}>
-                        Day {d} ({d}{getOrdinalSuffix(d)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 6. Reminder Notification */}
+          {/* 5. Reminder Notification */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
               <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -482,7 +423,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
             )}
           </div>
 
-          {/* 7. Notes */}
+          {/* 6. Notes */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-focus block">
               Notes / Particulars (Optional)

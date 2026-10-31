@@ -5,6 +5,7 @@ export interface BillPaymentRecord {
   periodKey?: string
   paymentDate: string
   amount: number
+  billedAmount?: number
   paymentMethod: string
   refNo?: string
   notes?: string
@@ -19,6 +20,7 @@ export interface BillPaymentPeriod {
   label: string
   paid: boolean
   partiallyPaid?: boolean
+  billedAmount?: number
   paidAmount?: number
   remainingAmount?: number
   paymentDate?: string
@@ -33,6 +35,7 @@ export interface BillItem {
   billerName: string
   company: string
   amount: number
+  latestAmount?: number
   dueDate: string // YYYY-MM-DD
   dueDayOfMonth?: number
   initialDueDate?: string
@@ -57,7 +60,7 @@ export interface BillItem {
 export interface NewBillInput {
   billerName: string
   company: string
-  amount: number
+  amount?: number
   dueDate: string
   dueDayOfMonth?: number
   billingCycle?: BillRecurring
@@ -103,6 +106,7 @@ type BackendPeriod = {
   period_date: string
   paid: boolean
   partially_paid?: boolean
+  billed_amount?: number | string
   paid_amount?: number | string
   remaining_amount?: number | string
   payment_date?: string
@@ -113,6 +117,7 @@ type BackendPeriod = {
     period_key: string
     payment_date: string
     amount: number | string
+    billed_amount?: number | string
     payment_method: string
     reference_no?: string
     notes?: string
@@ -126,6 +131,7 @@ type BackendBill = {
   company?: string
   bill_name: string
   amount: number | string
+  latest_amount?: number | string
   recurring: 'daily' | 'monthly' | 'yearly'
   due_date: string
   due_date_reminder: number
@@ -138,6 +144,7 @@ type BackendBill = {
     period_key: string
     payment_date: string
     amount: number | string
+    billed_amount?: number | string
     payment_method: string
     reference_no?: string
     notes?: string
@@ -177,9 +184,11 @@ export function validateBillInput(input: Partial<NewBillInput>): { valid: boolea
     errors.company = 'Assigned company is required.'
   }
 
-  const amountErr = validateBillAmount(input.amount ?? '')
-  if (amountErr) {
-    errors.amount = amountErr
+  if (input.amount !== undefined && input.amount !== null && input.amount !== 0) {
+    const amountErr = validateBillAmount(input.amount)
+    if (amountErr) {
+      errors.amount = amountErr
+    }
   }
 
   if (!input.dueDate) {
@@ -268,6 +277,7 @@ function mapBackendBill(data: BackendBill): BillItem {
     periodKey: payment.period_key,
     paymentDate: payment.payment_date,
     amount: Number(payment.amount) || 0,
+    billedAmount: payment.billed_amount !== undefined && payment.billed_amount !== null ? Number(payment.billed_amount) : undefined,
     paymentMethod: payment.payment_method,
     refNo: payment.reference_no,
     notes: payment.notes,
@@ -279,6 +289,7 @@ function mapBackendBill(data: BackendBill): BillItem {
     label: p.period_label,
     paid: p.paid,
     partiallyPaid: p.partially_paid,
+    billedAmount: p.billed_amount !== undefined && p.billed_amount !== null ? Number(p.billed_amount) : undefined,
     paidAmount: Number(p.paid_amount) || 0,
     remainingAmount: Number(p.remaining_amount) || 0,
     paymentDate: p.payment_date,
@@ -290,6 +301,7 @@ function mapBackendBill(data: BackendBill): BillItem {
       periodKey: pay.period_key,
       paymentDate: pay.payment_date,
       amount: Number(pay.amount) || 0,
+      billedAmount: pay.billed_amount !== undefined && pay.billed_amount !== null ? Number(pay.billed_amount) : undefined,
       paymentMethod: pay.payment_method,
       refNo: pay.reference_no,
       notes: pay.notes,
@@ -310,6 +322,7 @@ function mapBackendBill(data: BackendBill): BillItem {
     billerName: data.bill_name,
     company: data.company || '',
     amount: Number(data.amount) || 0,
+    latestAmount: data.latest_amount !== undefined && data.latest_amount !== null ? Number(data.latest_amount) : undefined,
     dueDate: data.next_period_date || data.due_date,
     dueDayOfMonth: dueDay,
     initialDueDate: data.due_date,
@@ -351,7 +364,7 @@ export function getBillPaymentOptions(
         paid: false,
         periodDate: bill.dueDate,
         paidAmount: 0,
-        remainingAmount: bill.amount,
+        remainingAmount: bill.latestAmount || bill.amount,
       },
     }
   }
@@ -364,7 +377,7 @@ export function getBillPaymentOptions(
     paid: bill.status === 'Paid',
     partiallyPaid: bill.status === 'Partially Paid',
     paidAmount: 0,
-    remainingAmount: bill.amount,
+    remainingAmount: bill.latestAmount || bill.amount,
     periodDate: bill.nextPeriodDate || bill.dueDate,
     isNextPayable: true,
   }
@@ -412,7 +425,7 @@ export const billsService = {
     const payload = {
       company: input.company,
       bill_name: input.billerName.trim(),
-      amount: Number(input.amount),
+      amount: input.amount !== undefined ? Number(input.amount) : 0,
       recurring: (input.billingCycle || 'Monthly').toLowerCase(),
       due_date: input.dueDate,
       due_date_reminder: input.reminderDaysBefore ?? 3,
@@ -431,7 +444,7 @@ export const billsService = {
   },
 
   async updateBill(id: string, input: UpdateBillInput): Promise<BillItem> {
-    if (input.amount !== undefined) {
+    if (input.amount !== undefined && input.amount > 0) {
       const err = validateBillAmount(input.amount)
       if (err) throw new Error(err)
     }
@@ -476,6 +489,7 @@ export const billsService = {
       paymentMethod: string
       refNo?: string
       notes?: string
+      billedAmount?: number
       remainingAmount?: number
     }
   ): Promise<BillItem> {
@@ -492,6 +506,7 @@ export const billsService = {
         period_key: payment.periodKey || null,
         payment_date: payment.paymentDate,
         amount: Number(payment.amount),
+        billed_amount: payment.billedAmount !== undefined ? Number(payment.billedAmount) : null,
         payment_method: payment.paymentMethod.trim(),
         reference_no: payment.refNo?.trim() || null,
         notes: payment.notes?.trim() || null,
@@ -551,19 +566,20 @@ export const billsService = {
     let dueSoonAmount = 0
 
     bills.forEach((b) => {
-      totalMonthlyAmount += b.amount
+      const amt = b.latestAmount || b.amount || 0
+      totalMonthlyAmount += amt
       if (b.status === 'Paid') {
-        paidAmount += b.amount
+        paidAmount += amt
         paidCount += 1
       } else {
-        unpaidAmount += b.amount
+        unpaidAmount += amt
         unpaidCount += 1
         if (b.status === 'Overdue') {
           overdueCount += 1
-          overdueAmount += b.amount
+          overdueAmount += amt
         } else if (b.status === 'Due Soon') {
           dueSoonCount += 1
-          dueSoonAmount += b.amount
+          dueSoonAmount += amt
         }
       }
     })
@@ -644,7 +660,7 @@ export const billsService = {
     const rows = bills.map((b) => [
       `"${(b.billerName || '').replace(/"/g, '""')}"`,
       `"${(b.company || '').replace(/"/g, '""')}"`,
-      b.amount,
+      b.latestAmount || b.amount,
       b.dueDate,
       b.billingCycle,
       b.status,

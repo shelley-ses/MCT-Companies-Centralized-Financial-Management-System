@@ -155,9 +155,29 @@ class BillsService:
             key = _period_key(period_date, recurring)
             period_payments = [item for item in bill.payments if item.period_key == key]
             paid_amount = sum((item.amount for item in period_payments), Decimal("0.00"))
-            is_paid = paid_amount >= bill.amount
-            is_partially_paid = not is_paid and paid_amount > Decimal("0.00")
-            remaining_amount = Decimal("0.00") if is_paid else max(Decimal("0.00"), bill.amount - paid_amount)
+
+            # Determine billed statement amount for this period
+            period_billed = max(
+                (p.billed_amount for p in period_payments if p.billed_amount is not None),
+                default=None,
+            )
+            if period_billed is None:
+                if period_payments:
+                    period_billed = paid_amount
+                elif bill.amount and bill.amount > Decimal("0.00"):
+                    period_billed = bill.amount
+                else:
+                    period_billed = None
+
+            if period_billed is not None and period_billed > Decimal("0.00"):
+                is_paid = paid_amount >= period_billed
+                is_partially_paid = not is_paid and paid_amount > Decimal("0.00")
+                remaining_amount = Decimal("0.00") if is_paid else max(Decimal("0.00"), period_billed - paid_amount)
+            else:
+                is_paid = paid_amount > Decimal("0.00")
+                is_partially_paid = False
+                remaining_amount = Decimal("0.00")
+
             latest_payment = max(
                 period_payments,
                 key=lambda p: (p.payment_date, p.bill_payment_id),
@@ -171,6 +191,7 @@ class BillsService:
                 "period_date": period_date,
                 "paid": is_paid,
                 "partially_paid": is_partially_paid,
+                "billed_amount": period_billed,
                 "paid_amount": paid_amount,
                 "remaining_amount": remaining_amount,
                 "payment_date": latest_payment.payment_date if latest_payment else None,
@@ -220,12 +241,24 @@ class BillsService:
     def _to_output(self, bill: Bill, as_of: date = date.today()) -> BillOut:
         next_period = self._next_period(bill, as_of)
         periods = self._periods(bill, as_of)
+        latest_payment = max(
+            bill.payments,
+            key=lambda p: (p.payment_date, p.bill_payment_id),
+            default=None,
+        )
+        latest_amount = None
+        if latest_payment:
+            latest_amount = latest_payment.billed_amount if latest_payment.billed_amount is not None else latest_payment.amount
+        elif bill.amount and bill.amount > Decimal("0.00"):
+            latest_amount = bill.amount
+
         return BillOut(
             bill_id=bill.bill_id,
             company_id=bill.company_id,
             company=bill.company.company_name if bill.company else None,
             bill_name=bill.bill_name,
-            amount=bill.amount,
+            amount=bill.amount or Decimal("0.00"),
+            latest_amount=latest_amount,
             recurring=_normalize_recurring(bill.recurring),
             due_date=bill.due_date,
             due_date_reminder=bill.due_date_reminder,
@@ -293,6 +326,7 @@ class BillsService:
         values.update(
             company_id=company.company_id,
             bill_name=clean_name,
+            amount=values.get("amount") or Decimal("0.00"),
             recurring=_normalize_recurring(data.recurring),
             status="unpaid",
         )
@@ -383,9 +417,26 @@ class BillsService:
         # Calculate remaining balance for this period
         period_payments = [p for p in bill.payments if p.period_key == target_period_key]
         current_paid = sum((p.amount for p in period_payments), Decimal("0.00"))
-        remaining = max(Decimal("0.00"), bill.amount - current_paid)
+        existing_billed = max((p.billed_amount for p in period_payments if p.billed_amount is not None), default=None)
 
-        if remaining <= Decimal("0.00"):
+        if data.billed_amount is not None and data.billed_amount > Decimal("0.00"):
+            period_billed = data.billed_amount
+        elif existing_billed is not None and existing_billed > Decimal("0.00"):
+            period_billed = existing_billed
+        elif bill.amount and bill.amount > Decimal("0.00"):
+            period_billed = bill.amount
+        else:
+            period_billed = data.amount
+
+        if data.amount > period_billed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment amount (₱{data.amount:,.2f}) cannot exceed the billed statement amount (₱{period_billed:,.2f})."
+            )
+
+        remaining = max(Decimal("0.00"), period_billed - current_paid)
+
+        if current_paid > Decimal("0.00") and remaining <= Decimal("0.00"):
             raise HTTPException(
                 status_code=400,
                 detail=f"{target_period['period_label']} is already fully paid."
@@ -403,6 +454,7 @@ class BillsService:
             period_key=target_period_key,
             payment_date=data.payment_date,
             amount=data.amount,
+            billed_amount=period_billed,
             payment_method=data.payment_method.strip(),
             reference_no=data.reference_no.strip() if data.reference_no else None,
             notes=data.notes.strip() if data.notes else None,
@@ -459,18 +511,19 @@ class BillsService:
         due_soon_count = 0
 
         for b in bills:
-            total_monthly_amount += b.amount
+            amount_to_count = b.latest_amount or b.amount or Decimal("0.00")
+            total_monthly_amount += amount_to_count
             if b.status == "paid":
-                paid_amount += b.amount
+                paid_amount += amount_to_count
                 paid_count += 1
             else:
-                unpaid_amount += b.amount
+                unpaid_amount += amount_to_count
                 unpaid_count += 1
                 if b.status == "overdue":
-                    overdue_amount += b.amount
+                    overdue_amount += amount_to_count
                     overdue_count += 1
                 elif b.status == "due soon":
-                    due_soon_amount += b.amount
+                    due_soon_amount += amount_to_count
                     due_soon_count += 1
 
         return BillStatsOut(

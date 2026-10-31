@@ -862,7 +862,13 @@ export const BillsPage: React.FC = () => {
                     <div className="text-[11px] opacity-75 mt-0.5 flex items-center gap-1.5">
                       <span>{rem.bill.company}</span>
                       <span>•</span>
-                      <span className="font-semibold">{formatPHP(rem.bill.amount)}</span>
+                      <span className="font-semibold">
+                        {rem.bill.latestAmount && rem.bill.latestAmount > 0
+                          ? formatPHP(rem.bill.latestAmount)
+                          : rem.bill.amount && rem.bill.amount > 0
+                          ? formatPHP(rem.bill.amount)
+                          : '—'}
+                      </span>
                     </div>
                   </div>
 
@@ -913,7 +919,7 @@ export const BillsPage: React.FC = () => {
                   COMPANY
                 </TableHead>
                 <TableHead className="w-[18%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
-                  MONTHLY AMOUNT
+                  LATEST BILLED / PAID
                 </TableHead>
                 <TableHead className="w-[16%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   DUE DATE
@@ -1007,9 +1013,15 @@ export const BillsPage: React.FC = () => {
                         </div>
                       </TableCell>
 
-                      {/* Monthly Amount & Recurrence */}
+                      {/* Latest Billed / Paid Amount & Recurrence */}
                       <TableCell className="w-[18%] px-3 py-3.5 text-xs font-bold text-focus tabular-nums text-right truncate">
-                        <div className="truncate">{formatPHP(bill.amount)}</div>
+                        <div className="truncate">
+                          {bill.latestAmount && bill.latestAmount > 0
+                            ? formatPHP(bill.latestAmount)
+                            : bill.amount && bill.amount > 0
+                            ? formatPHP(bill.amount)
+                            : '—'}
+                        </div>
                         <div className="text-[10px] font-normal truncate mt-0.5 flex justify-end">
                           {bill.billingCycle === 'Daily' ? (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
