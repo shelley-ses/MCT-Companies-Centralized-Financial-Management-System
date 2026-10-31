@@ -150,11 +150,24 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
   const parsedAmount = parseFloat(amountInput)
   const parsedTotalBilled = parseFloat(totalBilledInput)
 
+  let amountInputError: string | null = null
+  if (amountInput.trim()) {
+    if (isNaN(parsedAmount) || parsedAmount < 1) {
+      amountInputError = 'Payment amount must be at least ₱1.00.'
+    } else if (isPeriodPartiallyPaid && periodRemainingBalance > 0 && parsedAmount > periodRemainingBalance + 0.005) {
+      amountInputError = `Payment amount cannot exceed the remaining balance of ${formatPHP(periodRemainingBalance)}.`
+    } else if (isInstallment && !isNaN(parsedTotalBilled) && parsedTotalBilled > 0 && parsedAmount > parsedTotalBilled + 0.005) {
+      amountInputError = `Payment amount cannot exceed the total amount of ${formatPHP(parsedTotalBilled)}.`
+    } else if (!isInstallment && selectedPeriod?.billedAmount && selectedPeriod.billedAmount > 0 && parsedAmount > selectedPeriod.billedAmount + 0.005) {
+      amountInputError = `Payment amount cannot exceed the remaining balance of ${formatPHP(selectedPeriod.billedAmount)}.`
+    }
+  }
+
   let isAmountValid = false
   let willBePartiallyPaid = false
 
   if (isPeriodPartiallyPaid) {
-    isAmountValid = !isNaN(parsedAmount) && parsedAmount >= 1 && parsedAmount <= (periodRemainingBalance + 0.01)
+    isAmountValid = !isNaN(parsedAmount) && parsedAmount >= 1 && !amountInputError
     willBePartiallyPaid = isAmountValid && parsedAmount < periodRemainingBalance - 0.005
   } else if (isInstallment) {
     isAmountValid =
@@ -162,10 +175,10 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
       parsedTotalBilled >= 1 &&
       !isNaN(parsedAmount) &&
       parsedAmount >= 1 &&
-      parsedAmount <= parsedTotalBilled
+      !amountInputError
     willBePartiallyPaid = isAmountValid && parsedAmount < parsedTotalBilled - 0.005
   } else {
-    isAmountValid = !isNaN(parsedAmount) && parsedAmount >= 1
+    isAmountValid = !isNaN(parsedAmount) && parsedAmount >= 1 && !amountInputError
     willBePartiallyPaid = false
   }
 
@@ -232,23 +245,18 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
       return
     }
 
+    if (amountInputError) {
+      setError(amountInputError)
+      return
+    }
+
     if (!isAmountValid) {
-      if (isPeriodPartiallyPaid) {
-        setError(
-          parsedAmount < 1
-            ? 'Payment amount cannot be lower than ₱1.00.'
-            : `Payment amount cannot exceed remaining period balance (${formatPHP(periodRemainingBalance)}).`
-        )
-      } else if (isInstallment) {
-        if (isNaN(parsedTotalBilled) || parsedTotalBilled < 1) {
-          setError('Please provide a valid Total Statement Amount of at least ₱1.00.')
-        } else if (parsedAmount > parsedTotalBilled) {
-          setError(`Payment amount cannot exceed statement amount (${formatPHP(parsedTotalBilled)}).`)
-        } else {
-          setError('Payment amount cannot be lower than ₱1.00.')
-        }
+      if (isPeriodPartiallyPaid && periodRemainingBalance > 0 && parsedAmount > periodRemainingBalance) {
+        setError(`Payment amount cannot exceed the remaining balance of ${formatPHP(periodRemainingBalance)}.`)
+      } else if (isInstallment && !isNaN(parsedTotalBilled) && parsedAmount > parsedTotalBilled) {
+        setError(`Payment amount cannot exceed the total amount of ${formatPHP(parsedTotalBilled)}.`)
       } else {
-        setError('Payment amount cannot be lower than ₱1.00.')
+        setError('Please provide a valid payment amount.')
       }
       return
     }
@@ -746,7 +754,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
               {isInstallment && !isPeriodPartiallyPaid && (
                 <div className="space-y-1.5 animate-in fade-in duration-150">
                   <label className="text-xs font-semibold text-focus flex items-center justify-between">
-                    <span>Total Period Statement Amount (₱) <span className="text-[#960C01]">*</span></span>
+                    <span>Total Amount (₱) <span className="text-[#960C01]">*</span></span>
                     <span className="text-[11px] text-muted-fg font-normal">Full amount on bill statement</span>
                   </label>
                   <div className="relative">
@@ -805,12 +813,23 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                       setAmountInput(e.target.value)
                     }}
                     placeholder="0.00"
-                    className="h-10 pl-7 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className={cn(
+                      'h-10 pl-7 text-xs sm:text-sm rounded-xl font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+                      amountInputError && 'border-[#960C01] focus-visible:ring-[#960C01]/20'
+                    )}
                   />
                 </div>
 
+                {/* Inline Validation Error Message */}
+                {amountInputError && (
+                  <p className="text-[11px] text-[#960C01] font-semibold flex items-center gap-1.5 pt-0.5 animate-in fade-in duration-150">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[#960C01]" />
+                    <span>{amountInputError}</span>
+                  </p>
+                )}
+
                 {/* Installment vs Full Settlement Hint */}
-                {isAmountValid && (
+                {isAmountValid && !amountInputError && (
                   <div className="pt-1">
                     {willBePartiallyPaid ? (
                       <p className="text-[11px] text-amber-800 font-medium bg-amber-50/80 border border-amber-200/80 rounded-xl px-2.5 py-1.5">

@@ -77,6 +77,7 @@ export const BillsPage: React.FC = () => {
   // Data states
   const [bills, setBills] = React.useState<BillItem[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
   const [companyList, setCompanyList] = React.useState<string[]>(DEFAULT_COMPANY_LIST)
 
   const { activeCompany, setActiveCompany } = useCompany()
@@ -198,11 +199,13 @@ export const BillsPage: React.FC = () => {
   // Load bills
   const loadBills = React.useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const data = await billsService.getBills()
       setBills(data)
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load bills:', err)
+      setLoadError(err?.message || 'Failed to load bills.')
       setBills([])
     } finally {
       setLoading(false)
@@ -957,6 +960,34 @@ export const BillsPage: React.FC = () => {
                     </TableCell>
                   </TableRow>
                 ))
+              ) : loadError ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="py-14 text-center text-xs sm:text-sm text-muted-fg"
+                  >
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
+                      <div className="w-12 h-12 rounded-2xl bg-[#960C01]/10 flex items-center justify-center text-[#960C01] mb-1">
+                        <AlertCircle className="w-6 h-6 stroke-[1.5]" />
+                      </div>
+                      <p className="font-semibold text-focus text-sm sm:text-base">
+                        Failed to load bill records
+                      </p>
+                      <p className="text-xs text-[#960C01] leading-relaxed">
+                        {loadError}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={loadBills}
+                        className="mt-2 text-xs font-semibold rounded-xl"
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ) : paginatedBills.length === 0 ? (
                 <TableRow>
                   <TableCell

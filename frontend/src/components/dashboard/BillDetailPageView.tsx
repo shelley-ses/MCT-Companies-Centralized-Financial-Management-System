@@ -93,6 +93,38 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
       ? Math.max(0, nextPayable.billedAmount - (nextPayable?.paidAmount || 0))
       : bill.latestAmount || bill.amount || 0
 
+  // Pre-calculate per-period payment totals and statement amounts from transactions
+  const periodStatsMap = React.useMemo(() => {
+    const map = new Map<string, { totalPaid: number; statementAmount: number; isSettled: boolean }>()
+    payments.forEach((p) => {
+      const key = p.periodKey || p.paymentDate
+      const current = map.get(key) || { totalPaid: 0, statementAmount: 0, isSettled: false }
+      current.totalPaid += p.amount || 0
+      if (p.billedAmount !== undefined && p.billedAmount > current.statementAmount) {
+        current.statementAmount = p.billedAmount
+      }
+      map.set(key, current)
+    })
+
+    // Cross-reference with schedule if available
+    map.forEach((val, key) => {
+      const sp = schedule.find((item) => item.key === key)
+      if (sp) {
+        val.isSettled = sp.paid
+        if (sp.billedAmount && sp.billedAmount > val.statementAmount) {
+          val.statementAmount = sp.billedAmount
+        }
+      } else if (val.statementAmount > 0) {
+        val.isSettled = val.totalPaid >= val.statementAmount - 0.005
+      } else if (bill.amount > 0) {
+        val.isSettled = val.totalPaid >= bill.amount - 0.005
+      } else {
+        val.isSettled = true
+      }
+    })
+    return map
+  }, [payments, schedule, bill.amount])
+
   // Build ledger entries from recorded payment transactions only
   const ledgerRows = React.useMemo(() => {
     const rows: Array<{
@@ -107,12 +139,12 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
     }> = []
 
     payments.forEach((p) => {
+      const key = p.periodKey || p.paymentDate
       const matchedPeriod = schedule.find((sp) => sp.key === p.periodKey)
-      const isPartial = Boolean(
-        matchedPeriod?.partiallyPaid ||
-        (matchedPeriod?.billedAmount && p.amount < matchedPeriod.billedAmount) ||
-        (bill.amount > 0 && p.amount < bill.amount)
-      )
+      const stats = periodStatsMap.get(key)
+      const isPeriodPaid = stats ? stats.isSettled : (matchedPeriod ? matchedPeriod.paid : true)
+      const isPartial = !isPeriodPaid
+
       rows.push({
         id: p.id,
         date: p.paymentDate,
@@ -126,7 +158,7 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
     })
 
     return rows
-  }, [payments, schedule, bill.amount])
+  }, [payments, schedule, periodStatsMap])
 
   const filteredLedgerRows = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase()

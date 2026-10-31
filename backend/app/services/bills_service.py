@@ -463,9 +463,9 @@ class BillsService:
 
         try:
             self.db.commit()
-        except Exception:
+        except Exception as exc:
             self.db.rollback()
-            raise HTTPException(status_code=409, detail="Failed to record bill payment.")
+            raise HTTPException(status_code=409, detail=f"Failed to record bill payment: {str(exc)}")
 
         return self._to_output(self.get_bill(bill_id))
 
