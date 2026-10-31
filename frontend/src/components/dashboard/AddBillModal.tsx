@@ -25,6 +25,7 @@ import {
 } from '@/services/billsService'
 import { loanService } from '@/services/loanService'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
+import { formatUserFriendlyErrorMessage } from '@/utils/errorUtils'
 import { cn } from '@/lib/utils'
 
 interface AddBillModalProps {
@@ -220,7 +221,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       onSuccess(created)
       onOpenChange(false)
     } catch (err: any) {
-      const msg = err?.message || 'Failed to create bill record.'
+      const msg = formatUserFriendlyErrorMessage(err, 'Unable to create bill record. Please try again.')
       if (msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('duplicate')) {
         setFieldErrors({ billerName: msg })
       }

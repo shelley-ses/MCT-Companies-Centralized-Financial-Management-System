@@ -1,4 +1,5 @@
 import { isCompanyMatch } from '@/utils/companyUtils'
+import { formatUserFriendlyErrorMessage } from '@/utils/errorUtils'
 
 export interface BillPaymentRecord {
   id: string
@@ -249,15 +250,19 @@ function backendHeaders(): HeadersInit {
   }
 }
 
-async function getBackendError(response: Response): Promise<Error> {
+async function getBackendError(response: Response, defaultFallback = 'Server request failed. Please try again.'): Promise<Error> {
   try {
     const data = await response.json()
-    if (typeof data.detail === 'string') return new Error(data.detail)
-    if (Array.isArray(data.detail) && data.detail[0]?.msg) return new Error(data.detail[0].msg)
+    const friendly = formatUserFriendlyErrorMessage(
+      data?.detail || { status: response.status },
+      defaultFallback
+    )
+    return new Error(friendly)
   } catch {
     // Ignore JSON parse failure
   }
-  return new Error(`Server request failed with status ${response.status}`)
+  const friendly = formatUserFriendlyErrorMessage({ status: response.status }, defaultFallback)
+  return new Error(friendly)
 }
 
 function mapStatus(status: string): BillStatus {
@@ -396,26 +401,34 @@ export function getBillPaymentOptions(
 
 export const billsService = {
   async getBills(companyFilter?: string): Promise<BillItem[]> {
-    const query =
-      companyFilter && companyFilter !== 'All Companies'
-        ? `?company_name=${encodeURIComponent(companyFilter)}`
-        : ''
-    const response = await fetch(`/api/v1/bills${query}`, { headers: backendHeaders() })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const query =
+        companyFilter && companyFilter !== 'All Companies'
+          ? `?company_name=${encodeURIComponent(companyFilter)}`
+          : ''
+      const response = await fetch(`/api/v1/bills${query}`, { headers: backendHeaders() })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to load bills. Please try again.')
+      }
+      const data: BackendBill[] = await response.json()
+      return data.map(mapBackendBill)
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to load bills. Please try again.'))
     }
-    const data: BackendBill[] = await response.json()
-    return data.map(mapBackendBill)
   },
 
   async getBillById(id: string): Promise<BillItem> {
-    const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
-      headers: backendHeaders(),
-    })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
+        headers: backendHeaders(),
+      })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to retrieve bill details. Please try again.')
+      }
+      return mapBackendBill(await response.json())
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to retrieve bill details. Please try again.'))
     }
-    return mapBackendBill(await response.json())
   },
 
   async createBill(input: NewBillInput): Promise<BillItem> {
@@ -435,15 +448,19 @@ export const billsService = {
       notes: input.notes?.trim() || null,
     }
 
-    const response = await fetch('/api/v1/bills', {
-      method: 'POST',
-      headers: backendHeaders(),
-      body: JSON.stringify(payload),
-    })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const response = await fetch('/api/v1/bills', {
+        method: 'POST',
+        headers: backendHeaders(),
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to create bill record. Please try again.')
+      }
+      return mapBackendBill(await response.json())
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to create bill record. Please try again.'))
     }
-    return mapBackendBill(await response.json())
   },
 
   async updateBill(id: string, input: UpdateBillInput): Promise<BillItem> {
@@ -461,26 +478,34 @@ export const billsService = {
     if (input.reminderDaysBefore !== undefined) payload.due_date_reminder = input.reminderDaysBefore
     if (input.notes !== undefined) payload.notes = input.notes?.trim() || null
 
-    const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: backendHeaders(),
-      body: JSON.stringify(payload),
-    })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: backendHeaders(),
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to update bill record. Please try again.')
+      }
+      return mapBackendBill(await response.json())
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to update bill record. Please try again.'))
     }
-    return mapBackendBill(await response.json())
   },
 
   async deleteBill(id: string): Promise<boolean> {
-    const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: backendHeaders(),
-    })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: backendHeaders(),
+      })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to delete bill record. Please try again.')
+      }
+      return true
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to delete bill record. Please try again.'))
     }
-    return true
   },
 
   async recordPayment(
@@ -503,59 +528,75 @@ export const billsService = {
       throw new Error(firstError)
     }
 
-    const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/payments`, {
-      method: 'POST',
-      headers: backendHeaders(),
-      body: JSON.stringify({
-        period_key: payment.periodKey || null,
-        payment_date: payment.paymentDate,
-        amount: Number(payment.amount),
-        billed_amount: payment.billedAmount !== undefined ? Number(payment.billedAmount) : null,
-        payment_method: payment.paymentMethod.trim(),
-        reference_no: (payment.referenceNo || payment.refNo)?.trim() || null,
-        notes: payment.notes?.trim() || null,
-      }),
-    })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/payments`, {
+        method: 'POST',
+        headers: backendHeaders(),
+        body: JSON.stringify({
+          period_key: payment.periodKey || null,
+          payment_date: payment.paymentDate,
+          amount: Number(payment.amount),
+          billed_amount: payment.billedAmount !== undefined ? Number(payment.billedAmount) : null,
+          payment_method: payment.paymentMethod.trim(),
+          reference_no: (payment.referenceNo || payment.refNo)?.trim() || null,
+          notes: payment.notes?.trim() || null,
+        }),
+      })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to record payment. Please try again.')
+      }
+      return mapBackendBill(await response.json())
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to record payment. Please try again.'))
     }
-    return mapBackendBill(await response.json())
   },
 
   async deletePayment(id: string, paymentId: string): Promise<BillItem> {
-    const response = await fetch(
-      `/api/v1/bills/${encodeURIComponent(id)}/payments/${encodeURIComponent(paymentId)}`,
-      {
-        method: 'DELETE',
-        headers: backendHeaders(),
+    try {
+      const response = await fetch(
+        `/api/v1/bills/${encodeURIComponent(id)}/payments/${encodeURIComponent(paymentId)}`,
+        {
+          method: 'DELETE',
+          headers: backendHeaders(),
+        }
+      )
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to delete payment record. Please try again.')
       }
-    )
-    if (!response.ok) {
-      throw await getBackendError(response)
+      return mapBackendBill(await response.json())
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to delete payment record. Please try again.'))
     }
-    return mapBackendBill(await response.json())
   },
 
   async markAsUnpaid(id: string): Promise<BillItem> {
-    const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/latest-payment`, {
-      method: 'DELETE',
-      headers: backendHeaders(),
-    })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/latest-payment`, {
+        method: 'DELETE',
+        headers: backendHeaders(),
+      })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to reset bill status. Please try again.')
+      }
+      return mapBackendBill(await response.json())
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to reset bill status. Please try again.'))
     }
-    return mapBackendBill(await response.json())
   },
 
   async getSchedule(id: string, asOf?: string) {
-    const query = asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''
-    const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/schedule${query}`, {
-      headers: backendHeaders(),
-    })
-    if (!response.ok) {
-      throw await getBackendError(response)
+    try {
+      const query = asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''
+      const response = await fetch(`/api/v1/bills/${encodeURIComponent(id)}/schedule${query}`, {
+        headers: backendHeaders(),
+      })
+      if (!response.ok) {
+        throw await getBackendError(response, 'Unable to load bill schedule. Please try again.')
+      }
+      return response.json()
+    } catch (err: any) {
+      throw new Error(formatUserFriendlyErrorMessage(err, 'Unable to load bill schedule. Please try again.'))
     }
-    return response.json()
   },
 
   getStats(bills: BillItem[]): BillStats {

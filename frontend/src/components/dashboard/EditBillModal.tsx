@@ -25,6 +25,7 @@ import {
   type UpdateBillInput,
 } from '@/services/billsService'
 import { loanService } from '@/services/loanService'
+import { formatUserFriendlyErrorMessage } from '@/utils/errorUtils'
 import { cn } from '@/lib/utils'
 
 interface EditBillModalProps {
@@ -210,7 +211,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
       onSuccess(updated)
       onOpenChange(false)
     } catch (err: any) {
-      setError(err?.message || 'Failed to update bill record.')
+      setError(formatUserFriendlyErrorMessage(err, 'Unable to update bill record. Please try again.'))
     } finally {
       setIsSubmitting(false)
     }

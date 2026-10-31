@@ -24,6 +24,7 @@ import {
   type BillPaymentPeriod,
 } from '@/services/billsService'
 import { formatToYYYYMMDD } from '@/utils/dateUtils'
+import { formatUserFriendlyErrorMessage } from '@/utils/errorUtils'
 import { cn } from '@/lib/utils'
 
 export interface RecordBillPaymentModalProps {
@@ -301,7 +302,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
         onOpenChange(false)
       }, 700)
     } catch (err: any) {
-      setError(err?.message || 'Failed to record payment. Please try again.')
+      setError(formatUserFriendlyErrorMessage(err, 'Unable to record payment remittance. Please try again.'))
     } finally {
       setIsSubmitting(false)
     }

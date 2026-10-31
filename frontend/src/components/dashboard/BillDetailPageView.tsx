@@ -27,6 +27,7 @@ import {
   type BillItem,
 } from '@/services/billsService'
 import { formatDisplayDate } from '@/utils/dateUtils'
+import { formatUserFriendlyErrorMessage } from '@/utils/errorUtils'
 import { cn } from '@/lib/utils'
 
 function formatPeriodDisplay(periodLabelOrKey?: string): string {
@@ -194,11 +195,12 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
   )
 
   const handleExportPdf = () => {
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) {
-      alert('Please allow pop-ups in your browser to export the Bill Details PDF.')
-      return
-    }
+    try {
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        alert('Please allow pop-ups in your browser to export the Bill Details PDF.')
+        return
+      }
 
     const exportDateStr = new Date().toLocaleDateString('en-PH', {
       year: 'numeric',
@@ -529,7 +531,10 @@ export const BillDetailPageView: React.FC<BillDetailPageViewProps> = ({
         </body>
       </html>
     `)
-    printWindow.document.close()
+      printWindow.document.close()
+    } catch (err: any) {
+      alert(formatUserFriendlyErrorMessage(err, 'Unable to export Bill Details PDF. Please try again.'))
+    }
   }
 
   return (

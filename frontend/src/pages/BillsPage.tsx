@@ -59,6 +59,7 @@ import { RecordBillPaymentModal } from '@/components/dashboard/RecordBillPayment
 import { DashboardKpiCard } from '@/components/dashboard/DashboardKpiCard'
 import { isCompanyMatch } from '@/utils/companyUtils'
 import { formatDisplayDate } from '@/utils/dateUtils'
+import { formatUserFriendlyErrorMessage } from '@/utils/errorUtils'
 import { cn } from '@/lib/utils'
 
 const DEFAULT_COMPANY_LIST = ['All Companies']
@@ -205,7 +206,7 @@ export const BillsPage: React.FC = () => {
       setBills(data)
     } catch (err: any) {
       console.error('Failed to load bills:', err)
-      setLoadError(err?.message || 'Failed to load bills.')
+      setLoadError(formatUserFriendlyErrorMessage(err, 'Unable to load bills. Please try again.'))
       setBills([])
     } finally {
       setLoading(false)
@@ -367,7 +368,7 @@ export const BillsPage: React.FC = () => {
       }
       setDeleteConfirmBill(null)
     } catch (err: any) {
-      alert(err?.message || 'Failed to delete bill')
+      alert(formatUserFriendlyErrorMessage(err, 'Unable to delete bill. Please try again.'))
     } finally {
       setIsDeleting(false)
     }
@@ -379,88 +380,100 @@ export const BillsPage: React.FC = () => {
   }
 
   const handleExportCsv = () => {
-    const compName = isCompanyScoped ? assignedCompany : selectedCompany
-    billsService.exportCsv(
-      filteredBills,
-      `monthly_bills_${compName.replace(/\s+/g, '_')}_${Date.now()}.csv`
-    )
-    setIsExportDropdownOpen(false)
+    try {
+      const compName = isCompanyScoped ? assignedCompany : selectedCompany
+      billsService.exportCsv(
+        filteredBills,
+        `monthly_bills_${compName.replace(/\s+/g, '_')}_${Date.now()}.csv`
+      )
+    } catch (err: any) {
+      alert(formatUserFriendlyErrorMessage(err, 'Unable to export bills to CSV. Please try again.'))
+    } finally {
+      setIsExportDropdownOpen(false)
+    }
   }
 
   const handleExportPdf = () => {
     setIsExportDropdownOpen(false)
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) return
-    const companyTitle = isCompanyScoped ? assignedCompany : selectedCompany
-    const rowsHtml =
-      filteredBills.length === 0
-        ? `<tr><td colspan="6" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No bills found matching the selected filters.</td></tr>`
-        : filteredBills
-          .map(
-            (b) => `
-        <tr>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${b.billerName}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${b.company}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 600;">₱${b.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.dueDate}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.billingCycle}</td>
-          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.status}</td>
-        </tr>
-      `
-          )
-          .join('')
+    try {
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        alert('Please allow pop-ups in your browser to export the Bills PDF.')
+        return
+      }
+      const companyTitle = isCompanyScoped ? assignedCompany : selectedCompany
+      const rowsHtml =
+        filteredBills.length === 0
+          ? `<tr><td colspan="6" style="padding: 24px; text-align: center; color: #64748B; font-size: 12px; font-style: italic;">No bills found matching the selected filters.</td></tr>`
+          : filteredBills
+            .map(
+              (b) => `
+          <tr>
+            <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: 600;">${b.billerName}</td>
+            <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">${b.company}</td>
+            <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: right; font-weight: 600;">₱${b.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+            <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.dueDate}</td>
+            <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.billingCycle}</td>
+            <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-align: center;">${b.status}</td>
+          </tr>
+        `
+            )
+            .join('')
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Bills Report - ${companyTitle}</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0F172A; padding: 24px; }
-            h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: #960C01; }
-            p { font-size: 12px; color: #64748B; margin: 0 0 16px 0; }
-            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-            th { background-color: #F8FAFC; text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; border-bottom: 2px solid #CBD5E1; }
-            .summary { margin-top: 20px; padding: 12px 16px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0; display: flex; justify-content: space-between; font-size: 12px; }
-            @media print {
-              body { padding: 10px; }
-              @page { size: landscape; margin: 10mm; }
-            }
-          </style>
-        </head>
-        <body>
-          <h1>MCT Group of Companies</h1>
-          <p>Bills Report for <strong>${companyTitle}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Biller Name</th>
-                <th>Company</th>
-                <th style="text-align: right;">Amount</th>
-                <th style="text-align: center;">Due Date</th>
-                <th style="text-align: center;">Cycle</th>
-                <th style="text-align: center;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-          <div class="summary">
-            <div><strong>Total Records:</strong> ${filteredBills.length}</div>
-            <div><strong>Total Payable:</strong> ₱${stats.totalMonthlyAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
-            <div><strong>Total Paid:</strong> ₱${stats.paidAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
-            <div><strong>Overdue / Unpaid:</strong> ₱${(stats.overdueAmount + stats.unpaidAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
-          </div>
-          <script>
-            window.onload = function() {
-              window.print();
-            };
-          </script>
-        </body>
-      </html>
-    `)
-    printWindow.document.close()
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Bills Report - ${companyTitle}</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0F172A; padding: 24px; }
+              h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: #960C01; }
+              p { font-size: 12px; color: #64748B; margin: 0 0 16px 0; }
+              table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+              th { background-color: #F8FAFC; text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; border-bottom: 2px solid #CBD5E1; }
+              .summary { margin-top: 20px; padding: 12px 16px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0; display: flex; justify-content: space-between; font-size: 12px; }
+              @media print {
+                body { padding: 10px; }
+                @page { size: landscape; margin: 10mm; }
+              }
+            </style>
+          </head>
+          <body>
+            <h1>MCT Group of Companies</h1>
+            <p>Bills Report for <strong>${companyTitle}</strong> · Generated on ${new Date().toLocaleDateString('en-PH', { dateStyle: 'full' })}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Biller Name</th>
+                  <th>Company</th>
+                  <th style="text-align: right;">Amount</th>
+                  <th style="text-align: center;">Due Date</th>
+                  <th style="text-align: center;">Cycle</th>
+                  <th style="text-align: center;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+            <div class="summary">
+              <div><strong>Total Records:</strong> ${filteredBills.length}</div>
+              <div><strong>Total Payable:</strong> ₱${stats.totalMonthlyAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+              <div><strong>Total Paid:</strong> ₱${stats.paidAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+              <div><strong>Overdue / Unpaid:</strong> ₱${(stats.overdueAmount + stats.unpaidAmount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <script>
+              window.onload = function() {
+                window.print();
+              };
+            </script>
+          </body>
+        </html>
+      `)
+      printWindow.document.close()
+    } catch (err: any) {
+      alert(formatUserFriendlyErrorMessage(err, 'Unable to generate Bills PDF report. Please try again.'))
+    }
   }
 
   const filteredCompanyList = React.useMemo(() => {
