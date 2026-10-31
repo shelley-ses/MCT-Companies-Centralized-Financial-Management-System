@@ -283,6 +283,13 @@ export const BillsPage: React.FC = () => {
       }
 
       return true
+    }).sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      if (timeA !== timeB) return timeB - timeA
+      const idA = parseInt(a.id, 10) || 0
+      const idB = parseInt(b.id, 10) || 0
+      return idB - idA
     })
   }, [bills, selectedCompany, statusFilter, searchQuery])
 
@@ -918,16 +925,16 @@ export const BillsPage: React.FC = () => {
                 <TableHead className="w-[28%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
                   BILLER
                 </TableHead>
-                <TableHead className="w-[22%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[22%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   COMPANY
                 </TableHead>
-                <TableHead className="w-[18%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-right">
+                <TableHead className="w-[18%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   LATEST BILLED / PAID
                 </TableHead>
-                <TableHead className="w-[16%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[16%] px-3.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   DUE DATE
                 </TableHead>
-                <TableHead className="w-[11%] px-2.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-left">
+                <TableHead className="w-[11%] px-2.5 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
                   STATUS
                 </TableHead>
                 <TableHead className="w-[5%] px-1 py-3.5 text-xs font-bold uppercase tracking-wider text-muted-fg text-center">
@@ -940,20 +947,20 @@ export const BillsPage: React.FC = () => {
               {loading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <TableRow key={idx} className="border-b border-slate-100">
-                    <TableCell className="px-3 py-4">
+                    <TableCell className="px-3 py-4 text-left">
                       <div className="h-4 w-28 bg-slate-200/80 animate-pulse rounded" />
                     </TableCell>
-                    <TableCell className="px-3 py-4">
-                      <div className="h-4 w-24 bg-slate-200/80 animate-pulse rounded" />
+                    <TableCell className="px-3 py-4 text-center">
+                      <div className="h-4 w-24 bg-slate-200/80 animate-pulse rounded mx-auto" />
                     </TableCell>
-                    <TableCell className="px-3 py-4 text-right">
-                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded ml-auto" />
+                    <TableCell className="px-3 py-4 text-center">
+                      <div className="h-4 w-20 bg-slate-200/80 animate-pulse rounded mx-auto" />
                     </TableCell>
-                    <TableCell className="px-3 py-4">
-                      <div className="h-4 w-16 bg-slate-200/70 animate-pulse rounded" />
+                    <TableCell className="px-3 py-4 text-center">
+                      <div className="h-4 w-16 bg-slate-200/70 animate-pulse rounded mx-auto" />
                     </TableCell>
-                    <TableCell className="px-2.5 py-4">
-                      <div className="h-5 w-16 bg-slate-200/60 animate-pulse rounded-full" />
+                    <TableCell className="px-2.5 py-4 text-center">
+                      <div className="h-5 w-16 bg-slate-200/60 animate-pulse rounded-full mx-auto" />
                     </TableCell>
                     <TableCell className="px-1 py-4 text-center">
                       <div className="h-6 w-6 bg-slate-200/60 animate-pulse rounded-md mx-auto" />
@@ -1035,25 +1042,25 @@ export const BillsPage: React.FC = () => {
 
                       {/* Company */}
                       <TableCell
-                        className="w-[22%] px-3 py-3.5 text-xs font-semibold text-focus truncate text-left"
+                        className="w-[22%] px-3 py-3.5 text-xs font-semibold text-focus truncate text-center"
                         title={bill.company}
                       >
-                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                        <div className="flex items-center justify-center gap-1.5 min-w-0 truncate">
                           <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
                           <span className="truncate">{bill.company}</span>
                         </div>
                       </TableCell>
 
                       {/* Latest Billed / Paid Amount & Recurrence */}
-                      <TableCell className="w-[18%] px-3 py-3.5 text-xs font-bold text-focus tabular-nums text-right truncate">
-                        <div className="truncate">
+                      <TableCell className="w-[18%] px-3 py-3.5 text-xs font-bold text-focus tabular-nums text-center truncate">
+                        <div className="truncate text-center">
                           {bill.latestAmount && bill.latestAmount > 0
                             ? formatPHP(bill.latestAmount)
                             : bill.amount && bill.amount > 0
                             ? formatPHP(bill.amount)
                             : '—'}
                         </div>
-                        <div className="text-[10px] font-normal truncate mt-0.5 flex justify-end">
+                        <div className="text-[10px] font-normal truncate mt-0.5 flex justify-center">
                           {bill.billingCycle === 'Daily' ? (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
                               Daily
@@ -1071,10 +1078,10 @@ export const BillsPage: React.FC = () => {
                       </TableCell>
 
                       {/* Due Date & Reminder */}
-                      <TableCell className="w-[16%] px-3 py-3.5 text-xs text-left truncate">
-                        <div className="flex flex-col min-w-0">
+                      <TableCell className="w-[16%] px-3 py-3.5 text-xs text-center truncate">
+                        <div className="flex flex-col items-center justify-center min-w-0">
                           <span className="font-semibold text-focus truncate">{formatDisplayDate(bill.dueDate)}</span>
-                          <span className="text-[11px] text-amber-600 flex items-center gap-1 truncate font-medium">
+                          <span className="text-[11px] text-amber-600 flex items-center justify-center gap-1 truncate font-medium">
                             <BellRing className="w-2.5 h-2.5 shrink-0" />
                             <span className="truncate">
                               {bill.billingCycle === 'Daily' ? 'Daily Alert' : `Remind ${bill.reminderDaysBefore}d`}
@@ -1084,8 +1091,8 @@ export const BillsPage: React.FC = () => {
                       </TableCell>
 
                       {/* Status */}
-                      <TableCell className="w-[10%] px-2.5 py-3.5 text-left truncate">
-                        <div className="flex flex-col gap-1 items-start">
+                      <TableCell className="w-[11%] px-2.5 py-3.5 text-center truncate">
+                        <div className="flex flex-col gap-1 items-center justify-center">
                           {isPaid ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold shadow-2xs">
                               <Check className="w-3 h-3 text-emerald-600 shrink-0" />
@@ -1108,7 +1115,7 @@ export const BillsPage: React.FC = () => {
                             </span>
                           )}
                           {bill.auditDate && (
-                            <span className="text-[10px] text-slate-500 font-normal flex items-center gap-1" title={`Audited at: ${bill.auditDate}`}>
+                            <span className="text-[10px] text-slate-500 font-normal flex items-center justify-center gap-1" title={`Audited at: ${bill.auditDate}`}>
                               <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                               <span className="truncate max-w-[110px]">{bill.auditDate}</span>
                             </span>

@@ -200,6 +200,12 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
       return
     }
 
+    const exists = allPeriods.find((p) => p.key === period.key)
+    if (!exists) {
+      setError(`The ${period.label} period is not an active billing cycle for this bill.`)
+      return
+    }
+
     // Check backlog: cannot select a period later than nextPayable if nextPayable is still unpaid
     if (nextPayable && period.key > nextPayable.key && !nextPayable.paid) {
       setError(`Please settle ${nextPayable.label} first before paying ${period.label}.`)
@@ -275,6 +281,7 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
         amount: parsedAmount,
         billedAmount: billedAmountToPass,
         paymentMethod,
+        refNo: referenceNo.trim() || undefined,
         referenceNo: referenceNo.trim() || undefined,
         notes: notes.trim() || undefined,
       })
@@ -340,7 +347,43 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
           {/* Two-Column Layout: Left = Billing Period Picker, Right = Payment Transaction Details */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
             {/* Left Column: Adaptive Period Picker */}
-            <div className="space-y-2">
+            <div className="space-y-3">
+              {/* Selected Billing Period Summary Box (Target Billing Month/Day/Year) */}
+              {selectedPeriod && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-fg uppercase tracking-wider">
+                      Target {periodCadenceLabel}
+                    </span>
+                    <span
+                      className={cn(
+                        'px-2 py-0.5 rounded text-[10px] font-bold border',
+                        isPeriodPaid && 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                        isPeriodPartiallyPaid && 'bg-amber-50 text-amber-900 border-amber-300',
+                        !isPeriodPaid && !isPeriodPartiallyPaid && 'bg-slate-100 text-slate-700 border-slate-200'
+                      )}
+                    >
+                      {isPeriodPaid ? 'Fully Settled' : isPeriodPartiallyPaid ? 'Partially Paid' : 'Pending Settlement'}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between pt-0.5">
+                    <span className="text-sm sm:text-base font-bold text-focus">
+                      {selectedPeriod.label}
+                    </span>
+                    {isPeriodPartiallyPaid && (
+                      <span className="text-xs font-semibold text-focus tabular-nums">
+                        Remaining: <strong className="text-sm font-bold text-focus">{formatPHP(periodRemainingBalance)}</strong>
+                      </span>
+                    )}
+                  </div>
+                  {isPeriodPartiallyPaid && selectedPeriod.paidAmount !== undefined && (
+                    <p className="text-[11px] text-amber-800 font-medium">
+                      Already paid: {formatPHP(selectedPeriod.paidAmount)} of {selectedPeriod.billedAmount ? formatPHP(selectedPeriod.billedAmount) : formatPHP(bill.amount)}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-focus">
                   Select {periodCadenceLabel} <span className="text-[#960C01]">*</span>
@@ -414,33 +457,26 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                           const dateKey = `${calYear}-${mStr}-${dStr}`
 
                           const period = allPeriods.find((p) => p.key === dateKey)
+                          if (!period) {
+                            return (
+                              <div
+                                key={dateKey}
+                                className="h-9 rounded-lg text-xs font-normal flex flex-col items-center justify-center relative border border-slate-100 bg-slate-100/50 text-slate-300 opacity-40 cursor-not-allowed select-none"
+                                title="Not an active billing date for this bill"
+                              >
+                                <span>{d}</span>
+                              </div>
+                            )
+                          }
+
                           const isSelected = selectedPeriod?.key === dateKey
-                          const state = period ? getPeriodState(period) : 'current'
+                          const state = getPeriodState(period)
 
                           return (
                             <button
                               key={dateKey}
                               type="button"
-                              onClick={() => {
-                                if (period) {
-                                  handleSelectPeriod(period)
-                                } else {
-                                  const synth: BillPaymentPeriod = {
-                                    key: dateKey,
-                                    label: new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, {
-                                      month: 'short',
-                                      day: 'numeric',
-                                      year: 'numeric',
-                                    }),
-                                    paid: false,
-                                    paidAmount: 0,
-                                    remainingAmount: 0,
-                                    periodDate: dateKey,
-                                    isFuture: dateKey > todayStr,
-                                  }
-                                  handleSelectPeriod(synth)
-                                }
-                              }}
+                              onClick={() => handleSelectPeriod(period)}
                               className={cn(
                                 'h-9 rounded-lg text-xs font-medium flex flex-col items-center justify-center relative transition-all cursor-pointer border',
                                 isSelected && 'bg-[#960C01] text-white font-bold shadow-xs border-[#960C01]',
@@ -509,29 +545,33 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                       const mNum = idx + 1
                       const monthKey = `${selectedYear}-${String(mNum).padStart(2, '0')}`
                       const period = allPeriods.find((p) => p.key === monthKey)
+
+                      if (!period) {
+                        return (
+                          <div
+                            key={monthKey}
+                            className="p-2.5 rounded-xl border border-slate-200/50 bg-slate-100/70 text-slate-400 text-left flex flex-col justify-between opacity-40 cursor-not-allowed select-none min-h-[62px]"
+                            title="Not an active billing cycle for this bill"
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <span className="text-xs font-semibold text-slate-400">{mName}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-200/60 text-slate-500 border border-slate-300/60">
+                                N/A
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 mt-1 font-normal">—</span>
+                          </div>
+                        )
+                      }
+
                       const isSelected = selectedPeriod?.key === monthKey
-                      const state = period ? getPeriodState(period) : (monthKey > todayStr.slice(0, 7) ? 'advance' : 'overdue')
+                      const state = getPeriodState(period)
 
                       return (
                         <button
                           key={monthKey}
                           type="button"
-                          onClick={() => {
-                            if (period) {
-                              handleSelectPeriod(period)
-                            } else {
-                              const synth: BillPaymentPeriod = {
-                                key: monthKey,
-                                label: `${MONTH_FULL_NAMES[idx]} ${selectedYear}`,
-                                paid: false,
-                                paidAmount: 0,
-                                remainingAmount: 0,
-                                periodDate: `${monthKey}-01`,
-                                isFuture: monthKey > todayStr.slice(0, 7),
-                              }
-                              handleSelectPeriod(synth)
-                            }
-                          }}
+                          onClick={() => handleSelectPeriod(period)}
                           className={cn(
                             'p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer min-h-[62px]',
                             isSelected && 'border-[#960C01] bg-[#960C01]/5 ring-2 ring-[#960C01]/20',
@@ -671,51 +711,12 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
 
             {/* Right Column: Transaction Details (Payment Date, Amount, Method, Ref No, Notes) */}
             <div className="space-y-3.5">
-              {/* Selected Billing Period Summary Box */}
-              {selectedPeriod && (
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-fg uppercase tracking-wider">
-                      Target {periodCadenceLabel}
-                    </span>
-                    <span
-                      className={cn(
-                        'px-2 py-0.5 rounded text-[10px] font-bold border',
-                        isPeriodPaid && 'bg-emerald-50 text-emerald-800 border-emerald-200',
-                        isPeriodPartiallyPaid && 'bg-amber-50 text-amber-900 border-amber-300',
-                        !isPeriodPaid && !isPeriodPartiallyPaid && 'bg-slate-100 text-slate-700 border-slate-200'
-                      )}
-                    >
-                      {isPeriodPaid ? 'Fully Settled' : isPeriodPartiallyPaid ? 'Partially Paid' : 'Pending Settlement'}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline justify-between pt-0.5">
-                    <span className="text-sm sm:text-base font-bold text-focus">
-                      {selectedPeriod.label}
-                    </span>
-                    {isPeriodPartiallyPaid && (
-                      <span className="text-xs font-semibold text-focus tabular-nums">
-                        Remaining: <strong className="text-sm font-bold text-focus">{formatPHP(periodRemainingBalance)}</strong>
-                      </span>
-                    )}
-                  </div>
-                  {isPeriodPartiallyPaid && selectedPeriod.paidAmount !== undefined && (
-                    <p className="text-[11px] text-amber-800 font-medium">
-                      Already paid: {formatPHP(selectedPeriod.paidAmount)} of {selectedPeriod.billedAmount ? formatPHP(selectedPeriod.billedAmount) : formatPHP(bill.amount)}
-                    </p>
-                  )}
-                </div>
-              )}
-
               {/* 1. Payment Date (Date transaction was actually settled) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-focus">
                     Payment Date <span className="text-[#960C01]">*</span>
                   </label>
-                  <span className="text-[11px] text-muted-fg font-normal">
-                    Defaults to today
-                  </span>
                 </div>
                 <Input
                   required
@@ -864,8 +865,6 @@ export const RecordBillPaymentModal: React.FC<RecordBillPaymentModalProps> = ({
                   <option value="GCash">GCash</option>
                   <option value="Bank Transfer">Bank Transfer</option>
                   <option value="Cheque">Cheque</option>
-                  <option value="Maya">Maya</option>
-                  <option value="Credit Card">Credit Card</option>
                 </select>
               </div>
 

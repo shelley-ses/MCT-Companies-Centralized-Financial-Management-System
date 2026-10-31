@@ -8,6 +8,7 @@ export interface BillPaymentRecord {
   billedAmount?: number
   paymentMethod: string
   refNo?: string
+  referenceNo?: string
   notes?: string
   createdAt: string
 }
@@ -280,6 +281,7 @@ function mapBackendBill(data: BackendBill): BillItem {
     billedAmount: payment.billed_amount !== undefined && payment.billed_amount !== null ? Number(payment.billed_amount) : undefined,
     paymentMethod: payment.payment_method,
     refNo: payment.reference_no,
+    referenceNo: payment.reference_no,
     notes: payment.notes,
     createdAt: payment.created_at || payment.payment_date,
   }))
@@ -304,6 +306,7 @@ function mapBackendBill(data: BackendBill): BillItem {
       billedAmount: pay.billed_amount !== undefined && pay.billed_amount !== null ? Number(pay.billed_amount) : undefined,
       paymentMethod: pay.payment_method,
       refNo: pay.reference_no,
+      referenceNo: pay.reference_no,
       notes: pay.notes,
       createdAt: pay.created_at || pay.payment_date,
     })),
@@ -488,6 +491,7 @@ export const billsService = {
       periodKey?: string
       paymentMethod: string
       refNo?: string
+      referenceNo?: string
       notes?: string
       billedAmount?: number
       remainingAmount?: number
@@ -508,7 +512,7 @@ export const billsService = {
         amount: Number(payment.amount),
         billed_amount: payment.billedAmount !== undefined ? Number(payment.billedAmount) : null,
         payment_method: payment.paymentMethod.trim(),
-        reference_no: payment.refNo?.trim() || null,
+        reference_no: (payment.referenceNo || payment.refNo)?.trim() || null,
         notes: payment.notes?.trim() || null,
       }),
     })
@@ -639,10 +643,40 @@ export const billsService = {
       }
     })
 
+    const typePriority: Record<string, number> = {
+      overdue: 1,
+      due_today: 2,
+      due_soon: 3,
+    }
+
     return reminders.sort((a, b) => {
-      if (a.type === 'overdue' && b.type !== 'overdue') return -1
-      if (a.type !== 'overdue' && b.type === 'overdue') return 1
-      return a.daysDiff - b.daysDiff
+      const priorityDiff = (typePriority[a.type] ?? 99) - (typePriority[b.type] ?? 99)
+      if (priorityDiff !== 0) return priorityDiff
+
+      // If both are overdue: highest overdue days first (most overdue needs attention the most)
+      if (a.type === 'overdue' && b.type === 'overdue') {
+        if (b.daysDiff !== a.daysDiff) {
+          return b.daysDiff - a.daysDiff
+        }
+        const amtA = a.bill.latestAmount || a.bill.amount || 0
+        const amtB = b.bill.latestAmount || b.bill.amount || 0
+        return amtB - amtA
+      }
+
+      // If both are due today: highest amount first
+      if (a.type === 'due_today' && b.type === 'due_today') {
+        const amtA = a.bill.latestAmount || a.bill.amount || 0
+        const amtB = b.bill.latestAmount || b.bill.amount || 0
+        return amtB - amtA
+      }
+
+      // If both are due soon: closest due date first (e.g., 1 day away before 3 days away)
+      if (a.daysDiff !== b.daysDiff) {
+        return a.daysDiff - b.daysDiff
+      }
+      const amtA = a.bill.latestAmount || a.bill.amount || 0
+      const amtB = b.bill.latestAmount || b.bill.amount || 0
+      return amtB - amtA
     })
   },
 

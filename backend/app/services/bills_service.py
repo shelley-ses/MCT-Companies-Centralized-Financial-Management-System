@@ -293,7 +293,7 @@ class BillsService:
         elif company_name and company_name.lower() != "all companies":
             resolved = _resolve_company(self.db, None, company_name)
             query = query.filter(Bill.company_id == resolved.company_id)
-        return [self._to_output(bill) for bill in query.order_by(Bill.due_date.asc(), Bill.bill_id.asc()).all()]
+        return [self._to_output(bill) for bill in query.order_by(Bill.created_at.desc(), Bill.bill_id.desc()).all()]
 
     def get_bill(self, bill_id: int) -> Bill:
         bill = (
