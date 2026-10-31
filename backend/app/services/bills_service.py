@@ -22,16 +22,17 @@ from app.schemas.bills import (
 RECURRING_VALUES = {"daily", "monthly", "yearly"}
 
 
-def _add_period(period_date: date, recurring: str, count: int = 1) -> date:
+def _add_period(period_date: date, recurring: str, count: int = 1, anchor_day: Optional[int] = None) -> date:
+    day = anchor_day if anchor_day is not None else period_date.day
     if recurring == "daily":
         return date.fromordinal(period_date.toordinal() + count)
     if recurring == "yearly":
         year = period_date.year + count
-        return date(year, period_date.month, min(period_date.day, monthrange(year, period_date.month)[1]))
+        return date(year, period_date.month, min(day, monthrange(year, period_date.month)[1]))
     month_index = period_date.year * 12 + period_date.month - 1 + count
     year, month_zero_based = divmod(month_index, 12)
     month = month_zero_based + 1
-    return date(year, month, min(period_date.day, monthrange(year, month)[1]))
+    return date(year, month, min(day, monthrange(year, month)[1]))
 
 
 def _period_key(period_date: date, recurring: str) -> str:
@@ -133,10 +134,11 @@ class BillsService:
 
     def _periods(self, bill: Bill, as_of: date = date.today(), include_future: int = 12):
         recurring = _normalize_recurring(bill.recurring)
+        anchor_day = bill.due_date.day
         period_date = bill.due_date
         # Clamp start year to 2025 onwards
         if period_date.year < 2025:
-            period_date = date(2025, 1, min(period_date.day, monthrange(2025, 1)[1]))
+            period_date = date(2025, 1, min(anchor_day, monthrange(2025, 1)[1]))
         periods = []
         max_periods = 366 if recurring == "daily" else (15 if recurring == "yearly" else 60)
 
@@ -163,7 +165,7 @@ class BillsService:
             if period_date >= as_of and sum(1 for item in periods if item["is_future"]) >= include_future:
                 if not any(item.period_key > key for item in bill.payments):
                     break
-            period_date = _add_period(period_date, recurring)
+            period_date = _add_period(period_date, recurring, 1, anchor_day=anchor_day)
         return periods
 
     def _next_period(self, bill: Bill, as_of: date = date.today()):
@@ -185,7 +187,10 @@ class BillsService:
             return "partially paid"
         if unpaid_past_or_current["period_date"] < as_of:
             return "overdue"
-        if (unpaid_past_or_current["period_date"] - as_of).days <= bill.due_date_reminder:
+        recurring = _normalize_recurring(bill.recurring)
+        reminder_days = 0 if recurring == "daily" else bill.due_date_reminder
+        diff_days = (unpaid_past_or_current["period_date"] - as_of).days
+        if diff_days <= reminder_days:
             return "due soon"
         return "unpaid"
 

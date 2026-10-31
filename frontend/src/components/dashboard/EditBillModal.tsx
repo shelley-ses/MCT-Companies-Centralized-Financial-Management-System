@@ -48,6 +48,35 @@ const DEFAULT_COMPANIES = [
   'Golden Sunburst Ventures',
 ]
 
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
+
+function getOrdinalSuffix(day: number): string {
+  if (day >= 11 && day <= 13) return 'th'
+  switch (day % 10) {
+    case 1:
+      return 'st'
+    case 2:
+      return 'nd'
+    case 3:
+      return 'rd'
+    default:
+      return 'th'
+  }
+}
+
 export const EditBillModal: React.FC<EditBillModalProps> = ({
   open,
   onOpenChange,
@@ -80,9 +109,14 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   // Form states
   const [billerName, setBillerName] = React.useState('')
   const [amount, setAmount] = React.useState('')
-  const [dueDate, setDueDate] = React.useState('')
   const [company, setCompany] = React.useState('')
   const [billingCycle, setBillingCycle] = React.useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly')
+
+  // Recurrence-specific schedule states (effective immediately)
+  const [dueDayOfMonth, setDueDayOfMonth] = React.useState<number>(1)
+  const [yearlyMonth, setYearlyMonth] = React.useState<number>(1)
+  const [yearlyDay, setYearlyDay] = React.useState<number>(1)
+
   const [reminderDaysBefore, setReminderDaysBefore] = React.useState<number>(5)
   const [status, setStatus] = React.useState<BillStatus>('Unpaid')
   const [notes, setNotes] = React.useState('')
@@ -95,19 +129,56 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
     dueDate?: string
   }>({})
 
+  const handleBillingCycleChange = (cycle: 'Daily' | 'Monthly' | 'Yearly') => {
+    setBillingCycle(cycle)
+    if (cycle === 'Daily') {
+      setReminderDaysBefore(0)
+    } else if (cycle === 'Monthly') {
+      if (reminderDaysBefore === 0) setReminderDaysBefore(5)
+    } else if (cycle === 'Yearly') {
+      if (reminderDaysBefore < 7) setReminderDaysBefore(14)
+    }
+  }
+
+  const getComputedDueDate = (): string => {
+    const now = new Date()
+    const y = now.getFullYear()
+    if (billingCycle === 'Daily') {
+      return bill?.dueDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    }
+    if (billingCycle === 'Yearly') {
+      const maxDays = new Date(y, yearlyMonth, 0).getDate()
+      const day = Math.min(yearlyDay, maxDays)
+      return `${y}-${String(yearlyMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+    // Monthly (effective immediately for current month)
+    const m = now.getMonth() + 1
+    const maxDays = new Date(y, m, 0).getDate()
+    const day = Math.min(dueDayOfMonth, maxDays)
+    return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
   // Populate from bill prop
   React.useEffect(() => {
     if (bill && open) {
-      setBillerName(bill.billerName || '')
-      setAmount(bill.amount?.toString() || '')
-      setDueDate(bill.dueDate || '')
-      setCompany(bill.company || 'MCT Kitchen')
-      setBillingCycle(
+      const anchorDate = bill.initialDueDate || bill.dueDate || ''
+      const cycle =
         bill.billingCycle === 'Daily' || bill.billingCycle === 'Yearly'
           ? bill.billingCycle
           : 'Monthly'
-      )
-      setReminderDaysBefore(bill.reminderDaysBefore ?? 5)
+      const parsedDate = anchorDate ? new Date(`${anchorDate}T00:00:00`) : new Date()
+
+      setBillerName(bill.billerName || '')
+      setAmount(bill.amount?.toString() || '')
+      setCompany(bill.company || 'MCT Kitchen')
+      setBillingCycle(cycle)
+
+      const day = bill.dueDayOfMonth || (anchorDate ? parsedDate.getDate() : 1)
+      setDueDayOfMonth(day || 1)
+      setYearlyMonth(anchorDate ? parsedDate.getMonth() + 1 : 1)
+      setYearlyDay(day || 1)
+
+      setReminderDaysBefore(cycle === 'Daily' ? 0 : (bill.reminderDaysBefore ?? 5))
       setStatus(bill.status || 'Unpaid')
       setNotes(bill.notes || '')
       setError('')
@@ -129,12 +200,13 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
 
     const cleanAmount = amount.replace(/,/g, '').trim()
     const numAmount = parseFloat(cleanAmount)
-    if (!cleanAmount || isNaN(numAmount) || numAmount <= 0) {
-      errors.amount = 'Please enter a valid bill amount greater than ₱0.'
+    if (!cleanAmount || isNaN(numAmount) || numAmount < 1 || cleanAmount.startsWith('0')) {
+      errors.amount = 'Bill amount cannot start with 0 and must be at least ₱1.00.'
     }
 
-    if (!dueDate) {
-      errors.dueDate = 'Due date is required.'
+    const computedDueDate = getComputedDueDate()
+    if (!computedDueDate) {
+      errors.dueDate = 'Valid schedule / due date is required.'
     }
 
     if (Object.keys(errors).length > 0) {
@@ -147,7 +219,8 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
       const input: UpdateBillInput = {
         billerName: billerName.trim(),
         amount: numAmount,
-        dueDate,
+        dueDate: computedDueDate,
+        dueDayOfMonth: billingCycle === 'Monthly' ? dueDayOfMonth : undefined,
         company: canChooseCompany ? company : bill.company,
         billingCycle,
         reminderDaysBefore,
@@ -278,52 +351,81 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                 <p className="text-[11px] text-red-600 font-medium">{fieldErrors.amount}</p>
               )}
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* 4. Recurring Schedule */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>Recurring</span>
-                <span className="text-red-500">*</span>
-              </Label>
-              <select
-                value={billingCycle}
-                onChange={(e) => setBillingCycle(e.target.value as 'Daily' | 'Monthly' | 'Yearly')}
-                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-              >
-                <option value="Daily">Daily</option>
-                <option value="Monthly">Monthly</option>
-                <option value="Yearly">Yearly</option>
-              </select>
-            </div>
+            {/* 5. Recurrence Dynamic Controls */}
+            {billingCycle === 'Daily' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                  <span>Effective Schedule</span>
+                </Label>
+                <div className="w-full h-10 px-3 rounded-xl border border-stroke/40 bg-slate-50 text-xs text-muted-fg font-medium flex items-center">
+                  <span>Effective immediately: Due every calendar day.</span>
+                </div>
+              </div>
+            )}
 
-            {/* 5. Due Date */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
-                <span>Due Date</span>
-                <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                type="date"
-                value={dueDate}
-                onChange={(e) => {
-                  setDueDate(e.target.value)
-                  if (fieldErrors.dueDate) {
-                    setFieldErrors((p) => ({ ...p, dueDate: undefined }))
-                  }
-                }}
-                className={cn(
-                  'h-10 rounded-xl border-stroke/50 text-xs font-medium',
-                  fieldErrors.dueDate && 'border-red-500 focus-visible:ring-red-200'
-                )}
-              />
-              {fieldErrors.dueDate && (
-                <p className="text-[11px] text-red-600 font-medium">{fieldErrors.dueDate}</p>
-              )}
-            </div>
+            {billingCycle === 'Monthly' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                  <span>Due Day of the Month</span>
+                  <span className="text-red-500">*</span>
+                </Label>
+                <select
+                  value={dueDayOfMonth}
+                  onChange={(e) => setDueDayOfMonth(parseInt(e.target.value, 10))}
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                >
+                  {Array.from({ length: 30 }, (_, i) => i + 1).map((d) => (
+                    <option key={d} value={d}>
+                      Due every {d}{getOrdinalSuffix(d)} of the month
+                    </option>
+                  ))}
+                  <option value={31}>Due every 31st (or last day of month)</option>
+                </select>
+                <p className="text-[11px] text-muted-fg font-normal">
+                  🔁 Effective immediately for current month. Shorter months automatically clamp to month-end.
+                </p>
+              </div>
+            )}
+
+            {billingCycle === 'Yearly' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-focus flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-muted-fg shrink-0" />
+                  <span>Annual Renewal (Month & Day)</span>
+                  <span className="text-red-500">*</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={yearlyMonth}
+                    onChange={(e) => setYearlyMonth(parseInt(e.target.value, 10))}
+                    className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                  >
+                    {MONTH_NAMES.map((m, idx) => (
+                      <option key={m} value={idx + 1}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={yearlyDay}
+                    onChange={(e) => setYearlyDay(parseInt(e.target.value, 10))}
+                    className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={d}>
+                        Day {d} ({d}{getOrdinalSuffix(d)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[11px] text-muted-fg font-normal">
+                  🔁 Recurs annually every year on {MONTH_NAMES[yearlyMonth - 1]} {yearlyDay}{getOrdinalSuffix(yearlyDay)}.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -333,17 +435,35 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                 <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span>Due Date Reminder</span>
               </Label>
-              <select
-                value={reminderDaysBefore}
-                onChange={(e) => setReminderDaysBefore(parseInt(e.target.value, 10))}
-                className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
-              >
-                <option value={1}>1 day before due date</option>
-                <option value={3}>3 days before due date</option>
-                <option value={5}>5 days before due date</option>
-                <option value={7}>7 days before due date</option>
-                <option value={10}>10 days before due date</option>
-              </select>
+              {billingCycle === 'Daily' ? (
+                <div className="w-full h-10 px-3 rounded-xl border border-stroke/40 bg-slate-50 text-xs text-muted-fg font-medium flex items-center">
+                  <span>Automatic daily alerts: Notifies on <strong>Due Today</strong> and <strong>Overdue</strong></span>
+                </div>
+              ) : billingCycle === 'Yearly' ? (
+                <select
+                  value={reminderDaysBefore}
+                  onChange={(e) => setReminderDaysBefore(parseInt(e.target.value, 10))}
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                >
+                  <option value={7}>7 days before annual renewal</option>
+                  <option value={14}>14 days before annual renewal</option>
+                  <option value={30}>30 days before annual renewal</option>
+                  <option value={60}>60 days before annual renewal</option>
+                </select>
+              ) : (
+                <select
+                  value={reminderDaysBefore}
+                  onChange={(e) => setReminderDaysBefore(parseInt(e.target.value, 10))}
+                  className="w-full h-10 px-3 rounded-xl border border-stroke/50 bg-white text-xs font-medium text-focus shadow-2xs focus:outline-none focus:ring-2 focus:ring-focus/20 focus:border-focus cursor-pointer"
+                >
+                  <option value={1}>1 day before due date</option>
+                  <option value={3}>3 days before due date</option>
+                  <option value={5}>5 days before due date</option>
+                  <option value={7}>7 days before due date</option>
+                  <option value={10}>10 days before due date</option>
+                  <option value={14}>14 days before due date</option>
+                </select>
+              )}
             </div>
 
             {/* 7. Status */}

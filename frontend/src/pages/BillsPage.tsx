@@ -595,7 +595,7 @@ export const BillsPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-3xl sm:text-4xl font-bold text-focus tracking-tight">
-                Monthly Bills
+                Company Bills
               </h1>
             </div>
             <p className="text-sm sm:text-base text-muted-fg font-normal mt-1">
@@ -820,50 +820,6 @@ export const BillsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Top Metric KPI Containers (4 Cards) matching Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Monthly Bills */}
-        <DashboardKpiCard
-          label="Total Monthly Bills"
-          value={loading ? '...' : formatPHP(stats.totalMonthlyAmount)}
-          icon={Receipt}
-          subtext={`Across ${stats.totalBillsCount} scheduled bills`}
-        />
-
-        {/* Paid / Settled */}
-        <DashboardKpiCard
-          label="Paid / Settled"
-          value={loading ? '...' : formatPHP(stats.paidAmount)}
-          icon={CheckCircle2}
-          subtext={`${stats.paidCount} of ${stats.totalBillsCount} bills settled`}
-          valueClassName="text-emerald-600"
-          iconContainerClassName="bg-emerald-50 text-emerald-600 border border-emerald-200/60"
-        />
-
-        {/* Unpaid / Outstanding */}
-        <DashboardKpiCard
-          label="Unpaid / Outstanding"
-          value={loading ? '...' : formatPHP(stats.unpaidAmount)}
-          icon={Clock}
-          subtext={`${stats.unpaidCount} bills pending payment`}
-          valueClassName="text-amber-600"
-          iconContainerClassName="bg-amber-50 text-amber-600 border border-amber-200/60"
-        />
-
-        {/* Urgent Reminders */}
-        <DashboardKpiCard
-          label="Urgent Reminders"
-          value={loading ? '...' : String(reminders.length)}
-          icon={BellRing}
-          subtext={
-            stats.overdueCount > 0
-              ? `${stats.overdueCount} overdue (${formatPHP(stats.overdueAmount)})`
-              : `${stats.dueSoonCount} due soon`
-          }
-          valueClassName="text-rose-600"
-          iconContainerClassName="bg-rose-50 text-rose-600 border border-rose-200/60"
-        />
-      </div>
 
       {/* 3. Due Date Reminders Banner (Alert section) */}
       {reminders.length > 0 && (
@@ -1072,21 +1028,35 @@ export const BillsPage: React.FC = () => {
                         </div>
                       </TableCell>
 
-                      {/* Monthly Amount */}
+                      {/* Monthly Amount & Recurrence */}
                       <TableCell className="w-[18%] px-3 py-3.5 text-xs font-bold text-focus tabular-nums text-right truncate">
                         <div className="truncate">{formatPHP(bill.amount)}</div>
-                        <div className="text-[10px] text-muted-fg font-normal truncate">
-                          {bill.billingCycle}
+                        <div className="text-[10px] font-normal truncate mt-0.5 flex justify-end">
+                          {bill.billingCycle === 'Daily' ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
+                              Daily
+                            </span>
+                          ) : bill.billingCycle === 'Yearly' ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200/60">
+                              Yearly (Annual)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200/60">
+                              Monthly (Every {bill.dueDayOfMonth || (bill.dueDate ? parseInt(bill.dueDate.slice(8, 10), 10) : 1)})
+                            </span>
+                          )}
                         </div>
                       </TableCell>
 
                       {/* Due Date & Reminder */}
                       <TableCell className="w-[16%] px-3 py-3.5 text-xs text-left truncate">
                         <div className="flex flex-col min-w-0">
-                          <span className="font-medium text-focus truncate">{bill.dueDate}</span>
+                          <span className="font-semibold text-focus truncate">{bill.dueDate}</span>
                           <span className="text-[11px] text-amber-600 flex items-center gap-1 truncate font-medium">
                             <BellRing className="w-2.5 h-2.5 shrink-0" />
-                            <span className="truncate">Remind {bill.reminderDaysBefore}d</span>
+                            <span className="truncate">
+                              {bill.billingCycle === 'Daily' ? 'Daily Alert' : `Remind ${bill.reminderDaysBefore}d`}
+                            </span>
                           </span>
                         </div>
                       </TableCell>

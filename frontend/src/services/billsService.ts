@@ -622,7 +622,7 @@ function mapBackendBill(data: BackendBill): BillItem {
     accountNo: data.account_no || '',
     amount: Number(data.amount),
     dueDate: data.next_period_date || data.due_date,
-    dueDayOfMonth: Number((data.next_period_date || data.due_date).slice(8, 10)),
+    dueDayOfMonth: Number(data.due_date.slice(8, 10)),
     initialDueDate: data.due_date,
     billingCycle: recurring,
     reminderDaysBefore: data.due_date_reminder,
@@ -749,11 +749,17 @@ export function getBillPaymentOptions(
       periodDate.setFullYear(startDate.getFullYear() + index)
     } else {
       const targetMonth = startDate.getMonth() + index
-      const lastDay = new Date(startDate.getFullYear(), targetMonth + 1, 0).getDate()
+      const targetYear = startDate.getFullYear() + Math.floor(targetMonth / 12)
+      const normalizedMonth = ((targetMonth % 12) + 12) % 12
+      const lastDay = new Date(targetYear, normalizedMonth + 1, 0).getDate()
+      const anchorDay =
+        bill.dueDayOfMonth ||
+        new Date(`${bill.initialDueDate || bill.dueDate}T00:00:00`).getDate() ||
+        1
       periodDate = new Date(
-        startDate.getFullYear(),
-        targetMonth,
-        Math.min(startDate.getDate(), lastDay)
+        targetYear,
+        normalizedMonth,
+        Math.min(anchorDay, lastDay)
       )
     }
 
@@ -866,7 +872,9 @@ function calculateBillStatus(bill: BillItem, todayStr: string): BillStatus {
   const diffTime = dueDateObj.getTime() - todayObj.getTime()
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
-  if (diffDays >= 0 && diffDays <= (bill.reminderDaysBefore || 5)) {
+  const recurring = normalizeRecurring(bill.billingCycle)
+  const reminderDays = recurring === 'Daily' ? 0 : (bill.reminderDaysBefore ?? 5)
+  if (diffDays >= 0 && diffDays <= reminderDays) {
     return 'Due Soon'
   }
 
