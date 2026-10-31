@@ -40,19 +40,6 @@ class BillUpdate(BaseModel):
     due_date: Optional[date] = None
     due_date_reminder: Optional[int] = Field(None, ge=0)
     notes: Optional[str] = None
-    status: Optional[Literal["unpaid", "paid", "overdue", "due soon"]] = None
-
-
-class BillOut(BillBase):
-    bill_id: int
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    payments: List["BillPaymentOut"] = []
-    next_period_key: Optional[str] = None
-    next_period_label: Optional[str] = None
-    next_period_date: Optional[date] = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class BillPaymentCreate(BaseModel):
@@ -78,11 +65,27 @@ class BillPeriodOut(BaseModel):
     period_date: date
     paid: bool
     partially_paid: bool = False
-    paid_amount: Optional[Decimal] = Decimal("0.00")
-    remaining_amount: Optional[Decimal] = None
+    paid_amount: Decimal = Decimal("0.00")
+    remaining_amount: Decimal = Decimal("0.00")
     payment_date: Optional[date] = None
-    is_future: bool
-    is_next_payable: bool
+    is_future: bool = False
+    is_next_payable: bool = False
+    payments: List[BillPaymentOut] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BillOut(BillBase):
+    bill_id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    payments: List[BillPaymentOut] = []
+    next_period_key: Optional[str] = None
+    next_period_label: Optional[str] = None
+    next_period_date: Optional[date] = None
+    periods: Optional[List[BillPeriodOut]] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BillScheduleOut(BaseModel):
@@ -93,4 +96,28 @@ class BillScheduleOut(BaseModel):
     next_period_label: Optional[str] = None
 
 
+class BillStatsOut(BaseModel):
+    total_monthly_amount: Decimal = Decimal("0.00")
+    total_bills_count: int = 0
+    paid_amount: Decimal = Decimal("0.00")
+    paid_count: int = 0
+    unpaid_amount: Decimal = Decimal("0.00")
+    unpaid_count: int = 0
+    overdue_amount: Decimal = Decimal("0.00")
+    overdue_count: int = 0
+    due_soon_amount: Decimal = Decimal("0.00")
+    due_soon_count: int = 0
+
+
+class BillReminderOut(BaseModel):
+    bill_id: int
+    bill_name: str
+    company: str
+    type: Literal["overdue", "due_today", "due_soon"]
+    days_diff: int
+    message: str
+    due_date: date
+
+
 BillOut.model_rebuild()
+BillScheduleOut.model_rebuild()

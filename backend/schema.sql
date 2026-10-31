@@ -205,8 +205,7 @@ CREATE TABLE IF NOT EXISTS bill_payments (
     reference_no VARCHAR(100),
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT bill_payments_amount_positive CHECK (amount > 0),
-    CONSTRAINT bill_payments_period_unique UNIQUE (bill_id, period_key)
+    CONSTRAINT bill_payments_amount_positive CHECK (amount > 0)
 );
 
 -- 16. Petty Cash Top-ups (sales cash moved into a company's petty cash wallet)

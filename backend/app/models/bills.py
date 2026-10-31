@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -30,15 +30,12 @@ class Bill(Base):
         "BillPayment",
         back_populates="bill",
         cascade="all, delete-orphan",
-        order_by="BillPayment.payment_date.desc()",
+        order_by="BillPayment.payment_date.desc(), BillPayment.bill_payment_id.desc()",
     )
 
 
 class BillPayment(Base):
     __tablename__ = "bill_payments"
-    __table_args__ = (
-        UniqueConstraint("bill_id", "period_key", name="uq_bill_payment_period"),
-    )
 
     bill_payment_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     bill_id = Column(

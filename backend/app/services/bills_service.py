@@ -1,8 +1,8 @@
 from calendar import monthrange
 from datetime import date
-from typing import Optional
-
 from decimal import Decimal
+from typing import List, Optional
+
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -12,9 +12,12 @@ from app.models.company import Company
 from app.schemas.bills import (
     BillCreate,
     BillOut,
-    BillPeriodOut,
     BillPaymentCreate,
+    BillPaymentOut,
+    BillPeriodOut,
+    BillReminderOut,
     BillScheduleOut,
+    BillStatsOut,
     BillUpdate,
 )
 
@@ -28,11 +31,14 @@ def _add_period(period_date: date, recurring: str, count: int = 1, anchor_day: O
         return date.fromordinal(period_date.toordinal() + count)
     if recurring == "yearly":
         year = period_date.year + count
-        return date(year, period_date.month, min(day, monthrange(year, period_date.month)[1]))
+        month = period_date.month
+        max_day = monthrange(year, month)[1]
+        return date(year, month, min(day, max_day))
     month_index = period_date.year * 12 + period_date.month - 1 + count
     year, month_zero_based = divmod(month_index, 12)
     month = month_zero_based + 1
-    return date(year, month, min(day, monthrange(year, month)[1]))
+    max_day = monthrange(year, month)[1]
+    return date(year, month, min(day, max_day))
 
 
 def _period_key(period_date: date, recurring: str) -> str:
@@ -77,7 +83,6 @@ KNOWN_COMPANY_ALIASES = {
 
 
 def _resolve_company(db: Session, company_id: Optional[int], company_name: Optional[str]) -> Company:
-    # 1. By ID if specified
     if company_id:
         company = db.query(Company).filter(Company.company_id == company_id).first()
         if company:
@@ -85,7 +90,6 @@ def _resolve_company(db: Session, company_id: Optional[int], company_name: Optio
 
     all_companies = db.query(Company).all()
 
-    # 2. If name is missing or "all companies", fallback to first company gracefully
     if not company_name or not company_name.strip() or company_name.strip().lower() == "all companies":
         if all_companies:
             return all_companies[0]
@@ -94,17 +98,14 @@ def _resolve_company(db: Session, company_id: Optional[int], company_name: Optio
     clean_name = company_name.strip()
     clean_lower = clean_name.lower()
 
-    # 3. Exact case-insensitive match
     company = db.query(Company).filter(Company.company_name.ilike(clean_name)).first()
     if company:
         return company
 
-    # 4. Trimmed space-insensitive match
     for c in all_companies:
         if c.company_name.strip().lower() == clean_lower:
             return c
 
-    # 5. Known aliases / keyword mappings
     for alias_key, search_terms in KNOWN_COMPANY_ALIASES.items():
         if alias_key in clean_lower or clean_lower in alias_key:
             for term in search_terms:
@@ -112,13 +113,11 @@ def _resolve_company(db: Session, company_id: Optional[int], company_name: Optio
                     if term in c.company_name.strip().lower():
                         return c
 
-    # 6. Generic substring containment
     for c in all_companies:
         c_clean = c.company_name.strip().lower()
         if clean_lower in c_clean or c_clean in clean_lower:
             return c
 
-    # 7. Word-level match (words with >= 4 characters)
     words = [w for w in clean_lower.replace("&", " ").replace(".", " ").split() if len(w) >= 4]
     for w in words:
         for c in all_companies:
@@ -132,25 +131,40 @@ class BillsService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _periods(self, bill: Bill, as_of: date = date.today(), include_future: int = 12):
+    def _periods(self, bill: Bill, as_of: date = date.today(), include_future: Optional[int] = None) -> List[dict]:
         recurring = _normalize_recurring(bill.recurring)
         anchor_day = bill.due_date.day
         period_date = bill.due_date
-        # Clamp start year to 2025 onwards
+
+        if recurring == "daily":
+            min_future = 30 if include_future is None else include_future
+            max_periods = 180
+        elif recurring == "yearly":
+            min_future = 5 if include_future is None else include_future
+            max_periods = 20
+        else:
+            min_future = 12 if include_future is None else include_future
+            max_periods = 60
+
+        # Anchor start date, clamping to not go unreasonably far in the past
         if period_date.year < 2025:
             period_date = date(2025, 1, min(anchor_day, monthrange(2025, 1)[1]))
-        periods = []
-        max_periods = 366 if recurring == "daily" else (15 if recurring == "yearly" else 60)
 
+        periods = []
         for _ in range(max_periods):
             key = _period_key(period_date, recurring)
             period_payments = [item for item in bill.payments if item.period_key == key]
-            paid_amount = sum((item.amount for item in period_payments), Decimal(0))
+            paid_amount = sum((item.amount for item in period_payments), Decimal("0.00"))
             is_paid = paid_amount >= bill.amount
-            is_partially_paid = not is_paid and paid_amount > 0
-            remaining_amount = Decimal(0) if is_paid else max(Decimal(0), bill.amount - paid_amount)
-            latest_payment = max(period_payments, key=lambda p: p.payment_date, default=None)
+            is_partially_paid = not is_paid and paid_amount > Decimal("0.00")
+            remaining_amount = Decimal("0.00") if is_paid else max(Decimal("0.00"), bill.amount - paid_amount)
+            latest_payment = max(
+                period_payments,
+                key=lambda p: (p.payment_date, p.bill_payment_id),
+                default=None,
+            )
             is_future = period_date > as_of
+
             periods.append({
                 "period_key": key,
                 "period_label": _period_label(period_date, recurring),
@@ -161,19 +175,28 @@ class BillsService:
                 "remaining_amount": remaining_amount,
                 "payment_date": latest_payment.payment_date if latest_payment else None,
                 "is_future": is_future,
+                "payments": [
+                    BillPaymentOut.model_validate(p)
+                    for p in sorted(
+                        period_payments,
+                        key=lambda p: (p.payment_date, p.bill_payment_id),
+                        reverse=True,
+                    )
+                ],
             })
-            if period_date >= as_of and sum(1 for item in periods if item["is_future"]) >= include_future:
+
+            if period_date >= as_of and sum(1 for item in periods if item["is_future"]) >= min_future:
                 if not any(item.period_key > key for item in bill.payments):
                     break
+
             period_date = _add_period(period_date, recurring, 1, anchor_day=anchor_day)
+
         return periods
 
-    def _next_period(self, bill: Bill, as_of: date = date.today()):
+    def _next_period(self, bill: Bill, as_of: date = date.today()) -> Optional[dict]:
         periods = self._periods(bill, as_of)
-        return (
-            next((period for period in periods if not period["paid"] and not period["is_future"]), None)
-            or next((period for period in periods if not period["paid"]), None)
-        )
+        # Oldest unpaid period is always next payable (past due first, then current, then future advance)
+        return next((p for p in periods if not p["paid"]), None)
 
     def _status(self, bill: Bill, as_of: date = date.today()) -> str:
         periods = self._periods(bill, as_of)
@@ -196,6 +219,7 @@ class BillsService:
 
     def _to_output(self, bill: Bill, as_of: date = date.today()) -> BillOut:
         next_period = self._next_period(bill, as_of)
+        periods = self._periods(bill, as_of)
         return BillOut(
             bill_id=bill.bill_id,
             company_id=bill.company_id,
@@ -209,19 +233,34 @@ class BillsService:
             status=self._status(bill, as_of),
             created_at=bill.created_at,
             updated_at=bill.updated_at,
-            payments=bill.payments,
+            payments=[
+                BillPaymentOut.model_validate(p)
+                for p in sorted(
+                    bill.payments,
+                    key=lambda p: (p.payment_date, p.bill_payment_id),
+                    reverse=True,
+                )
+            ],
             next_period_key=next_period["period_key"] if next_period else None,
             next_period_label=next_period["period_label"] if next_period else None,
             next_period_date=next_period["period_date"] if next_period else None,
+            periods=[
+                BillPeriodOut(
+                    **period,
+                    is_next_payable=bool(next_period and period["period_key"] == next_period["period_key"]),
+                )
+                for period in periods
+            ],
         )
 
-    def list_bills(self, company_id: Optional[int] = None, company_name: Optional[str] = None):
+    def list_bills(self, company_id: Optional[int] = None, company_name: Optional[str] = None) -> List[BillOut]:
         query = self.db.query(Bill).options(joinedload(Bill.company), joinedload(Bill.payments))
         if company_id:
             query = query.filter(Bill.company_id == company_id)
         elif company_name and company_name.lower() != "all companies":
-            query = query.filter(Bill.company_id == _resolve_company(self.db, None, company_name).company_id)
-        return [self._to_output(bill) for bill in query.order_by(Bill.due_date.asc()).all()]
+            resolved = _resolve_company(self.db, None, company_name)
+            query = query.filter(Bill.company_id == resolved.company_id)
+        return [self._to_output(bill) for bill in query.order_by(Bill.due_date.asc(), Bill.bill_id.asc()).all()]
 
     def get_bill(self, bill_id: int) -> Bill:
         bill = (
@@ -251,7 +290,12 @@ class BillsService:
                 detail=f"A bill with provider name '{clean_name}' already exists for {company.company_name}."
             )
         values = data.model_dump(exclude={"company", "company_id", "status"})
-        values.update(company_id=company.company_id, recurring=_normalize_recurring(data.recurring), status="unpaid")
+        values.update(
+            company_id=company.company_id,
+            bill_name=clean_name,
+            recurring=_normalize_recurring(data.recurring),
+            status="unpaid",
+        )
         bill = Bill(**values)
         self.db.add(bill)
         self.db.commit()
@@ -280,10 +324,12 @@ class BillsService:
                     status_code=400,
                     detail=f"A bill with provider name '{clean_name}' already exists."
                 )
+            values["bill_name"] = clean_name
         if "company_id" in values or "company" in values:
             company = _resolve_company(self.db, values.pop("company_id", None), values.pop("company", None))
             bill.company_id = company.company_id
-        values["recurring"] = _normalize_recurring(values["recurring"]) if "recurring" in values else bill.recurring
+        if "recurring" in values:
+            values["recurring"] = _normalize_recurring(values["recurring"])
         for key, value in values.items():
             if key != "status":
                 setattr(bill, key, value)
@@ -314,63 +360,61 @@ class BillsService:
 
     def record_payment(self, bill_id: int, data: BillPaymentCreate) -> BillOut:
         bill = self.get_bill(bill_id)
+        periods = self._periods(bill)
         next_period = self._next_period(bill)
-        if not next_period:
-            raise HTTPException(status_code=400, detail="No unpaid billing period is available.")
-        period_key = data.period_key or next_period["period_key"]
-        if period_key != next_period["period_key"]:
-            raise HTTPException(status_code=409, detail=f"Settle {next_period['period_label']} before paying another period.")
 
-        existing_payment = (
-            self.db.query(BillPayment)
-            .filter(
-                BillPayment.bill_id == bill_id,
-                BillPayment.period_key == period_key,
+        target_period_key = data.period_key or (next_period["period_key"] if next_period else None)
+        if not target_period_key:
+            raise HTTPException(status_code=400, detail="No billing period specified or available.")
+
+        # Locate the targeted period in generated periods
+        target_period = next((p for p in periods if p["period_key"] == target_period_key), None)
+        if not target_period:
+            raise HTTPException(status_code=400, detail=f"Invalid billing period key '{target_period_key}'.")
+
+        # Sequence enforcement: cannot pay an advance period if an earlier period is unpaid
+        earlier_unpaid = next((p for p in periods if not p["paid"] and p["period_key"] < target_period_key), None)
+        if earlier_unpaid:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Please settle {earlier_unpaid['period_label']} before paying {target_period['period_label']}."
             )
-            .first()
-        )
 
-        current_paid = existing_payment.amount if existing_payment else 0.0
-        remaining = max(0.0, bill.amount - current_paid)
-        if data.amount > (remaining + 0.01):
+        # Calculate remaining balance for this period
+        period_payments = [p for p in bill.payments if p.period_key == target_period_key]
+        current_paid = sum((p.amount for p in period_payments), Decimal("0.00"))
+        remaining = max(Decimal("0.00"), bill.amount - current_paid)
+
+        if remaining <= Decimal("0.00"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Amount paid cannot be greater than the Monthly Bill Amount or remaining balance (₱{remaining:,.2f})."
+                detail=f"{target_period['period_label']} is already fully paid."
             )
 
-        if existing_payment:
-            existing_payment.amount += data.amount
-            existing_payment.payment_date = data.payment_date
-            existing_payment.payment_method = data.payment_method.strip()
-            if data.reference_no:
-                existing_payment.reference_no = (
-                    f"{existing_payment.reference_no}, {data.reference_no}"
-                    if existing_payment.reference_no
-                    else data.reference_no
-                )
-            if data.notes:
-                existing_payment.notes = (
-                    f"{existing_payment.notes}; {data.notes}"
-                    if existing_payment.notes
-                    else data.notes
-                )
-        else:
-            payment = BillPayment(
-                bill_id=bill_id,
-                period_key=period_key,
-                payment_date=data.payment_date,
-                amount=data.amount,
-                payment_method=data.payment_method.strip(),
-                reference_no=data.reference_no,
-                notes=data.notes,
+        if data.amount > (remaining + Decimal("0.01")):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment amount (₱{data.amount:,.2f}) cannot exceed the remaining balance (₱{remaining:,.2f})."
             )
-            self.db.add(payment)
+
+        # Record new payment transaction (independent row for installments and audit trail)
+        payment = BillPayment(
+            bill_id=bill_id,
+            period_key=target_period_key,
+            payment_date=data.payment_date,
+            amount=data.amount,
+            payment_method=data.payment_method.strip(),
+            reference_no=data.reference_no.strip() if data.reference_no else None,
+            notes=data.notes.strip() if data.notes else None,
+        )
+        self.db.add(payment)
 
         try:
             self.db.commit()
         except Exception:
             self.db.rollback()
             raise HTTPException(status_code=409, detail="Failed to record bill payment.")
+
         return self._to_output(self.get_bill(bill_id))
 
     def delete_payment(self, bill_id: int, payment_id: int) -> BillOut:
@@ -386,9 +430,113 @@ class BillsService:
 
     def delete_latest_payment(self, bill_id: int) -> BillOut:
         bill = self.get_bill(bill_id)
-        payment = max(bill.payments, key=lambda item: item.created_at or item.payment_date, default=None)
+        payment = max(
+            bill.payments,
+            key=lambda item: (item.payment_date, item.bill_payment_id),
+            default=None,
+        )
         if not payment:
-            raise HTTPException(status_code=404, detail="No bill payment found.")
+            raise HTTPException(status_code=404, detail="No bill payment found to undo.")
         self.db.delete(payment)
         self.db.commit()
         return self._to_output(self.get_bill(bill_id))
+
+    def get_stats(
+        self,
+        company_id: Optional[int] = None,
+        company_name: Optional[str] = None,
+        as_of: date = date.today(),
+    ) -> BillStatsOut:
+        bills = self.list_bills(company_id=company_id, company_name=company_name)
+        total_monthly_amount = Decimal("0.00")
+        paid_amount = Decimal("0.00")
+        paid_count = 0
+        unpaid_amount = Decimal("0.00")
+        unpaid_count = 0
+        overdue_amount = Decimal("0.00")
+        overdue_count = 0
+        due_soon_amount = Decimal("0.00")
+        due_soon_count = 0
+
+        for b in bills:
+            total_monthly_amount += b.amount
+            if b.status == "paid":
+                paid_amount += b.amount
+                paid_count += 1
+            else:
+                unpaid_amount += b.amount
+                unpaid_count += 1
+                if b.status == "overdue":
+                    overdue_amount += b.amount
+                    overdue_count += 1
+                elif b.status == "due soon":
+                    due_soon_amount += b.amount
+                    due_soon_count += 1
+
+        return BillStatsOut(
+            total_monthly_amount=total_monthly_amount,
+            total_bills_count=len(bills),
+            paid_amount=paid_amount,
+            paid_count=paid_count,
+            unpaid_amount=unpaid_amount,
+            unpaid_count=unpaid_count,
+            overdue_amount=overdue_amount,
+            overdue_count=overdue_count,
+            due_soon_amount=due_soon_amount,
+            due_soon_count=due_soon_count,
+        )
+
+    def get_reminders(
+        self,
+        company_id: Optional[int] = None,
+        company_name: Optional[str] = None,
+        as_of: date = date.today(),
+    ) -> List[BillReminderOut]:
+        bills = self.list_bills(company_id=company_id, company_name=company_name)
+        reminders = []
+
+        for b in bills:
+            if not b.next_period_date:
+                continue
+            due_date = b.next_period_date
+            diff_days = (due_date - as_of).days
+
+            if diff_days < 0:
+                reminders.append(
+                    BillReminderOut(
+                        bill_id=b.bill_id,
+                        bill_name=b.bill_name,
+                        company=b.company or "",
+                        type="overdue",
+                        days_diff=abs(diff_days),
+                        message=f"{b.bill_name} ({b.company}) was due on {due_date.isoformat()} ({abs(diff_days)} day{'s' if abs(diff_days) > 1 else ''} overdue)",
+                        due_date=due_date,
+                    )
+                )
+            elif diff_days == 0:
+                reminders.append(
+                    BillReminderOut(
+                        bill_id=b.bill_id,
+                        bill_name=b.bill_name,
+                        company=b.company or "",
+                        type="due_today",
+                        days_diff=0,
+                        message=f"{b.bill_name} ({b.company}) is due TODAY!",
+                        due_date=due_date,
+                    )
+                )
+            elif diff_days <= (b.due_date_reminder or 3):
+                reminders.append(
+                    BillReminderOut(
+                        bill_id=b.bill_id,
+                        bill_name=b.bill_name,
+                        company=b.company or "",
+                        type="due_soon",
+                        days_diff=diff_days,
+                        message=f"{b.bill_name} ({b.company}) is due in {diff_days} day{'s' if diff_days > 1 else ''} ({due_date.isoformat()})",
+                        due_date=due_date,
+                    )
+                )
+
+        reminders.sort(key=lambda r: (0 if r.type == "overdue" else 1 if r.type == "due_today" else 2, r.days_diff))
+        return reminders
